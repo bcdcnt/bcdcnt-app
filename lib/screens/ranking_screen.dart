@@ -1,0 +1,457 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
+import '../constants/theme.dart';
+import '../services/api.dart';
+import '../services/player.dart';
+import '../widgets/song_row.dart';
+import '../widgets/mini_player.dart';
+
+class RankingScreen extends StatefulWidget {
+  const RankingScreen({super.key});
+
+  @override
+  State<RankingScreen> createState() => _RankingScreenState();
+}
+
+class _RankingScreenState extends State<RankingScreen> {
+  static const _types = [('song', 'Tân nhạc'), ('folk', 'Dân ca'), ('instrumental', 'Khí nhạc'), ('poem', 'Tiếng thơ')];
+  static const _periods = [('week', 'Tuần'), ('month', 'Tháng'), ('year', 'Năm'), ('', 'Tất cả')];
+  static const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
+
+  static const _artistTiles = [
+    ('nghe-si', 'Nghệ sĩ nghe nhiều', Icons.mic, Color(0xFF711313)),
+    ('nhac-si', 'Nhạc sĩ nghe nhiều', Icons.music_note, Color(0xFF8B6914)),
+    ('nha-tho', 'Nhà thơ nghe nhiều', Icons.auto_stories_outlined, Color(0xFF6B5210)),
+    ('soan-gia', 'Soạn giả nghe nhiều', Icons.edit_outlined, Color(0xFF4A0D0D)),
+  ];
+  static const _memberTiles = [
+    ('cong-hien', 'Top cống hiến', Icons.workspace_premium_outlined, Color(0xFF7A3B3A)),
+    ('dong-gop', 'Top đóng góp bản thu', Icons.upload_outlined, Color(0xFF2D5E3A)),
+    ('binh-luan', 'Top bình luận', Icons.chat_bubble_outline, Color(0xFF2D5E3A)),
+    ('binh-luan-yeu-thich', 'Top bình luận yêu thích', Icons.favorite_outline, Color(0xFF6B5210)),
+    ('nghe-nhieu', 'Top nghe nhiều', Icons.headphones_outlined, Color(0xFF4A0D0D)),
+  ];
+
+  String _type = 'song';
+  String _period = 'week';
+  bool _loading = true;
+  List<Map<String, dynamic>> _songs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchListen();
+  }
+
+  Future<void> _fetchListen() async {
+    setState(() => _loading = true);
+    try {
+      const q = r'''query($period: String, $type: String!) {
+        statisticListen(first: 10, page: 1, period: $period, type: $type) {
+          data {
+            total
+            object {
+              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } sheet { composers(first: 5) { data { id slug title } } } }
+              ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
+              ... on Instrumental { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
+              ... on Poem { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
+            }
+          }
+        }
+      }''';
+      final data = await ApiClient.query(q, {'period': _period, 'type': _type});
+      final list = ((data['statisticListen']?['data'] ?? []) as List)
+          .where((d) => d['object'] != null)
+          .map((d) {
+        final m = Map<String, dynamic>.from(d as Map);
+        m['object'] = Map<String, dynamic>.from(m['object'] as Map);
+        m['object']['file_type'] = _fileTypes[m['object']['__typename']] ?? _type;
+        return m;
+      }).toList();
+      if (!mounted) return;
+      setState(() { _songs = list; _loading = false; });
+    } catch (_) { if (mounted) setState(() => _loading = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Stack(children: [
+        CustomScrollView(slivers: [
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+            title: Text('BẢNG XẾP HẠNG', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            centerTitle: true,
+            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            sliver: SliverList(delegate: SliverChildListDelegate([
+              // Hero
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(18),
+                  gradient: const LinearGradient(colors: [Color(0xFF711313), Color(0xFFA01818)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  boxShadow: [BoxShadow(color: const Color(0xFF711313).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                ),
+                child: Row(children: [
+                  Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.leaderboard_outlined, color: Colors.white, size: 28)),
+                  const SizedBox(width: 14),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Bảng xếp hạng', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
+                    const SizedBox(height: 4),
+                    Text('Nghe nhiều, nghệ sĩ và thành viên', style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                  ])),
+                ]),
+              ),
+              const SizedBox(height: 22),
+
+              // Section: Listen
+              Row(children: [
+                const Icon(Icons.trending_up, size: 16, color: AppColors.accentLight),
+                const SizedBox(width: 6),
+                Text('Nghe nhiều', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+              ]),
+              const SizedBox(height: 12),
+
+              // Period chips
+              SizedBox(
+                height: 32,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _periods.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (ctx, i) {
+                    final p = _periods[i];
+                    final active = _period == p.$1;
+                    return InkWell(
+                      onTap: active ? null : () { setState(() => _period = p.$1); _fetchListen(); },
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: active ? AppColors.accent : AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                        ),
+                        child: Text(p.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary))),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Type tabs
+              Container(
+                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(children: _types.map((t) {
+                    final active = _type == t.$1;
+                    return InkWell(
+                      onTap: active ? null : () { setState(() => _type = t.$1); _fetchListen(); },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: active ? AppColors.accent : Colors.transparent, width: 2))),
+                        child: Text(t.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.text : AppColors.textMuted))),
+                      ),
+                    );
+                  }).toList()),
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // Listen list (top 10)
+              if (_loading)
+                const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              else if (_songs.isEmpty)
+                Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))))
+              else
+                ..._songs.asMap().entries.map((e) {
+                  final s = e.value['object'] as Map<String, dynamic>;
+                  final periodTotal = e.value['total'] is num ? (e.value['total'] as num).toInt() : 0;
+                  // Override views shown by SongRow with the period-specific total
+                  final sCopy = Map<String, dynamic>.from(s)..['views'] = periodTotal;
+                  return SongRow(song: sCopy, index: e.key, showIndex: true, onTap: () => context.push('/song/${s['id']}', extra: s));
+                }),
+
+              const SizedBox(height: 30),
+
+              // Section: Artists
+              Row(children: [
+                const Icon(Icons.mic, size: 16, color: AppColors.accentLight),
+                const SizedBox(width: 6),
+                Text('Nghệ sĩ', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+              ]),
+              const SizedBox(height: 12),
+              ..._artistTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
+
+              const SizedBox(height: 24),
+
+              // Section: Members
+              Row(children: [
+                const Icon(Icons.people_outline, size: 16, color: AppColors.accentLight),
+                const SizedBox(width: 6),
+                Text('Thành viên', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+              ]),
+              const SizedBox(height: 12),
+              ..._memberTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
+
+              SizedBox(height: player.currentSong != null ? 90 : 20),
+            ])),
+          ),
+        ]),
+        if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+
+  Widget _bigTile({required String slug, required String label, required IconData icon, required Color color}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        onTap: () => context.push('/bang-xep-hang/$slug'),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: [color, Color.lerp(color, Colors.black, 0.3)!], begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
+          ),
+          child: Row(children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Text(label, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)))),
+            const Icon(Icons.chevron_right, color: Colors.white70, size: 20),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class RankingDetailScreen extends StatefulWidget {
+  final String slug;
+  const RankingDetailScreen({super.key, required this.slug});
+
+  @override
+  State<RankingDetailScreen> createState() => _RankingDetailScreenState();
+}
+
+class _RankingDetailScreenState extends State<RankingDetailScreen> {
+  static const _configs = {
+    'nghe-si': ('Nghệ sĩ nghe nhiều', 'people', 'artist'),
+    'nhac-si': ('Nhạc sĩ nghe nhiều', 'people', 'composer'),
+    'nha-tho': ('Nhà thơ nghe nhiều', 'people', 'poet'),
+    'soan-gia': ('Soạn giả nghe nhiều', 'people', 'recomposer'),
+    'cong-hien': ('Top cống hiến', 'users', 'point'),
+    'nghe-nhieu': ('Top nghe nhiều', 'users', 'listen'),
+    'dong-gop': ('Top đóng góp bản thu', 'custom', 'topUpload'),
+    'binh-luan': ('Top bình luận', 'custom', 'topComment'),
+    'binh-luan-yeu-thich': ('Top bình luận yêu thích', 'custom', 'topCommentLove'),
+  };
+
+  final _scrollCtl = ScrollController();
+  List<Map<String, dynamic>> _items = [];
+  int _page = 1, _lastPage = 1;
+  bool _loading = true, _loadingMore = false;
+
+  @override
+  void initState() { super.initState(); _scrollCtl.addListener(_onScroll); _fetch(1); }
+  @override
+  void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
+  void _onScroll() {
+    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
+  }
+
+  Future<void> _fetch(int page) async {
+    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    try {
+      final cfg = _configs[widget.slug];
+      if (cfg == null) { if (mounted) setState(() => _loading = false); return; }
+      final type = cfg.$2;
+      List<Map<String, dynamic>> list = [];
+      Map pi = {};
+      if (type == 'people') {
+        final pt = cfg.$3;
+        final whereExtra = pt == 'artist' ? ', {column: "is_group", value: 0}' : '';
+        final q = '''query(\$page: Int) {
+          ${pt}s(first: 20, page: \$page, orderBy: [{column: "total_listens", order: DESC}], where: {AND: [{column: "total_listens", value: 0, operator: GT}$whereExtra]}) {
+            data { id title slug total_listens avatar { url } }
+            paginatorInfo { currentPage lastPage }
+          }
+        }''';
+        final data = await ApiClient.query(q, {'page': page});
+        final raw = data['${pt}s'];
+        list = ((raw?['data'] ?? []) as List).map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          return {
+            'id': m['id'], 'name': m['title'], 'slug': m['slug'],
+            'avatar': m['avatar']?['url'], 'value': m['total_listens'] ?? 0,
+            '_route': '/${{
+              'artist': 'nghe-si', 'composer': 'nhac-si', 'poet': 'nha-tho', 'recomposer': 'soan-gia',
+            }[pt]}/${m['slug']}',
+            '_valueLabel': 'lượt nghe',
+          };
+        }).toList();
+        pi = raw?['paginatorInfo'] ?? {};
+      } else if (type == 'users') {
+        final field = cfg.$3;
+        final extra = ', {column: "id", value: 1, operator: NEQ}';
+        final q = '''query(\$page: Int) {
+          users(first: 20, page: \$page, orderBy: [{column: "$field", order: DESC}], where: {AND: [{column: "$field", value: 0, operator: GT}$extra]}) {
+            data { id username avatar { url } $field }
+            paginatorInfo { currentPage lastPage }
+          }
+        }''';
+        final data = await ApiClient.query(q, {'page': page});
+        final raw = data['users'];
+        list = ((raw?['data'] ?? []) as List).map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          return {
+            'id': m['id'], 'name': m['username'],
+            'avatar': m['avatar']?['url'], 'value': m[field] ?? 0,
+            '_route': '/user/${m['id']}',
+            '_valueLabel': field == 'listen' ? 'lượt nghe' : 'điểm',
+          };
+        }).toList();
+        pi = raw?['paginatorInfo'] ?? {};
+      } else { // custom
+        final qn = cfg.$3;
+        final q = '''query(\$page: Int) {
+          $qn(first: 20, page: \$page) {
+            data { username avatar user_id total }
+            paginatorInfo { currentPage lastPage }
+          }
+        }''';
+        final data = await ApiClient.query(q, {'page': page});
+        final raw = data[qn];
+        final valueLabel = qn == 'topUpload' ? 'bản thu' : (qn == 'topComment' ? 'bình luận' : 'lượt thích');
+        list = ((raw?['data'] ?? []) as List).map((e) {
+          final m = Map<String, dynamic>.from(e as Map);
+          return {
+            'id': m['user_id'], 'name': m['username'],
+            'avatar': m['avatar'], 'value': m['total'] ?? 0,
+            '_route': '/user/${m['user_id']}',
+            '_valueLabel': valueLabel,
+          };
+        }).toList();
+        pi = raw?['paginatorInfo'] ?? {};
+      }
+      if (!mounted) return;
+      setState(() {
+        if (page == 1) _items = list; else _items.addAll(list);
+        _page = pi['currentPage'] ?? page;
+        _lastPage = pi['lastPage'] ?? 1;
+        _loading = false; _loadingMore = false;
+      });
+    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+  }
+
+  String _formatInt(int n) {
+    final s = n.abs().toString();
+    final buf = StringBuffer();
+    for (int i = 0; i < s.length; i++) { if (i > 0 && (s.length - i) % 3 == 0) buf.write('.'); buf.write(s[i]); }
+    return buf.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    final cfg = _configs[widget.slug];
+    final title = cfg?.$1 ?? 'Bảng xếp hạng';
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Stack(children: [
+        CustomScrollView(controller: _scrollCtl, slivers: [
+          SliverAppBar(
+            pinned: true,
+            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+            title: Text(title.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            centerTitle: true,
+            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          ),
+          if (_loading && _items.isEmpty)
+            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_items.isEmpty)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: AppText.bodyText)))
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                (ctx, i) => _row(i, _items[i]),
+                childCount: _items.length,
+              )),
+            ),
+          SliverToBoxAdapter(child: Column(children: [
+            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            SizedBox(height: player.currentSong != null ? 90 : 20),
+          ])),
+        ]),
+        if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+
+  Widget _row(int i, Map<String, dynamic> item) {
+    final rank = i + 1;
+    final isTop3 = rank <= 3;
+    const medals = [Color(0xFFFFD54F), Color(0xFFB0BEC5), Color(0xFFA87451)];
+    final value = item['value'] is num ? (item['value'] as num).toInt() : 0;
+    return InkWell(
+      onTap: () => context.push(item['_route'] as String),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: isTop3 ? medals[i].withValues(alpha: 0.4) : AppColors.border, width: isTop3 ? 1.2 : 1),
+        ),
+        child: Row(children: [
+          Container(
+            width: 30, height: 30, alignment: Alignment.center,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: isTop3 ? LinearGradient(colors: [medals[i], medals[i].withValues(alpha: 0.6)]) : null,
+              color: isTop3 ? null : AppColors.surface,
+            ),
+            child: isTop3
+                ? Icon(i == 0 ? Icons.emoji_events : Icons.military_tech, color: Colors.white, size: 14)
+                : Text('$rank', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 36, height: 36,
+            decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+            child: ClipOval(
+              child: item['avatar'] != null
+                  ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white, size: 18))
+                  : const Icon(Icons.person, color: Colors.white, size: 18),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(_formatInt(value), style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+            Text(item['_valueLabel']?.toString() ?? '', style: body(const TextStyle(fontSize: 9, color: AppColors.textMuted))),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
