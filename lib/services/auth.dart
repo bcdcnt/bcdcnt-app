@@ -8,7 +8,16 @@ const meQuery = '''query { me {
   id username email
   avatar { url } background { url }
   unread
+  player_shuffle player_repeat
 }}''';
+
+const _updateMeShuffleMutation = '''mutation(\$v: Boolean) {
+  updateMe(player_shuffle: \$v) { id }
+}''';
+
+const _updateMeRepeatMutation = '''mutation(\$v: String) {
+  updateMe(player_repeat: \$v) { id }
+}''';
 
 const loginMutation = '''mutation(\$identity: String!, \$password: String!) {
   login(identity: \$identity, password: \$password) { access_token refresh_token }
@@ -150,6 +159,8 @@ class AuthProvider extends ChangeNotifier {
           'id': me['id'], 'username': me['username'], 'email': me['email'],
           'avatar': me['avatar']?['url'], 'background': me['background']?['url'],
           'unread': me['unread'] ?? 0,
+          'player_shuffle': me['player_shuffle'],
+          'player_repeat': me['player_repeat'],
         };
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user', jsonEncode(_user));
@@ -223,6 +234,24 @@ class AuthProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user', jsonEncode(_user));
     notifyListeners();
+  }
+
+  /// Persist a player setting (shuffle/repeat) to the server, fire-and-forget.
+  /// Updates the cached user immediately so the UI doesn't flicker.
+  Future<void> updatePlayerSetting(String key, Object value) async {
+    if (_user == null || _token == null) return;
+    _user![key] = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user', jsonEncode(_user));
+    try {
+      if (key == 'player_shuffle' && value is bool) {
+        await authedMutate(_updateMeShuffleMutation, {'v': value});
+      } else if (key == 'player_repeat' && value is String) {
+        await authedMutate(_updateMeRepeatMutation, {'v': value});
+      }
+    } catch (_) {
+      // Swallow — local state already updated; sync will retry next change.
+    }
   }
 
   Future<void> logout() async {

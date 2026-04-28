@@ -6,6 +6,10 @@ enum PlayerRepeatMode { off, all, one }
 
 typedef FetchMoreFn = Future<List<Map<String, dynamic>>> Function(List<Map<String, dynamic>> currentQueue);
 
+/// Optional callback invoked when shuffle/repeat changes so the host app
+/// can persist the change (e.g. via the updateMe GraphQL mutation).
+typedef OnPlayerSettingChanged = Future<void> Function(String key, Object value);
+
 class PlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   Map<String, dynamic>? _currentSong;
@@ -21,6 +25,10 @@ class PlayerProvider extends ChangeNotifier {
   double _playbackRate = 1.0;
   FetchMoreFn? _fetchMore;
   bool _isFetchingMore = false;
+  OnPlayerSettingChanged? _onSettingChanged;
+  // Track which user's settings we've already applied so we don't re-apply
+  // (and re-trigger sync to server) on every notifyListeners.
+  String? _appliedForUserId;
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
@@ -186,11 +194,43 @@ class PlayerProvider extends ChangeNotifier {
   void toggleShuffle() {
     _shuffle = !_shuffle;
     notifyListeners();
+    _onSettingChanged?.call('player_shuffle', _shuffle);
   }
 
   void toggleRepeat() {
     _repeat = PlayerRepeatMode.values[(_repeat.index + 1) % 3];
     notifyListeners();
+    _onSettingChanged?.call('player_repeat', _repeat.name);
+  }
+
+  /// Hook for the host app to persist shuffle/repeat changes (e.g. updateMe).
+  void setOnSettingChanged(OnPlayerSettingChanged? fn) {
+    _onSettingChanged = fn;
+  }
+
+  /// Apply persisted player settings from the authed user payload. No-op when
+  /// the same user's settings have already been applied — prevents bouncing
+  /// the values when AuthProvider notifies repeatedly.
+  void applyUserSettings(Map<String, dynamic>? user) {
+    if (user == null) {
+      _appliedForUserId = null;
+      return;
+    }
+    final uid = user['id']?.toString();
+    if (uid == null || uid == _appliedForUserId) return;
+    _appliedForUserId = uid;
+    bool changed = false;
+    final s = user['player_shuffle'];
+    if (s is bool && s != _shuffle) { _shuffle = s; changed = true; }
+    final r = user['player_repeat'];
+    if (r is String) {
+      final mode = PlayerRepeatMode.values.firstWhere(
+        (m) => m.name == r,
+        orElse: () => _repeat,
+      );
+      if (mode != _repeat) { _repeat = mode; changed = true; }
+    }
+    if (changed) notifyListeners();
   }
 
   Future<void> setVolume(double v) async {

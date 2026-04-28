@@ -55,13 +55,52 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
       ],
-      child: MaterialApp.router(
+      child: const _AuthPlayerBridge(
+        child: _AppRoot(),
+      ),
+    );
+  }
+}
+
+class _AppRoot extends StatelessWidget {
+  const _AppRoot();
+  @override
+  Widget build(BuildContext context) => MaterialApp.router(
         title: 'BCĐCNT',
         theme: appTheme(),
         debugShowCheckedModeBanner: false,
         routerConfig: _router,
-      ),
-    );
+      );
+}
+
+/// Wires AuthProvider <-> PlayerProvider:
+/// - Loads player_shuffle/player_repeat from the authed user into the player
+/// - Persists shuffle/repeat changes back via updateMe
+class _AuthPlayerBridge extends StatefulWidget {
+  final Widget child;
+  const _AuthPlayerBridge({required this.child});
+
+  @override
+  State<_AuthPlayerBridge> createState() => _AuthPlayerBridgeState();
+}
+
+class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
+  @override
+  void initState() {
+    super.initState();
+    final auth = context.read<AuthProvider>();
+    final player = context.read<PlayerProvider>();
+    player.setOnSettingChanged(auth.updatePlayerSetting);
+    // Apply current cached user (if already restored from prefs) immediately.
+    player.applyUserSettings(auth.user);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Re-apply whenever the authed user changes (login, /me refresh, logout).
+    final user = context.watch<AuthProvider>().user;
+    context.read<PlayerProvider>().applyUserSettings(user);
+    return widget.child;
   }
 }
 

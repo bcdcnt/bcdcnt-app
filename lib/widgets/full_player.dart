@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
@@ -47,6 +48,62 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final m = d.inMinutes.remainder(60).toString();
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+
+  void _openSongDetail(Map<String, dynamic> song) {
+    final id = song['id']?.toString();
+    if (id == null || id.isEmpty) return;
+    Navigator.of(context).pop();
+    context.push('/song/$id', extra: song);
+  }
+
+  void _openArtistDetail(Map artist) {
+    final slug = artist['slug']?.toString();
+    if (slug != null && slug.isNotEmpty && artist['title'] != null) {
+      Navigator.of(context).pop();
+      context.push('/nghe-si/$slug');
+      return;
+    }
+    // Karaoke "artists" entries are actually users — fall back to user route.
+    final id = artist['id']?.toString();
+    if (id != null && id.isNotEmpty && artist['username'] != null) {
+      Navigator.of(context).pop();
+      context.push('/user/$id');
+    }
+  }
+
+  Widget _buildArtistRow(List artists) {
+    final entries = <Map>[];
+    for (final a in artists) {
+      if (a is Map) {
+        final label = (a['title'] ?? a['username'] ?? '').toString();
+        if (label.isNotEmpty) entries.add(a);
+      }
+    }
+    if (entries.isEmpty) return const SizedBox.shrink();
+    final style = body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.accentLight));
+    final sepStyle = body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textMuted));
+    final children = <Widget>[];
+    for (var i = 0; i < entries.length; i++) {
+      final a = entries[i];
+      final label = (a['title'] ?? a['username']).toString();
+      children.add(InkWell(
+        onTap: () => _openArtistDetail(a),
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          child: Text(label, style: style),
+        ),
+      ));
+      if (i < entries.length - 1) {
+        children.add(Text(',', style: sepStyle));
+      }
+    }
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: children,
+    );
   }
 
   String _songType(Map<String, dynamic> song) {
@@ -143,12 +200,34 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   void _showMoreSheet(BuildContext ctx, Map<String, dynamic> song, PlayerProvider player) {
+    final speedLabel = '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x';
+    final loveCount = _lovers.length > 99 ? '99+' : (_lovers.isEmpty ? null : '${_lovers.length}');
     showModalBottomSheet(
       context: ctx,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (sheetCtx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: Icon(_liked ? Icons.favorite : Icons.favorite_border, color: _liked ? AppColors.accent : AppColors.textSecondary),
+            title: Text(_liked ? 'Đã thích' : 'Yêu thích', style: body(const TextStyle(color: AppColors.text))),
+            trailing: loveCount != null ? Text(loveCount, style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13))) : null,
+            onTap: () { Navigator.pop(sheetCtx); _handleLove(song); },
+          ),
+          ListTile(
+            leading: const Icon(Icons.ios_share, color: AppColors.textSecondary),
+            title: Text('Chia sẻ', style: body(const TextStyle(color: AppColors.text))),
+            onTap: () { Navigator.pop(sheetCtx); _handleShare(song); },
+          ),
+          ListTile(
+            leading: Icon(Icons.speed, color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textSecondary),
+            title: Text('Tốc độ phát', style: body(const TextStyle(color: AppColors.text))),
+            trailing: Text(speedLabel, style: body(TextStyle(
+              color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textMuted,
+              fontSize: 13, fontWeight: FontWeight.w700,
+            ))),
+            onTap: () { Navigator.pop(sheetCtx); _showSpeedSheet(); },
+          ),
           ListTile(
             leading: Icon(_downloading ? Icons.hourglass_empty : Icons.download_outlined, color: AppColors.textSecondary),
             title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(const TextStyle(color: AppColors.text))),
@@ -158,11 +237,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             leading: Icon(player.muted ? Icons.volume_off : Icons.volume_up, color: AppColors.textSecondary),
             title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(const TextStyle(color: AppColors.text))),
             onTap: () { Navigator.pop(sheetCtx); player.toggleMute(); },
-          ),
-          ListTile(
-            leading: const Icon(Icons.share_outlined, color: AppColors.textSecondary),
-            title: Text('Chia sẻ', style: body(const TextStyle(color: AppColors.text))),
-            onTap: () { Navigator.pop(sheetCtx); _handleShare(song); },
           ),
           const SizedBox(height: 8),
         ]),
@@ -218,8 +292,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       _rotation.stop();
     }
 
-    final artists = song['artists'] is List ? song['artists'] : ((song['artists'] as Map?)?['data'] ?? []);
-    final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', ');
+    final artists = (song['artists'] is List
+        ? song['artists']
+        : ((song['artists'] as Map?)?['data'] ?? [])) as List;
     final thumb = song['thumbnail']?['url'];
     final isInstrumental = song['file_type'] == 'instrumental';
     final screen = MediaQuery.of(context).size;
@@ -247,9 +322,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           SafeArea(
             child: Column(
               children: [
-                // Header
+                // Header — back · context · panel toggles · more
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                   child: Row(
                     children: [
                       IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text), onPressed: () => Navigator.pop(context)),
@@ -260,6 +335,24 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
                         ),
                       ),
+                      if (!isInstrumental)
+                        IconButton(
+                          tooltip: 'Lời bài hát',
+                          icon: Icon(
+                            Icons.lyrics_outlined,
+                            color: _panel == _PanelMode.lyrics ? AppColors.accentLight : AppColors.textSecondary,
+                          ),
+                          onPressed: () => setState(() => _panel = _panel == _PanelMode.lyrics ? _PanelMode.vinyl : _PanelMode.lyrics),
+                        ),
+                      if (queue.isNotEmpty)
+                        IconButton(
+                          tooltip: 'Danh sách phát',
+                          icon: Icon(
+                            Icons.queue_music,
+                            color: _panel == _PanelMode.queue ? AppColors.accentLight : AppColors.textSecondary,
+                          ),
+                          onPressed: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
+                        ),
                       IconButton(icon: const Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
                     ],
                   ),
@@ -272,52 +365,35 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   ),
                 ),
 
-                // Song info
+                // Song info — tap title to open song detail
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
                   child: Column(
                     children: [
-                      Text(
-                        song['title'] ?? '',
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+                      InkWell(
+                        onTap: () => _openSongDetail(song),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          child: Column(
+                            children: [
+                              Text(
+                                song['title'] ?? '',
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+                              ),
+                              if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(song['subtitle'], style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
-                      if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(song['subtitle'], style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
-                      ],
                       const SizedBox(height: 6),
-                      Text(
-                        artistText,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.accentLight)),
-                      ),
-                      const SizedBox(height: 10),
-                      // Pill buttons
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 8,
-                        children: [
-                          if (!isInstrumental)
-                            _Pill(
-                              icon: Icons.music_note,
-                              label: 'Lời',
-                              active: _panel == _PanelMode.lyrics,
-                              onTap: () => setState(() => _panel = _panel == _PanelMode.lyrics ? _PanelMode.vinyl : _PanelMode.lyrics),
-                            ),
-                          if (queue.isNotEmpty)
-                            _Pill(
-                              icon: Icons.queue_music,
-                              label: 'Danh sách (${queue.length})',
-                              active: _panel == _PanelMode.queue,
-                              onTap: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
-                            ),
-                        ],
-                      ),
+                      _buildArtistRow(artists),
                     ],
                   ),
                 ),
@@ -383,37 +459,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   ),
                 ),
 
-                // Secondary controls — minimal: love + speed
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 20),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SecondaryButton(
-                        icon: _liked ? Icons.favorite : Icons.favorite_border,
-                        color: _liked ? AppColors.accent : AppColors.textSecondary,
-                        badge: _lovers.isNotEmpty ? (_lovers.length > 99 ? '99+' : '${_lovers.length}') : null,
-                        onTap: () => _handleLove(song),
-                      ),
-                      const SizedBox(width: 32),
-                      InkWell(
-                        onTap: _showSpeedSheet,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Text(
-                            '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x',
-                            style: body(TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textSecondary,
-                            )),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -600,66 +646,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 }
 
-class _Pill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _Pill({required this.icon, required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-          border: Border.all(color: active ? AppColors.accent : AppColors.border),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: active ? AppColors.accentLight : AppColors.textSecondary),
-            const SizedBox(width: 6),
-            Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SecondaryButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String? badge;
-  final VoidCallback onTap;
-  const _SecondaryButton({required this.icon, required this.color, this.badge, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(icon: Icon(icon, color: color, size: 24), onPressed: onTap),
-        if (badge != null)
-          Positioned(
-            top: 2, right: 2,
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: Text(badge!, style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white))),
-            ),
-          ),
-      ],
-    );
-  }
-}
 
 class _ShuffleButton extends StatelessWidget {
   final bool active;
