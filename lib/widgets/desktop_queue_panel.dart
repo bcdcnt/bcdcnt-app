@@ -8,7 +8,12 @@ import '../services/player.dart';
 /// queue button. Lists the current PlayerProvider queue, highlights the
 /// active track, and lets users jump to any item by tapping.
 class DesktopQueuePanel extends StatelessWidget {
-  const DesktopQueuePanel({super.key});
+  /// When `true`, renders only the body (skips the chrome — surrounding
+  /// container, width, and the "Danh sách phát" title row). Used inside
+  /// the unified right-panel container in DesktopShell, which provides its
+  /// own header.
+  final bool embedded;
+  const DesktopQueuePanel({super.key, this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
@@ -16,15 +21,10 @@ class DesktopQueuePanel extends StatelessWidget {
     final queue = player.queue;
     final current = player.currentSong;
 
-    return Container(
-      width: 320,
-      decoration: BoxDecoration(
-        color: AppColors.bg,
-        border: Border(left: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    final col = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!embedded)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
             child: Row(
@@ -36,34 +36,43 @@ class DesktopQueuePanel extends StatelessWidget {
               ],
             ),
           ),
-          if (current != null) _NowPlayingBlock(song: current),
-          const Divider(height: 1, color: AppColors.borderSubtle),
-          if (queue.isEmpty)
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Center(
-                child: Text('Chưa có bài nào trong danh sách', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 12)), textAlign: TextAlign.center),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
-                itemCount: queue.length,
-                itemBuilder: (_, i) {
-                  final s = queue[i];
-                  final isActive = i == player.currentIndex;
-                  return _QueueRow(
-                    song: s,
-                    index: i,
-                    active: isActive,
-                    onTap: () => player.playAtIndex(i),
-                  );
-                },
-              ),
+        if (current != null) _NowPlayingBlock(song: current),
+        const Divider(height: 1, color: AppColors.borderSubtle),
+        if (queue.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              child: Text('Chưa có bài nào trong danh sách', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 12)), textAlign: TextAlign.center),
             ),
-        ],
+          )
+        else
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
+              itemCount: queue.length,
+              itemBuilder: (_, i) {
+                final s = queue[i];
+                final isActive = i == player.currentIndex;
+                return _QueueRow(
+                  song: s,
+                  index: i,
+                  active: isActive,
+                  onTap: () => player.playAtIndex(i),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+
+    if (embedded) return col;
+    return Container(
+      width: 320,
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(left: BorderSide(color: AppColors.border)),
       ),
+      child: col,
     );
   }
 }

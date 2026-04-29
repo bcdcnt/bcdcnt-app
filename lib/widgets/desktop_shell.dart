@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
@@ -12,8 +13,10 @@ import 'desktop_queue_panel.dart';
 /// Native macOS-style shell — Apple Music / Spotify pattern:
 ///   - Left sidebar (220px) holds primary navigation + library shortcuts.
 ///   - Main area fills the rest of the window (no max-width cap).
-///   - Optional right comment sidebar toggled by the user (defaults from
-///     the auth setting; a persistent toggle button overrides per-session).
+///   - Right inspector panel — opt-in via single toggle button. When open,
+///     a segmented control inside the panel header switches between Hàng đợi
+///     and Bình luận. Last selected tab is persisted across sessions; the
+///     open/closed state resets each launch (default: closed).
 ///   - Bottom-anchored MiniPlayer spans the full width when something is
 ///     playing.
 /// Active when MainShell detects viewport >= 900px.
@@ -25,15 +28,17 @@ class DesktopShell extends StatefulWidget {
   State<DesktopShell> createState() => _DesktopShellState();
 }
 
-enum _RightPanel { none, comments, queue }
+enum _RightPanelTab { queue, comments }
 
 class _DesktopShellState extends State<DesktopShell> {
-  // Per-session override for the comment sidebar; null means "follow the
-  // user's auth setting".
-  bool? _commentSidebarOverride;
-  // Which right-docked panel is currently open. Queue is opt-in (off by
-  // default), comments follows the user's auth setting unless overridden.
-  _RightPanel _rightPanelOverride = _RightPanel.none;
+  // Default open — desktop always exposes the inspector panel; the web's
+  // show_comment_sidebar setting does not apply here. User can close per
+  // session via the ✕ button.
+  bool _panelOpen = true;
+  // Which sub-tab is selected when panel is open. Persisted to prefs so a
+  // user who always wants Hàng đợi gets it back next launch.
+  _RightPanelTab _panelTab = _RightPanelTab.comments;
+  static const _prefsKey = 'desktop_panel_tab';
 
   // Sub-screens already overlay their own MiniPlayer in a Stack. Only the
   // top-level routes rely on the shell to render the bottom player bar.
@@ -42,31 +47,37 @@ class _DesktopShellState extends State<DesktopShell> {
     '/cong-dong/hoat-dong-thanh-vien', '/bang-xep-hang',
   };
 
-  // Detail/sub-routes that have their own AppBar with action icons in the
-  // top-right corner. Hide the shell's right-panel toolbar there so it
-  // doesn't overlap the screen's own share/edit/etc. buttons.
-  static const _detailRoutePrefixes = ['/song/', '/nghe-si/', '/nhac-si/', '/nha-tho/', '/soan-gia/', '/lan-dieu/', '/playlist/', '/sheet/', '/thao-luan/', '/dien-dan/', '/user/', '/tu-lieu/chi-tiet/', '/bai-gui/', '/tag/', '/the-loai/'];
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prefsKey);
+    if (raw == 'comments' && mounted) {
+      setState(() => _panelTab = _RightPanelTab.comments);
+    }
+  }
+
+  Future<void> _saveTab(_RightPanelTab tab) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefsKey, tab == _RightPanelTab.queue ? 'queue' : 'comments');
+  }
+
+  void _setTab(_RightPanelTab tab) {
+    if (_panelTab == tab) return;
+    setState(() => _panelTab = tab);
+    _saveTab(tab);
+  }
 
   @override
   Widget build(BuildContext context) {
     final hasPlayer = context.watch<PlayerProvider>().currentSong != null;
-    final auth = context.watch<AuthProvider>();
     final path = GoRouterState.of(context).uri.path;
     final shellShouldShowMiniPlayer = hasPlayer && _shellOwnedMiniPlayerPaths.contains(path);
-    final settingOn = auth.user?['show_comment_sidebar'] == true;
-    // Right panel resolution:
-    //   - if user explicitly opened queue → queue wins
-    //   - else if comments is on (override or auth setting, and not home) → comments
-    //   - else nothing
-    final commentsOn = path != '/' && (_commentSidebarOverride ?? settingOn);
-    _RightPanel activePanel;
-    if (_rightPanelOverride == _RightPanel.queue) {
-      activePanel = _RightPanel.queue;
-    } else if (commentsOn) {
-      activePanel = _RightPanel.comments;
-    } else {
-      activePanel = _RightPanel.none;
-    }
+    final effectiveTab = _panelTab;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -90,33 +101,28 @@ class _DesktopShellState extends State<DesktopShell> {
                           child: widget.child,
                         ),
                       ),
-                      // Top-right cluster of right-panel toggles (queue,
-                      // comments). Always visible — detail screens drop
-                      // their own top-right share buttons on desktop to
-                      // avoid overlap.
-                      Positioned(
-                        top: 8, right: 12,
-                        child: _RightPanelToolbar(
-                          active: activePanel,
-                          showCommentToggle: path != '/',
-                          onToggleComments: () => setState(() {
-                            // Tapping comments closes queue first, then
-                            // toggles comments override.
-                            _rightPanelOverride = _RightPanel.none;
-                            _commentSidebarOverride = !commentsOn;
-                          }),
-                          onToggleQueue: () => setState(() {
-                            _rightPanelOverride = activePanel == _RightPanel.queue
-                                ? _RightPanel.none
-                                : _RightPanel.queue;
-                          }),
+                      // Single open-panel button at top-right when panel is
+                      // closed. Tooltip says what it does; once open, the
+                      // close affordance lives inside the panel header so
+                      // the button isn't overlaid on content twice.
+                      if (!_panelOpen)
+                        Positioned(
+                          top: 10, right: 12,
+                          child: _PanelToggleBtn(
+                            tooltip: 'Mở bảng phụ',
+                            icon: Icons.view_sidebar_outlined,
+                            onTap: () => setState(() => _panelOpen = true),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-                if (activePanel == _RightPanel.queue) const DesktopQueuePanel()
-                else if (activePanel == _RightPanel.comments) const DesktopCommentSidebar(),
+                if (_panelOpen)
+                  _RightPanelContainer(
+                    activeTab: effectiveTab,
+                    onSelectTab: _setTab,
+                    onClose: () => setState(() => _panelOpen = false),
+                  ),
               ],
             ),
           ),
@@ -131,73 +137,157 @@ class _DesktopShellState extends State<DesktopShell> {
   }
 }
 
-class _RightPanelToolbar extends StatelessWidget {
-  final _RightPanel active;
-  final bool showCommentToggle;
-  final VoidCallback onToggleComments;
-  final VoidCallback onToggleQueue;
-  const _RightPanelToolbar({
-    required this.active,
-    required this.showCommentToggle,
-    required this.onToggleComments,
-    required this.onToggleQueue,
+class _RightPanelContainer extends StatelessWidget {
+  final _RightPanelTab activeTab;
+  final ValueChanged<_RightPanelTab> onSelectTab;
+  final VoidCallback onClose;
+  const _RightPanelContainer({
+    required this.activeTab,
+    required this.onSelectTab,
+    required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surface.withValues(alpha: 0.9),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(color: AppColors.border),
+    return Container(
+      width: 320,
+      decoration: BoxDecoration(
+        color: AppColors.bg,
+        border: Border(left: BorderSide(color: AppColors.border)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(3),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ToolbarBtn(
-              icon: Icons.queue_music,
-              tooltip: 'Danh sách phát',
-              active: active == _RightPanel.queue,
-              onTap: onToggleQueue,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Unified header — segmented tab switch on the left, close on right.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _SegmentedTabs(
+                    activeTab: activeTab,
+                    onSelect: onSelectTab,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: 'Đóng bảng',
+                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                  onPressed: onClose,
+                ),
+              ],
             ),
-            if (showCommentToggle) ...[
-              const SizedBox(width: 2),
-              _ToolbarBtn(
-                icon: Icons.chat_bubble_outline,
-                tooltip: 'Bình luận mới',
-                active: active == _RightPanel.comments,
-                onTap: onToggleComments,
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          Expanded(
+            child: activeTab == _RightPanelTab.queue
+                ? const DesktopQueuePanel(embedded: true)
+                : const DesktopCommentSidebar(embedded: true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentedTabs extends StatelessWidget {
+  final _RightPanelTab activeTab;
+  final ValueChanged<_RightPanelTab> onSelect;
+  const _SegmentedTabs({required this.activeTab, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.all(2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SegmentBtn(
+            icon: Icons.chat_bubble_outline,
+            label: 'Bình luận',
+            active: activeTab == _RightPanelTab.comments,
+            onTap: () => onSelect(_RightPanelTab.comments),
+          ),
+          _SegmentBtn(
+            icon: Icons.queue_music,
+            label: 'Hàng đợi',
+            active: activeTab == _RightPanelTab.queue,
+            onTap: () => onSelect(_RightPanelTab.queue),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SegmentBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  const _SegmentBtn({required this.icon, required this.label, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: active ? AppColors.accent : Colors.transparent,
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: active ? Colors.white : AppColors.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: body(TextStyle(
+                  fontSize: 12,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                  color: active ? Colors.white : AppColors.textSecondary,
+                )),
               ),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ToolbarBtn extends StatelessWidget {
+class _PanelToggleBtn extends StatelessWidget {
   final IconData icon;
   final String tooltip;
-  final bool active;
   final VoidCallback onTap;
-  const _ToolbarBtn({required this.icon, required this.tooltip, required this.active, required this.onTap});
+  const _PanelToggleBtn({required this.icon, required this.tooltip, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: active ? AppColors.accent : Colors.transparent,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.surface.withValues(alpha: 0.9),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: AppColors.border),
+        ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(8),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Icon(icon, size: 18, color: active ? Colors.white : AppColors.textSecondary),
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Icon(Icons.view_sidebar_outlined, size: 18, color: AppColors.textSecondary),
           ),
         ),
       ),

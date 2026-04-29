@@ -127,13 +127,23 @@ class _CommentMediaState extends State<CommentMedia> {
           case _BlockKind.image:
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: CachedNetworkImage(
-                  imageUrl: b.value,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(height: 120, color: AppColors.surfaceLight),
-                  errorWidget: (_, __, ___) => Container(height: 120, color: AppColors.surfaceLight, alignment: Alignment.center, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InkWell(
+                  onTap: () => _showImageZoom(context, b.value),
+                  borderRadius: BorderRadius.circular(10),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 240, maxHeight: 200),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: CachedNetworkImage(
+                        imageUrl: b.value,
+                        fit: BoxFit.cover,
+                        placeholder: (_, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight),
+                        errorWidget: (_, _, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight, alignment: Alignment.center, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             );
@@ -183,6 +193,42 @@ class _CommentMediaState extends State<CommentMedia> {
             );
         }
       }).toList(),
+    );
+  }
+
+  void _showImageZoom(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(ctx),
+          child: Stack(
+            children: [
+              Center(
+                child: InteractiveViewer(
+                  minScale: 1, maxScale: 4,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    fit: BoxFit.contain,
+                    placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
+                    errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0, right: 0,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

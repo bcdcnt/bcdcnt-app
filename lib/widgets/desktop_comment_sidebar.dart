@@ -16,7 +16,12 @@ import '../services/api.dart';
 class DesktopCommentSidebar extends StatefulWidget {
   final bool inline;
   final double maxHeight;
-  const DesktopCommentSidebar({super.key, this.inline = false, this.maxHeight = 600});
+  /// When `true`, drops the chrome (outer container, fixed width, "Bình luận
+  /// mới" title row) so this widget can be embedded inside the unified
+  /// right-panel container in DesktopShell. The refresh control moves to
+  /// just above the list as a small icon.
+  final bool embedded;
+  const DesktopCommentSidebar({super.key, this.inline = false, this.maxHeight = 600, this.embedded = false});
 
   @override
   State<DesktopCommentSidebar> createState() => _DesktopCommentSidebarState();
@@ -155,20 +160,26 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
     }
   }
 
+  Future<void> _refresh() async {
+    setState(() { _loading = true; _page = 1; _hasMore = true; });
+    await _fetch();
+  }
+
   @override
   Widget build(BuildContext context) {
     final inline = widget.inline;
-    final list = _loading
+    final embedded = widget.embedded;
+    Widget list = _loading
         ? const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
         : _items.isEmpty
             ? Padding(padding: const EdgeInsets.all(20), child: Text('Chưa có bình luận nào', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13))))
             : ListView.separated(
                 controller: inline ? null : _scrollController,
                 shrinkWrap: inline,
-                physics: inline ? const NeverScrollableScrollPhysics() : null,
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+                physics: inline ? const NeverScrollableScrollPhysics() : const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
                 itemCount: _items.length + (_loadingMore || _hasMore ? 1 : 0),
-                separatorBuilder: (_, __) => Divider(height: 1, color: AppColors.borderSubtle),
+                separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.borderSubtle),
                 itemBuilder: (_, i) {
                   if (i >= _items.length) {
                     return Padding(
@@ -192,27 +203,40 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
                 },
               );
 
+    // Pull-to-refresh on the scrollable variants. Embedded mode lives inside
+    // the shell panel which has its own header; standalone mode keeps the
+    // original header. Inline mode doesn't scroll, so no refresh wrap.
+    if (!inline) {
+      list = RefreshIndicator(
+        color: AppColors.accent,
+        backgroundColor: AppColors.surface,
+        onRefresh: _refresh,
+        child: list,
+      );
+    }
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: inline ? MainAxisSize.min : MainAxisSize.max,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
-          child: Row(
-            children: [
-              Text('Bình luận mới', style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-              const Spacer(),
-              IconButton(
-                iconSize: 18,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                tooltip: 'Làm mới',
-                icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
-                onPressed: () { setState(() { _loading = true; }); _fetch(); },
-              ),
-            ],
+        if (!embedded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
+            child: Row(
+              children: [
+                Text('Bình luận mới', style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                const Spacer(),
+                IconButton(
+                  iconSize: 18,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  tooltip: 'Làm mới',
+                  icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
+                  onPressed: _refresh,
+                ),
+              ],
+            ),
           ),
-        ),
         if (inline)
           ConstrainedBox(constraints: BoxConstraints(maxHeight: widget.maxHeight), child: list)
         else
@@ -220,6 +244,7 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
       ],
     );
 
+    if (embedded) return content;
     if (inline) {
       return Container(
         decoration: BoxDecoration(
