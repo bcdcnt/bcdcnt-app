@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -486,14 +487,77 @@ class _CommentSectionState extends State<CommentSection> {
             );
           }),
           if (_hasMore)
-            Center(
-              child: TextButton(
-                onPressed: _loadingMore ? null : () => _fetchComments(_page + 1),
-                child: Text(_loadingMore ? 'Đang tải...' : 'Xem thêm bình luận', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
-              ),
+            _LoadMoreSentinel(
+              loading: _loadingMore,
+              onReach: () {
+                if (!_loadingMore && _hasMore) _fetchComments(_page + 1);
+              },
             ),
         ],
       ],
+    );
+  }
+}
+
+/// Sentinel that triggers `onReach` when it scrolls into the viewport of
+/// the nearest enclosing Scrollable. Used at the tail of a paginated list
+/// to enable infinite scroll without an explicit "Load more" button.
+class _LoadMoreSentinel extends StatefulWidget {
+  final bool loading;
+  final VoidCallback onReach;
+  const _LoadMoreSentinel({required this.loading, required this.onReach});
+
+  @override
+  State<_LoadMoreSentinel> createState() => _LoadMoreSentinelState();
+}
+
+class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
+  ScrollPosition? _position;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scrollable = Scrollable.maybeOf(context);
+    final newPos = scrollable?.position;
+    if (newPos != _position) {
+      _position?.removeListener(_check);
+      _position = newPos;
+      _position?.addListener(_check);
+      // Initial check in case the sentinel is already visible without
+      // scrolling (short list).
+      WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+    }
+  }
+
+  @override
+  void dispose() {
+    _position?.removeListener(_check);
+    super.dispose();
+  }
+
+  void _check() {
+    if (!mounted || widget.loading) return;
+    final box = context.findRenderObject();
+    if (box is! RenderBox || _position == null) return;
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return;
+    final reveal = viewport.getOffsetToReveal(box, 0.0).offset;
+    // Trigger when sentinel's position is within ~300px of the current
+    // viewport so we prefetch before the user hits the bottom.
+    if (reveal - _position!.pixels < 300) {
+      widget.onReach();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: widget.loading
+            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
+            : const SizedBox(width: 1, height: 1),
+      ),
     );
   }
 }

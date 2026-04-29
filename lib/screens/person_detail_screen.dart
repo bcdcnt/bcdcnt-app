@@ -17,21 +17,8 @@ class _TypeConfig {
   final String label;
   final String queryName;
   final List<_SectionCfg> sections;
-  final String relatedQuery;
-  final String relatedIdVar;
-  final String relatedLabel;
-  final String relatedRoutePrefix;
   final String routePrefix;
-  const _TypeConfig({
-    required this.label,
-    required this.queryName,
-    required this.sections,
-    required this.relatedQuery,
-    required this.relatedIdVar,
-    required this.relatedLabel,
-    required this.relatedRoutePrefix,
-    required this.routePrefix,
-  });
+  const _TypeConfig({required this.label, required this.queryName, required this.sections, required this.routePrefix});
 }
 
 class _SectionCfg {
@@ -50,34 +37,14 @@ const _poemFields = 'id title subtitle slug views play_type thumbnail { url } fi
 
 const _songSec = _SectionCfg(key: 'songs', label: 'Bài hát', icon: Icons.music_note, fields: _songFields, fileType: 'song');
 const _folkSec = _SectionCfg(key: 'folks', label: 'Dân ca', icon: Icons.music_note, fields: _folkFields, fileType: 'folk');
-const _instSec = _SectionCfg(key: 'instrumentals', label: 'Hoà tấu', icon: Icons.music_note, fields: _instFields, fileType: 'instrumental');
+const _instSec = _SectionCfg(key: 'instrumentals', label: 'Khí nhạc', icon: Icons.music_note, fields: _instFields, fileType: 'instrumental');
 const _poemSec = _SectionCfg(key: 'poems', label: 'Ngâm thơ', icon: Icons.auto_stories_outlined, fields: _poemFields, fileType: 'poem');
 
 const Map<PersonType, _TypeConfig> _config = {
-  PersonType.artist: _TypeConfig(
-    label: 'Nghệ sĩ', queryName: 'artist',
-    sections: [_songSec, _folkSec, _instSec, _poemSec],
-    relatedQuery: 'relatedArtists', relatedIdVar: 'artist_id',
-    relatedLabel: 'Nghệ sĩ liên quan', relatedRoutePrefix: '/nghe-si/', routePrefix: '/nghe-si/',
-  ),
-  PersonType.composer: _TypeConfig(
-    label: 'Nhạc sĩ', queryName: 'composer',
-    sections: [_songSec, _instSec, _folkSec],
-    relatedQuery: 'relatedComposers', relatedIdVar: 'composer_id',
-    relatedLabel: 'Nhạc sĩ liên quan', relatedRoutePrefix: '/nhac-si/', routePrefix: '/nhac-si/',
-  ),
-  PersonType.poet: _TypeConfig(
-    label: 'Nhà thơ', queryName: 'poet',
-    sections: [_poemSec, _songSec],
-    relatedQuery: 'relatedPoets', relatedIdVar: 'poet_id',
-    relatedLabel: 'Nhà thơ liên quan', relatedRoutePrefix: '/nha-tho/', routePrefix: '/nha-tho/',
-  ),
-  PersonType.recomposer: _TypeConfig(
-    label: 'Soạn giả', queryName: 'recomposer',
-    sections: [_folkSec],
-    relatedQuery: 'relatedRecomposers', relatedIdVar: 'recomposer_id',
-    relatedLabel: 'Soạn giả liên quan', relatedRoutePrefix: '/soan-gia/', routePrefix: '/soan-gia/',
-  ),
+  PersonType.artist: _TypeConfig(label: 'Nghệ sĩ', queryName: 'artist', sections: [_songSec, _folkSec, _instSec, _poemSec], routePrefix: '/nghe-si/'),
+  PersonType.composer: _TypeConfig(label: 'Nhạc sĩ', queryName: 'composer', sections: [_songSec, _instSec, _folkSec], routePrefix: '/nhac-si/'),
+  PersonType.poet: _TypeConfig(label: 'Nhà thơ', queryName: 'poet', sections: [_poemSec, _songSec], routePrefix: '/nha-tho/'),
+  PersonType.recomposer: _TypeConfig(label: 'Soạn giả', queryName: 'recomposer', sections: [_folkSec], routePrefix: '/soan-gia/'),
 };
 
 class PersonDetailScreen extends StatefulWidget {
@@ -90,13 +57,23 @@ class PersonDetailScreen extends StatefulWidget {
 }
 
 class _SectionState {
-  List<dynamic> items;
-  int currentPage;
-  int lastPage;
-  int total;
-  String sort; // views | newest | likes | downloads
-  bool loading;
-  _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false});
+  final List<dynamic> items;
+  final int currentPage;
+  final int lastPage;
+  final int total;
+  final String sort;
+  final bool loading;
+  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false});
+
+  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading}) =>
+      _SectionState(
+        items: items ?? this.items,
+        currentPage: currentPage ?? this.currentPage,
+        lastPage: lastPage ?? this.lastPage,
+        total: total ?? this.total,
+        sort: sort ?? this.sort,
+        loading: loading ?? this.loading,
+      );
 }
 
 const _sortOptions = [
@@ -108,7 +85,6 @@ const _sortOptions = [
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Map<String, dynamic>? _person;
   final Map<String, _SectionState> _sections = {};
-  List<dynamic> _relatedPeople = [];
   bool _loading = true;
   bool _bioExpanded = false;
 
@@ -118,7 +94,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   void initState() {
     super.initState();
     for (final c in _cfg.sections) {
-      _sections[c.key] = _SectionState();
+      _sections[c.key] = const _SectionState();
     }
     _fetch();
   }
@@ -129,9 +105,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (oldWidget.slug != widget.slug || oldWidget.type != widget.type) {
       _sections.clear();
       for (final c in _cfg.sections) {
-        _sections[c.key] = _SectionState();
+        _sections[c.key] = const _SectionState();
       }
-      setState(() { _person = null; _relatedPeople = []; _loading = true; _bioExpanded = false; });
+      setState(() { _person = null; _loading = true; _bioExpanded = false; });
       _fetch();
     }
   }
@@ -155,12 +131,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             total: raw?['paginatorInfo']?['total'] ?? 0,
             currentPage: raw?['paginatorInfo']?['currentPage'] ?? 1,
             lastPage: raw?['paginatorInfo']?['lastPage'] ?? 1,
-            sort: 'views',
           );
         }
         _loading = false;
       });
-      _fetchRelated(p['id']);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -170,11 +144,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final cfg = _cfg.sections.firstWhere((c) => c.key == key);
     final personId = _person?['id']?.toString();
     if (personId == null) return;
-    final useSort = sort ?? _sections[key]!.sort;
+    final prev = _sections[key]!;
+    final useSort = sort ?? prev.sort;
     final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$3;
     setState(() {
-      final s = _sections[key]!;
-      _sections[key] = _SectionState(items: s.items, total: s.total, currentPage: s.currentPage, lastPage: s.lastPage, sort: useSort, loading: true);
+      _sections[key] = prev.copyWith(loading: true, sort: useSort);
     });
     try {
       final queryById = '${_cfg.queryName}ByID';
@@ -182,31 +156,29 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       final data = await ApiClient.query(q, {'id': personId, 'page': page});
       final raw = data[queryById]?[key];
       if (!mounted) return;
+      final newItems = (raw?['data'] ?? []) as List;
       setState(() {
         _sections[key] = _SectionState(
-          items: (raw?['data'] ?? []) as List,
-          total: raw?['paginatorInfo']?['total'] ?? _sections[key]!.total,
+          // page=1 is either initial sort/refresh — replace. page>1 — append.
+          items: page == 1 ? newItems : [...prev.items, ...newItems],
+          total: raw?['paginatorInfo']?['total'] ?? prev.total,
           currentPage: raw?['paginatorInfo']?['currentPage'] ?? page,
-          lastPage: raw?['paginatorInfo']?['lastPage'] ?? _sections[key]!.lastPage,
+          lastPage: raw?['paginatorInfo']?['lastPage'] ?? prev.lastPage,
           sort: useSort,
           loading: false,
         );
       });
     } catch (_) {
       if (mounted) setState(() {
-        final s = _sections[key]!;
-        _sections[key] = _SectionState(items: s.items, total: s.total, currentPage: s.currentPage, lastPage: s.lastPage, sort: useSort, loading: false);
+        _sections[key] = prev.copyWith(loading: false, sort: useSort);
       });
     }
   }
 
-  Future<void> _fetchRelated(dynamic id) async {
-    try {
-      final q = 'query(\$id: ID!) { ${_cfg.relatedQuery}(${_cfg.relatedIdVar}: \$id, first: 10) { data { id title slug avatar { url } } } }';
-      final data = await ApiClient.query(q, {'id': id.toString()});
-      final list = (data[_cfg.relatedQuery]?['data'] ?? []) as List;
-      if (mounted) setState(() => _relatedPeople = list);
-    } catch (_) {}
+  void _loadMore(String key) {
+    final s = _sections[key]!;
+    if (s.loading || s.currentPage >= s.lastPage) return;
+    _fetchPage(key, s.currentPage + 1);
   }
 
   String _formatInt(dynamic n) {
@@ -222,8 +194,18 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   String? _formatLifeDate(Map<String, dynamic> p, String suffix) {
-    final d = p['d$suffix'], m = p['m$suffix'], y = p['y$suffix'];
-    if (d == null && m == null && y == null) return null;
+    int? norm(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toInt() == 0 ? null : v.toInt();
+      final s = v.toString().trim();
+      if (s.isEmpty) return null;
+      final n = int.tryParse(s);
+      if (n == null) return null;
+      return n == 0 ? null : n;
+    }
+    final d = norm(p['d$suffix']);
+    final m = norm(p['m$suffix']);
+    final y = norm(p['y$suffix']);
     if (d != null && m != null && y != null) return '$d/$m/$y';
     if (m != null && y != null) return '$m/$y';
     if (y != null) return y.toString();
@@ -247,10 +229,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             children: [
               Align(
                 alignment: Alignment.topRight,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
+                child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(ctx)),
               ),
               Flexible(
                 child: GestureDetector(
@@ -258,13 +237,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: InteractiveViewer(
-                      minScale: 1,
-                      maxScale: 4,
+                      minScale: 1, maxScale: 4,
                       child: CachedNetworkImage(
                         imageUrl: url,
                         fit: BoxFit.contain,
-                        placeholder: (_, __) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
-                        errorWidget: (_, __, ___) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
+                        placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
+                        errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
                       ),
                     ),
                   ),
@@ -277,10 +255,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   children: [
                     const Icon(Icons.camera_alt_outlined, size: 14, color: Colors.white70),
                     const SizedBox(width: 6),
-                    Text(
-                      creditUser['username'] ?? '',
-                      style: body(const TextStyle(fontSize: 13, color: Colors.white70)),
-                    ),
+                    Text(creditUser['username'] ?? '', style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
                   ],
                 ),
               ),
@@ -312,267 +287,243 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         body: Center(child: Text('Không tìm thấy', style: AppText.bodyText)),
       );
     }
+
     final p = _person!;
-    final bio = p['content'];
+    final player = context.watch<PlayerProvider>();
+    // Hide section tabs that have no data — keeps the bar tight for niche
+    // people types (e.g. recomposers usually only have folks).
+    final visibleSections = _cfg.sections.where((c) => (_sections[c.key]?.total ?? 0) > 0).toList();
+
+    return DefaultTabController(
+      length: visibleSections.length + 1, // +1 for Tiểu sử
+      child: Scaffold(
+        backgroundColor: AppColors.bg,
+        body: Stack(
+          children: [
+            NestedScrollView(
+              headerSliverBuilder: (ctx, _) => [
+                SliverAppBar(
+                  pinned: true,
+                  backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+                  leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                  title: Text(_cfg.label.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                  centerTitle: true,
+                  actions: [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
+                ),
+                SliverToBoxAdapter(child: _buildHeader(p)),
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _TabBarDelegate(
+                    tabs: [
+                      const Tab(text: 'Tiểu sử'),
+                      ...visibleSections.map((c) => Tab(text: '${c.label} (${_formatInt(_sections[c.key]!.total)})')),
+                    ],
+                  ),
+                ),
+              ],
+              body: TabBarView(
+                children: [
+                  _buildBioTab(p, player.currentSong != null),
+                  ...visibleSections.map((c) => _buildSectionTab(c)),
+                ],
+              ),
+            ),
+            if (player.currentSong != null)
+              const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(Map<String, dynamic> p) {
     final bornDate = _formatLifeDate(p, 'ob');
     final deathDate = _formatLifeDate(p, 'od');
-    final player = context.watch<PlayerProvider>();
-
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Stack(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      child: Column(
         children: [
-          CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                pinned: true,
-                backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text(_cfg.label.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
-                centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-                actions: [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
-              ),
-
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    const SizedBox(height: 8),
-                    // Avatar — tap to zoom
-                    Center(
-                      child: InkWell(
-                        onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
-                        borderRadius: BorderRadius.circular(80),
-                        child: Container(
-                          width: 140, height: 140,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                            boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: -5)],
-                            border: Border.all(color: AppColors.border, width: 3),
-                          ),
-                          child: ClipOval(
-                            child: p['avatar']?['url'] != null
-                                ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => _initialsFallback(p))
-                                : _initialsFallback(p),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-                    Center(
-                      child: Text(
-                        p['title'] ?? '',
-                        textAlign: TextAlign.center,
-                        style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text)),
-                      ),
-                    ),
-                    if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Center(
-                        child: Text(
-                          p['rank'],
-                          textAlign: TextAlign.center,
-                          style: body(const TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w500)),
-                        ),
-                      ),
-                    ],
-
-                    const SizedBox(height: 20),
-                    // Stats bar
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: const BoxDecoration(
-                        border: Border(top: BorderSide(color: AppColors.border), bottom: BorderSide(color: AppColors.border)),
-                      ),
-                      child: IntrinsicHeight(
-                        child: Row(
-                          children: [
-                            _StatCell(label: 'Lượt nghe', value: _formatInt(p['total_listens'])),
-                            Container(width: 1, color: AppColors.border),
-                            _StatCell(label: 'Lượt tải', value: _formatInt(p['total_downloads'])),
-                            Container(width: 1, color: AppColors.border),
-                            _StatCell(label: 'Lượt xem', value: _formatInt(p['views'])),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-                    if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty)
-                      _InfoRow(icon: Icons.badge_outlined, label: 'Tên thật', value: p['real_name']),
-                    if (bornDate != null)
-                      _InfoRow(icon: Icons.cake_outlined, label: 'Ngày sinh', value: bornDate),
-                    if (deathDate != null)
-                      _InfoRow(icon: Icons.whatshot_outlined, label: 'Ngày mất', value: deathDate),
-                    if (p['born_address'] != null && (p['born_address'] as String).isNotEmpty)
-                      _InfoRow(icon: Icons.place_outlined, label: 'Quê quán', value: p['born_address']),
-
-                    // Bio
-                    if (bio != null && (bio as String).replaceAll(RegExp(r'<[^>]+>'), '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      _SectionHeader(icon: Icons.description_outlined, title: 'Tiểu sử'),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(12)),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ConstrainedBox(
-                              constraints: BoxConstraints(maxHeight: _bioExpanded ? double.infinity : 120),
-                              child: SingleChildScrollView(
-                                physics: const NeverScrollableScrollPhysics(),
-                                child: Html(
-                                  data: bio,
-                                  style: {'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(14), lineHeight: const LineHeight(1.8), color: AppColors.textSecondary)},
-                                ),
-                              ),
-                            ),
-                            InkWell(
-                              onTap: () => setState(() => _bioExpanded = !_bioExpanded),
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(_bioExpanded ? 'Thu gọn' : 'Xem thêm', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                                    Icon(_bioExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    // Song sections
-                    ..._cfg.sections.map((c) {
-                      final state = _sections[c.key]!;
-                      if (state.items.isEmpty && !state.loading) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SectionHeader(icon: c.icon, title: '${c.label}${state.total > 0 ? ' (${_formatInt(state.total)})' : ''}'),
-                            // Sort tabs
-                            if (state.total > 3)
-                              SizedBox(
-                                height: 32,
-                                child: ListView.separated(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _sortOptions.length,
-                                  separatorBuilder: (_, __) => const SizedBox(width: 6),
-                                  itemBuilder: (_, i) {
-                                    final opt = _sortOptions[i];
-                                    final active = state.sort == opt.$1;
-                                    return InkWell(
-                                      onTap: active ? null : () => _fetchPage(c.key, 1, sort: opt.$1),
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(color: active ? AppColors.accent : AppColors.border),
-                                        ),
-                                        child: Text(
-                                          opt.$2,
-                                          style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary)),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            const SizedBox(height: 8),
-                            if (state.loading)
-                              const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-                            else
-                              ...state.items.map((s) {
-                                final sg = Map<String, dynamic>.from(s as Map);
-                                sg['file_type'] = c.fileType;
-                                return SongRow(
-                                  song: sg,
-                                  onTap: () => context.push('/song/${sg['id']}', extra: sg),
-                                );
-                              }),
-                            if (state.lastPage > 1)
-                              _Pager(
-                                currentPage: state.currentPage,
-                                lastPage: state.lastPage,
-                                loading: state.loading,
-                                onGoto: (p) => _fetchPage(c.key, p),
-                              ),
-                          ],
-                        ),
-                      );
-                    }),
-
-                    // Related people
-                    if (_relatedPeople.isNotEmpty) ...[
-                      const SizedBox(height: 20),
-                      _SectionHeader(icon: Icons.people_outline, title: _cfg.relatedLabel),
-                      SizedBox(
-                        height: 112,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _relatedPeople.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 12),
-                          itemBuilder: (ctx, i) {
-                            final r = _relatedPeople[i];
-                            return InkWell(
-                              onTap: () => context.push('${_cfg.relatedRoutePrefix}${r['slug']}'),
-                              child: SizedBox(
-                                width: 72,
-                                child: Column(
-                                  children: [
-                                    Container(
-                                      width: 64, height: 64,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                                        border: Border.all(color: AppColors.border, width: 2),
-                                      ),
-                                      child: ClipOval(
-                                        child: r['avatar']?['url'] != null
-                                            ? CachedNetworkImage(imageUrl: r['avatar']['url'], fit: BoxFit.cover)
-                                            : Center(child: Text((r['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(color: Colors.white70, fontSize: 22, fontWeight: FontWeight.w800)))),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      r['title'] ?? '',
-                                      maxLines: 2,
-                                      textAlign: TextAlign.center,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-
-                    // Comments
-                    const SizedBox(height: 24),
-                    CommentSection(type: _cfg.queryName, id: p['id'].toString()),
-
-                    SizedBox(height: player.currentSong != null ? 80 : 20),
-                  ]),
+          const SizedBox(height: 8),
+          Center(
+            child: InkWell(
+              onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
+              borderRadius: BorderRadius.circular(80),
+              child: Container(
+                width: 140, height: 140,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: -5)],
+                  border: Border.all(color: AppColors.border, width: 3),
+                ),
+                child: ClipOval(
+                  child: p['avatar']?['url'] != null
+                      ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
+                      : _initialsFallback(p),
                 ),
               ),
-            ],
+            ),
           ),
-          if (player.currentSong != null)
-            const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+          const SizedBox(height: 16),
+          Text(
+            p['title'] ?? '',
+            textAlign: TextAlign.center,
+            style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text)),
+          ),
+          if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(p['rank'], textAlign: TextAlign.center, style: body(const TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
+          ],
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: AppColors.border), bottom: BorderSide(color: AppColors.border)),
+            ),
+            child: IntrinsicHeight(
+              child: Row(
+                children: [
+                  _StatCell(label: 'Lượt nghe', value: _formatInt(p['total_listens'])),
+                  Container(width: 1, color: AppColors.border),
+                  _StatCell(label: 'Lượt tải', value: _formatInt(p['total_downloads'])),
+                  Container(width: 1, color: AppColors.border),
+                  _StatCell(label: 'Lượt xem', value: _formatInt(p['views'])),
+                ],
+              ),
+            ),
+          ),
+          if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty)
+            _InfoRow(icon: Icons.badge_outlined, label: 'Tên thật', value: p['real_name']),
+          if (bornDate != null) _InfoRow(icon: Icons.cake_outlined, label: 'Ngày sinh', value: bornDate),
+          if (deathDate != null) _InfoRow(icon: Icons.whatshot_outlined, label: 'Ngày mất', value: deathDate),
+          if (p['born_address'] != null && (p['born_address'] as String).isNotEmpty)
+            _InfoRow(icon: Icons.place_outlined, label: 'Quê quán', value: p['born_address']),
         ],
       ),
+    );
+  }
+
+  Widget _buildSectionTab(_SectionCfg cfg) {
+    final state = _sections[cfg.key]!;
+    final hasMore = state.currentPage < state.lastPage;
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.metrics.axis != Axis.vertical) return false;
+        if (!state.loading && hasMore && n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
+          _loadMore(cfg.key);
+        }
+        return false;
+      },
+      child: ListView.builder(
+        key: PageStorageKey('person-${cfg.key}'),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+        itemCount: state.items.length + 2, // [sort bar, ...items, footer]
+        itemBuilder: (ctx, i) {
+          if (i == 0) return _buildSortBar(cfg.key, state);
+          if (i == state.items.length + 1) {
+            if (state.loading) {
+              return const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+            }
+            if (!hasMore && state.items.isNotEmpty) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: Text('Đã hết', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+              );
+            }
+            return const SizedBox(height: 16);
+          }
+          final s = state.items[i - 1];
+          final sg = Map<String, dynamic>.from(s as Map);
+          sg['file_type'] = cfg.fileType;
+          return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+        },
+      ),
+    );
+  }
+
+  Widget _buildSortBar(String key, _SectionState state) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SizedBox(
+        height: 32,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _sortOptions.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            final opt = _sortOptions[i];
+            final active = state.sort == opt.$1;
+            return InkWell(
+              onTap: active ? null : () => _fetchPage(key, 1, sort: opt.$1),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.accentSoft : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                ),
+                child: Text(
+                  opt.$2,
+                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary)),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBioTab(Map<String, dynamic> p, bool hasPlayer) {
+    final bio = p['content'];
+    final hasBio = bio != null && (bio as String).replaceAll(RegExp(r'<[^>]+>'), '').trim().isNotEmpty;
+    return ListView(
+      key: const PageStorageKey('person-bio'),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, hasPlayer ? 100 : 24),
+      children: [
+        if (hasBio) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(12)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: _bioExpanded ? double.infinity : 200),
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    child: Html(
+                      data: bio,
+                      style: {'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(14), lineHeight: const LineHeight(1.8), color: AppColors.textSecondary)},
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => setState(() => _bioExpanded = !_bioExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(_bioExpanded ? 'Thu gọn' : 'Xem thêm', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                        Icon(_bioExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+        ] else
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Center(child: Text('Chưa có tiểu sử', style: body(const TextStyle(color: AppColors.textMuted)))),
+          ),
+        CommentSection(type: _cfg.queryName, id: p['id'].toString()),
+      ],
     );
   }
 
@@ -586,6 +537,38 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       ),
     );
   }
+}
+
+class _TabBarDelegate extends SliverPersistentHeaderDelegate {
+  final List<Tab> tabs;
+  _TabBarDelegate({required this.tabs});
+
+  @override
+  double get minExtent => 48;
+  @override
+  double get maxExtent => 48;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: AppColors.bg,
+      child: TabBar(
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        labelColor: AppColors.accentLight,
+        unselectedLabelColor: AppColors.textSecondary,
+        indicatorColor: AppColors.accent,
+        indicatorWeight: 2,
+        dividerColor: AppColors.borderSubtle,
+        labelStyle: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        unselectedLabelStyle: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+        tabs: tabs,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _TabBarDelegate old) => old.tabs.length != tabs.length;
 }
 
 class _StatCell extends StatelessWidget {
@@ -626,112 +609,6 @@ class _InfoRow extends StatelessWidget {
           Text('$label: ', style: body(const TextStyle(fontSize: 13, color: AppColors.textMuted))),
           Expanded(child: Text(value, style: body(const TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w500)))),
         ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  const _SectionHeader({required this.icon, required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: AppColors.textSecondary),
-          const SizedBox(width: 8),
-          Text(title, style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-        ],
-      ),
-    );
-  }
-}
-
-class _Pager extends StatelessWidget {
-  final int currentPage;
-  final int lastPage;
-  final bool loading;
-  final void Function(int) onGoto;
-  const _Pager({required this.currentPage, required this.lastPage, required this.loading, required this.onGoto});
-
-  @override
-  Widget build(BuildContext context) {
-    // Compute a compact window of page numbers around current
-    final pages = <int>{};
-    pages.add(1);
-    pages.add(lastPage);
-    for (int i = -1; i <= 1; i++) {
-      final p = currentPage + i;
-      if (p >= 1 && p <= lastPage) pages.add(p);
-    }
-    final ordered = pages.toList()..sort();
-
-    final children = <Widget>[
-      _PageBtn(icon: Icons.chevron_left, enabled: currentPage > 1 && !loading, onTap: () => onGoto(currentPage - 1)),
-    ];
-    int prev = 0;
-    for (final p in ordered) {
-      if (prev != 0 && p - prev > 1) {
-        children.add(const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
-      }
-      children.add(_PageBtn(
-        label: '$p',
-        enabled: p != currentPage && !loading,
-        active: p == currentPage,
-        onTap: () => onGoto(p),
-      ));
-      prev = p;
-    }
-    children.add(_PageBtn(icon: Icons.chevron_right, enabled: currentPage < lastPage && !loading, onTap: () => onGoto(currentPage + 1)));
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 10, bottom: 4),
-      child: Center(
-        child: Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: children,
-        ),
-      ),
-    );
-  }
-}
-
-class _PageBtn extends StatelessWidget {
-  final String? label;
-  final IconData? icon;
-  final bool enabled;
-  final bool active;
-  final VoidCallback onTap;
-  const _PageBtn({this.label, this.icon, this.enabled = true, this.active = false, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = active ? AppColors.accent : AppColors.surfaceLight;
-    final fg = active ? Colors.white : (enabled ? AppColors.text : AppColors.textMuted);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 34, height: 34,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: active ? AppColors.accent : AppColors.border),
-          ),
-          child: Center(
-            child: icon != null
-                ? Icon(icon, size: 16, color: fg)
-                : Text(label!, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg))),
-          ),
-        ),
       ),
     );
   }

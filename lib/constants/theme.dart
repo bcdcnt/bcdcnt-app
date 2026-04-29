@@ -19,9 +19,13 @@ class AppColors {
   static const success = Color(0xFF66BB6A);
 }
 
-// Font family helpers
-TextStyle display([TextStyle? style]) => GoogleFonts.nunito(textStyle: style);
-TextStyle body([TextStyle? style]) => GoogleFonts.montserrat(textStyle: style);
+// Font helpers — pivoted to system default (SF Pro on macOS/iOS, Roboto on
+// Android) so the app feels native instead of web-styled. The custom Nunito
+// brand font is reserved for the wordmark via `brand()` to keep the logo
+// distinctive without weighing down every label.
+TextStyle display([TextStyle? style]) => style ?? const TextStyle();
+TextStyle body([TextStyle? style]) => style ?? const TextStyle();
+TextStyle brand([TextStyle? style]) => GoogleFonts.nunito(textStyle: style);
 
 class AppText {
   static TextStyle get displayLarge => display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text));
@@ -38,7 +42,7 @@ ThemeData appTheme() {
     brightness: Brightness.dark,
     scaffoldBackgroundColor: AppColors.bg,
     primaryColor: AppColors.accent,
-    textTheme: GoogleFonts.montserratTextTheme(ThemeData.dark().textTheme).apply(
+    textTheme: ThemeData.dark().textTheme.apply(
       bodyColor: AppColors.text,
       displayColor: AppColors.text,
     ),

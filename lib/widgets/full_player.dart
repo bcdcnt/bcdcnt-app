@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -298,7 +299,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final thumb = song['thumbnail']?['url'];
     final isInstrumental = song['file_type'] == 'instrumental';
     final screen = MediaQuery.of(context).size;
-    final vinylSize = screen.width * 0.72;
+    // Use the shortest viewport dimension so the vinyl stays a circle on
+    // wide-screen desktop (where width × 0.72 would overflow the height,
+    // clipping the disc into an ellipse-looking slice).
+    final vinylSize = math.min(math.min(screen.width, screen.height) * 0.6, 480.0);
     final queue = player.queue;
 
     return Scaffold(

@@ -16,6 +16,10 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   List<dynamic> _latest = [];
+  // Folk-music sub-data — populated lazily so the grid can show melodies +
+  // folk categories under the Dân ca section (parity with web's Library).
+  List<dynamic> _melodies = [];
+  List<dynamic> _folkCats = [];
   bool _loading = true;
 
   @override
@@ -30,9 +34,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
         songs(first: 8, orderBy: [{column: "id", order: DESC}]) {
           data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
         }
+        melodies(first: 200, orderBy: [{column: "title", order: ASC}]) {
+          data { id title slug }
+        }
+        fcats(first: 200, orderBy: [{column: "title", order: ASC}]) {
+          data { id title slug }
+        }
       }''');
       if (!mounted) return;
-      setState(() { _latest = data['songs']?['data'] ?? []; _loading = false; });
+      setState(() {
+        _latest = data['songs']?['data'] ?? [];
+        _melodies = (data['melodies']?['data'] ?? []) as List;
+        _folkCats = (data['fcats']?['data'] ?? []) as List;
+        _loading = false;
+      });
     } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 
@@ -71,6 +86,38 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ]),
             const SizedBox(height: 28),
           ],
+
+          // Thể loại
+          const SectionHeader(icon: Icons.category_outlined, title: 'Thể loại'),
+          _grid([
+            _Tile(label: 'Tân nhạc', icon: Icons.music_note, color: const Color(0xFF711313), onTap: () => context.push('/the-loai/tan-nhac')),
+            _Tile(label: 'Dân ca', icon: Icons.album_outlined, color: const Color(0xFF8B6914), onTap: () => context.push('/the-loai/dan-ca')),
+            _Tile(label: 'Khí nhạc', icon: Icons.piano, color: const Color(0xFF7A3B3A), onTap: () => context.push('/the-loai/khi-nhac')),
+            _Tile(label: 'Tiếng thơ', icon: Icons.auto_stories_outlined, color: const Color(0xFF6B5210), onTap: () => context.push('/the-loai/tieng-tho')),
+            _Tile(label: 'Thành viên hát', icon: Icons.mic_outlined, color: const Color(0xFF2D5E3A), onTap: () => context.push('/the-loai/thanh-vien-hat')),
+          ]),
+          const SizedBox(height: 28),
+
+          // Tân nhạc — sub-categories (web parity)
+          const SectionHeader(icon: Icons.music_note, title: 'Tân nhạc'),
+          _grid([
+            _Tile(label: 'Nhạc thiếu nhi', icon: Icons.child_care, color: const Color(0xFF8B6914), onTap: () => context.push('/tag/nhac-thieu-nhi')),
+            _Tile(label: 'Nhạc nước ngoài', icon: Icons.public, color: const Color(0xFF2D5E3A), onTap: () => context.push('/tag/nhac-nuoc-ngoai')),
+            _Tile(label: 'Nhạc nhẹ', icon: Icons.music_note_outlined, color: const Color(0xFF6B5210), onTap: () => context.push('/tag/nhac-nhe')),
+            _Tile(label: 'Nhạc tiền chiến', icon: Icons.history_toggle_off, color: const Color(0xFFA89060), onTap: () => context.push('/tag/nhac-tien-chien')),
+            _Tile(label: 'Nhạc phim', icon: Icons.movie_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag/nhac-phim')),
+            _Tile(label: 'Video', icon: Icons.play_circle_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/tag/video')),
+          ]),
+          const SizedBox(height: 28),
+
+          // Khí nhạc — sub-categories
+          const SectionHeader(icon: Icons.piano, title: 'Khí nhạc'),
+          _grid([
+            _Tile(label: 'Nhạc Việt Nam', icon: Icons.flag_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag/nhac-viet-nam')),
+            _Tile(label: 'Nhạc nước ngoài', icon: Icons.public, color: const Color(0xFF2D5E3A), onTap: () => context.push('/tag/nhac-nuoc-ngoai')),
+            _Tile(label: 'Video', icon: Icons.play_circle_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/tag/khi-nhac-video')),
+          ]),
+          const SizedBox(height: 28),
 
           // Mới cập nhật
           if (_latest.isNotEmpty) ...[
@@ -147,6 +194,46 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _Tile(label: 'Giới thiệu', icon: Icons.info_outline, color: const Color(0xFF711313), onTap: () => context.push('/gioi-thieu')),
             _Tile(label: 'Hỏi đáp AI', icon: Icons.auto_awesome, color: const Color(0xFF1A3A5C), onTap: () => _openWeb('/hoi-dap')),
           ]),
+          const SizedBox(height: 28),
+
+          // Dân ca — Làn điệu + thể loại con (full list, dynamic from API)
+          if (_melodies.isNotEmpty || _folkCats.isNotEmpty) ...[
+            const SectionHeader(icon: Icons.album_outlined, title: 'Dân ca'),
+            if (_melodies.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text('Làn điệu (${_melodies.length})', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+              ),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: _melodies.map((m) {
+                  final mm = Map<String, dynamic>.from(m);
+                  return _Chip(
+                    label: (mm['title'] ?? '').toString(),
+                    onTap: () => context.push('/lan-dieu/${mm['slug']}'),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+            ],
+            if (_folkCats.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 8),
+                child: Text('Thể loại (${_folkCats.length})', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+              ),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: _folkCats.map((f) {
+                  final ff = Map<String, dynamic>.from(f);
+                  return _Chip(
+                    label: (ff['title'] ?? '').toString(),
+                    onTap: () => context.push('/tag/${ff['slug']}'),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
 
           const SizedBox(height: 100),
         ],
@@ -155,13 +242,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
   }
 
   Widget _grid(List<_Tile> tiles) {
+    final w = MediaQuery.of(context).size.width;
+    // Native desktop pattern: more columns + taller tiles than mobile.
+    final cols = w >= 1280 ? 4 : (w >= 900 ? 3 : 2);
+    final tileHeight = w >= 900 ? 80.0 : 64.0;
     return GridView.count(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      mainAxisExtent: 64,
+      crossAxisCount: cols,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      mainAxisExtent: tileHeight,
       children: tiles,
     );
   }
@@ -239,6 +330,29 @@ class _Tile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _Chip({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Text(label, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
       ),
     );
   }

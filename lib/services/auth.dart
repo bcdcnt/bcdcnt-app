@@ -9,6 +9,7 @@ const meQuery = '''query { me {
   avatar { url } background { url }
   unread
   player_shuffle player_repeat
+  show_comment_sidebar
 }}''';
 
 const _updateMeShuffleMutation = '''mutation(\$v: Boolean) {
@@ -161,6 +162,7 @@ class AuthProvider extends ChangeNotifier {
           'unread': me['unread'] ?? 0,
           'player_shuffle': me['player_shuffle'],
           'player_repeat': me['player_repeat'],
+          'show_comment_sidebar': me['show_comment_sidebar'] ?? false,
         };
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('user', jsonEncode(_user));

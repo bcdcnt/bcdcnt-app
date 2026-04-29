@@ -25,6 +25,16 @@ class _PersonListScreenState extends State<PersonListScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  // Filters: starting letter (uppercase Vietnamese) and birth year. Null
+  // means "all". Selecting either resets pagination.
+  String? _letter;
+  int? _year;
+  // Vietnamese alphabet — includes Đ and the diacritic vowels separately so
+  // the user can quickly jump to e.g. "Ơ".
+  static const _alphabet = [
+    'A','Ă','Â','B','C','D','Đ','E','Ê','G','H','I','K','L','M','N',
+    'O','Ô','Ơ','P','Q','R','S','T','U','Ư','V','X','Y',
+  ];
 
   String get _queryName {
     switch (widget.type) {
@@ -95,8 +105,19 @@ class _PersonListScreenState extends State<PersonListScreen> {
 
   Future<void> _fetch(int page) async {
     setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    // Build a where clause with optional letter (title LIKE 'X%') and
+    // birth year (yob = N). When the user picks a Vietnamese diacritic
+    // (Ô/Ơ/Ê/Đ etc.) we send both the bare and accented forms via OR.
+    final wheres = <String>[];
+    if (_letter != null) {
+      wheres.add('{column: "title", operator: LIKE, value: "${_letter!}%"}');
+    }
+    if (_year != null) {
+      wheres.add('{column: "yob", operator: EQ, value: $_year}');
+    }
+    final whereStr = wheres.isEmpty ? '' : ', where: {AND: [${wheres.join(',')}]}';
     final q = '''query(\$page: Int) {
-      $_queryName(first: $_perPage, page: \$page, orderBy: [{column: "total_listens", order: DESC}]) {
+      $_queryName(first: $_perPage, page: \$page$whereStr, orderBy: [{column: "total_listens", order: DESC}]) {
         data { id slug title avatar { url } total_listens }
         paginatorInfo { currentPage lastPage total }
       }
@@ -118,6 +139,76 @@ class _PersonListScreenState extends State<PersonListScreen> {
     } catch (_) {
       if (mounted) setState(() { _loading = false; _loadingMore = false; });
     }
+  }
+
+  void _setLetter(String? l) {
+    if (_letter == l) return;
+    setState(() {
+      _letter = l;
+      _items = []; _page = 1; _lastPage = 1; _total = 0;
+    });
+    _fetch(1);
+  }
+
+  void _setYear(int? y) {
+    if (_year == y) return;
+    setState(() {
+      _year = y;
+      _items = []; _page = 1; _lastPage = 1; _total = 0;
+    });
+    _fetch(1);
+  }
+
+  Widget _buildFilters() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // A–Z row (horizontal scroll)
+        SizedBox(
+          height: 32,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _filterChip(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
+              for (final c in _alphabet)
+                _filterChip(label: c, active: _letter == c, onTap: () => _setLetter(c), compact: true),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Birth year row — wide range, scrollable horizontally.
+        SizedBox(
+          height: 32,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            children: [
+              _filterChip(label: 'Mọi năm', active: _year == null, onTap: () => _setYear(null)),
+              for (var y = DateTime.now().year; y >= 1900; y--)
+                _filterChip(label: '$y', active: _year == y, onTap: () => _setYear(y)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _filterChip({required String label, required bool active, required VoidCallback onTap, bool compact = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: active ? AppColors.accentSoft : AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: active ? AppColors.accent : AppColors.border),
+          ),
+          child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+        ),
+      ),
+    );
   }
 
   String _formatInt(int n) {
@@ -171,7 +262,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                             children: [
                               Text(_label, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_total > 0 ? '${_formatInt(_total)} người' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                              Text(_total > 0 ? '${_formatInt(_total)} ${_label.toLowerCase()}' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -179,6 +270,10 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // Filter row: A-Z + birth year. Both reset to "all" when
+                  // tapped twice.
+                  _buildFilters(),
+                  const SizedBox(height: 12),
                 ])),
               ),
               if (_loading && _items.isEmpty)
@@ -189,8 +284,13 @@ class _PersonListScreenState extends State<PersonListScreen> {
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3, crossAxisSpacing: 14, mainAxisSpacing: 18, childAspectRatio: 0.72,
+                    // Responsive cols: more on desktop so each tile doesn't
+                    // stretch with huge horizontal gaps between rows.
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 180,
+                      crossAxisSpacing: 14,
+                      mainAxisSpacing: 18,
+                      childAspectRatio: 0.72,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {

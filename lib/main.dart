@@ -38,8 +38,10 @@ import 'screens/user_detail_screen.dart';
 import 'screens/document_detail_screen.dart';
 import 'screens/forum_detail_screen.dart';
 import 'screens/melody_detail_screen.dart';
+import 'screens/folk_category_screen.dart';
 import 'screens/upload_detail_screen.dart';
 import 'widgets/mini_player.dart';
+import 'widgets/desktop_shell.dart';
 
 void main() {
   runApp(const BcdcntApp());
@@ -114,98 +116,124 @@ final _router = GoRouter(
         GoRoute(path: '/search', builder: (c, s) => const SearchScreen()),
         GoRoute(path: '/library', builder: (c, s) => const LibraryScreen()),
         GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
+        GoRoute(
+          path: '/song/:id',
+          builder: (c, s) => SongDetailScreen(songId: s.pathParameters['id']!, initialSong: s.extra as Map<String, dynamic>?),
+        ),
+        GoRoute(
+          path: '/nghe-si/:slug',
+          builder: (c, s) => PersonDetailScreen(type: PersonType.artist, slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(
+          path: '/nhac-si/:slug',
+          builder: (c, s) => PersonDetailScreen(type: PersonType.composer, slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(
+          path: '/nha-tho/:slug',
+          builder: (c, s) => PersonDetailScreen(type: PersonType.poet, slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(
+          path: '/soan-gia/:slug',
+          builder: (c, s) => PersonDetailScreen(type: PersonType.recomposer, slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(
+          path: '/the-loai/:slug',
+          builder: (c, s) => CategoryDetailScreen(slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(path: '/yeu-thich', builder: (c, s) => const UserSongListScreen(kind: UserListKind.favorites)),
+        GoRoute(path: '/nghe-gan-day', builder: (c, s) => const UserSongListScreen(kind: UserListKind.history)),
+        GoRoute(path: '/playlist-cua-toi', builder: (c, s) => const MyPlaylistsScreen()),
+        GoRoute(
+          path: '/tu-lieu/:type',
+          builder: (c, s) {
+            final t = archiveTypeFromSlug(s.pathParameters['type']!);
+            if (t == null) return const DocumentArchiveScreen(type: ArchiveType.image);
+            return DocumentArchiveScreen(type: t);
+          },
+        ),
+        // Person lists (no slug = list view; with slug = detail view above)
+        GoRoute(path: '/nghe-si', builder: (c, s) => const PersonListScreen(type: PersonType.artist)),
+        GoRoute(path: '/nhac-si', builder: (c, s) => const PersonListScreen(type: PersonType.composer)),
+        GoRoute(path: '/nha-tho', builder: (c, s) => const PersonListScreen(type: PersonType.poet)),
+        GoRoute(path: '/soan-gia', builder: (c, s) => const PersonListScreen(type: PersonType.recomposer)),
+        GoRoute(path: '/playlist', builder: (c, s) => const PlaylistListScreen()),
+        GoRoute(path: '/playlist/:id', builder: (c, s) => PlaylistDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/tag', builder: (c, s) => const TagListScreen()),
+        GoRoute(path: '/tag/:slug', builder: (c, s) => TagDetailScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/bai-gui-cua-toi', builder: (c, s) => const MyUploadsScreen()),
+        GoRoute(
+          path: '/bai-hat/thap-nien/:decade',
+          builder: (c, s) => DecadeSongsScreen(decade: int.tryParse(s.pathParameters['decade']!) ?? 1990),
+        ),
+        GoRoute(path: '/sheet', builder: (c, s) => const SheetListScreen()),
+        GoRoute(path: '/sheet/:id', builder: (c, s) => SheetDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/bang-xep-hang', builder: (c, s) => const RankingScreen()),
+        GoRoute(path: '/bang-xep-hang/:slug', builder: (c, s) => RankingDetailScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/cong-dong/hoat-dong-thanh-vien', builder: (c, s) => const ActivityScreen()),
+        GoRoute(path: '/thao-luan', builder: (c, s) => const DiscussionListScreen()),
+        GoRoute(path: '/thao-luan/:id', builder: (c, s) => DiscussionDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/gioi-thieu', builder: (c, s) => const StaticPageScreen(slug: 'gioi-thieu')),
+        GoRoute(path: '/yeu-cau', builder: (c, s) => const StaticPageScreen(slug: 'yeu-cau')),
+        GoRoute(path: '/gop-y', builder: (c, s) => const StaticPageScreen(slug: 'gop-y')),
+        GoRoute(path: '/p/:slug', builder: (c, s) => StaticPageScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/thong-bao', builder: (c, s) => const NotificationsScreen()),
+        GoRoute(path: '/cai-dat', builder: (c, s) => const SettingsScreen()),
+        GoRoute(path: '/binh-luan-cua-toi', builder: (c, s) => const MyCommentsScreen()),
+        GoRoute(path: '/thao-luan-cua-toi', builder: (c, s) => const MyTopicsScreen()),
+        GoRoute(path: '/thong-ke', builder: (c, s) => const StatsScreen()),
+        GoRoute(path: '/user/:id', builder: (c, s) => UserDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/tu-lieu/chi-tiet/:id', builder: (c, s) => DocumentDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/dien-dan/:id', builder: (c, s) => ForumDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/lan-dieu/:slug', builder: (c, s) => MelodyDetailScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/dan-ca/:slug', builder: (c, s) => FolkCategoryScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/bai-gui/:id', builder: (c, s) => UploadDetailScreen(id: s.pathParameters['id']!)),
       ],
     ),
-    GoRoute(
-      path: '/song/:id',
-      builder: (c, s) => SongDetailScreen(songId: s.pathParameters['id']!, initialSong: s.extra as Map<String, dynamic>?),
-    ),
-    GoRoute(
-      path: '/nghe-si/:slug',
-      builder: (c, s) => PersonDetailScreen(type: PersonType.artist, slug: s.pathParameters['slug']!),
-    ),
-    GoRoute(
-      path: '/nhac-si/:slug',
-      builder: (c, s) => PersonDetailScreen(type: PersonType.composer, slug: s.pathParameters['slug']!),
-    ),
-    GoRoute(
-      path: '/nha-tho/:slug',
-      builder: (c, s) => PersonDetailScreen(type: PersonType.poet, slug: s.pathParameters['slug']!),
-    ),
-    GoRoute(
-      path: '/soan-gia/:slug',
-      builder: (c, s) => PersonDetailScreen(type: PersonType.recomposer, slug: s.pathParameters['slug']!),
-    ),
-    GoRoute(
-      path: '/the-loai/:slug',
-      builder: (c, s) => CategoryDetailScreen(slug: s.pathParameters['slug']!),
-    ),
-    GoRoute(path: '/yeu-thich', builder: (c, s) => const UserSongListScreen(kind: UserListKind.favorites)),
-    GoRoute(path: '/nghe-gan-day', builder: (c, s) => const UserSongListScreen(kind: UserListKind.history)),
-    GoRoute(path: '/playlist-cua-toi', builder: (c, s) => const MyPlaylistsScreen()),
-    GoRoute(
-      path: '/tu-lieu/:type',
-      builder: (c, s) {
-        final t = archiveTypeFromSlug(s.pathParameters['type']!);
-        if (t == null) return const DocumentArchiveScreen(type: ArchiveType.image);
-        return DocumentArchiveScreen(type: t);
-      },
-    ),
-    // Person lists (no slug = list view; with slug = detail view above)
-    GoRoute(path: '/nghe-si', builder: (c, s) => const PersonListScreen(type: PersonType.artist)),
-    GoRoute(path: '/nhac-si', builder: (c, s) => const PersonListScreen(type: PersonType.composer)),
-    GoRoute(path: '/nha-tho', builder: (c, s) => const PersonListScreen(type: PersonType.poet)),
-    GoRoute(path: '/soan-gia', builder: (c, s) => const PersonListScreen(type: PersonType.recomposer)),
-    GoRoute(path: '/playlist', builder: (c, s) => const PlaylistListScreen()),
-    GoRoute(path: '/playlist/:id', builder: (c, s) => PlaylistDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/tag', builder: (c, s) => const TagListScreen()),
-    GoRoute(path: '/tag/:slug', builder: (c, s) => TagDetailScreen(slug: s.pathParameters['slug']!)),
-    GoRoute(path: '/bai-gui-cua-toi', builder: (c, s) => const MyUploadsScreen()),
-    GoRoute(
-      path: '/bai-hat/thap-nien/:decade',
-      builder: (c, s) => DecadeSongsScreen(decade: int.tryParse(s.pathParameters['decade']!) ?? 1990),
-    ),
-    GoRoute(path: '/sheet', builder: (c, s) => const SheetListScreen()),
-    GoRoute(path: '/sheet/:id', builder: (c, s) => SheetDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/bang-xep-hang', builder: (c, s) => const RankingScreen()),
-    GoRoute(path: '/bang-xep-hang/:slug', builder: (c, s) => RankingDetailScreen(slug: s.pathParameters['slug']!)),
-    GoRoute(path: '/cong-dong/hoat-dong-thanh-vien', builder: (c, s) => const ActivityScreen()),
-    GoRoute(path: '/thao-luan', builder: (c, s) => const DiscussionListScreen()),
-    GoRoute(path: '/thao-luan/:id', builder: (c, s) => DiscussionDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/gioi-thieu', builder: (c, s) => const StaticPageScreen(slug: 'gioi-thieu')),
-    GoRoute(path: '/yeu-cau', builder: (c, s) => const StaticPageScreen(slug: 'yeu-cau')),
-    GoRoute(path: '/gop-y', builder: (c, s) => const StaticPageScreen(slug: 'gop-y')),
-    GoRoute(path: '/p/:slug', builder: (c, s) => StaticPageScreen(slug: s.pathParameters['slug']!)),
-    GoRoute(path: '/thong-bao', builder: (c, s) => const NotificationsScreen()),
-    GoRoute(path: '/cai-dat', builder: (c, s) => const SettingsScreen()),
-    GoRoute(path: '/binh-luan-cua-toi', builder: (c, s) => const MyCommentsScreen()),
-    GoRoute(path: '/thao-luan-cua-toi', builder: (c, s) => const MyTopicsScreen()),
-    GoRoute(path: '/thong-ke', builder: (c, s) => const StatsScreen()),
-    GoRoute(path: '/user/:id', builder: (c, s) => UserDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/tu-lieu/chi-tiet/:id', builder: (c, s) => DocumentDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/dien-dan/:id', builder: (c, s) => ForumDetailScreen(id: s.pathParameters['id']!)),
-    GoRoute(path: '/lan-dieu/:slug', builder: (c, s) => MelodyDetailScreen(slug: s.pathParameters['slug']!)),
-    GoRoute(path: '/bai-gui/:id', builder: (c, s) => UploadDetailScreen(id: s.pathParameters['id']!)),
   ],
 );
 
+/// Picks between mobile and desktop chrome based on viewport width.
+/// 900px breakpoint matches typical desktop tablet boundary; below that we
+/// keep the bottom nav (mobile-friendly), above we render the web-style
+/// top header (DesktopShell).
 class MainShell extends StatelessWidget {
   final Widget child;
   const MainShell({super.key, required this.child});
 
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    if (width >= 900) return DesktopShell(child: child);
+    return _MobileShell(child: child);
+  }
+}
+
+class _MobileShell extends StatelessWidget {
+  final Widget child;
+  const _MobileShell({required this.child});
+
+  // Routes that show the bottom nav. All other routes (detail screens etc.)
+  // get full-screen immersion with no bottom nav, matching the previous
+  // out-of-shell behaviour before everything was unified under ShellRoute.
+  static const _topLevelPaths = {'/', '/binh-luan', '/search', '/library', '/profile'};
+
   int _indexFromPath(String path) {
-    if (path.startsWith('/binh-luan')) return 1;
-    if (path.startsWith('/search')) return 2;
-    if (path.startsWith('/library')) return 3;
-    if (path.startsWith('/profile')) return 4;
+    if (path == '/binh-luan') return 1;
+    if (path == '/search') return 2;
+    if (path == '/library') return 3;
+    if (path == '/profile') return 4;
     return 0;
   }
 
   @override
   Widget build(BuildContext context) {
     final path = GoRouterState.of(context).uri.path;
+    final showBottomNav = _topLevelPaths.contains(path);
     final index = _indexFromPath(path);
     final hasPlayer = context.watch<PlayerProvider>().currentSong != null;
+    // Sub-screens render their own MiniPlayer overlay; only the 5 top-level
+    // routes rely on the shell to show it.
+    final shellShouldShowMiniPlayer = hasPlayer && showBottomNav;
 
     return Scaffold(
       body: SafeArea(
@@ -213,11 +241,11 @@ class MainShell extends StatelessWidget {
         child: Column(
           children: [
             Expanded(child: child),
-            if (hasPlayer) const Padding(padding: EdgeInsets.only(bottom: 8), child: MiniPlayer()),
+            if (shellShouldShowMiniPlayer) const Padding(padding: EdgeInsets.only(bottom: 8), child: MiniPlayer()),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: !showBottomNav ? null : BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         backgroundColor: AppColors.surface,
         selectedItemColor: AppColors.accentLight,

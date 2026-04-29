@@ -263,8 +263,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _items.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, crossAxisSpacing: 6, mainAxisSpacing: 6,
+      // Responsive: more columns on wider windows so each tile shrinks
+      // instead of leaving wide gaps between rows.
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 220, crossAxisSpacing: 6, mainAxisSpacing: 6,
       ),
       itemBuilder: (ctx, i) {
         final d = _items[i];
@@ -331,8 +333,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _items.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 14, childAspectRatio: 1.05,
+      // Responsive: video tiles around 280px wide max so we get 2 cols on
+      // mobile but 4-5 cols on a desktop window without huge whitespace.
+      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 320, crossAxisSpacing: 10, mainAxisSpacing: 14, childAspectRatio: 1.05,
       ),
       itemBuilder: (ctx, i) {
         final d = _items[i];

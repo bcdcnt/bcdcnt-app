@@ -1,27 +1,60 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../constants/theme.dart';
 
 class ApiClient {
-  static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
-    final params = {
-      'query': q,
-      if (variables != null) 'variables': jsonEncode(variables),
+  /// Identifies requests as coming from the native app so the BE can branch
+  /// behavior (e.g. analytics, in-app webviews, response trimming). Format:
+  /// `bcdcnt-flutter/<platform>` — backend can split on `/`.
+  static String get _clientHeader {
+    final platform = kIsWeb
+        ? 'web'
+        : (Platform.isMacOS
+            ? 'macos'
+            : Platform.isIOS
+                ? 'ios'
+                : Platform.isAndroid
+                    ? 'android'
+                    : Platform.isWindows
+                        ? 'windows'
+                        : Platform.isLinux
+                            ? 'linux'
+                            : 'unknown');
+    return 'bcdcnt-flutter/$platform';
+  }
+
+  static Map<String, String> _baseHeaders({String? token, bool jsonContent = false}) {
+    return {
+      if (jsonContent) 'Content-Type': 'application/json',
+      'Origin': siteUrl,
+      'X-Client-App': _clientHeader,
+      if (token != null) 'Authorization': 'Bearer $token',
     };
-    final uri = Uri.parse(apiBase).replace(queryParameters: params);
-    final res = await http.get(uri, headers: {'Origin': siteUrl});
+  }
+
+  static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
+    // POST with body — long queries blow URL length limits on some
+    // proxies/CDNs and the response was coming back empty silently.
+    final res = await http.post(
+      Uri.parse(apiBase),
+      headers: _baseHeaders(jsonContent: true),
+      body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),
+    );
     final json = jsonDecode(res.body);
+    if (json['errors'] != null) {
+      // Surface the first GraphQL error so failures don't silently render
+      // empty pages. Catch sites can decide to swallow this if they want.
+      throw Exception(json['errors'][0]['message']);
+    }
     return json['data'] ?? {};
   }
 
   static Future<Map<String, dynamic>> mutate(String q, [Map<String, dynamic>? variables, String? token]) async {
     final res = await http.post(
       Uri.parse(apiBase),
-      headers: {
-        'Content-Type': 'application/json',
-        'Origin': siteUrl,
-        if (token != null) 'Authorization': 'Bearer $token',
-      },
+      headers: _baseHeaders(token: token, jsonContent: true),
       body: jsonEncode({'query': q, 'variables': variables}),
     );
     final json = jsonDecode(res.body);
@@ -37,11 +70,7 @@ class ApiClient {
     // on GET with Authorization header.
     final res = await http.post(
       Uri.parse(apiBase),
-      headers: {
-        'Content-Type': 'application/json',
-        'Origin': siteUrl,
-        'Authorization': 'Bearer $token',
-      },
+      headers: _baseHeaders(token: token, jsonContent: true),
       body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),
     );
     final json = jsonDecode(res.body);

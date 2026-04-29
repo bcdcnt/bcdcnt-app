@@ -85,7 +85,7 @@ const _playlistsQuery = '''query(\$where: WhereConditions) {
 }''';
 
 const _galleryQuery = '''query(\$where: WhereConditions) {
-  documents(first: 9, orderBy: [{column: "id", order: DESC}], where: \$where) {
+  documents(first: 24, orderBy: [{column: "id", order: DESC}], where: \$where) {
     data { id slug title views downloads thumbnail { url } uploader { id username } comments(first: 0) { paginatorInfo { total } } }
   }
 }''';
@@ -317,22 +317,26 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetch() async {
     setState(() => _loading = true);
     try {
+      // Per-query catch so one failing section (e.g. a schema mismatch) doesn't
+      // wipe the whole homepage — Future.wait rejects on first error otherwise.
+      Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) =>
+          f.catchError((_) => <String, dynamic>{});
       final queries = await Future.wait<Map<String, dynamic>>([
-        ApiClient.query(_stickyQuery),
-        ApiClient.query(_trendingQuery),
-        ApiClient.query(_artistsQuery, _artistsWhere),
-        ApiClient.query(_composersQuery, _composersWhere),
-        ApiClient.query(_videoQuery),
-        ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'is_system', 'value': '1'}, {'column': 'is_public', 'value': '1'}]}}),
-        ApiClient.query(_rankingQuery),
-        ApiClient.query(_galleryQuery, {'where': {'AND': [{'column': 'type', 'value': 'image'}]}}),
-        ApiClient.query(_audioQuery, {'where': {'AND': [{'column': 'type', 'value': 'audio'}]}}),
-        ApiClient.query(_videoDocQuery, {'where': {'AND': [{'column': 'type', 'value': 'video'}]}}),
-        ApiClient.query(_newsQuery, {'where': {'AND': [{'column': 'type', 'value': 'news'}]}}),
-        ApiClient.query(_memorialArtists, _stickyWhere),
-        ApiClient.query(_memorialComposers, _stickyWhere),
-        ApiClient.query(_memorialPoets, _stickyWhere),
-        ApiClient.query(_memorialRecomposers, _stickyWhere),
+        safe(ApiClient.query(_stickyQuery)),
+        safe(ApiClient.query(_trendingQuery)),
+        safe(ApiClient.query(_artistsQuery, _artistsWhere)),
+        safe(ApiClient.query(_composersQuery, _composersWhere)),
+        safe(ApiClient.query(_videoQuery)),
+        safe(ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'is_system', 'value': '1'}, {'column': 'is_public', 'value': '1'}]}})),
+        safe(ApiClient.query(_rankingQuery)),
+        safe(ApiClient.query(_galleryQuery, {'where': {'AND': [{'column': 'type', 'value': 'image'}]}})),
+        safe(ApiClient.query(_audioQuery, {'where': {'AND': [{'column': 'type', 'value': 'audio'}]}})),
+        safe(ApiClient.query(_videoDocQuery, {'where': {'AND': [{'column': 'type', 'value': 'video'}]}})),
+        safe(ApiClient.query(_newsQuery, {'where': {'AND': [{'column': 'type', 'value': 'news'}]}})),
+        safe(ApiClient.query(_memorialArtists, _stickyWhere)),
+        safe(ApiClient.query(_memorialComposers, _stickyWhere)),
+        safe(ApiClient.query(_memorialPoets, _stickyWhere)),
+        safe(ApiClient.query(_memorialRecomposers, _stickyWhere)),
       ]);
       final events = await _fetchEvents();
       if (!mounted) return;
@@ -513,7 +517,13 @@ class _HomeScreenState extends State<HomeScreen> {
       onRefresh: _fetch,
       child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        children: [
+        children: _feedItems(),
+      ),
+    );
+  }
+
+  List<Widget> _feedItems() {
+    return [
           // Compact hero greeting
           _StaggerFadeIn(index: 0, child: _hero()),
           const SizedBox(height: 14),
@@ -625,39 +635,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
 
-          // ─── BẢNG XẾP HẠNG ───
-          const _GroupLabel('BẢNG XẾP HẠNG'),
-          // Box 1: Top nghe nhiều (bài hát)
-          SectionHeader(
-            icon: Icons.headphones,
-            title: 'Top nghe nhiều',
-            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
-            actionText: 'Xem tất cả',
-            onAction: () {
-              const slug = {'song': 'song', 'folk': 'folk', 'instrumental': 'instrumental', 'poem': 'poem'};
-              context.push('/bang-xep-hang');
-              // Future: deep-link to a /bang-xep-hang/listen-{type}-{period} page
-              // For now the BXH home screen filters by type/period.
-              slug;
-            },
-          ),
-          _rankingTabs(),
-          const SizedBox(height: 10),
-          _rankingList(_chartSongs),
-          const SizedBox(height: 28),
-          // Box 2: Top thành viên
-          SectionHeader(
-            icon: Icons.workspace_premium_outlined,
-            title: 'Top thành viên',
-            subtitle: 'Thành viên đóng góp nhiều nhất',
-            actionText: 'Xem tất cả',
-            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
-          ),
-          _memberTabsBar(),
-          const SizedBox(height: 10),
-          _memberBody(),
-          const SizedBox(height: 32),
-
           // ─── TƯỞNG NHỚ & SỰ KIỆN ───
           if (_memorial.isNotEmpty || _events.isNotEmpty)
             const _GroupLabel('TƯỞNG NHỚ & SỰ KIỆN'),
@@ -693,7 +670,32 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
 
-          // Footer signature
+          // ─── BẢNG XẾP HẠNG (positioned at the end of the home feed) ───
+          const _GroupLabel('BẢNG XẾP HẠNG'),
+          SectionHeader(
+            icon: Icons.headphones,
+            title: 'Top nghe nhiều',
+            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang'),
+          ),
+          _rankingTabs(),
+          const SizedBox(height: 10),
+          _rankingList(_chartSongs),
+          const SizedBox(height: 28),
+          SectionHeader(
+            icon: Icons.workspace_premium_outlined,
+            title: 'Top thành viên',
+            subtitle: 'Thành viên đóng góp nhiều nhất',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
+          ),
+          _memberTabsBar(),
+          const SizedBox(height: 10),
+          _memberBody(),
+          const SizedBox(height: 32),
+
+          // Footer signature — slogan at the very bottom of the page.
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 28),
             child: Center(
@@ -712,10 +714,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 80),
-        ],
-      ),
-    );
+          const SizedBox(height: 60),
+    ];
   }
 
   // --- Section builders ---
@@ -1376,7 +1376,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _categoryTiles() {
     return SizedBox(
-      height: 108,
+      height: 124,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _categories.length,
@@ -1387,7 +1387,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onTap: () => context.push('/the-loai/${c.slug}'),
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              width: 130,
+              width: 144,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -1424,7 +1424,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(c.name, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.1))),
+                          Text(
+                            c.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.1, height: 1.15)),
+                          ),
                           const SizedBox(height: 2),
                           Row(children: [
                             Text('Khám phá', style: body(const TextStyle(fontSize: 10, color: Colors.white70))),
@@ -2005,13 +2010,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _imageGrid(List<dynamic> docs) {
-    final visible = docs.take(6).toList();
+    // More columns + more visible images on desktop so each thumbnail
+    // shrinks instead of looking poster-sized.
+    final w = MediaQuery.of(context).size.width;
+    final cols = w >= 1280 ? 6 : (w >= 900 ? 5 : 3);
+    final visibleCount = w >= 1280 ? 18 : (w >= 900 ? 15 : 6);
+    final visible = docs.take(visibleCount).toList();
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: visible.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, crossAxisSpacing: 6, mainAxisSpacing: 6,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols, crossAxisSpacing: 6, mainAxisSpacing: 6,
       ),
       itemBuilder: (ctx, i) {
         final d = visible[i];

@@ -151,6 +151,12 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final pl = _playlist!;
     final thumb = pl['thumbnail']?['url'];
     final user = pl['user'];
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    // Apple Music-style scale-up: bigger artwork + display type on desktop.
+    final thumbSize = isDesktop ? 200.0 : 120.0;
+    final titleSize = isDesktop ? 32.0 : 19.0;
+    final usernameSize = isDesktop ? 14.0 : 12.0;
+    final metaSize = isDesktop ? 13.0 : 11.0;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -165,51 +171,59 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              padding: EdgeInsets.fromLTRB(isDesktop ? 32 : 20, isDesktop ? 16 : 8, isDesktop ? 32 : 20, 24),
               sliver: SliverList(delegate: SliverChildListDelegate([
                 // Hero
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Container(
-                      width: 120, height: 120,
+                      width: thumbSize, height: thumbSize,
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 8))],
                       ),
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
                         child: thumb != null
                             ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
                             : Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted, size: 60)),
                       ),
                     ),
-                    const SizedBox(width: 14),
+                    SizedBox(width: isDesktop ? 24 : 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(pl['title'] ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2, letterSpacing: -0.3))),
+                          Text(
+                            'Playlist',
+                            style: body(TextStyle(
+                              fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w700,
+                              color: AppColors.textMuted,
+                            )),
+                          ),
                           const SizedBox(height: 6),
+                          Text(pl['title'] ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
+                          const SizedBox(height: 10),
                           if (user?['username'] != null) Row(children: [
                             CircleAvatar(
-                              radius: 10,
+                              radius: isDesktop ? 13 : 10,
                               backgroundColor: AppColors.surfaceLight,
                               backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
                             ),
-                            const SizedBox(width: 6),
-                            Flexible(child: Text(user['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)))),
+                            const SizedBox(width: 8),
+                            Flexible(child: Text(user['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: usernameSize, color: AppColors.textSecondary, fontWeight: FontWeight.w600)))),
                           ]),
                           if (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) Padding(
-                            padding: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.only(top: 8),
                             child: Row(children: [
-                              const Icon(Icons.event_outlined, size: 12, color: AppColors.accentLight),
+                              Icon(Icons.event_outlined, size: isDesktop ? 14 : 12, color: AppColors.accentLight),
                               const SizedBox(width: 4),
-                              Flexible(child: Text(_formatEventDate(pl['event_date']), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
+                              Flexible(child: Text(_formatEventDate(pl['event_date']), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: metaSize, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
                             ]),
                           ),
-                          const SizedBox(height: 6),
-                          Text('${_formatInt(_items.length)} bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                          const SizedBox(height: 8),
+                          Text('${_formatInt(_items.length)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textMuted))),
                         ],
                       ),
                     ),

@@ -320,33 +320,51 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
 
-        // Filter pills (only when has query)
-        if (hasQuery) SizedBox(
-          height: 38,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _filterOptions.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 6),
-            itemBuilder: (ctx, i) {
-              final opt = _filterOptions[i];
-              final active = _filter == opt.$1;
-              return InkWell(
-                onTap: active ? null : () => _setFilter(opt.$1),
-                borderRadius: BorderRadius.circular(18),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: active ? AppColors.accent : AppColors.border),
-                  ),
-                  child: Text(opt.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+        // Filter pills — only when there's a query to narrow.
+        // Mobile: horizontal-scroll pills (compact). Desktop: wrap so all
+        // categories are visible without scrolling.
+        if (hasQuery) Builder(builder: (ctx) {
+          final isDesktop = MediaQuery.of(ctx).size.width >= 900;
+          final pill = (
+            String f,
+            String label,
+          ) {
+            final active = _filter == f;
+            return InkWell(
+              onTap: active ? null : () => _setFilter(f),
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.accentSoft : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: active ? AppColors.accent : AppColors.border),
                 ),
-              );
-            },
-          ),
-        ),
+                child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+              ),
+            );
+          };
+          if (isDesktop) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [for (final opt in _filterOptions) pill(opt.$1, opt.$2)],
+              ),
+            );
+          }
+          return SizedBox(
+            height: 38,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: _filterOptions.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (_, i) => pill(_filterOptions[i].$1, _filterOptions[i].$2),
+            ),
+          );
+        }),
 
         Expanded(
           child: hasQuery ? _buildResults() : _buildEmpty(auth.isAuthenticated),

@@ -51,16 +51,20 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 
   String get _resolvedType {
-    final t = (widget.initialSong?['file_type'] ?? widget.fileType).toString();
+    // Priority: fetched song > navigation extras > widget default. The
+    // fetched value is authoritative once data lands, so the UI matches
+    // what the API returned even if extras were missing/stale.
+    final t = (_song?['file_type']
+        ?? widget.initialSong?['file_type']
+        ?? widget.fileType).toString();
     return ['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(t) ? t : 'song';
   }
 
-  Future<void> _fetch() async {
-    try {
-      final type = _resolvedType;
-      String query;
-      String dataKey;
-      switch (type) {
+  /// Build the per-type GraphQL query for a song detail. Returned tuple
+  /// is (queryString, dataKey).
+  (String, String) _queryForType(String type) {
+    String query; String dataKey;
+    switch (type) {
         case 'folk':
           dataKey = 'folk';
           query = r'''query($id: ID!) { folk(id: $id) {
@@ -75,7 +79,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             recomposers(first: 20) { data { id slug title } }
             fcats(first: 10) { data { id slug title } }
             melodies(first: 10) { data { id slug title } }
-            tags(first: 30) { data { id name slug } }
+            tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
           } }''';
@@ -91,7 +95,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
             composers(first: 20) { data { id slug title } }
-            tags(first: 30) { data { id name slug } }
+            tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
           } }''';
@@ -106,7 +110,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             uploader { id username }
             sheet { id slug title year lyric_type content description }
             poets(first: 20) { data { id slug title } }
-            tags(first: 30) { data { id name slug } }
+            tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
           } }''';
@@ -138,10 +142,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
           } }''';
-      }
+    }
+    return (query, dataKey);
+  }
 
-      final data = await ApiClient.query(query, {'id': widget.songId});
-      final s = data[dataKey];
+  Future<void> _fetch() async {
+    try {
+      final type = _resolvedType;
+      // IDs are NOT unique across song/folk/instrumental/poem/karaoke
+      // tables — falling through to other types when one returns null
+      // would silently load the wrong record. Trust the preferred type
+      // strictly; fix the upstream extras instead.
+      final pair = _queryForType(type);
+      final data = await ApiClient.query(pair.$1, {'id': widget.songId});
+      final raw = data[pair.$2];
+      Map<String, dynamic>? s = raw == null ? null : Map<String, dynamic>.from(raw as Map);
       if (s != null) {
         final auth = context.read<AuthProvider>();
         final userId = auth.user?['id'];
@@ -154,7 +169,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         // For folk/instrumental/poem, composers/poets/tags live at root level
         if (normalized['composers'] != null && sheet['composers'] == null) sheet['composers'] = normalized['composers'];
         if (normalized['poets'] != null && sheet['poets'] == null) sheet['poets'] = normalized['poets'];
-        if (normalized['tags'] != null && sheet['tags'] == null) sheet['tags'] = (normalized['tags']?['data'] ?? []);
+        if (normalized['tags'] != null && sheet['tags'] == null) {
+          // Folk/Instrumental/Poem return `tags` as a plain list at root.
+          // Karaoke/Song nest it under sheet (already handled). Both shapes
+          // are normalised into a List on sheet['tags'].
+          final t = normalized['tags'];
+          sheet['tags'] = t is List ? t : (t is Map ? (t['data'] ?? []) : []);
+        }
         if (normalized['recomposers'] != null) sheet['recomposers'] = normalized['recomposers'];
         if (normalized['fcats'] != null) sheet['fcats'] = normalized['fcats'];
         if (normalized['melodies'] != null) sheet['melodies'] = normalized['melodies'];
@@ -319,7 +340,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ... on Karaoke { subtitle users(first: 100) { data { id username avatar { url } } } }
           }
         }''',
-        {'id': widget.songId, 'type': widget.fileType},
+        // Use resolved type so suggestions match the actual song type
+        // (folk/instrumental/poem/karaoke), not the constructor default.
+        {'id': widget.songId, 'type': _resolvedType},
       );
       final list = (data['suggestSongs'] ?? []) as List;
       if (!mounted) return;
@@ -364,7 +387,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ... on Karaoke { subtitle users(first: 100) { data { id username avatar { url } } } }
           }
         }''',
-        {'id': widget.songId, 'type': widget.fileType, 'exceptIds': exceptIds},
+        {'id': widget.songId, 'type': _resolvedType, 'exceptIds': exceptIds},
       );
       final list = ((data['suggestSongs'] ?? []) as List)
           .map((x) {
@@ -410,11 +433,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final data = auth.isAuthenticated
           ? await auth.authedMutate(
               r'''mutation($objectType: String!, $objectId: ID!) { download(object_type: $objectType, object_id: $objectId) { url } }''',
-              {'objectType': widget.fileType, 'objectId': widget.songId},
+              {'objectType': _resolvedType, 'objectId': widget.songId},
             )
           : await ApiClient.mutate(
               r'''mutation($objectType: String!, $objectId: ID!) { download(object_type: $objectType, object_id: $objectId) { url } }''',
-              {'objectType': widget.fileType, 'objectId': widget.songId},
+              {'objectType': _resolvedType, 'objectId': widget.songId},
             );
       final url = data['download']?['url'];
       if (url != null) {
@@ -437,7 +460,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void _openPlaylistDialog() {
     showDialog(
       context: context,
-      builder: (_) => PlaylistDialog(songId: widget.songId, type: widget.fileType),
+      builder: (_) => PlaylistDialog(songId: widget.songId, type: _resolvedType),
     );
   }
 
@@ -459,7 +482,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       context: context,
       builder: (_) => LyricHistoryDialog(
         songId: widget.songId,
-        songType: widget.fileType,
+        songType: _resolvedType,
       ),
     );
   }
@@ -534,12 +557,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final isVideo = player.currentSong?['play_type'] == 'video';
     final w = MediaQuery.of(context).size.width;
     final hasPlayer = player.currentSong != null;
+    final isDesktop = w >= 900;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: Stack(
-        children: [
-          CustomScrollView(
+    final mainScroll = CustomScrollView(
             slivers: [
               // 1. Sticky header
               SliverAppBar(
@@ -548,17 +568,24 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 title: const Text('CHI TIẾT', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
                 centerTitle: true,
                 leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-                actions: [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
+                // Share lives in the player's "more" sheet on desktop where
+                // the shell already shows queue + comments toggles in the
+                // top-right; keeping it here would overlap them.
+                actions: MediaQuery.of(context).size.width >= 900
+                    ? const []
+                    : [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
               ),
 
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    // 2. Hero thumbnail — use fixed height based on screen width
+                    // 2. Hero thumbnail — square on mobile; on desktop a
+                    // wide cinematic banner: blurred stretched art behind a
+                    // crisp centred crop, à la Apple Music album header.
                     const SizedBox(height: 4),
                     SizedBox(
-                      height: w - 40, // same as width (square)
+                      height: isDesktop ? 280 : (w - 40),
                       width: double.infinity,
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(20),
@@ -659,33 +686,43 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ],
                     ),
 
-                    // 5b. Folk-specific: recomposers (Soạn giả)
-                    if (_resolvedType == 'folk') ...[
-                      Builder(builder: (ctx) {
-                        final rec = (song['sheet']?['recomposers']?['data'] ?? []) as List;
-                        if (rec.isEmpty) return const SizedBox.shrink();
-                        return _MetaLine(
-                          label: 'Soạn giả',
-                          children: _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')),
-                        );
-                      }),
-                      Builder(builder: (ctx) {
-                        final fcats = (song['sheet']?['fcats']?['data'] ?? []) as List;
-                        if (fcats.isEmpty) return const SizedBox.shrink();
-                        return _MetaLine(
-                          label: 'Thể loại',
-                          children: [TextSpan(text: fcats.map((f) => f['title']).join(', '), style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w600))],
-                        );
-                      }),
-                      Builder(builder: (ctx) {
-                        final melodies = (song['sheet']?['melodies']?['data'] ?? []) as List;
-                        if (melodies.isEmpty) return const SizedBox.shrink();
-                        return _MetaLine(
-                          label: 'Làn điệu',
-                          children: _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')),
-                        );
-                      }),
-                    ],
+                    // 5b. Folk extras — Soạn giả / Thể loại / Làn điệu.
+                    // Render whenever the data is present (don't gate on
+                    // _resolvedType, so the blocks still appear if the
+                    // type detection is off but the API returned the
+                    // fields). The normalizer copies fcats/melodies/
+                    // recomposers from the root into `sheet` for any folk
+                    // record so we read from a single path.
+                    Builder(builder: (ctx) {
+                      final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
+                      if (rec.isEmpty) return const SizedBox.shrink();
+                      return _MetaLine(
+                        label: 'Soạn giả',
+                        children: _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')),
+                      );
+                    }),
+                    Builder(builder: (ctx) {
+                      final raw = song['sheet']?['fcats'] ?? song['fcats'];
+                      // ignore: avoid_print
+                      print('[detail] fcats raw=$raw');
+                      final fcats = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
+                      if (fcats.isEmpty) return const SizedBox.shrink();
+                      return _MetaLine(
+                        label: 'Thể loại',
+                        children: _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')),
+                      );
+                    }),
+                    Builder(builder: (ctx) {
+                      final raw = song['sheet']?['melodies'] ?? song['melodies'];
+                      // ignore: avoid_print
+                      print('[detail] melodies raw=$raw');
+                      final melodies = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
+                      if (melodies.isEmpty) return const SizedBox.shrink();
+                      return _MetaLine(
+                        label: 'Làn điệu',
+                        children: _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')),
+                      );
+                    }),
 
                     // 6. Poets / lyricType
                     if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem'))
@@ -727,11 +764,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ],
                       ),
 
-                    // 9. Upload date
+                    // 9. Upload date — same accent style as other meta
+                    // values for visual consistency (no underline since the
+                    // date isn't a link).
                     if (song['created_at'] != null)
                       _MetaLine(
                         label: 'Ngày đăng',
-                        children: [TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.text, fontWeight: FontWeight.w600))],
+                        children: [TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600))],
                       ),
 
                     // 13. Sheet music link (not inline images on mobile for now)
@@ -863,7 +902,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ],
 
                     // 16. Lyrics
-                    if (widget.fileType != 'instrumental' && lyrics != null && (lyrics as String).isNotEmpty) ...[
+                    if (_resolvedType != 'instrumental' && lyrics != null && (lyrics as String).isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
                       _ExpandCard(
@@ -917,112 +956,133 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ),
                     ],
 
-                    // 18. Same sheet recordings (filter same type)
-                    if (_sameSheet.isNotEmpty) ...[
-                      () {
-                        final filtered = _sameSheet.where((s) => s['file_type'] == (widget.fileType == 'karaoke' ? 'song' : widget.fileType)).toList();
-                        if (filtered.isEmpty) return const SizedBox.shrink();
-                        final shown = _sameSheetExpanded ? filtered : filtered.take(5).toList();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            _SectionHeader(icon: Icons.album_outlined, title: widget.fileType == 'karaoke' ? 'Thành viên hát bài này' : '${filtered.length} bản thu khác của cùng bài này'),
-                            ...shown.map((s) {
-                              final sg = Map<String, dynamic>.from(s);
-                              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-                            }),
-                            if (filtered.length > 5)
-                              _ShowMoreButton(
-                                expanded: _sameSheetExpanded,
-                                remaining: filtered.length - 5,
-                                onTap: () => setState(() => _sameSheetExpanded = !_sameSheetExpanded),
-                              ),
-                          ]),
-                        );
-                      }(),
-                      // 19. Karaoke members singing (if current is song, show karaoke covers)
-                      () {
-                        final karaokes = _sameSheet.where((s) => s['file_type'] == 'karaoke' && s['id'].toString() != widget.songId).toList();
-                        if (karaokes.isEmpty) return const SizedBox.shrink();
-                        final shown = _karaokeExpanded ? karaokes : karaokes.take(5).toList();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            _SectionHeader(icon: Icons.mic_outlined, title: 'Thành viên hát bài này'),
-                            ...shown.map((s) {
-                              final sg = Map<String, dynamic>.from(s);
-                              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-                            }),
-                            if (karaokes.length > 5)
-                              _ShowMoreButton(
-                                expanded: _karaokeExpanded,
-                                remaining: karaokes.length - 5,
-                                onTap: () => setState(() => _karaokeExpanded = !_karaokeExpanded),
-                              ),
-                          ]),
-                        );
-                      }(),
-                    ],
-
-                    // 20. Suggestions
-                    if (_suggestions.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _SectionHeader(icon: Icons.music_note_outlined, title: 'Có thể bạn muốn nghe'),
-                      ..._suggestions.map((s) {
-                        final sg = Map<String, dynamic>.from(s);
-                        return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-                      }),
-                    ],
-
-                    // 21. Songs by each artist
-                    for (final ag in _artistSongs)
-                      () {
-                        final artist = artists.firstWhere((a) => a['id'].toString() == ag['artistId'].toString(), orElse: () => {'title': ''});
-                        final title = artist['title'] ?? '';
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            _SectionHeader(icon: Icons.mic_outlined, title: 'Do $title trình bày'),
-                            ...((ag['songs'] as List).map((s) {
-                              final sg = Map<String, dynamic>.from(s);
-                              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-                            })),
-                          ]),
-                        );
-                      }(),
-
-                    // 22. Songs by each composer
-                    for (final cg in _composerSongs)
-                      () {
-                        final composer = composers.firstWhere((c) => c['id'].toString() == cg['composerId'].toString(), orElse: () => {'title': ''});
-                        final title = composer['title'] ?? '';
-                        final label = widget.fileType == 'folk' ? 'soạn giả' : widget.fileType == 'poem' ? 'là tác giả' : 'sáng tác';
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            _SectionHeader(icon: Icons.music_note_outlined, title: 'Do $title $label'),
-                            ...((cg['songs'] as List).map((s) {
-                              final sg = Map<String, dynamic>.from(s);
-                              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-                            })),
-                          ]),
-                        );
-                      }(),
+                    // 18-22. Related sections (same sheet, suggestions, by artist,
+                    // by composer). Always inline on both mobile and desktop —
+                    // the native macOS shell uses a left sidebar instead of a
+                    // right "engagement" column.
+                    ..._buildRelatedSections(artists, composers),
 
                     // 23. Comments
                     const SizedBox(height: 28),
-                    CommentSection(type: widget.fileType, id: widget.songId),
+                    CommentSection(type: _resolvedType, id: widget.songId),
 
                     const SizedBox(height: 120),
                   ]),
                 ),
               ),
             ],
-          ),
+          );
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Stack(
+        children: [
+          mainScroll,
           if (hasPlayer) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],
       ),
     );
+  }
+
+  /// Sections shown either inline below the main content (mobile) or in a
+  /// fixed right column (desktop). Order mirrors the bcdcnt-web source.
+  List<Widget> _buildRelatedSections(List artists, List composers) {
+    final widgets = <Widget>[];
+
+    // 18. Other recordings of the same composition (same type)
+    if (_sameSheet.isNotEmpty) {
+      final filtered = _sameSheet.where((s) => s['file_type'] == (_resolvedType == 'karaoke' ? 'song' : _resolvedType)).toList();
+      if (filtered.isNotEmpty) {
+        final shown = _sameSheetExpanded ? filtered : filtered.take(5).toList();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _SectionHeader(icon: Icons.album_outlined, title: _resolvedType == 'karaoke' ? 'Thành viên hát bài này' : '${filtered.length} bản thu khác của cùng bài này'),
+            ...shown.map((s) {
+              final sg = Map<String, dynamic>.from(s);
+              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+            }),
+            if (filtered.length > 5)
+              _ShowMoreButton(
+                expanded: _sameSheetExpanded,
+                remaining: filtered.length - 5,
+                onTap: () => setState(() => _sameSheetExpanded = !_sameSheetExpanded),
+              ),
+          ]),
+        ));
+      }
+
+      // 19. Karaoke covers (when current is a song and karaoke versions exist)
+      final karaokes = _sameSheet.where((s) => s['file_type'] == 'karaoke' && s['id'].toString() != widget.songId).toList();
+      if (karaokes.isNotEmpty) {
+        final shown = _karaokeExpanded ? karaokes : karaokes.take(5).toList();
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _SectionHeader(icon: Icons.mic_outlined, title: 'Thành viên hát bài này'),
+            ...shown.map((s) {
+              final sg = Map<String, dynamic>.from(s);
+              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+            }),
+            if (karaokes.length > 5)
+              _ShowMoreButton(
+                expanded: _karaokeExpanded,
+                remaining: karaokes.length - 5,
+                onTap: () => setState(() => _karaokeExpanded = !_karaokeExpanded),
+              ),
+          ]),
+        ));
+      }
+    }
+
+    // 20. Suggestions
+    if (_suggestions.isNotEmpty) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _SectionHeader(icon: Icons.music_note_outlined, title: 'Có thể bạn muốn nghe'),
+          ..._suggestions.map((s) {
+            final sg = Map<String, dynamic>.from(s);
+            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+          }),
+        ]),
+      ));
+    }
+
+    // 21. Songs grouped by artist
+    for (final ag in _artistSongs) {
+      final artist = artists.firstWhere((a) => a['id'].toString() == ag['artistId'].toString(), orElse: () => {'title': ''});
+      final title = artist['title'] ?? '';
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _SectionHeader(icon: Icons.mic_outlined, title: 'Do $title trình bày'),
+          ...((ag['songs'] as List).map((s) {
+            final sg = Map<String, dynamic>.from(s);
+            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+          })),
+        ]),
+      ));
+    }
+
+    // 22. Songs grouped by composer
+    for (final cg in _composerSongs) {
+      final composer = composers.firstWhere((c) => c['id'].toString() == cg['composerId'].toString(), orElse: () => {'title': ''});
+      final title = composer['title'] ?? '';
+      final label = _resolvedType == 'folk' ? 'soạn giả' : _resolvedType == 'poem' ? 'là tác giả' : 'sáng tác';
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _SectionHeader(icon: Icons.music_note_outlined, title: 'Do $title $label'),
+          ...((cg['songs'] as List).map((s) {
+            final sg = Map<String, dynamic>.from(s);
+            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+          })),
+        ]),
+      ));
+    }
+
+    return widgets;
   }
 
   List<InlineSpan> _linkRow(List items, String key, void Function(Map) onTap) {

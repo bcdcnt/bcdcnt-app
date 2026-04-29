@@ -42,8 +42,10 @@ class MiniPlayer extends StatelessWidget {
             onTap: () => Navigator.push(
               context,
               PageRouteBuilder(
-                opaque: false,
-                barrierColor: Colors.black54,
+                // Opaque so the underlying DesktopShell chrome (top toolbar
+                // toggles, sidebar) doesn't bleed through behind the
+                // FullPlayer.
+                opaque: true,
                 pageBuilder: (_, anim, __) => SlideTransition(
                   position: anim.drive(Tween(begin: const Offset(0, 1), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
                   child: const FullPlayer(),
