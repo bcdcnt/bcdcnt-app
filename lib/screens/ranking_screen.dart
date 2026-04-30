@@ -7,6 +7,7 @@ import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/shimmer.dart';
 
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
@@ -170,7 +171,7 @@ class _RankingScreenState extends State<RankingScreen> {
 
               // Listen list (top 10) — top 3 podium, rest as SongRow
               if (_loading)
-                const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                const Padding(padding: EdgeInsets.only(top: 6), child: SongListSkeleton(rows: 8, showIndex: true))
               else if (_songs.isEmpty)
                 Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))))
               else ...[

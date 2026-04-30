@@ -81,3 +81,95 @@ class SkBox extends StatelessWidget {
     decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(radius)),
   );
 }
+
+/// Skeleton stand-in for a SongRow list while data is loading. Renders [rows]
+/// fake rows with shimmer applied so the page reserves layout instead of
+/// flashing a spinner. Uses the same vertical rhythm as SongRow so when real
+/// data swaps in, content doesn't jump.
+class SongListSkeleton extends StatelessWidget {
+  final int rows;
+  final bool showIndex;
+  const SongListSkeleton({super.key, this.rows = 8, this.showIndex = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer(
+      child: Column(
+        children: List.generate(rows, (i) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1))),
+          child: Row(
+            children: [
+              if (showIndex) ...[
+                const SizedBox(width: 22, child: Center(child: SkBox(width: 12, height: 10, radius: 4))),
+                const SizedBox(width: 8),
+              ],
+              const SkBox(width: 48, height: 48, radius: 10),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SkBox(width: (220 - (i * 12).clamp(0, 80)).toDouble(), height: 12, radius: 4),
+                    const SizedBox(height: 6),
+                    SkBox(width: (140 - (i * 8).clamp(0, 60)).toDouble(), height: 10, radius: 4),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        )),
+      ),
+    );
+  }
+}
+
+/// Skeleton for a hero-style detail header (artwork + title + meta).
+/// Suitable for song / playlist / person detail screens.
+class HeroSkeleton extends StatelessWidget {
+  final bool circular;
+  const HeroSkeleton({super.key, this.circular = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Shimmer(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 160, height: 160,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight,
+                shape: circular ? BoxShape.circle : BoxShape.rectangle,
+                borderRadius: circular ? null : BorderRadius.circular(14),
+              ),
+            ),
+            const SizedBox(width: 18),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkBox(width: 80, height: 10, radius: 4),
+                  SizedBox(height: 12),
+                  SkBox(width: 260, height: 22, radius: 6),
+                  SizedBox(height: 8),
+                  SkBox(width: 180, height: 14, radius: 4),
+                  SizedBox(height: 18),
+                  Row(children: [
+                    SkBox(width: 60, height: 12, radius: 4),
+                    SizedBox(width: 18),
+                    SkBox(width: 60, height: 12, radius: 4),
+                    SizedBox(width: 18),
+                    SkBox(width: 60, height: 12, radius: 4),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

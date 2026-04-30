@@ -10,6 +10,7 @@ import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
+import '../widgets/shimmer.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
   final String id;
@@ -139,7 +140,20 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_loading && _playlist == null) {
-      return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('PLAYLIST', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          centerTitle: true,
+        ),
+        body: const SingleChildScrollView(child: Column(children: [
+          HeroSkeleton(),
+          Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: SongListSkeleton(rows: 8, showIndex: true)),
+        ])),
+      );
     }
     if (_playlist == null) {
       return Scaffold(

@@ -18,6 +18,17 @@ class MiniPlayer extends StatelessWidget {
     final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', ');
     final thumb = song['thumbnail']?['url'];
 
+    // "Up next" preview — surfaces the queue item that will play after the
+    // current one, mirroring Spotify's tooltip hint. Wired into the
+    // skip-next button tooltip so it stays contextual without cluttering
+    // the row.
+    final hasNext = player.queue.length > player.currentIndex + 1;
+    final nextSong = hasNext ? player.queue[player.currentIndex + 1] : null;
+    final nextTitle = nextSong?['title']?.toString();
+    final nextTooltip = nextTitle != null && nextTitle.isNotEmpty
+        ? 'Tiếp: $nextTitle  ⇧ →'
+        : 'Bài tiếp theo  ⇧ →';
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
@@ -84,7 +95,7 @@ class MiniPlayer extends StatelessWidget {
                       padding: EdgeInsets.zero,
                     ),
                   ),
-                  IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: const Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  IconButton(tooltip: nextTooltip, icon: const Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
                 ],
               ),
             ),

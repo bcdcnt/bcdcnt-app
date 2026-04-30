@@ -9,6 +9,7 @@ import '../services/player.dart';
 import 'mini_player.dart';
 import 'desktop_comment_sidebar.dart';
 import 'desktop_queue_panel.dart';
+import 'notifications_dropdown.dart';
 
 /// Native macOS-style shell — Apple Music / Spotify pattern:
 ///   - Left sidebar (220px) holds primary navigation + library shortcuts.
@@ -450,25 +451,27 @@ class _NotifBell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        IconButton(
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          tooltip: 'Thông báo',
-          icon: const Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
-          onPressed: () => context.push('/thong-bao'),
-        ),
-        if (unread > 0)
-          Positioned(
-            top: 4, right: 4,
-            child: Container(
-              width: 8, height: 8,
-              decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-            ),
+    return NotificationsDropdown(
+      builder: (ctx, openDropdown) => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            tooltip: 'Thông báo',
+            icon: const Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
+            onPressed: openDropdown,
           ),
-      ],
+          if (unread > 0)
+            Positioned(
+              top: 4, right: 4,
+              child: Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
