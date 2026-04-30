@@ -610,6 +610,98 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final hasPlayer = player.currentSong != null;
     final isDesktop = w >= 900;
 
+    // Meta block — composers/poets/performers/dates/tags. On desktop these
+    // sit inside the hero info column (filling the right-of-artwork dead
+    // space). On mobile they stack below the hero as before.
+    final metaItems = <Widget>[
+      if (composers.isNotEmpty) _MetaLine(
+        label: 'Sáng tác',
+        children: [
+          ..._linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
+          if (year != null) TextSpan(text: ' ($year)', style: const TextStyle(color: AppColors.textMuted)),
+        ],
+      ),
+      Builder(builder: (ctx) {
+        final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
+        if (rec.isEmpty) return const SizedBox.shrink();
+        return _MetaLine(
+          label: 'Soạn giả',
+          children: _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')),
+        );
+      }),
+      Builder(builder: (ctx) {
+        final raw = song['sheet']?['fcats'] ?? song['fcats'];
+        final fcats = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
+        if (fcats.isEmpty) return const SizedBox.shrink();
+        return _MetaLine(
+          label: 'Thể loại',
+          children: _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')),
+        );
+      }),
+      Builder(builder: (ctx) {
+        final raw = song['sheet']?['melodies'] ?? song['melodies'];
+        final melodies = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
+        if (melodies.isEmpty) return const SizedBox.shrink();
+        return _MetaLine(
+          label: 'Làn điệu',
+          children: _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')),
+        );
+      }),
+      if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem'))
+        _MetaLine(
+          label: lyricType != null && (lyricType as String).isNotEmpty ? lyricType : 'Thơ',
+          children: _linkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}')),
+        ),
+      if (artists.isNotEmpty) _MetaLine(
+        label: _resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày',
+        children: [
+          ..._linkRow(artists, 'title', (a) {
+            if (_resolvedType == 'karaoke') {
+              final id = a['id'];
+              if (id != null) context.push('/user/$id');
+            } else {
+              context.push('/nghe-si/${a['slug']}');
+            }
+          }),
+          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: const TextStyle(color: AppColors.textMuted)),
+        ],
+      ),
+      if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null)
+        _MetaLine(
+          label: 'Bài gốc',
+          children: [
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: GestureDetector(
+                onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
+                child: Text(song['song']['title'] ?? '', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
+              ),
+            ),
+          ],
+        ),
+      if (song['created_at'] != null)
+        _MetaLine(
+          label: 'Ngày đăng',
+          children: [TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600))],
+        ),
+      if (tags.isNotEmpty) Padding(
+        padding: const EdgeInsets.only(top: 2, bottom: 4),
+        child: Wrap(
+          spacing: 8, runSpacing: 8,
+          children: tags.map<Widget>((t) => InkWell(
+            onTap: () => context.push('/tag/${t['slug']}'),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(20)),
+              child: Text('#${t['name'] ?? ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+            ),
+          )).toList(),
+        ),
+      ),
+    ];
+
     final mainScroll = CustomScrollView(
             controller: _scrollCtl,
             slivers: [
@@ -684,6 +776,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             context.push('/nghe-si/${a['slug']}');
                           }
                         },
+                        metaContent: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: metaItems),
                       )
                     else
                       _MobileHero(
@@ -716,123 +809,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
 
-                    const SizedBox(height: 14),
-
-                    // 5. Composers / Sáng tác
-                    if (composers.isNotEmpty) _MetaLine(
-                      label: 'Sáng tác',
-                      children: [
-                        ..._linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
-                        if (year != null) TextSpan(text: ' ($year)', style: const TextStyle(color: AppColors.textMuted)),
-                      ],
-                    ),
-
-                    // 5b. Folk extras — Soạn giả / Thể loại / Làn điệu.
-                    // Render whenever the data is present (don't gate on
-                    // _resolvedType, so the blocks still appear if the
-                    // type detection is off but the API returned the
-                    // fields). The normalizer copies fcats/melodies/
-                    // recomposers from the root into `sheet` for any folk
-                    // record so we read from a single path.
-                    Builder(builder: (ctx) {
-                      final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
-                      if (rec.isEmpty) return const SizedBox.shrink();
-                      return _MetaLine(
-                        label: 'Soạn giả',
-                        children: _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')),
-                      );
-                    }),
-                    Builder(builder: (ctx) {
-                      final raw = song['sheet']?['fcats'] ?? song['fcats'];
-                      // ignore: avoid_print
-                      print('[detail] fcats raw=$raw');
-                      final fcats = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
-                      if (fcats.isEmpty) return const SizedBox.shrink();
-                      return _MetaLine(
-                        label: 'Thể loại',
-                        children: _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')),
-                      );
-                    }),
-                    Builder(builder: (ctx) {
-                      final raw = song['sheet']?['melodies'] ?? song['melodies'];
-                      // ignore: avoid_print
-                      print('[detail] melodies raw=$raw');
-                      final melodies = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
-                      if (melodies.isEmpty) return const SizedBox.shrink();
-                      return _MetaLine(
-                        label: 'Làn điệu',
-                        children: _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')),
-                      );
-                    }),
-
-                    // 6. Poets / lyricType
-                    if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem'))
-                      _MetaLine(
-                        label: lyricType != null && (lyricType as String).isNotEmpty ? lyricType : 'Thơ',
-                        children: _linkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}')),
-                      ),
-
-                    // 8. Artists / Performers (Karaoke uses users → already normalized to artists)
-                    if (artists.isNotEmpty) _MetaLine(
-                      label: _resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày',
-                      children: [
-                        ..._linkRow(artists, 'title', (a) {
-                          if (_resolvedType == 'karaoke') {
-                            // a.slug here is username → user detail
-                            final id = a['id'];
-                            if (id != null) context.push('/user/$id');
-                          } else {
-                            context.push('/nghe-si/${a['slug']}');
-                          }
-                        }),
-                        if (recordYear != null) TextSpan(text: ' ($recordYear)', style: const TextStyle(color: AppColors.textMuted)),
-                      ],
-                    ),
-
-                    // 8b. For karaoke: link back to source song
-                    if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null)
-                      _MetaLine(
-                        label: 'Bài gốc',
-                        children: [
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.baseline,
-                            baseline: TextBaseline.alphabetic,
-                            child: GestureDetector(
-                              onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
-                              child: Text(song['song']['title'] ?? '', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    // 9. Upload date — same accent style as other meta
-                    // values for visual consistency (no underline since the
-                    // date isn't a link).
-                    if (song['created_at'] != null)
-                      _MetaLine(
-                        label: 'Ngày đăng',
-                        children: [TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600))],
-                      ),
-
-                    // 13. Sheet music link (not inline images on mobile for now)
-                    // Description (label changed to match web: "Giới thiệu")
-
-
-                    // 10. Tags
-                    if (tags.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: tags.map<Widget>((t) => InkWell(
-                          onTap: () => context.push('/tag/${t['slug']}'),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(20)),
-                            child: Text('#${t['name'] ?? ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                          ),
-                        )).toList(),
-                      ),
+                    // 5-10. Meta block (composers, performers, dates, tags) —
+                    // on desktop these are passed into the hero info column
+                    // via metaContent so they fill the right-of-artwork dead
+                    // space; on mobile they stack inline below the hero.
+                    if (!isDesktop) ...[
+                      const SizedBox(height: 14),
+                      ...metaItems,
                     ],
 
                     const SizedBox(height: 16),
@@ -900,7 +883,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     // column for vertical reading on small screens.
                     Builder(builder: (ctx) {
                       final leftItems = <Widget>[
-                        ..._buildSheetSection(),
+                        ..._buildSheetSection(isDesktop),
                         ..._buildDescriptionSection(description),
                         ..._buildStorySection(story),
                         ..._buildLyricsSection(lyrics, isCurrent),
@@ -957,11 +940,69 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 
   /// Sheet music horizontal carousel (Bản nhạc).
-  List<Widget> _buildSheetSection() {
+  List<Widget> _buildSheetSection(bool isDesktop) {
     if (_sheetImages.isEmpty) return const [];
+    final header = SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc', count: '(${_sheetImages.length})');
+
+    // Desktop layout — sheet music deserves more screen real estate. A
+    // single sheet renders as a tall left-aligned thumbnail; multiple sheets
+    // wrap into a 2-up grid so the eye can compare pages side by side.
+    if (isDesktop) {
+      if (_sheetImages.length == 1) {
+        return [
+          const SizedBox(height: 16),
+          header,
+          InkWell(
+            onTap: () => _openSheetLightbox(0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 460),
+                decoration: BoxDecoration(border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
+                child: CachedNetworkImage(
+                  imageUrl: _sheetImages[0],
+                  fit: BoxFit.contain,
+                  alignment: Alignment.topCenter,
+                  errorWidget: (ctx, url, err) => Container(height: 320, color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.broken_image, color: AppColors.textMuted))),
+                ),
+              ),
+            ),
+          ),
+        ];
+      }
+      return [
+        const SizedBox(height: 16),
+        header,
+        LayoutBuilder(builder: (ctx, constraints) {
+          const gap = 12.0;
+          final cellW = (constraints.maxWidth - gap) / 2;
+          return Wrap(
+            spacing: gap, runSpacing: gap,
+            children: List.generate(_sheetImages.length, (i) => InkWell(
+              onTap: () => _openSheetLightbox(i),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  width: cellW,
+                  height: cellW * 1.35,
+                  decoration: BoxDecoration(border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
+                  child: CachedNetworkImage(
+                    imageUrl: _sheetImages[i],
+                    fit: BoxFit.cover,
+                    errorWidget: (ctx, url, err) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.broken_image, color: AppColors.textMuted))),
+                  ),
+                ),
+              ),
+            )),
+          );
+        }),
+      ];
+    }
+
+    // Mobile — horizontal carousel keeps thumbnails compact.
     return [
       const SizedBox(height: 16),
-      SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc', count: '(${_sheetImages.length})'),
+      header,
       SizedBox(
         height: 160,
         child: ListView.separated(
@@ -1561,8 +1602,12 @@ String _typeLabelFor(String t) {
 
 /// Apple-Music-style desktop hero: square artwork left, info column right
 /// (type label, hero title, subtitle, artist row, stats, labelled action
-/// cluster). Replaces the cinematic banner + stacked title + standalone
-/// play CTA we used for mobile.
+/// cluster, optional meta content). Replaces the cinematic banner + stacked
+/// title + standalone play CTA we used for mobile.
+///
+/// [metaContent] is an optional slot rendered below the action cluster —
+/// caller passes composers/poets/upload date/tags etc. so they fill the
+/// right-of-artwork dead space instead of stacking below the hero.
 class _DesktopHero extends StatelessWidget {
   final Map<String, dynamic> song;
   final List artists;
@@ -1579,6 +1624,7 @@ class _DesktopHero extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback? onHistory;
   final void Function(Map artist) onArtistTap;
+  final Widget? metaContent;
 
   const _DesktopHero({
     required this.song,
@@ -1596,6 +1642,7 @@ class _DesktopHero extends StatelessWidget {
     required this.onShare,
     this.onHistory,
     required this.onArtistTap,
+    this.metaContent,
   });
 
   @override
@@ -1609,7 +1656,7 @@ class _DesktopHero extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Artwork
           Container(
@@ -1708,6 +1755,10 @@ class _DesktopHero extends StatelessWidget {
                   if (onHistory != null)
                     _PrimaryActionPill(icon: Icons.history, label: 'Lịch sử', onTap: onHistory!),
                 ]),
+                if (metaContent != null) ...[
+                  const SizedBox(height: 20),
+                  metaContent!,
+                ],
               ],
             ),
           ),
