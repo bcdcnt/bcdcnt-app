@@ -648,15 +648,42 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // 3. Title + subtitle
+                    // 3. Title + subtitle (hero scale on desktop)
                     RichText(
                       text: TextSpan(
                         children: [
-                          TextSpan(text: song['title'] ?? '', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2, letterSpacing: -0.3))),
+                          TextSpan(text: song['title'] ?? '', style: display(TextStyle(
+                            fontSize: isDesktop ? 32 : 24,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.text,
+                            height: 1.15,
+                            letterSpacing: -0.3,
+                          ))),
                           if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty)
-                            TextSpan(text: ' ${song['subtitle']}', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: AppColors.textMuted))),
+                            TextSpan(text: ' ${song['subtitle']}', style: display(TextStyle(
+                              fontSize: isDesktop ? 22 : 18,
+                              fontWeight: FontWeight.w400,
+                              color: AppColors.textMuted,
+                            ))),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // 3b. Primary play button — prominent CTA right below the
+                    // title, like Apple Music / Spotify album pages. The
+                    // existing icon row below shows secondary actions
+                    // (like, download, add to playlist).
+                    _PrimaryPlayButton(
+                      isCurrent: isCurrent,
+                      isPlaying: player.isPlaying,
+                      onPlay: () {
+                        if (isCurrent) {
+                          context.read<PlayerProvider>().togglePlay();
+                        } else {
+                          _play();
+                        }
+                      },
                     ),
                     const SizedBox(height: 6),
 
@@ -1128,6 +1155,54 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       buf.write(s[i]);
     }
     return v < 0 ? '-${buf.toString()}' : buf.toString();
+  }
+}
+
+/// Primary play CTA shown directly below the title — Apple Music / Spotify
+/// pattern. When the song is the current track we flip into a "Tạm dừng /
+/// Đang phát" toggle so it stays useful instead of re-triggering playback.
+class _PrimaryPlayButton extends StatelessWidget {
+  final bool isCurrent;
+  final bool isPlaying;
+  final VoidCallback onPlay;
+  const _PrimaryPlayButton({
+    required this.isCurrent,
+    required this.isPlaying,
+    required this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final showPause = isCurrent && isPlaying;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPlay,
+          borderRadius: BorderRadius.circular(28),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 14, offset: const Offset(0, 4))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(showPause ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 22),
+                const SizedBox(width: 8),
+                Text(
+                  showPause ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
+                  style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.3)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

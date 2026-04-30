@@ -295,41 +295,21 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     ),
                   ]),
                   const SizedBox(height: 10),
-                  SizedBox(
-                    height: 200,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _related.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (ctx, i) {
-                        final r = _related[i];
-                        final thumb = r['thumbnail']?['url'];
-                        final total = r['items']?['paginatorInfo']?['total'] ?? 0;
-                        final ev = r['event_date'];
-                        return InkWell(
-                          onTap: () => context.push('/playlist/${r['id']}'),
-                          child: SizedBox(
+                  isDesktop
+                    ? _RelatedGrid(items: _related, formatEventDate: _formatEventDate)
+                    : SizedBox(
+                        height: 200,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _related.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 12),
+                          itemBuilder: (ctx, i) => _RelatedCard(
+                            item: _related[i],
                             width: 130,
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: thumb != null
-                                    ? CachedNetworkImage(imageUrl: thumb, width: 130, height: 130, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 130, height: 130, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)))
-                                    : Container(width: 130, height: 130, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
-                              const SizedBox(height: 2),
-                              if (ev != null && ev.toString().isNotEmpty)
-                                Text(_formatEventDate(ev), style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
-                              else if (total > 0)
-                                Text('$total bài', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
-                            ]),
+                            formatEventDate: _formatEventDate,
                           ),
-                        );
-                      },
-                    ),
-                  ),
+                        ),
+                      ),
                   const SizedBox(height: 24),
                 ],
                 const Divider(color: AppColors.border, height: 1),
@@ -343,6 +323,73 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
+    );
+  }
+}
+
+class _RelatedGrid extends StatelessWidget {
+  final List _items;
+  final String Function(dynamic) formatEventDate;
+  const _RelatedGrid({required List items, required this.formatEventDate}) : _items = items;
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final cols = w >= 1280 ? 5 : (w >= 1100 ? 4 : 3);
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _items.length.clamp(0, cols * 2),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: cols,
+        mainAxisSpacing: 18,
+        crossAxisSpacing: 14,
+        childAspectRatio: 0.72,
+      ),
+      itemBuilder: (_, i) => _RelatedCard(item: _items[i], formatEventDate: formatEventDate),
+    );
+  }
+}
+
+class _RelatedCard extends StatelessWidget {
+  final Map item;
+  final double? width;
+  final String Function(dynamic) formatEventDate;
+  const _RelatedCard({required this.item, this.width, required this.formatEventDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = item['thumbnail']?['url'];
+    final total = item['items']?['paginatorInfo']?['total'] ?? 0;
+    final ev = item['event_date'];
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: () => context.push('/playlist/${item['id']}'),
+        borderRadius: BorderRadius.circular(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: thumb != null
+                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)))
+                  : Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+            const SizedBox(height: 2),
+            if (ev != null && ev.toString().isNotEmpty)
+              Text(formatEventDate(ev), style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+            else if (total > 0)
+              Text('$total bài', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -27,10 +27,25 @@ TextStyle display([TextStyle? style]) => style ?? const TextStyle();
 TextStyle body([TextStyle? style]) => style ?? const TextStyle();
 TextStyle brand([TextStyle? style]) => GoogleFonts.nunito(textStyle: style);
 
+/// Type scale — 7 tiers from caption (11) to hero (32). Use these instead of
+/// raw `fontSize:` overrides so a future tweak (e.g. font size accessibility
+/// preference) only needs to touch one place.
+///
+///   hero        32   — detail-screen titles (song / person / playlist)
+///   displayLarge 22   — section headlines, modal titles
+///   displayMedium 18  — sub-headlines
+///   sectionTitle 16   — list section labels
+///   emphasized   15   — hero subtitles, highlighted body
+///   title        14   — list item titles
+///   bodyText     13   — body copy
+///   meta         12   — metadata rows
+///   caption      11   — caption / overline / timestamp
 class AppText {
+  static TextStyle get hero => display(const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.1, color: AppColors.text));
   static TextStyle get displayLarge => display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text));
   static TextStyle get displayMedium => display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text));
   static TextStyle get sectionTitle => display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
+  static TextStyle get emphasized => body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.text));
   static TextStyle get title => body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text));
   static TextStyle get bodyText => body(const TextStyle(fontSize: 13, color: AppColors.textSecondary));
   static TextStyle get meta => body(const TextStyle(fontSize: 12, color: AppColors.textMuted));

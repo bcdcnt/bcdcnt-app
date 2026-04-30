@@ -339,6 +339,94 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Widget _buildHeader(Map<String, dynamic> p) {
     final bornDate = _formatLifeDate(p, 'ob');
     final deathDate = _formatLifeDate(p, 'od');
+    final w = MediaQuery.of(context).size.width;
+    final isDesktop = w >= 900;
+    if (isDesktop) {
+      return _buildDesktopHeader(p, bornDate, deathDate);
+    }
+    return _buildMobileHeader(p, bornDate, deathDate);
+  }
+
+  /// Spotify-style horizontal artist hero: left avatar + right column with
+  /// big title, role/rank, stats inline, life dates.
+  Widget _buildDesktopHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 16, 32, 28),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          InkWell(
+            onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
+            borderRadius: BorderRadius.circular(110),
+            child: Container(
+              width: 200, height: 200,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 36, spreadRadius: -4)],
+                border: Border.all(color: AppColors.border, width: 3),
+              ),
+              child: ClipOval(
+                child: p['avatar']?['url'] != null
+                    ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
+                    : _initialsFallback(p),
+              ),
+            ),
+          ),
+          const SizedBox(width: 32),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _cfg.label.toUpperCase(),
+                  style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  p['title'] ?? '',
+                  style: AppText.hero,
+                ),
+                if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(p['rank'], style: body(const TextStyle(fontSize: 15, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
+                ],
+                const SizedBox(height: 18),
+                // Inline stat row — comma-separated, Spotify-style.
+                Wrap(
+                  spacing: 18, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _StatInline(label: 'lượt nghe', value: _formatInt(p['total_listens'])),
+                    _StatInline(label: 'lượt tải', value: _formatInt(p['total_downloads'])),
+                    _StatInline(label: 'lượt xem', value: _formatInt(p['views'])),
+                  ],
+                ),
+                if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty
+                    || bornDate != null || deathDate != null
+                    || (p['born_address'] != null && (p['born_address'] as String).isNotEmpty))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Wrap(
+                      spacing: 18, runSpacing: 4,
+                      children: [
+                        if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty)
+                          _MetaChip(icon: Icons.badge_outlined, value: p['real_name']),
+                        if (bornDate != null) _MetaChip(icon: Icons.cake_outlined, value: bornDate),
+                        if (deathDate != null) _MetaChip(icon: Icons.whatshot_outlined, value: deathDate),
+                        if (p['born_address'] != null && (p['born_address'] as String).isNotEmpty)
+                          _MetaChip(icon: Icons.place_outlined, value: p['born_address']),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
       child: Column(
@@ -569,6 +657,42 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _TabBarDelegate old) => old.tabs.length != tabs.length;
+}
+
+class _StatInline extends StatelessWidget {
+  final String label;
+  final String value;
+  const _StatInline({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(text: value, style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+          TextSpan(text: ' $label', style: body(const TextStyle(fontSize: 13, color: AppColors.textMuted))),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  const _MetaChip({required this.icon, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.textMuted),
+        const SizedBox(width: 6),
+        Text(value, style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+      ],
+    );
+  }
 }
 
 class _StatCell extends StatelessWidget {
