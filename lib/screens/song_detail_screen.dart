@@ -15,6 +15,7 @@ import '../widgets/comment_section.dart';
 import '../widgets/sheet_lightbox.dart';
 import '../widgets/playlist_dialog.dart';
 import '../widgets/shimmer.dart';
+import '../widgets/timed_lyrics.dart';
 import '../widgets/file_history_dialog.dart';
 import '../widgets/lyric_history_dialog.dart';
 
@@ -38,6 +39,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   List<String> _sheetImages = [];
   bool _isLoved = false;
   bool _loading = true;
+  // Drives the sticky-title appbar — flips to true once the user has
+  // scrolled past the hero so the appbar can swap "CHI TIẾT" for the
+  // song title. Listened on the main scroll controller.
+  bool _showStickyTitle = false;
+  final ScrollController _scrollCtl = ScrollController();
   bool _descExpanded = false;
   bool _storyExpanded = false;
   bool _lyricsExpanded = false;
@@ -48,7 +54,25 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void initState() {
     super.initState();
     _song = widget.initialSong != null ? Map<String, dynamic>.from(widget.initialSong!) : null;
+    _scrollCtl.addListener(_onScroll);
     _fetch();
+  }
+
+  @override
+  void dispose() {
+    _scrollCtl.removeListener(_onScroll);
+    _scrollCtl.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    // Hero is ~280-380px tall on desktop / square on mobile. Flip the
+    // sticky title once the hero is roughly half-scrolled out so the
+    // header doesn't fight with the inline song title.
+    final shouldShow = _scrollCtl.offset > 220;
+    if (shouldShow != _showStickyTitle) {
+      setState(() => _showStickyTitle = shouldShow);
+    }
   }
 
   String get _resolvedType {
@@ -573,17 +597,35 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final isDesktop = w >= 900;
 
     final mainScroll = CustomScrollView(
+            controller: _scrollCtl,
             slivers: [
-              // 1. Sticky header
+              // 1. Sticky header — title swaps to the song name + artist
+              // line once the user has scrolled past the hero, à la
+              // Apple Music album pages.
               SliverAppBar(
                 pinned: true,
-                backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: const Text('CHI TIẾT', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
+                backgroundColor: AppColors.bg.withValues(alpha: 0.92),
+                titleSpacing: 0,
+                title: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _showStickyTitle
+                      ? Column(
+                          key: const ValueKey('song-title'),
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                            if (artists.isNotEmpty) Text(
+                              (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', '),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                            ),
+                          ],
+                        )
+                      : const Text('CHI TIẾT', key: ValueKey('label'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
+                ),
                 centerTitle: true,
                 leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-                // Share lives in the player's "more" sheet on desktop where
-                // the shell already shows queue + comments toggles in the
-                // top-right; keeping it here would overlap them.
                 actions: MediaQuery.of(context).size.width >= 900
                     ? const []
                     : [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
@@ -593,112 +635,57 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    // 2. Hero thumbnail — square on mobile; on desktop a
-                    // wide cinematic banner: blurred stretched art behind a
-                    // crisp centred crop, à la Apple Music album header.
                     const SizedBox(height: 4),
-                    SizedBox(
-                      height: isDesktop ? 280 : (w - 40),
-                      width: double.infinity,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Container(
-                              decoration: const BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [AppColors.accent, AppColors.accentLight],
-                                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                                ),
-                              ),
-                            ),
-                            if (thumb != null)
-                              CachedNetworkImage(
-                                imageUrl: thumb,
-                                fit: BoxFit.cover,
-                                errorWidget: (ctx, url, err) => const Center(child: Icon(Icons.music_note, size: 80, color: Colors.white38)),
-                              ),
-                            Positioned(
-                              left: 0, right: 0, bottom: 0, height: 80,
-                              child: Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, AppColors.bg]))),
-                            ),
-                            // Image credit icon (tap to reveal popup)
-                            if (song['imageCreditor']?['username'] != null) Positioned(
-                              right: 10, bottom: 10,
-                              child: InkWell(
-                                onTap: () {
-                                  showDialog(context: context, builder: (ctx) => AlertDialog(
-                                    backgroundColor: AppColors.surface,
-                                    title: Row(children: const [
-                                      Icon(Icons.camera_alt_outlined, size: 18, color: AppColors.accentLight),
-                                      SizedBox(width: 8),
-                                      Text('Tín dụng ảnh', style: TextStyle(fontSize: 14, color: AppColors.text)),
-                                    ]),
-                                    content: Text(
-                                      'Ảnh minh hoạ bởi ${song['imageCreditor']['username']}',
-                                      style: body(const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-                                    ),
-                                    actions: [
-                                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Đóng')),
-                                    ],
-                                  ));
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.5),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.camera_alt_outlined, size: 14, color: Colors.white70),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                    // 2-3. HERO — desktop runs a horizontal Apple-Music-style
+                    // split (artwork left, info column right with stats and
+                    // labelled action cluster). Mobile keeps the full-bleed
+                    // banner with title + play CTA stacked beneath.
+                    if (isDesktop)
+                      _DesktopHero(
+                        song: song,
+                        artists: artists,
+                        resolvedType: _resolvedType,
+                        isLoved: _isLoved,
+                        loveCount: loves.length,
+                        hasUploads: uploads.isNotEmpty,
+                        isCurrent: isCurrent,
+                        isPlaying: player.isPlaying,
+                        onPlay: () {
+                          if (isCurrent) {
+                            context.read<PlayerProvider>().togglePlay();
+                          } else {
+                            _play();
+                          }
+                        },
+                        onLove: _toggleLove,
+                        onDownload: _download,
+                        onAddToPlaylist: _openPlaylistDialog,
+                        onShare: _share,
+                        onHistory: uploads.isNotEmpty ? _openFileHistory : null,
+                        onArtistTap: (a) {
+                          if (_resolvedType == 'karaoke') {
+                            final id = a['id'];
+                            if (id != null) context.push('/user/$id');
+                          } else if (a['slug'] != null) {
+                            context.push('/nghe-si/${a['slug']}');
+                          }
+                        },
+                      )
+                    else
+                      _MobileHero(
+                        thumb: thumb,
+                        song: song,
+                        widthAvailable: w - 40,
+                        isCurrent: isCurrent,
+                        isPlaying: player.isPlaying,
+                        onPlay: () {
+                          if (isCurrent) {
+                            context.read<PlayerProvider>().togglePlay();
+                          } else {
+                            _play();
+                          }
+                        },
                       ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 3. Title + subtitle (hero scale on desktop)
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(text: song['title'] ?? '', style: display(TextStyle(
-                            fontSize: isDesktop ? 32 : 24,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.text,
-                            height: 1.15,
-                            letterSpacing: -0.3,
-                          ))),
-                          if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty)
-                            TextSpan(text: ' ${song['subtitle']}', style: display(TextStyle(
-                              fontSize: isDesktop ? 22 : 18,
-                              fontWeight: FontWeight.w400,
-                              color: AppColors.textMuted,
-                            ))),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-
-                    // 3b. Primary play button — prominent CTA right below the
-                    // title, like Apple Music / Spotify album pages. The
-                    // existing icon row below shows secondary actions
-                    // (like, download, add to playlist).
-                    _PrimaryPlayButton(
-                      isCurrent: isCurrent,
-                      isPlaying: player.isPlaying,
-                      onPlay: () {
-                        if (isCurrent) {
-                          context.read<PlayerProvider>().togglePlay();
-                        } else {
-                          _play();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 6),
 
                     // 4. Empty file warning
                     if (emptyFile)
@@ -836,40 +823,43 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
                     const SizedBox(height: 16),
 
-                    // 11. Stats + action buttons
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: const BoxDecoration(
-                        border: Border(
-                          top: BorderSide(color: AppColors.border),
-                          bottom: BorderSide(color: AppColors.border),
+                    // 11. Stats + secondary icon row — only on mobile, where
+                    // there's no room for the desktop labelled action cluster
+                    // baked into the hero.
+                    if (!isDesktop)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            top: BorderSide(color: AppColors.border),
+                            bottom: BorderSide(color: AppColors.border),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.visibility, size: 16, color: AppColors.textSecondary),
+                            const SizedBox(width: 6),
+                            Text('${_formatInt(song['views'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            if ((song['downloads'] ?? 0) > 0) ...[
+                              const SizedBox(width: 16),
+                              const Icon(Icons.download, size: 16, color: AppColors.textSecondary),
+                              const SizedBox(width: 6),
+                              Text('${_formatInt(song['downloads'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            ],
+                            const Spacer(),
+                            _IconBtn(
+                              icon: _isLoved ? Icons.favorite : Icons.favorite_border,
+                              color: _isLoved ? AppColors.accent : AppColors.textSecondary,
+                              bg: _isLoved ? AppColors.accentSoft : AppColors.surfaceLight,
+                              badge: loves.isNotEmpty ? loves.length.toString() : null,
+                              onTap: _toggleLove,
+                            ),
+                            if (uploads.isNotEmpty) _IconBtn(icon: Icons.history, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openFileHistory),
+                            _IconBtn(icon: Icons.download, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _download),
+                            _IconBtn(icon: Icons.add, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openPlaylistDialog),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.visibility, size: 16, color: AppColors.textSecondary),
-                          const SizedBox(width: 6),
-                          Text('${_formatInt(song['views'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                          if ((song['downloads'] ?? 0) > 0) ...[
-                            const SizedBox(width: 16),
-                            const Icon(Icons.download, size: 16, color: AppColors.textSecondary),
-                            const SizedBox(width: 6),
-                            Text('${_formatInt(song['downloads'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                          ],
-                          const Spacer(),
-                          _IconBtn(
-                            icon: _isLoved ? Icons.favorite : Icons.favorite_border,
-                            color: _isLoved ? AppColors.accent : AppColors.textSecondary,
-                            bg: _isLoved ? AppColors.accentSoft : AppColors.surfaceLight,
-                            badge: loves.isNotEmpty ? loves.length.toString() : null,
-                            onTap: _toggleLove,
-                          ),
-                          if (uploads.isNotEmpty) _IconBtn(icon: Icons.history, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openFileHistory),
-                          _IconBtn(icon: Icons.download, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _download),
-                          _IconBtn(icon: Icons.add, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openPlaylistDialog),
-                        ],
-                      ),
-                    ),
 
                     // 12. Contributor info
                     if (song['uploader'] != null || song['file']?['user'] != null)
@@ -941,14 +931,25 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ),
                     ],
 
-                    // 16. Lyrics
+                    // 16. Lyrics — when this song is the active track, render
+                    // synced lyrics that highlight the active line and seek
+                    // on tap. Falls back to plain HTML when LRC tags are
+                    // missing or the song isn't currently playing.
                     if (_resolvedType != 'instrumental' && lyrics != null && (lyrics as String).isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
                       _ExpandCard(
                         expanded: _lyricsExpanded,
                         onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
-                        child: Html(data: lyrics, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+                        child: isCurrent
+                            ? SizedBox(
+                                height: _lyricsExpanded ? 420 : 220,
+                                child: TimedLyrics(
+                                  raw: lyrics as String,
+                                  fallback: Html(data: lyrics, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+                                ),
+                              )
+                            : Html(data: lyrics, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
                       ),
                     ],
 
@@ -1372,6 +1373,302 @@ class _ShowMoreButton extends StatelessWidget {
             const SizedBox(width: 6),
             Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatIntStatic(dynamic v) {
+  if (v == null) return '0';
+  final n = (v is num) ? v.toInt() : int.tryParse(v.toString()) ?? 0;
+  final s = n.abs().toString();
+  final buf = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+    buf.write(s[i]);
+  }
+  return n < 0 ? '-$buf' : buf.toString();
+}
+
+String _typeLabelFor(String t) {
+  switch (t) {
+    case 'song': return 'Bài hát';
+    case 'folk': return 'Dân ca';
+    case 'instrumental': return 'Khí nhạc';
+    case 'poem': return 'Tiếng thơ';
+    case 'karaoke': return 'Thành viên hát';
+    default: return 'Bài hát';
+  }
+}
+
+/// Apple-Music-style desktop hero: square artwork left, info column right
+/// (type label, hero title, subtitle, artist row, stats, labelled action
+/// cluster). Replaces the cinematic banner + stacked title + standalone
+/// play CTA we used for mobile.
+class _DesktopHero extends StatelessWidget {
+  final Map<String, dynamic> song;
+  final List artists;
+  final String resolvedType;
+  final bool isLoved;
+  final int loveCount;
+  final bool hasUploads;
+  final bool isCurrent;
+  final bool isPlaying;
+  final VoidCallback onPlay;
+  final VoidCallback onLove;
+  final VoidCallback onDownload;
+  final VoidCallback onAddToPlaylist;
+  final VoidCallback onShare;
+  final VoidCallback? onHistory;
+  final void Function(Map artist) onArtistTap;
+
+  const _DesktopHero({
+    required this.song,
+    required this.artists,
+    required this.resolvedType,
+    required this.isLoved,
+    required this.loveCount,
+    required this.hasUploads,
+    required this.isCurrent,
+    required this.isPlaying,
+    required this.onPlay,
+    required this.onLove,
+    required this.onDownload,
+    required this.onAddToPlaylist,
+    required this.onShare,
+    this.onHistory,
+    required this.onArtistTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = song['thumbnail']?['url'];
+    final subtitle = song['subtitle'] as String?;
+    final views = song['views'] ?? 0;
+    final downloads = song['downloads'] ?? 0;
+    final showPause = isCurrent && isPlaying;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Artwork
+          Container(
+            width: 240, height: 240,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: thumb != null
+                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
+                  : Container(
+                      decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                      child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 28),
+          // Info column
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _typeLabelFor(resolvedType).toUpperCase(),
+                  style: body(const TextStyle(fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  song['title'] ?? '',
+                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: display(const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
+                ),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(subtitle, style: display(const TextStyle(fontSize: 20, color: AppColors.textMuted, fontWeight: FontWeight.w400))),
+                ],
+                if (artists.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      for (final a in artists) ...[
+                        InkWell(
+                          onTap: () => onArtistTap(a as Map),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                            child: Text(a['title'] ?? a['username'] ?? '', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                          ),
+                        ),
+                        if (a != artists.last) Text('·', style: body(const TextStyle(fontSize: 15, color: AppColors.textMuted))),
+                      ],
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 14),
+                // Stat strip
+                Row(children: [
+                  const Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
+                  const SizedBox(width: 4),
+                  Text('${_formatIntStatic(views)} lượt nghe', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                  if (downloads > 0) ...[
+                    const SizedBox(width: 14),
+                    const Icon(Icons.download, size: 13, color: AppColors.textMuted),
+                    const SizedBox(width: 4),
+                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                  ],
+                  if (loveCount > 0) ...[
+                    const SizedBox(width: 14),
+                    const Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
+                    const SizedBox(width: 4),
+                    Text('${_formatIntStatic(loveCount)} yêu thích', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                  ],
+                ]),
+                const SizedBox(height: 18),
+                // Action cluster
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  _PrimaryActionPill(
+                    icon: showPause ? Icons.pause : Icons.play_arrow,
+                    label: showPause ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
+                    onTap: onPlay,
+                    primary: true,
+                  ),
+                  _PrimaryActionPill(
+                    icon: isLoved ? Icons.favorite : Icons.favorite_border,
+                    label: 'Yêu thích',
+                    onTap: onLove,
+                    activeAccent: isLoved,
+                  ),
+                  _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải xuống', onTap: onDownload),
+                  _PrimaryActionPill(icon: Icons.playlist_add, label: 'Playlist', onTap: onAddToPlaylist),
+                  _PrimaryActionPill(icon: Icons.ios_share, label: 'Chia sẻ', onTap: onShare),
+                  if (onHistory != null)
+                    _PrimaryActionPill(icon: Icons.history, label: 'Lịch sử', onTap: onHistory!),
+                ]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Mobile fallback hero — keeps the previous full-bleed banner UX since it
+/// reads better on a narrow viewport than the desktop split layout.
+class _MobileHero extends StatelessWidget {
+  final String? thumb;
+  final Map<String, dynamic> song;
+  final double widthAvailable;
+  final bool isCurrent;
+  final bool isPlaying;
+  final VoidCallback onPlay;
+
+  const _MobileHero({
+    required this.thumb,
+    required this.song,
+    required this.widthAvailable,
+    required this.isCurrent,
+    required this.isPlaying,
+    required this.onPlay,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: widthAvailable,
+          width: double.infinity,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  ),
+                ),
+                if (thumb != null)
+                  CachedNetworkImage(imageUrl: thumb!, fit: BoxFit.cover, errorWidget: (_, _, _) => const Center(child: Icon(Icons.music_note, size: 80, color: Colors.white38))),
+                Positioned(
+                  left: 0, right: 0, bottom: 0, height: 80,
+                  child: Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, AppColors.bg]))),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        RichText(
+          text: TextSpan(
+            children: [
+              TextSpan(text: song['title'] ?? '', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
+              if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty)
+                TextSpan(text: ' ${song['subtitle']}', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: AppColors.textMuted))),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        _PrimaryPlayButton(
+          isCurrent: isCurrent,
+          isPlaying: isPlaying,
+          onPlay: onPlay,
+        ),
+      ],
+    );
+  }
+}
+
+/// Labelled action pill for the desktop hero. Primary variant has the
+/// accent gradient + white text (used for Phát); the rest are surface-tone
+/// with optional accent state for Love.
+class _PrimaryActionPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool primary;
+  final bool activeAccent;
+
+  const _PrimaryActionPill({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.primary = false,
+    this.activeAccent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = primary ? Colors.white : (activeAccent ? AppColors.accent : AppColors.text);
+    final bgColor = primary ? null : (activeAccent ? AppColors.accentSoft : AppColors.surfaceLight);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            gradient: primary ? const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]) : null,
+            color: bgColor,
+            borderRadius: BorderRadius.circular(24),
+            border: primary || activeAccent ? null : Border.all(color: AppColors.border),
+            boxShadow: primary ? [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))] : null,
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 16, color: fg),
+            const SizedBox(width: 6),
+            Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg))),
+          ]),
         ),
       ),
     );
