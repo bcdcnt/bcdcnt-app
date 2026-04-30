@@ -171,8 +171,11 @@ class _CommandPaletteState extends State<CommandPalette> {
       type: MaterialType.transparency,
       child: Center(
       child: Container(
+        // Fixed height so the popup stops jumping between empty / few /
+        // many results — Spotify-style. Body scrolls inside when results
+        // overflow the available space.
         width: 640,
-        constraints: const BoxConstraints(maxHeight: 480),
+        height: 480,
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
@@ -182,7 +185,6 @@ class _CommandPaletteState extends State<CommandPalette> {
         child: Focus(
           onKeyEvent: _handleKey,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
@@ -218,29 +220,32 @@ class _CommandPaletteState extends State<CommandPalette> {
                 ),
               ),
               const Divider(height: 1, color: AppColors.border),
-              Flexible(
+              Expanded(
                 child: _loading
-                    ? const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
                     : _ctrl.text.trim().isEmpty
                         ? Padding(
                             padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Gõ để tìm. Dùng ↑↓ chọn, Enter mở, Esc đóng.',
-                              style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                              textAlign: TextAlign.center,
+                            child: Center(
+                              child: Text(
+                                'Gõ để tìm. Dùng ↑↓ chọn, Enter mở, Esc đóng.',
+                                style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           )
                         : _hits.isEmpty
                             ? Padding(
                                 padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Không tìm thấy kết quả',
-                                  style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                                  textAlign: TextAlign.center,
+                                child: Center(
+                                  child: Text(
+                                    'Không tìm thấy kết quả',
+                                    style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                                    textAlign: TextAlign.center,
+                                  ),
                                 ),
                               )
                             : ListView.builder(
-                                shrinkWrap: true,
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 itemCount: _hits.length,
                                 itemBuilder: (_, i) => _PaletteRow(
