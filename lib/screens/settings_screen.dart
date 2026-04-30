@@ -268,78 +268,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (_loading)
             const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-              sliver: SliverList(delegate: SliverChildListDelegate([
-                _section('Hình ảnh', [_imagePickers()]),
-                const SizedBox(height: 14),
-                _section('Tuỳ chọn', [
-                  _toggleRow(
-                    icon: Icons.notifications_outlined,
-                    title: 'Âm thanh thông báo',
-                    subtitle: 'Phát âm thanh khi có thông báo mới',
-                    value: _notificationSound,
-                    onChanged: (_) => _toggleNotificationSound(),
-                  ),
-                  _toggleRow(
-                    icon: Icons.chat_bubble_outline,
-                    title: 'Sidebar bình luận',
-                    subtitle: 'Hiện sidebar bình luận trên desktop',
-                    value: _showCommentSidebar,
-                    onChanged: (_) => _toggleCommentSidebar(),
-                  ),
-                ]),
-                const SizedBox(height: 14),
-                _section('Thông tin cá nhân', [
-                  _field('Họ và tên', _fullnameCtl),
-                  _field('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone),
-                  _field('Địa chỉ', _addressCtl),
-                  Row(children: [
-                    Expanded(child: _field('Ngày', _dobCtl, keyboardType: TextInputType.number, hint: 'DD')),
-                    const SizedBox(width: 8),
-                    Expanded(child: _field('Tháng', _mobCtl, keyboardType: TextInputType.number, hint: 'MM')),
-                    const SizedBox(width: 8),
-                    Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
-                  ]),
-                  Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-                    Row(children: [
-                      _genderChip('male', 'Nam'),
-                      const SizedBox(width: 8),
-                      _genderChip('female', 'Nữ'),
-                      const SizedBox(width: 8),
-                      _genderChip('other', 'Khác'),
-                    ]),
-                  ])),
-                  const SizedBox(height: 8),
-                  _saveBtn('Lưu thông tin', _saving == 'info', _saveInfo),
-                ]),
-                const SizedBox(height: 14),
-                _section('Đổi mật khẩu', [
-                  _field('Mật khẩu mới', _passwordCtl, obscure: true),
-                  _field('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: true),
-                  const SizedBox(height: 8),
-                  _saveBtn('Đổi mật khẩu', _saving == 'pw', _savePassword),
-                ]),
-                const SizedBox(height: 14),
-                _section('Đổi tên đăng nhập', [
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
-                  ),
-                  _field('Tên đăng nhập mới', _newUsernameCtl),
-                  _field('Lý do', _usernameReasonCtl),
-                  const SizedBox(height: 8),
-                  _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
-                  if (_usernameReqs.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Text('LỊCH SỬ', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
-                    const SizedBox(height: 6),
-                    ..._usernameReqs.map(_usernameReqRow),
-                  ],
-                ]),
-                SizedBox(height: player.currentSong != null ? 90 : 20),
-              ])),
+            SliverFillRemaining(
+              hasScrollBody: true,
+              child: _SettingsBody(
+                sections: _sectionDefs(),
+                bottomPadding: player.currentSong != null ? 90 : 20,
+              ),
             ),
         ]),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
@@ -554,6 +488,274 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
             : Text(label, style: body(const TextStyle(fontWeight: FontWeight.w700))),
       ),
+    );
+  }
+
+  /// Section list — single source of truth shared by both layouts. Keeping
+  /// it here means the body widget can be a dumb consumer.
+  List<_SettingsSectionDef> _sectionDefs() {
+    return [
+      _SettingsSectionDef(
+        id: 'images',
+        icon: Icons.image_outlined,
+        title: 'Hình ảnh',
+        builder: () => _imagePickers(),
+      ),
+      _SettingsSectionDef(
+        id: 'prefs',
+        icon: Icons.tune,
+        title: 'Tuỳ chọn',
+        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _toggleRow(
+            icon: Icons.notifications_outlined,
+            title: 'Âm thanh thông báo',
+            subtitle: 'Phát âm thanh khi có thông báo mới',
+            value: _notificationSound,
+            onChanged: (_) => _toggleNotificationSound(),
+          ),
+          _toggleRow(
+            icon: Icons.chat_bubble_outline,
+            title: 'Sidebar bình luận',
+            subtitle: 'Hiện sidebar bình luận trên desktop',
+            value: _showCommentSidebar,
+            onChanged: (_) => _toggleCommentSidebar(),
+          ),
+        ]),
+      ),
+      _SettingsSectionDef(
+        id: 'profile',
+        icon: Icons.person_outline,
+        title: 'Thông tin cá nhân',
+        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _field('Họ và tên', _fullnameCtl),
+          _field('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone),
+          _field('Địa chỉ', _addressCtl),
+          Row(children: [
+            Expanded(child: _field('Ngày', _dobCtl, keyboardType: TextInputType.number, hint: 'DD')),
+            const SizedBox(width: 8),
+            Expanded(child: _field('Tháng', _mobCtl, keyboardType: TextInputType.number, hint: 'MM')),
+            const SizedBox(width: 8),
+            Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
+          ]),
+          Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+            Row(children: [
+              _genderChip('male', 'Nam'),
+              const SizedBox(width: 8),
+              _genderChip('female', 'Nữ'),
+              const SizedBox(width: 8),
+              _genderChip('other', 'Khác'),
+            ]),
+          ])),
+          const SizedBox(height: 8),
+          _saveBtn('Lưu thông tin', _saving == 'info', _saveInfo),
+        ]),
+      ),
+      _SettingsSectionDef(
+        id: 'password',
+        icon: Icons.lock_outline,
+        title: 'Đổi mật khẩu',
+        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _field('Mật khẩu mới', _passwordCtl, obscure: true),
+          _field('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: true),
+          const SizedBox(height: 8),
+          _saveBtn('Đổi mật khẩu', _saving == 'pw', _savePassword),
+        ]),
+      ),
+      _SettingsSectionDef(
+        id: 'username',
+        icon: Icons.alternate_email,
+        title: 'Đổi tên đăng nhập',
+        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+          ),
+          _field('Tên đăng nhập mới', _newUsernameCtl),
+          _field('Lý do', _usernameReasonCtl),
+          const SizedBox(height: 8),
+          _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
+          if (_usernameReqs.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text('LỊCH SỬ', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+            const SizedBox(height: 6),
+            ..._usernameReqs.map(_usernameReqRow),
+          ],
+        ]),
+      ),
+      _SettingsSectionDef(
+        id: 'shortcuts',
+        icon: Icons.keyboard_outlined,
+        title: 'Phím tắt',
+        builder: () => const _ShortcutsList(),
+      ),
+    ];
+  }
+}
+
+class _SettingsSectionDef {
+  final String id;
+  final IconData icon;
+  final String title;
+  final Widget Function() builder;
+  const _SettingsSectionDef({required this.id, required this.icon, required this.title, required this.builder});
+}
+
+/// Renders the settings sections — 2-pane macOS layout on desktop (≥900px),
+/// stacked single-column on mobile.
+class _SettingsBody extends StatefulWidget {
+  final List<_SettingsSectionDef> sections;
+  final double bottomPadding;
+  const _SettingsBody({required this.sections, required this.bottomPadding});
+
+  @override
+  State<_SettingsBody> createState() => _SettingsBodyState();
+}
+
+class _SettingsBodyState extends State<_SettingsBody> {
+  String? _activeId;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeId = widget.sections.isNotEmpty ? widget.sections.first.id : null;
+  }
+
+  Widget _sectionCard(_SettingsSectionDef s) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(children: [
+              Icon(s.icon, size: 16, color: AppColors.accentLight),
+              const SizedBox(width: 8),
+              Text(s.title, style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+            ]),
+          ),
+          s.builder(),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    if (!isDesktop) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomPadding),
+        children: widget.sections.map(_sectionCard).toList(),
+      );
+    }
+    final active = widget.sections.firstWhere(
+      (s) => s.id == _activeId,
+      orElse: () => widget.sections.first,
+    );
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomPadding),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Left pane: section nav (macOS System Settings vibe).
+          SizedBox(
+            width: 220,
+            child: ListView(
+              padding: const EdgeInsets.only(top: 6),
+              children: widget.sections.map((s) {
+                final selected = s.id == active.id;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: InkWell(
+                    onTap: () => setState(() => _activeId = s.id),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected ? AppColors.accentSoft : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(children: [
+                        Icon(s.icon, size: 16, color: selected ? AppColors.accentLight : AppColors.textSecondary),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(s.title, style: body(TextStyle(
+                          fontSize: 13,
+                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                          color: selected ? AppColors.text : AppColors.textSecondary,
+                        )))),
+                      ]),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: ListView(
+              key: ValueKey('settings-content-${active.id}'),
+              padding: const EdgeInsets.only(top: 6),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(active.title, style: AppText.displayLarge),
+                ),
+                active.builder(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortcutsList extends StatelessWidget {
+  const _ShortcutsList();
+
+  @override
+  Widget build(BuildContext context) {
+    final shortcuts = [
+      ('Phát / Tạm dừng', ['Space']),
+      ('Tua lùi 5 giây', ['←']),
+      ('Tua tới 5 giây', ['→']),
+      ('Bài trước', ['⇧', '←']),
+      ('Bài kế tiếp', ['⇧', '→']),
+      ('Tìm kiếm nhanh', ['⌘', 'K']),
+      ('Mở trang Tìm kiếm', ['⌘', 'F']),
+      ('Mở Cài đặt', ['⌘', ',']),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: shortcuts.map((s) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          child: Row(children: [
+            Expanded(child: Text(s.$1, style: body(const TextStyle(fontSize: 13, color: AppColors.text)))),
+            ...s.$2.map((k) => Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Text(k, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+              ),
+            )),
+          ]),
+        );
+      }).toList(),
     );
   }
 }
