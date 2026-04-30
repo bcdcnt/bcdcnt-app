@@ -13,8 +13,14 @@ import '../services/api.dart';
 class CommandPalette extends StatefulWidget {
   const CommandPalette({super.key});
 
-  static Future<void> show(BuildContext context) {
-    return Navigator.of(context, rootNavigator: true).push(
+  /// Open the palette as a modal overlay. If [navigatorState] is null we'll
+  /// look up the root Navigator from [context] — useful when called from a
+  /// widget already inside the route tree. Global keyboard shortcuts pass
+  /// [navigatorState] explicitly because their handler runs above any
+  /// Navigator and a context lookup wouldn't find one.
+  static Future<void> show(BuildContext context, {NavigatorState? navigatorState}) {
+    final nav = navigatorState ?? Navigator.of(context, rootNavigator: true);
+    return nav.push(
       PageRouteBuilder(
         opaque: false,
         barrierDismissible: true,

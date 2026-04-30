@@ -61,7 +61,9 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const _AuthPlayerBridge(
-        child: _AppRoot(),
+        child: KeyboardShortcuts(
+          child: _AppRoot(),
+        ),
       ),
     );
   }
@@ -75,10 +77,6 @@ class _AppRoot extends StatelessWidget {
         theme: appTheme(),
         debugShowCheckedModeBanner: false,
         routerConfig: _router,
-        // KeyboardShortcuts must live inside MaterialApp so its handler can
-        // call Navigator.of() / context.go() — outside, the BuildContext
-        // doesn't have a Navigator yet and the route operations crash.
-        builder: (context, child) => KeyboardShortcuts(child: child ?? const SizedBox.shrink()),
       );
 }
 
@@ -113,7 +111,13 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
   }
 }
 
+/// Exposed so widgets that need to push routes from outside the navigator
+/// tree (e.g. global keyboard shortcuts firing CommandPalette) can do so via
+/// `rootNavigatorKey.currentState!.push(...)` instead of a fragile context.
+final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final _router = GoRouter(
+  navigatorKey: rootNavigatorKey,
   routes: [
     ShellRoute(
       builder: (context, state, child) => MainShell(child: child),

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/player.dart';
+import '../main.dart' show rootNavigatorKey;
 import 'command_palette.dart';
 
 /// Top-level keyboard shortcuts for the desktop app, modelled after
@@ -76,16 +77,21 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
     // Cmd/Ctrl shortcuts run regardless of typing — they're system-style
     // navigation that shouldn't be blocked by a focused TextField.
     if (meta) {
+      // Use the root navigator key so we don't depend on the build context
+      // having a Navigator ancestor — this widget sits inside MaterialApp's
+      // builder which is *above* the navigator subtree.
+      final nav = rootNavigatorKey.currentState;
+      final navCtx = nav?.context;
       if (key == LogicalKeyboardKey.keyK) {
-        CommandPalette.show(context);
+        if (nav != null) CommandPalette.show(nav.context, navigatorState: nav);
         return true;
       }
       if (key == LogicalKeyboardKey.keyF) {
-        context.go('/search');
+        if (navCtx != null) navCtx.go('/search');
         return true;
       }
       if (key == LogicalKeyboardKey.comma) {
-        context.go('/cai-dat');
+        if (navCtx != null) navCtx.go('/cai-dat');
         return true;
       }
       return false;
