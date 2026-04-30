@@ -12,6 +12,7 @@ import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
 import '../services/api.dart';
+import '../services/theme_provider.dart';
 
 class FullPlayer extends StatefulWidget {
   const FullPlayer({super.key});
@@ -358,7 +359,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   center: const Alignment(0, 0),
                   radius: 0.8,
                   colors: [
-                    (_artworkAccent ?? AppColors.accent).withValues(alpha: 0.35),
+                    (_artworkAccent ?? context.watch<ThemeProvider>().palette.accent).withValues(alpha: 0.35),
                     Colors.transparent,
                   ],
                 ),

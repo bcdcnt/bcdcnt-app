@@ -10,6 +10,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
+import '../services/theme_provider.dart';
 import '../widgets/mini_player.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -584,6 +585,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ]),
       ),
       _SettingsSectionDef(
+        id: 'theme',
+        icon: Icons.palette_outlined,
+        title: 'Phối màu',
+        builder: () => const _ThemePicker(),
+      ),
+      _SettingsSectionDef(
         id: 'shortcuts',
         icon: Icons.keyboard_outlined,
         title: 'Phím tắt',
@@ -714,6 +721,67 @@ class _SettingsBodyState extends State<_SettingsBody> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ThemePicker extends StatelessWidget {
+  const _ThemePicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProv = context.watch<ThemeProvider>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Text(
+            'Tông màu chủ đạo của ứng dụng. Hiện áp dụng cho gradient nền player; bản cập nhật sau sẽ phủ toàn UI.',
+            style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.5)),
+          ),
+        ),
+        Wrap(
+          spacing: 12, runSpacing: 12,
+          children: kAppPalettes.map((p) {
+            final active = themeProv.name == p.name;
+            return InkWell(
+              onTap: () => themeProv.setTheme(p.name),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: 140,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: active ? p.accent : AppColors.border, width: active ? 2 : 1),
+                  boxShadow: active ? [BoxShadow(color: p.accent.withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 6))] : null,
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 28, height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(colors: [p.accent, p.accentLight]),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        p.label,
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: AppColors.text)),
+                      ),
+                    ),
+                    if (active) Icon(Icons.check_circle, size: 16, color: p.accentLight),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }

@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/player.dart';
 import 'hover_effects.dart';
+import 'playlist_dialog.dart';
 
 class SongRow extends StatelessWidget {
   final Map<String, dynamic> song;
@@ -22,7 +26,9 @@ class SongRow extends StatelessWidget {
 
     return HoverHighlight(
       borderRadius: BorderRadius.zero,
-      child: InkWell(
+      child: GestureDetector(
+        onSecondaryTapDown: (d) => _showContextMenu(context, d.globalPosition),
+        child: InkWell(
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
@@ -64,6 +70,73 @@ class SongRow extends StatelessWidget {
         ),
         ),
       ),
+      ),
+    );
+  }
+
+  Future<void> _showContextMenu(BuildContext context, Offset pos) async {
+    final firstArtist = (song['artists'] is List
+        ? (song['artists'] as List)
+        : ((song['artists']?['data'] ?? []) as List));
+    final hasArtist = firstArtist.isNotEmpty && firstArtist.first is Map && firstArtist.first['slug'] != null;
+    final fileType = (song['file_type'] ?? 'song').toString();
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: const BorderSide(color: AppColors.border),
+      ),
+      items: [
+        _menuItem('play',     Icons.play_arrow,        'Phát'),
+        _menuItem('queue',    Icons.playlist_play,     'Thêm vào hàng đợi'),
+        _menuItem('playlist', Icons.playlist_add,      'Thêm vào playlist...'),
+        const PopupMenuDivider(),
+        _menuItem('detail',   Icons.info_outline,      'Mở chi tiết'),
+        if (hasArtist)
+          _menuItem('artist', Icons.person_outline,    'Đến nghệ sĩ'),
+      ],
+    );
+    if (selected == null || !context.mounted) return;
+    switch (selected) {
+      case 'play':
+        if (onTap != null) onTap!();
+        break;
+      case 'queue':
+        // Append to queue without interrupting current playback.
+        final player = context.read<PlayerProvider>();
+        if (player.queue.where((s) => s['id'].toString() == song['id'].toString()).isEmpty) {
+          player.setQueue([...player.queue, Map<String, dynamic>.from(song)]);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã thêm "${song['title']}" vào hàng đợi'), duration: const Duration(seconds: 2)));
+        break;
+      case 'playlist':
+        showDialog(context: context, builder: (_) => PlaylistDialog(songId: song['id'].toString(), type: fileType));
+        break;
+      case 'detail':
+        context.push('/song/${song['id']}', extra: Map<String, dynamic>.from(song));
+        break;
+      case 'artist':
+        final a = firstArtist.first as Map;
+        if (fileType == 'karaoke' && a['id'] != null) {
+          context.push('/user/${a['id']}');
+        } else if (a['slug'] != null) {
+          context.push('/nghe-si/${a['slug']}');
+        }
+        break;
+    }
+  }
+
+  PopupMenuItem<String> _menuItem(String value, IconData icon, String label) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 38,
+      child: Row(children: [
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 10),
+        Text(label, style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+      ]),
     );
   }
 }

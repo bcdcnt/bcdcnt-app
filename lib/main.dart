@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'constants/theme.dart';
 import 'services/auth.dart';
 import 'services/player.dart';
+import 'services/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/library_screen.dart';
@@ -57,6 +58,7 @@ class BcdcntApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const _AuthPlayerBridge(
         child: KeyboardShortcuts(
