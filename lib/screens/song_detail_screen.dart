@@ -880,132 +880,49 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
 
-                    // 13. Sheet music images
-                    if (_sheetImages.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc'),
-                      SizedBox(
-                        height: 160,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _sheetImages.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 8),
-                          itemBuilder: (ctx, i) => InkWell(
-                            onTap: () => _openSheetLightbox(i),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                decoration: BoxDecoration(border: Border.all(color: AppColors.border)),
-                                child: CachedNetworkImage(
-                                  imageUrl: _sheetImages[i],
-                                  height: 160,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (ctx, url, err) => Container(width: 120, height: 160, color: AppColors.surfaceLight, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
-                                ),
+                    // 13-23. Body sections — desktop splits into a 2-col
+                    // layout (text-heavy left + related lists right) so the
+                    // page doesn't scroll a kilometre. Mobile keeps a single
+                    // column for vertical reading on small screens.
+                    Builder(builder: (ctx) {
+                      final leftItems = <Widget>[
+                        ..._buildSheetSection(),
+                        ..._buildDescriptionSection(description),
+                        ..._buildStorySection(story),
+                        ..._buildLyricsSection(lyrics, isCurrent),
+                        ..._buildLyricEditorsRow(),
+                        const SizedBox(height: 28),
+                        CommentSection(type: _resolvedType, id: widget.songId),
+                      ];
+                      final rightItems = _buildRelatedSections(artists, composers);
+
+                      if (isDesktop && rightItems.isNotEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: leftItems)),
+                              const SizedBox(width: 28),
+                              SizedBox(
+                                width: 360,
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rightItems),
                               ),
-                            ),
+                            ],
                           ),
-                        ),
-                      ),
-                    ],
-
-                    // 14. Description (label: "Giới thiệu")
-                    if (description != null && (description as String).replaceAll(RegExp(r'<[^>]+>'), '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _SectionHeader(icon: Icons.description_outlined, title: 'Giới thiệu'),
-                      _ExpandCard(
-                        expanded: _descExpanded,
-                        onToggle: () => setState(() => _descExpanded = !_descExpanded),
-                        child: Html(data: description, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
-                      ),
-                    ],
-
-                    // 15. Birth story
-                    if (story != null && (story as String).replaceAll(RegExp(r'<[^>]+>'), '').trim().isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _SectionHeader(icon: Icons.auto_stories_outlined, title: 'Hoàn cảnh ra đời'),
-                      _ExpandCard(
-                        expanded: _storyExpanded,
-                        onToggle: () => setState(() => _storyExpanded = !_storyExpanded),
-                        child: Html(data: story, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
-                      ),
-                    ],
-
-                    // 16. Lyrics — when this song is the active track, render
-                    // synced lyrics that highlight the active line and seek
-                    // on tap. Falls back to plain HTML when LRC tags are
-                    // missing or the song isn't currently playing.
-                    if (_resolvedType != 'instrumental' && lyrics != null && (lyrics as String).isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      _SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
-                      _ExpandCard(
-                        expanded: _lyricsExpanded,
-                        onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
-                        child: isCurrent
-                            ? SizedBox(
-                                height: _lyricsExpanded ? 420 : 220,
-                                child: TimedLyrics(
-                                  raw: lyrics as String,
-                                  fallback: Html(data: lyrics, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
-                                ),
-                              )
-                            : Html(data: lyrics, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
-                      ),
-                    ],
-
-                    // 17. Lyric editors — stacked avatars + history link (after lyrics)
-                    if (_lyricEditors.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        );
+                      }
+                      // Mobile (or no related): everything stacks single-column.
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Stacked avatars
-                          SizedBox(
-                            width: _lyricEditors.length > 5 ? 5 * 16.0 + 16 : _lyricEditors.length * 16.0 + 8,
-                            height: 24,
-                            child: Stack(
-                              children: [
-                                for (int i = 0; i < _lyricEditors.take(5).length; i++)
-                                  Positioned(
-                                    left: i * 16.0,
-                                    child: Container(
-                                      decoration: BoxDecoration(border: Border.all(color: AppColors.bg, width: 1.5), borderRadius: BorderRadius.circular(12)),
-                                      child: ClipOval(
-                                        child: _lyricEditors[i]['avatar']?['url'] != null
-                                            ? CachedNetworkImage(imageUrl: _lyricEditors[i]['avatar']['url'], width: 24, height: 24, fit: BoxFit.cover)
-                                            : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: const Icon(Icons.person, size: 12, color: AppColors.textMuted)),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text('·', style: TextStyle(color: AppColors.border)),
-                          const SizedBox(width: 8),
-                          InkWell(
-                            onTap: _openLyricHistory,
-                            child: Row(
-                              children: [
-                                const Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
-                                const SizedBox(width: 4),
-                                Text('Lịch sử sửa lời', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
-                              ],
-                            ),
-                          ),
+                          ...leftItems.sublist(0, leftItems.length - 2), // strip trailing comments
+                          ...rightItems,
+                          const SizedBox(height: 28),
+                          CommentSection(type: _resolvedType, id: widget.songId),
                         ],
-                      ),
-                    ],
-
-                    // 18-22. Related sections (same sheet, suggestions, by artist,
-                    // by composer). Always inline on both mobile and desktop —
-                    // the native macOS shell uses a left sidebar instead of a
-                    // right "engagement" column.
-                    ..._buildRelatedSections(artists, composers),
-
-                    // 23. Comments
-                    const SizedBox(height: 28),
-                    CommentSection(type: _resolvedType, id: widget.songId),
+                      );
+                    }),
 
                     const SizedBox(height: 120),
                   ]),
@@ -1023,6 +940,137 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         ],
       ),
     );
+  }
+
+  /// Sheet music horizontal carousel (Bản nhạc).
+  List<Widget> _buildSheetSection() {
+    if (_sheetImages.isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      _SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc'),
+      SizedBox(
+        height: 160,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _sheetImages.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          itemBuilder: (ctx, i) => InkWell(
+            onTap: () => _openSheetLightbox(i),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                decoration: BoxDecoration(border: Border.all(color: AppColors.border)),
+                child: CachedNetworkImage(
+                  imageUrl: _sheetImages[i],
+                  height: 160,
+                  fit: BoxFit.cover,
+                  errorWidget: (ctx, url, err) => Container(width: 120, height: 160, color: AppColors.surfaceLight, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildDescriptionSection(dynamic description) {
+    if (description == null) return const [];
+    final str = description as String;
+    if (str.replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      _SectionHeader(icon: Icons.description_outlined, title: 'Giới thiệu'),
+      _ExpandCard(
+        expanded: _descExpanded,
+        onToggle: () => setState(() => _descExpanded = !_descExpanded),
+        child: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+      ),
+    ];
+  }
+
+  List<Widget> _buildStorySection(dynamic story) {
+    if (story == null) return const [];
+    final str = story as String;
+    if (str.replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      _SectionHeader(icon: Icons.auto_stories_outlined, title: 'Hoàn cảnh ra đời'),
+      _ExpandCard(
+        expanded: _storyExpanded,
+        onToggle: () => setState(() => _storyExpanded = !_storyExpanded),
+        child: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+      ),
+    ];
+  }
+
+  List<Widget> _buildLyricsSection(dynamic lyrics, bool isCurrent) {
+    if (_resolvedType == 'instrumental') return const [];
+    if (lyrics == null) return const [];
+    final str = lyrics as String;
+    if (str.isEmpty) return const [];
+    return [
+      const SizedBox(height: 16),
+      _SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
+      _ExpandCard(
+        expanded: _lyricsExpanded,
+        onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
+        child: isCurrent
+            ? SizedBox(
+                height: _lyricsExpanded ? 420 : 220,
+                child: TimedLyrics(
+                  raw: str,
+                  fallback: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+                ),
+              )
+            : Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+      ),
+    ];
+  }
+
+  List<Widget> _buildLyricEditorsRow() {
+    if (_lyricEditors.isEmpty) return const [];
+    return [
+      const SizedBox(height: 10),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: _lyricEditors.length > 5 ? 5 * 16.0 + 16 : _lyricEditors.length * 16.0 + 8,
+            height: 24,
+            child: Stack(
+              children: [
+                for (int i = 0; i < _lyricEditors.take(5).length; i++)
+                  Positioned(
+                    left: i * 16.0,
+                    child: Container(
+                      decoration: BoxDecoration(border: Border.all(color: AppColors.bg, width: 1.5), borderRadius: BorderRadius.circular(12)),
+                      child: ClipOval(
+                        child: _lyricEditors[i]['avatar']?['url'] != null
+                            ? CachedNetworkImage(imageUrl: _lyricEditors[i]['avatar']['url'], width: 24, height: 24, fit: BoxFit.cover)
+                            : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: const Icon(Icons.person, size: 12, color: AppColors.textMuted)),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text('·', style: TextStyle(color: AppColors.border)),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: _openLyricHistory,
+            child: Row(
+              children: [
+                const Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
+                const SizedBox(width: 4),
+                Text('Lịch sử sửa lời', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ];
   }
 
   /// Sections shown either inline below the main content (mobile) or in a
