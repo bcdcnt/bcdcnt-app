@@ -16,6 +16,7 @@ import '../widgets/sheet_lightbox.dart';
 import '../widgets/playlist_dialog.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/timed_lyrics.dart';
+import '../widgets/section_header.dart';
 import '../widgets/file_history_dialog.dart';
 import '../widgets/lyric_history_dialog.dart';
 
@@ -437,6 +438,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       queue.add(m);
     }
     context.read<PlayerProvider>().playSong(s, queue);
+  }
+
+  /// Play a section's song list as the active queue. Used by the Phát tất
+  /// cả CTA on related-section headers and artist banners.
+  void _playList(List songs) {
+    if (songs.isEmpty) return;
+    final queue = <Map<String, dynamic>>[];
+    for (final x in songs) {
+      final m = Map<String, dynamic>.from(x as Map);
+      m['audioUrl'] = m['file']?['audio_url'];
+      queue.add(m);
+    }
+    context.read<PlayerProvider>().playSong(queue.first, queue);
   }
 
   Future<void> _share() async {
@@ -947,7 +961,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     if (_sheetImages.isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      _SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc'),
+      SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc', count: '(${_sheetImages.length})'),
       SizedBox(
         height: 160,
         child: ListView.separated(
@@ -980,7 +994,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     if (str.replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      _SectionHeader(icon: Icons.description_outlined, title: 'Giới thiệu'),
+      const SectionHeader(icon: Icons.description_outlined, title: 'Giới thiệu'),
       _ExpandCard(
         expanded: _descExpanded,
         onToggle: () => setState(() => _descExpanded = !_descExpanded),
@@ -995,7 +1009,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     if (str.replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      _SectionHeader(icon: Icons.auto_stories_outlined, title: 'Hoàn cảnh ra đời'),
+      const SectionHeader(icon: Icons.auto_stories_outlined, title: 'Hoàn cảnh ra đời'),
       _ExpandCard(
         expanded: _storyExpanded,
         onToggle: () => setState(() => _storyExpanded = !_storyExpanded),
@@ -1011,7 +1025,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     if (str.isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      _SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
+      const SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
       _ExpandCard(
         expanded: _lyricsExpanded,
         onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
@@ -1086,7 +1100,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         widgets.add(Padding(
           padding: const EdgeInsets.only(top: 16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _SectionHeader(icon: Icons.album_outlined, title: _resolvedType == 'karaoke' ? 'Thành viên hát bài này' : '${filtered.length} bản thu khác của cùng bài này'),
+            SectionHeader(
+              icon: Icons.album_outlined,
+              title: _resolvedType == 'karaoke' ? 'Thành viên hát bài này' : 'Bản thu khác',
+              count: '(${filtered.length})',
+              actionText: 'Phát tất cả',
+              onAction: () => _playList(filtered),
+            ),
             ...shown.map((s) {
               final sg = Map<String, dynamic>.from(s);
               return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
@@ -1108,7 +1128,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         widgets.add(Padding(
           padding: const EdgeInsets.only(top: 16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _SectionHeader(icon: Icons.mic_outlined, title: 'Thành viên hát bài này'),
+            SectionHeader(
+              icon: Icons.mic_outlined,
+              title: 'Thành viên hát bài này',
+              count: '(${karaokes.length})',
+              actionText: 'Phát tất cả',
+              onAction: () => _playList(karaokes),
+            ),
             ...shown.map((s) {
               final sg = Map<String, dynamic>.from(s);
               return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
@@ -1129,7 +1155,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _SectionHeader(icon: Icons.music_note_outlined, title: 'Có thể bạn muốn nghe'),
+          SectionHeader(
+            icon: Icons.music_note_outlined,
+            title: 'Có thể bạn muốn nghe',
+            count: '(${_suggestions.length})',
+            actionText: 'Phát tất cả',
+            onAction: () => _playList(_suggestions),
+          ),
           ..._suggestions.map((s) {
             final sg = Map<String, dynamic>.from(s);
             return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
@@ -1138,18 +1170,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ));
     }
 
-    // 21. Songs grouped by artist
+    // 21. Songs grouped by artist — banner with artist avatar + name link
     for (final ag in _artistSongs) {
       final artist = artists.firstWhere((a) => a['id'].toString() == ag['artistId'].toString(), orElse: () => {'title': ''});
-      final title = artist['title'] ?? '';
+      final title = (artist['title'] ?? '').toString();
+      final slug = artist['slug']?.toString();
+      final avatar = artist['avatar']?['url']?.toString();
+      final songs = (ag['songs'] as List);
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _SectionHeader(icon: Icons.mic_outlined, title: 'Do $title trình bày'),
-          ...((ag['songs'] as List).map((s) {
+          _ArtistBanner(
+            name: title,
+            avatar: avatar,
+            label: 'Trình bày',
+            onTap: slug != null ? () => context.push('/nghe-si/$slug') : null,
+            onPlayAll: () => _playList(songs),
+            count: songs.length,
+          ),
+          ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
             return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-          })),
+          }),
         ]),
       ));
     }
@@ -1157,16 +1199,27 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     // 22. Songs grouped by composer
     for (final cg in _composerSongs) {
       final composer = composers.firstWhere((c) => c['id'].toString() == cg['composerId'].toString(), orElse: () => {'title': ''});
-      final title = composer['title'] ?? '';
-      final label = _resolvedType == 'folk' ? 'soạn giả' : _resolvedType == 'poem' ? 'là tác giả' : 'sáng tác';
+      final title = (composer['title'] ?? '').toString();
+      final slug = composer['slug']?.toString();
+      final avatar = composer['avatar']?['url']?.toString();
+      final routePrefix = _resolvedType == 'folk' ? '/soan-gia' : _resolvedType == 'poem' ? '/nha-tho' : '/nhac-si';
+      final label = _resolvedType == 'folk' ? 'Soạn giả' : _resolvedType == 'poem' ? 'Tác giả' : 'Sáng tác';
+      final songs = (cg['songs'] as List);
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _SectionHeader(icon: Icons.music_note_outlined, title: 'Do $title $label'),
-          ...((cg['songs'] as List).map((s) {
+          _ArtistBanner(
+            name: title,
+            avatar: avatar,
+            label: label,
+            onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
+            onPlayAll: () => _playList(songs),
+            count: songs.length,
+          ),
+          ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
             return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-          })),
+          }),
         ]),
       ));
     }
@@ -1290,27 +1343,83 @@ class _MetaLine extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback? onAction;
-  final String? actionText;
-  const _SectionHeader({required this.icon, required this.title, this.onAction, this.actionText});
+/// Banner header for "Do X trình bày / sáng tác" sections — shows the
+/// person's avatar + name (clickable) + role label, plus a play-all CTA
+/// and the song count. Replaces the plain icon+text section header so
+/// users see who X is at a glance.
+class _ArtistBanner extends StatelessWidget {
+  final String name;
+  final String? avatar;
+  final String label;
+  final int count;
+  final VoidCallback? onTap;
+  final VoidCallback onPlayAll;
+
+  const _ArtistBanner({
+    required this.name,
+    required this.label,
+    required this.count,
+    this.avatar,
+    this.onTap,
+    required this.onPlayAll,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppColors.accent),
-          const SizedBox(width: 8),
-          Expanded(child: Text(title, style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
-          if (onAction != null && actionText != null) GestureDetector(
-            onTap: onAction,
-            child: Text(actionText!, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            children: [
+              Container(
+                width: 40, height: 40,
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                child: ClipOval(
+                  child: avatar != null && avatar!.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: avatar!, fit: BoxFit.cover, errorWidget: (_, _, _) => Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))))
+                      : Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(label.toUpperCase(), style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
+                    const SizedBox(height: 2),
+                    Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                      Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2)))),
+                      const SizedBox(width: 6),
+                      Text('($count)', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                    ]),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: onPlayAll,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.play_arrow, size: 14, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text('Phát', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white))),
+                  ]),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

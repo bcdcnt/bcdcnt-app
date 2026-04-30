@@ -5,6 +5,9 @@ class SectionHeader extends StatelessWidget {
   final IconData? icon;
   final String title;
   final String? subtitle;
+  /// Inline count badge rendered next to the title — e.g. `(8 bản)`, `(15)`.
+  /// Helpful when the section has a known length to set expectations.
+  final String? count;
   final String? actionText;
   final VoidCallback? onAction;
 
@@ -13,6 +16,7 @@ class SectionHeader extends StatelessWidget {
     this.icon,
     required this.title,
     this.subtitle,
+    this.count,
     this.actionText,
     this.onAction,
   });
@@ -43,15 +47,33 @@ class SectionHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: display(const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.text,
-                    letterSpacing: -0.2,
-                    height: 1.15,
-                  )),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: display(const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.text,
+                          letterSpacing: -0.2,
+                          height: 1.15,
+                        )),
+                      ),
+                    ),
+                    if (count != null) Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                        count!,
+                        style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                      ),
+                    ),
+                  ],
                 ),
                 if (subtitle != null) Padding(
                   padding: const EdgeInsets.only(top: 2),

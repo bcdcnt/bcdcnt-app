@@ -11,6 +11,7 @@ import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/shimmer.dart';
+import '../widgets/section_header.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
   final String id;
@@ -299,36 +300,64 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
               sliver: SliverList(delegate: SliverChildListDelegate([
-                if (_related.isNotEmpty) ...[
-                  Row(children: [
-                    Icon((pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? Icons.event_outlined : Icons.queue_music_outlined, size: 14, color: AppColors.textSecondary),
-                    const SizedBox(width: 6),
-                    Text(
-                      (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? 'Playlist sự kiện khác' : 'Playlist khác',
-                      style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                if (isDesktop && _related.isNotEmpty) ...[
+                  // Desktop: comments left flex, related playlists in a
+                  // narrow vertical sidebar — Option A 2-col split.
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Divider(color: AppColors.border, height: 1),
+                        const SizedBox(height: 16),
+                        CommentSection(type: 'playlist', id: widget.id),
+                      ]),
+                    ),
+                    const SizedBox(width: 28),
+                    SizedBox(
+                      width: 360,
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        SectionHeader(
+                          icon: (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? Icons.event_outlined : Icons.queue_music_outlined,
+                          title: (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? 'Playlist sự kiện khác' : 'Playlist khác',
+                          count: '(${_related.length})',
+                        ),
+                        ..._related.take(8).map((r) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _RelatedCardCompact(item: r, formatEventDate: _formatEventDate),
+                        )),
+                      ]),
                     ),
                   ]),
-                  const SizedBox(height: 10),
-                  isDesktop
-                    ? _RelatedGrid(items: _related, formatEventDate: _formatEventDate)
-                    : SizedBox(
-                        height: 200,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _related.length,
-                          separatorBuilder: (_, _) => const SizedBox(width: 12),
-                          itemBuilder: (ctx, i) => _RelatedCard(
-                            item: _related[i],
-                            width: 130,
-                            formatEventDate: _formatEventDate,
-                          ),
+                ] else ...[
+                  // Mobile (or no related): keep the original stacked flow.
+                  if (_related.isNotEmpty) ...[
+                    Row(children: [
+                      Icon((pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? Icons.event_outlined : Icons.queue_music_outlined, size: 14, color: AppColors.textSecondary),
+                      const SizedBox(width: 6),
+                      Text(
+                        (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? 'Playlist sự kiện khác' : 'Playlist khác',
+                        style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      ),
+                    ]),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 200,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _related.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 12),
+                        itemBuilder: (ctx, i) => _RelatedCard(
+                          item: _related[i],
+                          width: 130,
+                          formatEventDate: _formatEventDate,
                         ),
                       ),
-                  const SizedBox(height: 24),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                  const Divider(color: AppColors.border, height: 1),
+                  const SizedBox(height: 16),
+                  CommentSection(type: 'playlist', id: widget.id),
                 ],
-                const Divider(color: AppColors.border, height: 1),
-                const SizedBox(height: 16),
-                CommentSection(type: 'playlist', id: widget.id),
                 SizedBox(height: player.currentSong != null ? 90 : 20),
               ])),
             ),
@@ -361,6 +390,51 @@ class _RelatedGrid extends StatelessWidget {
         childAspectRatio: 0.72,
       ),
       itemBuilder: (_, i) => _RelatedCard(item: _items[i], formatEventDate: formatEventDate),
+    );
+  }
+}
+
+/// Compact horizontal row used in the desktop sidebar — 56x56 thumb +
+/// title + count, optimised for scanning a narrow column.
+class _RelatedCardCompact extends StatelessWidget {
+  final Map item;
+  final String Function(dynamic) formatEventDate;
+  const _RelatedCardCompact({required this.item, required this.formatEventDate});
+
+  @override
+  Widget build(BuildContext context) {
+    final thumb = item['thumbnail']?['url'];
+    final total = item['items']?['paginatorInfo']?['total'] ?? 0;
+    final ev = item['event_date'];
+    return InkWell(
+      onTap: () => context.push('/playlist/${item['id']}'),
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: thumb != null
+                ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)))
+                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+                const SizedBox(height: 3),
+                if (ev != null && ev.toString().isNotEmpty)
+                  Text(formatEventDate(ev), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+                else if (total > 0)
+                  Text('$total bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }
