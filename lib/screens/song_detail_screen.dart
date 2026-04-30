@@ -14,6 +14,7 @@ import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/sheet_lightbox.dart';
 import '../widgets/playlist_dialog.dart';
+import '../widgets/shimmer.dart';
 import '../widgets/file_history_dialog.dart';
 import '../widgets/lyric_history_dialog.dart';
 
@@ -531,7 +532,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _song == null) {
-      return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg, elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('CHI TIẾT', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          centerTitle: true,
+        ),
+        body: const SingleChildScrollView(child: Column(children: [
+          HeroSkeleton(),
+          Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: SongListSkeleton(rows: 4)),
+        ])),
+      );
     }
     if (_song == null) {
       return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(), body: Center(child: Text('Không tìm thấy', style: AppText.bodyText)));

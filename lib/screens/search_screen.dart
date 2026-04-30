@@ -574,6 +574,14 @@ class _TopResultCard extends StatelessWidget {
     final subtitle = isSongLike(t) ? hit['artist']?.toString() : null;
     final isPerson = t == 'artist' || t == 'composer' || t == 'poet' || t == 'recomposer' || t == 'user';
 
+    // Desktop: larger artwork + hero-tier title (Apple Music / Spotify scale).
+    // Mobile keeps the compact original sizing.
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final imgSize = isDesktop ? 140.0 : 84.0;
+    final titleSize = isDesktop ? 24.0 : 16.0;
+    final subSize = isDesktop ? 14.0 : 12.0;
+    final cardPadding = isDesktop ? 22.0 : 14.0;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -596,7 +604,7 @@ class _TopResultCard extends StatelessWidget {
             onTap: onTap,
             borderRadius: BorderRadius.circular(14),
             child: Container(
-              padding: const EdgeInsets.all(14),
+              padding: EdgeInsets.all(cardPadding),
               decoration: BoxDecoration(
                 color: AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(14),
@@ -606,19 +614,19 @@ class _TopResultCard extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    width: 84, height: 84,
+                    width: imgSize, height: imgSize,
                     decoration: BoxDecoration(
                       shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
-                      borderRadius: isPerson ? null : BorderRadius.circular(10),
+                      borderRadius: isPerson ? null : BorderRadius.circular(12),
                       color: AppColors.surface,
                       boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: image != null
-                        ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconFor(t), color: AppColors.textMuted))
-                        : Icon(iconFor(t), color: AppColors.textMuted, size: 32),
+                        ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(iconFor(t), color: AppColors.textMuted))
+                        : Icon(iconFor(t), color: AppColors.textMuted, size: imgSize * 0.4),
                   ),
-                  const SizedBox(width: 14),
+                  SizedBox(width: isDesktop ? 22 : 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -629,11 +637,11 @@ class _TopResultCard extends StatelessWidget {
                           decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
                           child: Text(typeLabel.toUpperCase(), style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1))),
                         ),
-                        const SizedBox(height: 6),
-                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2))),
+                        SizedBox(height: isDesktop ? 10 : 6),
+                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
                         if (subtitle != null && subtitle.isNotEmpty) Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                          padding: EdgeInsets.only(top: isDesktop ? 6 : 4),
+                          child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: subSize, color: AppColors.textSecondary))),
                         ),
                       ],
                     ),

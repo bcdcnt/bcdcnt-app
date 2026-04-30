@@ -10,6 +10,7 @@ import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
+import '../widgets/shimmer.dart';
 
 enum PersonType { artist, composer, poet, recomposer }
 
@@ -278,7 +279,19 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg, elevation: 0,
+          leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text(_cfg.label.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          centerTitle: true,
+        ),
+        body: const SingleChildScrollView(child: Column(children: [
+          HeroSkeleton(circular: true),
+          Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: SongListSkeleton(rows: 6, showIndex: true)),
+        ])),
+      );
     }
     if (_person == null) {
       return Scaffold(

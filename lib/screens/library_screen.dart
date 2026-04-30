@@ -8,6 +8,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../widgets/section_header.dart';
 import '../widgets/hover_effects.dart';
+import '../services/player.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -21,12 +22,60 @@ class _LibraryScreenState extends State<LibraryScreen> {
   // folk categories under the Dân ca section (parity with web's Library).
   List<dynamic> _melodies = [];
   List<dynamic> _folkCats = [];
+  // Recently-listened — only populated when authenticated. Renders as a
+  // horizontal carousel above the "Của bạn" tile grid.
+  List<Map<String, dynamic>> _recent = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _fetch();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchRecent());
+  }
+
+  Future<void> _fetchRecent() async {
+    final auth = context.read<AuthProvider>();
+    final userId = auth.user?['id']?.toString();
+    if (!auth.isAuthenticated || userId == null) return;
+    try {
+      final data = await auth.authedQuery(r'''query($id: ID!) {
+        user(id: $id) {
+          recentListens(first: 8, page: 1, orderBy: [{column: "id", order: DESC}]) {
+            data {
+              object {
+                __typename
+                ... on Song { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
+                ... on Folk { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
+                ... on Instrumental { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
+                ... on Poem { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
+                ... on Karaoke { id title slug play_type thumbnail { url } file { audio_url video_url } users(first: 3) { data { id username } } }
+              }
+            }
+          }
+        }
+      }''', {'id': userId});
+      if (!mounted) return;
+      const tnMap = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
+      final fresh = <Map<String, dynamic>>[];
+      final seen = <String>{};
+      for (final entry in (data['user']?['recentListens']?['data'] ?? []) as List) {
+        final obj = entry['object'];
+        if (obj == null) continue;
+        final m = Map<String, dynamic>.from(obj as Map);
+        final id = m['id'].toString();
+        if (seen.contains(id)) continue;
+        seen.add(id);
+        m['file_type'] = tnMap[m['__typename']] ?? 'song';
+        if (m['users'] != null && m['artists'] == null) {
+          // Karaoke → expose users as artists for SongRow / cards.
+          final users = (m['users']?['data'] ?? []) as List;
+          m['artists'] = {'data': users.map((u) => {'title': u['username'], 'id': u['id']}).toList()};
+        }
+        fresh.add(m);
+      }
+      setState(() => _recent = fresh);
+    } catch (_) {}
   }
 
   Future<void> _fetch() async {
@@ -75,6 +124,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
             style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted)),
           ),
           const SizedBox(height: 24),
+
+          // Recently played — only when there's data to show, so the
+          // section doesn't render an empty rail for new accounts.
+          if (auth.isAuthenticated && _recent.isNotEmpty) ...[
+            const SectionHeader(icon: Icons.history, title: 'Nghe gần đây'),
+            _RecentCarousel(items: _recent),
+            const SizedBox(height: 28),
+          ],
 
           // Của bạn (logged in only)
           if (auth.isAuthenticated) ...[
@@ -361,6 +418,61 @@ class _Chip extends StatelessWidget {
           ),
           child: Text(label, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
         ),
+      ),
+    );
+  }
+}
+
+/// Horizontal carousel of the user's most recent listens. Cards scale
+/// 130/160/180 across mobile/laptop/ultrawide so the row stays one-line at
+/// common widths. Tap plays the track via PlayerProvider, treating the
+/// carousel itself as the playback queue.
+class _RecentCarousel extends StatelessWidget {
+  final List<Map<String, dynamic>> items;
+  const _RecentCarousel({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 130.0);
+    return SizedBox(
+      height: card + 56,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (ctx, i) {
+          final s = items[i];
+          final thumb = s['thumbnail']?['url']?.toString();
+          final artists = (s['artists']?['data'] ?? []) as List;
+          final artistText = artists.map((a) => a['title'] ?? '').join(', ');
+          return HoverScale(
+            child: InkWell(
+              onTap: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: card,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: thumb != null
+                          ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
+                          : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+                    if (artistText.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
