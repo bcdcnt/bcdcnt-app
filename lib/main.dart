@@ -61,9 +61,7 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const _AuthPlayerBridge(
-        child: KeyboardShortcuts(
-          child: _AppRoot(),
-        ),
+        child: _AppRoot(),
       ),
     );
   }
@@ -77,6 +75,10 @@ class _AppRoot extends StatelessWidget {
         theme: appTheme(),
         debugShowCheckedModeBanner: false,
         routerConfig: _router,
+        // KeyboardShortcuts must live inside MaterialApp so its handler can
+        // call Navigator.of() / context.go() — outside, the BuildContext
+        // doesn't have a Navigator yet and the route operations crash.
+        builder: (context, child) => KeyboardShortcuts(child: child ?? const SizedBox.shrink()),
       );
 }
 
