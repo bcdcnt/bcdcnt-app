@@ -208,6 +208,32 @@ class PlayerProvider extends ChangeNotifier {
     _onSettingChanged = fn;
   }
 
+  /// Reorder the queue, keeping the current song's playback uninterrupted.
+  /// `newIndex` follows Flutter's ReorderableListView convention where it
+  /// refers to the position the item will end up in after removal — it can
+  /// be one past the end of the list.
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (_queue.isEmpty) return;
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    var target = newIndex;
+    if (target > oldIndex) target -= 1;
+    if (target < 0) target = 0;
+    if (target >= _queue.length) target = _queue.length - 1;
+    if (target == oldIndex) return;
+
+    // Remember the active song id so we can restore the index after the
+    // structural shift — playback isn't interrupted because the underlying
+    // AudioPlayer keeps its current source.
+    final activeId = _currentSong?['id']?.toString();
+    final item = _queue.removeAt(oldIndex);
+    _queue.insert(target, item);
+    if (activeId != null) {
+      final newCur = _queue.indexWhere((s) => s['id'].toString() == activeId);
+      if (newCur >= 0) _currentIndex = newCur;
+    }
+    notifyListeners();
+  }
+
   /// Apply persisted player settings from the authed user payload. No-op when
   /// the same user's settings have already been applied — prevents bouncing
   /// the values when AuthProvider notifies repeatedly.

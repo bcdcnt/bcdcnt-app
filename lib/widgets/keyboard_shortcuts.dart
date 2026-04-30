@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../services/player.dart';
+import 'command_palette.dart';
 
 /// Top-level keyboard shortcuts for the desktop app, modelled after
 /// Spotify / Apple Music:
@@ -65,6 +66,10 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
     // Cmd/Ctrl shortcuts always run, even while typing — Cmd+F is the
     // canonical way to jump to search regardless of current focus.
     if (meta) {
+      if (key == LogicalKeyboardKey.keyK) {
+        CommandPalette.show(context);
+        return KeyEventResult.handled;
+      }
       if (key == LogicalKeyboardKey.keyF) {
         context.go('/search');
         return KeyEventResult.handled;

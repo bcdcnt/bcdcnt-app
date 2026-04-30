@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:go_router/go_router.dart';
+import 'package:palette_generator/palette_generator.dart';
+import 'timed_lyrics.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
@@ -30,6 +32,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   bool _loversFetchedForId = false;
   String? _songLyrics;
   String? _lyricsFetchedForId;
+  // Dominant color extracted from the current artwork. Drives the top
+  // radial-gradient backdrop so it looks colour-coordinated with the song,
+  // matching Spotify's "now playing" vibe.
+  Color? _artworkAccent;
+  String? _artworkAccentForUrl;
 
   static const List<double> _speedPresets = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -49,6 +56,32 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final m = d.inMinutes.remainder(60).toString();
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
+  }
+
+  Future<void> _maybeExtractAccent(String? url) async {
+    if (url == null || url.isEmpty) {
+      if (_artworkAccent != null && mounted) setState(() { _artworkAccent = null; _artworkAccentForUrl = null; });
+      return;
+    }
+    if (url == _artworkAccentForUrl) return;
+    _artworkAccentForUrl = url;
+    try {
+      final palette = await PaletteGenerator.fromImageProvider(
+        CachedNetworkImageProvider(url),
+        size: const Size(96, 96),
+        maximumColorCount: 6,
+      );
+      // Prefer vibrant > muted > dominant — vibrant gives the most
+      // "Spotify-like" backdrop. Falls back gracefully when colours are dull.
+      final picked = palette.vibrantColor?.color
+          ?? palette.lightVibrantColor?.color
+          ?? palette.mutedColor?.color
+          ?? palette.dominantColor?.color;
+      if (!mounted || picked == null || _artworkAccentForUrl != url) return;
+      setState(() => _artworkAccent = picked);
+    } catch (_) {
+      // Network or decode error — leave previous accent in place.
+    }
   }
 
   void _openSongDetail(Map<String, dynamic> song) {
@@ -286,6 +319,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     if (_lyricsFetchedForId != song['id'].toString()) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLovesAndLyrics(song));
     }
+    // Re-extract artwork accent when the thumbnail URL changes.
+    final _thumbForAccent = song['thumbnail']?['url']?.toString();
+    if (_thumbForAccent != _artworkAccentForUrl) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeExtractAccent(_thumbForAccent));
+    }
 
     if (player.isPlaying && !_rotation.isAnimating) {
       _rotation.repeat();
@@ -311,13 +349,18 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         children: [
           Positioned(
             top: -100, left: 0, right: 0,
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOut,
               height: 400,
               decoration: BoxDecoration(
                 gradient: RadialGradient(
                   center: const Alignment(0, 0),
                   radius: 0.8,
-                  colors: [AppColors.accent.withValues(alpha: 0.3), Colors.transparent],
+                  colors: [
+                    (_artworkAccent ?? AppColors.accent).withValues(alpha: 0.35),
+                    Colors.transparent,
+                  ],
                 ),
               ),
             ),
@@ -545,7 +588,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   Widget _buildLyricsPanel() {
-    return Container(
+    final container = Container(
       margin: const EdgeInsets.symmetric(horizontal: 24),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -554,24 +597,28 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       ),
       child: (_songLyrics == null || _songLyrics!.isEmpty)
           ? Center(child: Text('Chưa có lời bài hát', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 14))))
-          : SingleChildScrollView(
-              child: Html(
-                data: _songLyrics!,
-                style: {
-                  'body': Style(
-                    margin: Margins.zero,
-                    padding: HtmlPaddings.zero,
-                    fontSize: FontSize(14),
-                    lineHeight: const LineHeight(2.0),
-                    color: AppColors.textSecondary,
-                    textAlign: TextAlign.center,
-                    fontFamily: body().fontFamily,
-                  ),
-                  'p': Style(margin: Margins.only(bottom: 8)),
-                },
+          : TimedLyrics(
+              raw: _songLyrics,
+              fallback: SingleChildScrollView(
+                child: Html(
+                  data: _songLyrics!,
+                  style: {
+                    'body': Style(
+                      margin: Margins.zero,
+                      padding: HtmlPaddings.zero,
+                      fontSize: FontSize(14),
+                      lineHeight: const LineHeight(2.0),
+                      color: AppColors.textSecondary,
+                      textAlign: TextAlign.center,
+                      fontFamily: body().fontFamily,
+                    ),
+                    'p': Style(margin: Margins.only(bottom: 8)),
+                  },
+                ),
               ),
             ),
     );
+    return container;
   }
 
   Widget _buildQueuePanel(PlayerProvider player, List<Map<String, dynamic>> queue) {

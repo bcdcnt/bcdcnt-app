@@ -23,6 +23,7 @@ dependencies:
   video_player: ^2.9.2
   chewie: ^1.8.5
   file_picker: ^8.1.4
+  palette_generator: ^0.3.3+7
 
 dev_dependencies:
   flutter_test:

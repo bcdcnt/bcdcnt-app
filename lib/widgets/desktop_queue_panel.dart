@@ -47,13 +47,22 @@ class DesktopQueuePanel extends StatelessWidget {
           )
         else
           Expanded(
-            child: ListView.builder(
+            child: ReorderableListView.builder(
               padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
+              buildDefaultDragHandles: false,
               itemCount: queue.length,
+              onReorder: (oldIndex, newIndex) => player.reorderQueue(oldIndex, newIndex),
+              proxyDecorator: (child, _, _) => Material(
+                color: Colors.transparent,
+                elevation: 6,
+                shadowColor: Colors.black.withValues(alpha: 0.4),
+                child: child,
+              ),
               itemBuilder: (_, i) {
                 final s = queue[i];
                 final isActive = i == player.currentIndex;
                 return _QueueRow(
+                  key: ValueKey('q-${s['id']}-$i'),
                   song: s,
                   index: i,
                   active: isActive,
@@ -136,7 +145,7 @@ class _QueueRow extends StatelessWidget {
   final int index;
   final bool active;
   final VoidCallback onTap;
-  const _QueueRow({required this.song, required this.index, required this.active, required this.onTap});
+  const _QueueRow({super.key, required this.song, required this.index, required this.active, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +201,13 @@ class _QueueRow extends StatelessWidget {
                     ),
                   ],
                 ],
+              ),
+            ),
+            ReorderableDragStartListener(
+              index: index,
+              child: const Padding(
+                padding: EdgeInsets.only(left: 4),
+                child: Icon(Icons.drag_indicator, size: 16, color: AppColors.textMuted),
               ),
             ),
           ],
