@@ -7,7 +7,22 @@ class FileHistoryDialog extends StatefulWidget {
   final List<dynamic> uploads;
   final String? currentFileId;
   final String? songTitle;
-  const FileHistoryDialog({super.key, required this.uploads, this.currentFileId, this.songTitle});
+  /// Song-level uploader (the user who first posted the song record).
+  /// Distinct from each upload's file owner — surfaced here as a small
+  /// header card so contributor info isn't lost after we removed the
+  /// caption from the song detail hero.
+  final Map<String, dynamic>? uploader;
+  /// ISO timestamp of when the song record was created.
+  final String? songCreatedAt;
+
+  const FileHistoryDialog({
+    super.key,
+    required this.uploads,
+    this.currentFileId,
+    this.songTitle,
+    this.uploader,
+    this.songCreatedAt,
+  });
 
   @override
   State<FileHistoryDialog> createState() => _FileHistoryDialogState();
@@ -48,6 +63,46 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
               ),
             ),
             const Divider(color: AppColors.border, height: 1),
+            if (widget.uploader != null) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 14,
+                      backgroundColor: AppColors.surfaceLight,
+                      backgroundImage: widget.uploader?['avatar']?['url'] != null
+                          ? CachedNetworkImageProvider(widget.uploader!['avatar']['url'])
+                          : null,
+                      child: widget.uploader?['avatar']?['url'] == null
+                          ? Text(
+                              ((widget.uploader?['username'] ?? '?').toString()).substring(0, 1).toUpperCase(),
+                              style: display(const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w800)),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Đăng bài', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.6))),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.uploader?['username'] ?? '',
+                            style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
+                          ),
+                          if (widget.songCreatedAt != null && widget.songCreatedAt!.isNotEmpty)
+                            Text(_formatDate(widget.songCreatedAt), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(color: AppColors.border, height: 1, indent: 16, endIndent: 16),
+            ],
             Flexible(
               child: ListView.separated(
                 padding: const EdgeInsets.all(16),

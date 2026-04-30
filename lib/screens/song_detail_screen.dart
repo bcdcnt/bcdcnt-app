@@ -38,6 +38,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   List<dynamic> _composerSongs = [];
   List<dynamic> _lyricEditors = [];
   List<String> _sheetImages = [];
+  /// Per-image credit caption (e.g. "Bản nhạc: ten-user"). Aligned 1:1 with
+  /// [_sheetImages] — empty string means "no credit available".
+  List<String?> _sheetCaptions = [];
   bool _isLoved = false;
   bool _loading = true;
   // Drives the sticky-title appbar — flips to true once the user has
@@ -258,18 +261,43 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 
   Future<void> _fetchSheetImages(dynamic sheetId, String? mainContent) async {
-    final images = <String>[..._extractImages(mainContent)];
+    final images = <String>[];
+    final captions = <String?>[];
     try {
       final data = await ApiClient.query(
-        r'''query($id: ID!) { sheet(id: $id) { revisions(first: 20) { data { content } } } }''',
+        r'''query($id: ID!) { sheet(id: $id) {
+          uploader { id username }
+          revisions(first: 20) { data { content uploader { id username } } }
+        } }''',
         {'id': sheetId.toString()},
       );
-      final revs = (data['sheet']?['revisions']?['data'] ?? []) as List;
-      for (final rev in revs) {
-        images.addAll(_extractImages(rev['content']));
+      final sheetData = data['sheet'];
+      final mainUploader = sheetData?['uploader']?['username'] as String?;
+      final mainCaption = mainUploader == null ? null : 'Bản nhạc: $mainUploader';
+      // Main content images use the sheet's primary uploader.
+      for (final url in _extractImages(mainContent)) {
+        images.add(url);
+        captions.add(mainCaption);
       }
-    } catch (_) {}
-    if (mounted) setState(() => _sheetImages = images);
+      // Each revision's images are credited to that revision's uploader.
+      final revs = (sheetData?['revisions']?['data'] ?? []) as List;
+      for (final rev in revs) {
+        final revUser = rev['uploader']?['username'] as String?;
+        final revCaption = revUser == null ? null : 'Bản nhạc: $revUser';
+        for (final url in _extractImages(rev['content'])) {
+          images.add(url);
+          captions.add(revCaption);
+        }
+      }
+    } catch (_) {
+      // Fallback — if the credit query fails, still show images without captions.
+      images.addAll(_extractImages(mainContent));
+      captions.addAll(List.filled(images.length, null));
+    }
+    if (mounted) setState(() {
+      _sheetImages = images;
+      _sheetCaptions = captions;
+    });
   }
 
   Future<void> _fetchSameSheet(dynamic sheetId) async {
@@ -492,7 +520,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void _openSheetLightbox(int index) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => SheetLightbox(images: _sheetImages, initialIndex: index)),
+      MaterialPageRoute(builder: (_) => SheetLightbox(images: _sheetImages, captions: _sheetCaptions, initialIndex: index)),
+    );
+  }
+
+  /// Open the song's hero thumbnail in a lightbox with image credit caption.
+  void _openArtworkLightbox() {
+    final thumb = _song?['thumbnail']?['url'] as String?;
+    if (thumb == null || thumb.isEmpty) return;
+    final creditUser = _song?['imageCreditor']?['username'] as String?;
+    final caption = creditUser == null ? null : 'Ảnh: $creditUser';
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => SheetLightbox(images: [thumb], captions: [caption])),
     );
   }
 
@@ -512,6 +552,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         uploads: uploads,
         currentFileId: _song?['file']?['id']?.toString(),
         songTitle: _song?['title']?.toString(),
+        uploader: _song?['uploader'] is Map ? Map<String, dynamic>.from(_song!['uploader']) : null,
+        songCreatedAt: _song?['created_at']?.toString(),
       ),
     );
   }
@@ -613,46 +655,73 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     // Meta block — composers/poets/performers/dates/tags. On desktop these
     // sit inside the hero info column (filling the right-of-artwork dead
     // space). On mobile they stack below the hero as before.
+    // Inline credits row — every artistic fact (composer, poet, folk
+    // recomposer/genre/melody, record year, upload date) folded into one
+    // RichText so the hero reads like editorial credits rather than a
+    // stacked "Label: Value" form. Each fact has a muted tiny label and is
+    // separated by mid-dots.
+    Widget? creditsRow;
+    {
+      final segs = <InlineSpan>[];
+      const muted = TextStyle(color: AppColors.textMuted);
+      void addSep() {
+        if (segs.isNotEmpty) segs.add(const TextSpan(text: '  ·  ', style: muted));
+      }
+      void addFact(String label, List<InlineSpan> linkSpans) {
+        if (linkSpans.isEmpty) return;
+        addSep();
+        segs.add(TextSpan(text: '$label ', style: muted));
+        segs.addAll(linkSpans);
+      }
+
+      if (composers.isNotEmpty) {
+        addSep();
+        segs.add(const TextSpan(text: 'Sáng tác ', style: muted));
+        segs.addAll(_linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')));
+        if (year != null) segs.add(TextSpan(text: ' ($year)', style: muted));
+      }
+      // Folk extras
+      final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
+      addFact('Soạn giả', _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')));
+      final fcatsRaw = song['sheet']?['fcats'] ?? song['fcats'];
+      final fcats = (fcatsRaw is Map ? (fcatsRaw['data'] ?? []) : (fcatsRaw ?? [])) as List;
+      addFact('Thể loại', _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')));
+      final melRaw = song['sheet']?['melodies'] ?? song['melodies'];
+      final melodies = (melRaw is Map ? (melRaw['data'] ?? []) : (melRaw ?? [])) as List;
+      addFact('Làn điệu', _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')));
+      if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem')) {
+        final poetLabel = lyricType != null && (lyricType as String).isNotEmpty ? lyricType : 'Thơ';
+        addFact(poetLabel, _linkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}')));
+      }
+      if (recordYear != null && isDesktop) {
+        addSep();
+        segs.add(const TextSpan(text: 'Thu ', style: muted));
+        segs.add(TextSpan(text: recordYear, style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
+      }
+      if (song['created_at'] != null) {
+        addSep();
+        segs.add(const TextSpan(text: 'Đăng ', style: muted));
+        segs.add(TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
+      }
+      if (segs.isNotEmpty) {
+        creditsRow = Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: RichText(
+            text: TextSpan(
+              style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5)),
+              children: segs,
+            ),
+          ),
+        );
+      }
+    }
+
     final metaItems = <Widget>[
-      if (composers.isNotEmpty) _MetaLine(
-        label: 'Sáng tác',
-        children: [
-          ..._linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
-          if (year != null) TextSpan(text: ' ($year)', style: const TextStyle(color: AppColors.textMuted)),
-        ],
-      ),
-      Builder(builder: (ctx) {
-        final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
-        if (rec.isEmpty) return const SizedBox.shrink();
-        return _MetaLine(
-          label: 'Soạn giả',
-          children: _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')),
-        );
-      }),
-      Builder(builder: (ctx) {
-        final raw = song['sheet']?['fcats'] ?? song['fcats'];
-        final fcats = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
-        if (fcats.isEmpty) return const SizedBox.shrink();
-        return _MetaLine(
-          label: 'Thể loại',
-          children: _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')),
-        );
-      }),
-      Builder(builder: (ctx) {
-        final raw = song['sheet']?['melodies'] ?? song['melodies'];
-        final melodies = (raw is Map ? (raw['data'] ?? []) : (raw ?? [])) as List;
-        if (melodies.isEmpty) return const SizedBox.shrink();
-        return _MetaLine(
-          label: 'Làn điệu',
-          children: _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')),
-        );
-      }),
-      if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem'))
-        _MetaLine(
-          label: lyricType != null && (lyricType as String).isNotEmpty ? lyricType : 'Thơ',
-          children: _linkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}')),
-        ),
-      if (artists.isNotEmpty) _MetaLine(
+      if (creditsRow != null) creditsRow,
+      // Trình bày — desktop already shows artists in the hero artist row,
+      // so the duplicate meta line is suppressed there. Mobile keeps it
+      // since the mobile hero only carries title + subtitle.
+      if (artists.isNotEmpty && !isDesktop) _MetaLine(
         label: _resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày',
         children: [
           ..._linkRow(artists, 'title', (a) {
@@ -680,23 +749,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
           ],
         ),
-      if (song['created_at'] != null)
-        _MetaLine(
-          label: 'Ngày đăng',
-          children: [TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600))],
-        ),
       if (tags.isNotEmpty) Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 4),
+        padding: const EdgeInsets.only(top: 6, bottom: 4),
         child: Wrap(
-          spacing: 8, runSpacing: 8,
+          spacing: 14, runSpacing: 4,
           children: tags.map<Widget>((t) => InkWell(
             onTap: () => context.push('/tag/${t['slug']}'),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(20)),
-              child: Text('#${t['name'] ?? ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-            ),
+            child: Text('#${t['name'] ?? ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
           )).toList(),
         ),
       ),
@@ -776,6 +835,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             context.push('/nghe-si/${a['slug']}');
                           }
                         },
+                        onArtworkTap: _openArtworkLightbox,
                         metaContent: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: metaItems),
                       )
                     else
@@ -792,6 +852,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             _play();
                           }
                         },
+                        onArtworkTap: _openArtworkLightbox,
                       ),
 
                     // 4. Empty file warning
@@ -858,24 +919,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
 
-                    // 12. Contributor info
-                    if (song['uploader'] != null || song['file']?['user'] != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 4,
-                          children: [
-                            if (song['uploader'] != null) Text(song['uploader']['username'], style: AppText.caption),
-                            if (song['created_at'] != null) Text(timeago(song['created_at']), style: AppText.caption),
-                            if (song['file']?['user'] != null && song['file']?['user']?['id'] != song['uploader']?['id']) ...[
-                              Text('·', style: AppText.caption),
-                              Text(song['file']['user']['username'], style: AppText.caption),
-                              if (song['file']?['created_at'] != null) Text(timeago(song['file']['created_at']), style: AppText.caption),
-                            ],
-                          ],
-                        ),
-                      ),
+                    // Contributor caption removed — uploader/file owner info
+                    // is admin metadata, available via API/admin tooling. A
+                    // dedicated "Đóng góp" credits section can be added
+                    // later if user demand surfaces.
 
                     // 13-23. Body sections — desktop splits into a 2-col
                     // layout (text-heavy left + related lists right) so the
@@ -942,84 +989,31 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// Sheet music horizontal carousel (Bản nhạc).
   List<Widget> _buildSheetSection(bool isDesktop) {
     if (_sheetImages.isEmpty) return const [];
-    final header = SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc', count: '(${_sheetImages.length})');
-
-    // Desktop layout — sheet music deserves more screen real estate. A
-    // single sheet renders as a tall left-aligned thumbnail; multiple sheets
-    // wrap into a 2-up grid so the eye can compare pages side by side.
-    if (isDesktop) {
-      if (_sheetImages.length == 1) {
-        return [
-          const SizedBox(height: 16),
-          header,
-          InkWell(
-            onTap: () => _openSheetLightbox(0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 460),
-                decoration: BoxDecoration(border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
-                child: CachedNetworkImage(
-                  imageUrl: _sheetImages[0],
-                  fit: BoxFit.contain,
-                  alignment: Alignment.topCenter,
-                  errorWidget: (ctx, url, err) => Container(height: 320, color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.broken_image, color: AppColors.textMuted))),
-                ),
-              ),
-            ),
-          ),
-        ];
-      }
-      return [
-        const SizedBox(height: 16),
-        header,
-        LayoutBuilder(builder: (ctx, constraints) {
-          const gap = 12.0;
-          final cellW = (constraints.maxWidth - gap) / 2;
-          return Wrap(
-            spacing: gap, runSpacing: gap,
-            children: List.generate(_sheetImages.length, (i) => InkWell(
-              onTap: () => _openSheetLightbox(i),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  width: cellW,
-                  height: cellW * 1.35,
-                  decoration: BoxDecoration(border: Border.all(color: AppColors.border), borderRadius: BorderRadius.circular(10)),
-                  child: CachedNetworkImage(
-                    imageUrl: _sheetImages[i],
-                    fit: BoxFit.cover,
-                    errorWidget: (ctx, url, err) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.broken_image, color: AppColors.textMuted))),
-                  ),
-                ),
-              ),
-            )),
-          );
-        }),
-      ];
-    }
-
-    // Mobile — horizontal carousel keeps thumbnails compact.
+    // Sheet music is a secondary section — keep it compact (horizontal
+    // scroll thumbs) so it doesn't dominate the page. Tap any thumb to
+    // open the lightbox for full-size viewing.
+    final thumbH = isDesktop ? 200.0 : 160.0;
     return [
       const SizedBox(height: 16),
-      header,
+      SectionHeader(icon: Icons.image_outlined, title: 'Bản nhạc', count: '(${_sheetImages.length})'),
       SizedBox(
-        height: 160,
+        height: thumbH,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: _sheetImages.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 8),
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
           itemBuilder: (ctx, i) => InkWell(
             onTap: () => _openSheetLightbox(i),
+            borderRadius: BorderRadius.circular(8),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Container(
-                decoration: BoxDecoration(border: Border.all(color: AppColors.border)),
+                decoration: BoxDecoration(border: Border.all(color: AppColors.border), color: Colors.white),
                 child: CachedNetworkImage(
                   imageUrl: _sheetImages[i],
-                  height: 160,
-                  fit: BoxFit.cover,
-                  errorWidget: (ctx, url, err) => Container(width: 120, height: 160, color: AppColors.surfaceLight, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
+                  height: thumbH,
+                  fit: BoxFit.contain,
+                  errorWidget: (ctx, url, err) => Container(width: 140, height: thumbH, color: AppColors.surfaceLight, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
                 ),
               ),
             ),
@@ -1370,10 +1364,10 @@ class _MetaLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
         text: TextSpan(
-          style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
           children: [
             TextSpan(text: '$label: '),
             ...children,
@@ -1624,6 +1618,7 @@ class _DesktopHero extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback? onHistory;
   final void Function(Map artist) onArtistTap;
+  final VoidCallback? onArtworkTap;
   final Widget? metaContent;
 
   const _DesktopHero({
@@ -1642,6 +1637,7 @@ class _DesktopHero extends StatelessWidget {
     required this.onShare,
     this.onHistory,
     required this.onArtistTap,
+    this.onArtworkTap,
     this.metaContent,
   });
 
@@ -1658,21 +1654,27 @@ class _DesktopHero extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Artwork
-          Container(
-            width: 240, height: 240,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: thumb != null
-                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
-                  : Container(
-                      decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                      child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
-                    ),
+          // Artwork — tap to open lightbox with credit caption.
+          MouseRegion(
+            cursor: onArtworkTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+            child: GestureDetector(
+              onTap: onArtworkTap,
+              child: Container(
+                width: 300, height: 300,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: thumb != null
+                      ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
+                      : Container(
+                          decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                          child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
+                        ),
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 28),
@@ -1682,22 +1684,32 @@ class _DesktopHero extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Vertical rhythm follows golden ratio (φ ≈ 1.618):
+                //   font tier   36 → 22 → 14 → 11 (anchor = title)
+                //   space tier   6 → 14 → 22 → 26 (within / between groups)
+                // Groups: [TYPE] · [TITLE] · [ARTIST + STATS] · [ACTIONS] · [META].
                 Text(
                   _typeLabelFor(resolvedType).toUpperCase(),
                   style: body(const TextStyle(fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  song['title'] ?? '',
+                const SizedBox(height: 6),
+                // Title with subtitle inlined as a smaller muted suffix —
+                // matches editorial layouts (Apple Music / Spotify) where
+                // disambiguators like "(bản 1)" sit beside the title rather
+                // than claiming a full 20px line of their own.
+                RichText(
                   maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: display(const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
+                  text: TextSpan(
+                    style: display(const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
+                    children: [
+                      TextSpan(text: song['title'] ?? ''),
+                      if (subtitle != null && subtitle.isNotEmpty)
+                        TextSpan(text: ' $subtitle', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.textMuted, letterSpacing: -0.2))),
+                    ],
+                  ),
                 ),
-                if (subtitle != null && subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(subtitle, style: display(const TextStyle(fontSize: 20, color: AppColors.textMuted, fontWeight: FontWeight.w400))),
-                ],
                 if (artists.isNotEmpty) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
                   Wrap(
                     spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
@@ -1707,34 +1719,34 @@ class _DesktopHero extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                            child: Text(a['title'] ?? a['username'] ?? '', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                            child: Text(a['title'] ?? a['username'] ?? '', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                           ),
                         ),
-                        if (a != artists.last) Text('·', style: body(const TextStyle(fontSize: 15, color: AppColors.textMuted))),
+                        if (a != artists.last) Text('·', style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
                       ],
                     ],
                   ),
                 ],
-                const SizedBox(height: 14),
-                // Stat strip
+                const SizedBox(height: 6),
+                // Stat strip — same group as artist row (small gap).
                 Row(children: [
                   const Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
                   const SizedBox(width: 4),
-                  Text('${_formatIntStatic(views)} lượt nghe', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                  Text('${_formatIntStatic(views)} lượt nghe', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                   if (downloads > 0) ...[
                     const SizedBox(width: 14),
                     const Icon(Icons.download, size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 4),
-                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                   ],
                   if (loveCount > 0) ...[
                     const SizedBox(width: 14),
                     const Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 4),
-                    Text('${_formatIntStatic(loveCount)} yêu thích', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                    Text('${_formatIntStatic(loveCount)} yêu thích', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                   ],
                 ]),
-                const SizedBox(height: 18),
+                const SizedBox(height: 22),
                 // Action cluster
                 Wrap(spacing: 10, runSpacing: 10, children: [
                   _PrimaryActionPill(
@@ -1751,12 +1763,13 @@ class _DesktopHero extends StatelessWidget {
                   ),
                   _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải xuống', onTap: onDownload),
                   _PrimaryActionPill(icon: Icons.playlist_add, label: 'Playlist', onTap: onAddToPlaylist),
-                  _PrimaryActionPill(icon: Icons.ios_share, label: 'Chia sẻ', onTap: onShare),
-                  if (onHistory != null)
-                    _PrimaryActionPill(icon: Icons.history, label: 'Lịch sử', onTap: onHistory!),
+                  // Overflow — secondary actions (Chia sẻ, Lịch sử) live in
+                  // a "..." menu so the visible cluster stays at 4 pills,
+                  // matching Apple Music / Spotify density.
+                  _OverflowActionPill(onShare: onShare, onHistory: onHistory),
                 ]),
                 if (metaContent != null) ...[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 26),
                   metaContent!,
                 ],
               ],
@@ -1777,6 +1790,7 @@ class _MobileHero extends StatelessWidget {
   final bool isCurrent;
   final bool isPlaying;
   final VoidCallback onPlay;
+  final VoidCallback? onArtworkTap;
 
   const _MobileHero({
     required this.thumb,
@@ -1785,6 +1799,7 @@ class _MobileHero extends StatelessWidget {
     required this.isCurrent,
     required this.isPlaying,
     required this.onPlay,
+    this.onArtworkTap,
   });
 
   @override
@@ -1792,7 +1807,9 @@ class _MobileHero extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
+        GestureDetector(
+          onTap: onArtworkTap,
+          child: SizedBox(
           height: widthAvailable,
           width: double.infinity,
           child: ClipRRect(
@@ -1814,6 +1831,7 @@ class _MobileHero extends StatelessWidget {
               ],
             ),
           ),
+        ),
         ),
         const SizedBox(height: 24),
         RichText(
@@ -1878,6 +1896,57 @@ class _PrimaryActionPill extends StatelessWidget {
             Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg))),
           ]),
         ),
+      ),
+    );
+  }
+}
+
+/// Overflow pill (...) — bundles low-priority actions (Chia sẻ, Lịch sử)
+/// into a popup menu so the visible action cluster stays at 4 pills.
+class _OverflowActionPill extends StatelessWidget {
+  final VoidCallback onShare;
+  final VoidCallback? onHistory;
+
+  const _OverflowActionPill({required this.onShare, this.onHistory});
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: '',
+      offset: const Offset(0, 48),
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: AppColors.border)),
+      onSelected: (v) {
+        if (v == 'share') onShare();
+        if (v == 'history' && onHistory != null) onHistory!();
+      },
+      itemBuilder: (ctx) => [
+        PopupMenuItem(
+          value: 'share',
+          child: Row(children: [
+            const Icon(Icons.ios_share, size: 16, color: AppColors.text),
+            const SizedBox(width: 10),
+            Text('Chia sẻ', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+          ]),
+        ),
+        if (onHistory != null)
+          PopupMenuItem(
+            value: 'history',
+            child: Row(children: [
+              const Icon(Icons.history, size: 16, color: AppColors.text),
+              const SizedBox(width: 10),
+              Text('Lịch sử bản nhạc', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+            ]),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: const Icon(Icons.more_horiz, size: 18, color: AppColors.text),
       ),
     );
   }

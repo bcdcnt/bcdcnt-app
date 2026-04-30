@@ -5,7 +5,10 @@ import '../constants/theme.dart';
 class SheetLightbox extends StatefulWidget {
   final List<String> images;
   final int initialIndex;
-  const SheetLightbox({super.key, required this.images, this.initialIndex = 0});
+  /// Optional caption shown beneath each image (e.g. "Ảnh: <username>",
+  /// "Bản nhạc: <username>"). Length must match [images] when provided.
+  final List<String?>? captions;
+  const SheetLightbox({super.key, required this.images, this.initialIndex = 0, this.captions});
 
   @override
   State<SheetLightbox> createState() => _SheetLightboxState();
@@ -142,6 +145,29 @@ class _SheetLightboxState extends State<SheetLightbox> {
               ),
             ),
           ),
+          // Caption (image credit) — shown directly above the zoom toolbar
+          // when the parent supplied a credit string for the active image.
+          if (widget.captions != null && _currentIndex < widget.captions!.length && (widget.captions![_currentIndex]?.isNotEmpty ?? false))
+            Positioned(
+              left: 0, right: 0, bottom: 64,
+              child: SafeArea(
+                top: false,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(
+                      widget.captions![_currentIndex]!,
+                      style: body(const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           // Zoom toolbar — bottom-centre, mirrors PDF readers (Apple Preview,
           // Adobe). Pinch / scroll-wheel still work; this is for when there's
           // no trackpad gesture available.
