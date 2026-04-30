@@ -116,8 +116,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       }
     }
     if (entries.isEmpty) return const SizedBox.shrink();
-    final style = body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.accentLight));
-    final sepStyle = body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.textMuted));
+    final style = body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.accentLight));
+    final sepStyle = body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textMuted));
     final children = <Widget>[];
     for (var i = 0; i < entries.length; i++) {
       final a = entries[i];
