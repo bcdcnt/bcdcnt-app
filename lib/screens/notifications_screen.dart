@@ -7,6 +7,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
+import '../services/date_groups.dart';
 import '../widgets/mini_player.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -146,6 +147,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (r != null) context.push(r);
   }
 
+  List<Object> get _grouped => groupByDay(_items, (n) => n['created_at']);
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -185,8 +188,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                (ctx, i) => _row(_items[i]),
-                childCount: _items.length,
+                (ctx, i) {
+                  final entry = _grouped[i];
+                  if (entry is String) return _NotifDayHeader(label: entry);
+                  return _row(entry as Map<String, dynamic>);
+                },
+                childCount: _grouped.length,
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
@@ -241,6 +248,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           else
             const SizedBox(width: 14),
         ]),
+      ),
+    );
+  }
+}
+
+class _NotifDayHeader extends StatelessWidget {
+  final String label;
+  const _NotifDayHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 18, 8, 6),
+      child: Text(
+        label.toUpperCase(),
+        style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

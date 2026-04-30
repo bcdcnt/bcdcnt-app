@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import 'hover_effects.dart';
 
 class SongRow extends StatelessWidget {
   final Map<String, dynamic> song;
@@ -19,13 +20,15 @@ class SongRow extends StatelessWidget {
     final thumb = song['thumbnail']?['url'];
     final views = song['weeklyListens'] ?? song['views'] ?? 0;
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
-        ),
+    return HoverHighlight(
+      borderRadius: BorderRadius.zero,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
+          ),
         child: Row(
           children: [
             if (showIndex)
@@ -58,6 +61,7 @@ class SongRow extends StatelessWidget {
               Text(formatViews(views), style: AppText.caption),
             ],
           ],
+        ),
         ),
       ),
     );

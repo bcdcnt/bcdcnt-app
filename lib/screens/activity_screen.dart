@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
+import '../services/date_groups.dart';
 import '../widgets/mini_player.dart';
 
 class ActivityScreen extends StatefulWidget {
@@ -143,6 +144,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (r != null) context.push(r);
   }
 
+  List<Object> get _grouped => groupByDay(_items, (a) => a['created_at']);
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
@@ -185,8 +188,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                (ctx, i) => _row(_items[i]),
-                childCount: _items.length,
+                (ctx, i) {
+                  final entry = _grouped[i];
+                  if (entry is String) return _DayHeader(label: entry);
+                  return _row(entry as Map<String, dynamic>);
+                },
+                childCount: _grouped.length,
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
@@ -281,6 +288,22 @@ class _ActivityScreenState extends State<ActivityScreen> {
           child: Icon(iconData, size: 14, color: AppColors.accentLight),
         ),
       ]),
+    );
+  }
+}
+
+class _DayHeader extends StatelessWidget {
+  final String label;
+  const _DayHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
+      child: Text(
+        label.toUpperCase(),
+        style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+      ),
     );
   }
 }

@@ -42,6 +42,7 @@ import 'screens/folk_category_screen.dart';
 import 'screens/upload_detail_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/desktop_shell.dart';
+import 'widgets/keyboard_shortcuts.dart';
 
 void main() {
   runApp(const BcdcntApp());
@@ -58,7 +59,9 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
       ],
       child: const _AuthPlayerBridge(
-        child: _AppRoot(),
+        child: KeyboardShortcuts(
+          child: _AppRoot(),
+        ),
       ),
     );
   }

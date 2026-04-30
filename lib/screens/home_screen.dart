@@ -9,6 +9,7 @@ import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/section_header.dart';
+import '../widgets/hover_effects.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/gallery_lightbox.dart';
 import '../widgets/video_poster.dart';
@@ -229,27 +230,60 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _recentListens = [];
   List<Map<String, dynamic>> _recentLoves = [];
 
+  // Tracks whether we've successfully fetched personalized data for the
+  // currently logged-in user. Reset on logout so a re-login re-fetches.
+  String? _personalizedUserId;
+
   @override
   void initState() {
     super.initState();
     _fetch();
-    // Personalized fetch can run independently after a microtask so we have context.read access.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchPersonalized());
+    // AuthProvider restores from prefs asynchronously, so on first frame the
+    // user may still be null — listen for the eventual notify and (re)fetch
+    // once auth lands. Also fire once immediately in case auth was already
+    // ready when we mounted.
+    final auth = context.read<AuthProvider>();
+    auth.addListener(_onAuthChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged());
+  }
+
+  @override
+  void dispose() {
+    context.read<AuthProvider>().removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final uid = auth.user?['id']?.toString();
+    if (auth.isAuthenticated && uid != null && uid != _personalizedUserId) {
+      _personalizedUserId = uid;
+      _fetchPersonalized();
+    } else if (!auth.isAuthenticated && _personalizedUserId != null) {
+      _personalizedUserId = null;
+      if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty) {
+        setState(() { _recentListens = []; _recentLoves = []; });
+      }
+    }
   }
 
   Future<void> _fetchPersonalized() async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isAuthenticated) {
-      if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty) {
-        setState(() { _recentListens = []; _recentLoves = []; });
-      }
-      return;
-    }
     final userId = auth.user?['id']?.toString();
     if (userId == null) return;
     try {
+      // Per-query catch so a schema hiccup in one (e.g. recentListens) doesn't
+      // also blank out the other (e.g. loves). Mirrors the safety net in
+      // _fetch() for the public home queries.
+      Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) =>
+          f.catchError((e) {
+            // ignore: avoid_print
+            print('[home] personalized query failed: $e');
+            return <String, dynamic>{};
+          });
       final results = await Future.wait<Map<String, dynamic>>([
-        auth.authedQuery(r'''query($id: ID!) {
+        safe(auth.authedQuery(r'''query($id: ID!) {
           user(id: $id) {
             recentListens(first: 12, page: 1, orderBy: [{column: "id", order: DESC}]) {
               data {
@@ -264,8 +298,8 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             }
           }
-        }''', {'id': userId}),
-        auth.authedQuery(r'''query($id: ID!) {
+        }''', {'id': userId})),
+        safe(auth.authedQuery(r'''query($id: ID!) {
           user(id: $id) {
             loves(first: 12, page: 1, orderBy: [{column: "id", order: DESC}]) {
               data {
@@ -280,7 +314,7 @@ class _HomeScreenState extends State<HomeScreen> {
               }
             }
           }
-        }''', {'id': userId}),
+        }''', {'id': userId})),
       ]);
       if (!mounted) return;
 
@@ -1450,8 +1484,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _songCarousel(List<dynamic> songs, {bool showRank = false}) {
+    // Adaptive card size — mobile stays at 140 (matching the prior look),
+    // desktop scales up so cards don't look lonely on a 1400px window.
+    final w = MediaQuery.of(context).size.width;
+    final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 140.0);
     return SizedBox(
-      height: 200,
+      height: card + 60,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: songs.length,
@@ -1460,37 +1498,39 @@ class _HomeScreenState extends State<HomeScreen> {
           final song = Map<String, dynamic>.from(songs[i]);
           final artists = (song['artists']?['data'] ?? song['artists'] ?? []) as List;
           final thumb = song['thumbnail']?['url'];
-          return InkWell(
-            onTap: () => _openSong(song),
-            child: SizedBox(
-              width: 140,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover)
-                            : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
-                      ),
-                      if (showRank) Positioned(
-                        bottom: 6, left: 6,
-                        child: Container(
-                          width: 22, height: 22,
-                          decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                          alignment: Alignment.center,
-                          child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+          return HoverScale(
+            child: InkWell(
+              onTap: () => _openSong(song),
+              child: SizedBox(
+                width: card,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: thumb != null
+                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
+                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
+                        if (showRank) Positioned(
+                          bottom: 6, left: 6,
+                          child: Container(
+                            width: 22, height: 22,
+                            decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                            alignment: Alignment.center,
+                            child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    if (artists.isNotEmpty)
+                      Text(artists.map((a) => a['title'] ?? '').join(', '), style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
             ),
           );
@@ -1500,8 +1540,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _personCarousel(List<dynamic> people, String routePrefix) {
+    final w = MediaQuery.of(context).size.width;
+    final av = w >= 1280 ? 110.0 : (w >= 900 ? 96.0 : 80.0);
     return SizedBox(
-      height: 114,
+      height: av + 34,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: people.length,
@@ -1509,24 +1551,26 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (context, i) {
           final p = people[i];
           final avatar = p['avatar']?['url'];
-          return InkWell(
-            onTap: () => context.push('$routePrefix${p['slug']}'),
-            child: SizedBox(
-              width: 80,
-              child: Column(
-                children: [
-                  Container(
-                    width: 80, height: 80,
-                    decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
-                    child: ClipOval(
-                      child: avatar != null
-                          ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
-                          : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white70)))),
+          return HoverScale(
+            child: InkWell(
+              onTap: () => context.push('$routePrefix${p['slug']}'),
+              child: SizedBox(
+                width: av,
+                child: Column(
+                  children: [
+                    Container(
+                      width: av, height: av,
+                      decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                      child: ClipOval(
+                        child: avatar != null
+                            ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
+                            : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white70)))),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(p['title'] ?? '', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
+                    const SizedBox(height: 6),
+                    Text(p['title'] ?? '', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ],
+                ),
               ),
             ),
           );
@@ -1589,8 +1633,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _playlistCarousel(List<dynamic> playlists) {
+    final w = MediaQuery.of(context).size.width;
+    final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 140.0);
     return SizedBox(
-      height: 200,
+      height: card + 60,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: playlists.length,
@@ -1599,22 +1645,23 @@ class _HomeScreenState extends State<HomeScreen> {
           final pl = playlists[i];
           final thumb = pl['thumbnail']?['url'];
           final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
-          return InkWell(
-            onTap: () => context.push('/playlist/${pl['id']}'),
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: 140,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover)
-                            : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
-                      ),
+          return HoverScale(
+            child: InkWell(
+              onTap: () => context.push('/playlist/${pl['id']}'),
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: card,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: thumb != null
+                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
+                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
+                        ),
                       Positioned(
                         bottom: 6, right: 6,
                         child: Container(
@@ -1629,9 +1676,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
-                ],
+                    const SizedBox(height: 8),
+                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
+                  ],
+                ),
               ),
             ),
           );
