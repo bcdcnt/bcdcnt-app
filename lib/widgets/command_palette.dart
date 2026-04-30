@@ -47,10 +47,12 @@ class CommandPalette extends StatefulWidget {
 class _CommandPaletteState extends State<CommandPalette> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
+  final _listScroll = ScrollController();
   Timer? _debounce;
   List<Map<String, dynamic>> _hits = [];
   bool _loading = false;
   int _selected = 0;
+  static const _rowHeight = 54.0; // matches _PaletteRow padding + content
 
   @override
   void initState() {
@@ -63,7 +65,16 @@ class _CommandPaletteState extends State<CommandPalette> {
     _debounce?.cancel();
     _ctrl.dispose();
     _focus.dispose();
+    _listScroll.dispose();
     super.dispose();
+  }
+
+  void _scrollToSelected() {
+    if (!_listScroll.hasClients) return;
+    final viewport = _listScroll.position.viewportDimension;
+    final target = (_selected * _rowHeight) - (viewport / 2) + (_rowHeight / 2);
+    final clamped = target.clamp(0.0, _listScroll.position.maxScrollExtent);
+    _listScroll.animateTo(clamped, duration: const Duration(milliseconds: 140), curve: Curves.easeOut);
   }
 
   void _onChanged(String v) {
@@ -150,10 +161,12 @@ class _CommandPaletteState extends State<CommandPalette> {
     if (_hits.isEmpty) return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.arrowDown) {
       setState(() => _selected = (_selected + 1) % _hits.length);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.arrowUp) {
       setState(() => _selected = (_selected - 1 + _hits.length) % _hits.length);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
@@ -246,13 +259,13 @@ class _CommandPaletteState extends State<CommandPalette> {
                                 ),
                               )
                             : ListView.builder(
+                                controller: _listScroll,
                                 padding: const EdgeInsets.symmetric(vertical: 6),
                                 itemCount: _hits.length,
                                 itemBuilder: (_, i) => _PaletteRow(
                                   hit: _hits[i],
                                   selected: i == _selected,
                                   onTap: () => _open(_hits[i]),
-                                  onHover: () => setState(() => _selected = i),
                                 ),
                               ),
               ),
@@ -269,8 +282,7 @@ class _PaletteRow extends StatelessWidget {
   final Map<String, dynamic> hit;
   final bool selected;
   final VoidCallback onTap;
-  final VoidCallback onHover;
-  const _PaletteRow({required this.hit, required this.selected, required this.onTap, required this.onHover});
+  const _PaletteRow({required this.hit, required this.selected, required this.onTap});
 
   String _typeLabel(String? t) {
     switch (t) {
@@ -298,10 +310,10 @@ class _PaletteRow extends StatelessWidget {
     final type = hit['_search_type']?.toString();
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) => onHover(),
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 80),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
           color: selected ? AppColors.surfaceLight : Colors.transparent,
           child: Row(
