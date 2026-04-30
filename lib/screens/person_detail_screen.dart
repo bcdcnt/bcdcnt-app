@@ -391,21 +391,21 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Vertical rhythm — golden ratio (φ ≈ 1.618):
+                //   font tier  32 → 14 → 11 (anchor = title)
+                //   space tier  6 → 14 → 6 → 22 (within / between groups)
                 Text(
                   _cfg.label.toUpperCase(),
                   style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  p['title'] ?? '',
-                  style: AppText.hero,
-                ),
+                const SizedBox(height: 6),
+                Text(p['title'] ?? '', style: AppText.hero),
                 if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(p['rank'], style: body(const TextStyle(fontSize: 15, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
+                  const SizedBox(height: 6),
+                  Text(p['rank'], style: body(const TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
                 ],
-                const SizedBox(height: 18),
-                // Inline stat row — comma-separated, Spotify-style.
+                const SizedBox(height: 14),
+                // Inline stat row — Spotify-style.
                 Wrap(
                   spacing: 18, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
@@ -418,7 +418,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     || bornDate != null || deathDate != null
                     || (p['born_address'] != null && (p['born_address'] as String).isNotEmpty))
                   Padding(
-                    padding: const EdgeInsets.only(top: 14),
+                    padding: const EdgeInsets.only(top: 22),
                     child: Wrap(
                       spacing: 18, runSpacing: 4,
                       children: [
@@ -683,7 +683,7 @@ class _StatInline extends StatelessWidget {
       text: TextSpan(
         children: [
           TextSpan(text: value, style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-          TextSpan(text: ' $label', style: body(const TextStyle(fontSize: 13, color: AppColors.textMuted))),
+          TextSpan(text: ' $label', style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
         ],
       ),
     );
@@ -702,7 +702,7 @@ class _MetaChip extends StatelessWidget {
       children: [
         Icon(icon, size: 14, color: AppColors.textMuted),
         const SizedBox(width: 6),
-        Text(value, style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+        Text(value, style: body(const TextStyle(fontSize: 14, color: AppColors.textSecondary))),
       ],
     );
   }
