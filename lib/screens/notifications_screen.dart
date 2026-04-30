@@ -8,6 +8,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/date_groups.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/mini_player.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -179,11 +180,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           if (_loading && _items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(Icons.notifications_none, size: 48, color: AppColors.textMuted),
-              const SizedBox(height: 12),
-              Text('Chưa có thông báo nào', style: AppText.bodyText),
-            ])))
+            const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
+              icon: Icons.notifications_none,
+              title: 'Chưa có thông báo',
+              subtitle: 'Khi có người tương tác với bài gửi hoặc bình luận của bạn, thông báo sẽ xuất hiện ở đây.',
+            ))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

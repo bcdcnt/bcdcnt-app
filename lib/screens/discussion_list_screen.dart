@@ -116,7 +116,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
             child: Text('Chưa có box nào', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
           )
         else
-          ...children.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: _forumBox(c))),
+          _ForumChildrenLayout(children: children, buildBox: _forumBox),
       ]),
     );
   }
@@ -211,6 +211,45 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
           ],
         ]),
       ),
+    );
+  }
+}
+
+/// Layouts forum boxes responsively — single column on mobile, 2 columns
+/// from 900px, 3 from 1280px. Boxes flow into rows so very long discussion
+/// lists don't push subsequent forums far down the page.
+class _ForumChildrenLayout extends StatelessWidget {
+  final List<Map<String, dynamic>> children;
+  final Widget Function(Map<String, dynamic>) buildBox;
+  const _ForumChildrenLayout({required this.children, required this.buildBox});
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.of(context).size.width;
+    final cols = w >= 1280 ? 3 : (w >= 900 ? 2 : 1);
+    if (cols == 1) {
+      return Column(
+        children: children.map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: buildBox(c))).toList(),
+      );
+    }
+    // Distribute round-robin so column heights stay balanced even when
+    // discussion counts vary wildly between boxes.
+    final columns = List.generate(cols, (_) => <Map<String, dynamic>>[]);
+    for (var i = 0; i < children.length; i++) {
+      columns[i % cols].add(children[i]);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < cols; i++) ...[
+          if (i > 0) const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              children: columns[i].map((c) => Padding(padding: const EdgeInsets.only(bottom: 12), child: buildBox(c))).toList(),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

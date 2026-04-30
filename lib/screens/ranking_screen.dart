@@ -168,19 +168,23 @@ class _RankingScreenState extends State<RankingScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Listen list (top 10)
+              // Listen list (top 10) — top 3 podium, rest as SongRow
               if (_loading)
                 const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
               else if (_songs.isEmpty)
                 Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))))
-              else
-                ..._songs.asMap().entries.map((e) {
+              else ...[
+                if (_songs.length >= 3) ...[
+                  _RankingPodium(items: _songs.take(3).toList()),
+                  const SizedBox(height: 18),
+                ],
+                ..._songs.asMap().entries.skip(_songs.length >= 3 ? 3 : 0).map((e) {
                   final s = e.value['object'] as Map<String, dynamic>;
                   final periodTotal = e.value['total'] is num ? (e.value['total'] as num).toInt() : 0;
-                  // Override views shown by SongRow with the period-specific total
                   final sCopy = Map<String, dynamic>.from(s)..['views'] = periodTotal;
                   return SongRow(song: sCopy, index: e.key, showIndex: true, onTap: () => context.push('/song/${s['id']}', extra: s));
                 }),
+              ],
 
               const SizedBox(height: 30),
 
@@ -451,6 +455,120 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             Text(item['_valueLabel']?.toString() ?? '', style: body(const TextStyle(fontSize: 9, color: AppColors.textMuted))),
           ]),
         ]),
+      ),
+    );
+  }
+}
+
+/// Top-3 podium row for ranking screens — Apple Music Top-100 vibe.
+/// #1 sits in the centre and is taller, #2 / #3 flank it. Each card shows
+/// rank chip, artwork, title, artist, period total, and tappable navigation
+/// to the song detail.
+class _RankingPodium extends StatelessWidget {
+  final List items; // each: { object: songMap, total: num }
+  const _RankingPodium({required this.items});
+
+  String _fmt(num n) {
+    final s = n.toInt().abs().toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+    }
+    return n < 0 ? '-$buf' : buf.toString();
+  }
+
+  Widget _card(BuildContext context, int rank, Map<String, dynamic> entry, {required bool tall}) {
+    final song = entry['object'] as Map<String, dynamic>;
+    final total = entry['total'] is num ? entry['total'] as num : 0;
+    final thumb = song['thumbnail']?['url']?.toString();
+    final artists = (song['artists']?['data'] ?? song['artists'] ?? []) as List;
+    final artistText = artists.map((a) => a['title'] ?? '').join(', ');
+
+    final rankColors = {
+      1: const [Color(0xFFFFD700), Color(0xFFB8860B)], // gold
+      2: const [Color(0xFFC0C0C0), Color(0xFF808080)], // silver
+      3: const [Color(0xFFCD7F32), Color(0xFF8B4513)], // bronze
+    };
+    final colors = rankColors[rank] ?? rankColors[1]!;
+
+    final cover = AspectRatio(
+      aspectRatio: 1,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: thumb != null
+            ? CachedNetworkImage(
+                imageUrl: thumb,
+                fit: BoxFit.cover,
+                errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
+              )
+            : Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
+      ),
+    );
+
+    return InkWell(
+      onTap: () => context.push('/song/${song['id']}', extra: song),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tall ? 0 : 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              children: [
+                cover,
+                Positioned(
+                  top: 8, left: 8,
+                  child: Container(
+                    width: tall ? 36 : 30, height: tall ? 36 : 30,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))],
+                    ),
+                    child: Text('$rank', style: display(TextStyle(fontSize: tall ? 16 : 14, fontWeight: FontWeight.w900, color: Colors.white))),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              song['title']?.toString() ?? '',
+              maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: display(TextStyle(fontSize: tall ? 15 : 13, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.25)),
+            ),
+            if (artistText.isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+            ],
+            const SizedBox(height: 4),
+            Row(children: [
+              const Icon(Icons.headphones, size: 11, color: AppColors.textMuted),
+              const SizedBox(width: 4),
+              Text(_fmt(total), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.length < 3) return const SizedBox.shrink();
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // #2
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.only(right: 6), child: _card(context, 2, items[1] as Map<String, dynamic>, tall: false))),
+          // #1
+          Expanded(flex: 5, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: _card(context, 1, items[0] as Map<String, dynamic>, tall: true))),
+          // #3
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.only(left: 6), child: _card(context, 3, items[2] as Map<String, dynamic>, tall: false))),
+        ],
       ),
     );
   }

@@ -6,6 +6,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
 import '../services/date_groups.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/mini_player.dart';
 
 class ActivityScreen extends StatefulWidget {
@@ -183,7 +184,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
           if (_loading && _items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có hoạt động', style: AppText.bodyText)))
+            const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
+              icon: Icons.timeline,
+              title: 'Chưa có hoạt động',
+              subtitle: 'Hoạt động mới nhất từ cộng đồng sẽ xuất hiện ở đây.',
+            ))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),

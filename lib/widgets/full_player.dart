@@ -487,7 +487,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                      IconButton(icon: const Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
+                      IconButton(tooltip: 'Bài trước  ⇧ ←', icon: const Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
                       Container(
                         width: 68, height: 68,
                         decoration: BoxDecoration(
@@ -496,11 +496,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
                         ),
                         child: IconButton(
+                          tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
                           icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
                           onPressed: player.togglePlay,
                         ),
                       ),
-                      IconButton(icon: const Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
+                      IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: const Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
                       _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
                     ],
                   ),

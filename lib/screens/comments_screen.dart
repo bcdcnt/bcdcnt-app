@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
+import '../widgets/empty_state.dart';
 
 class CommentsScreen extends StatefulWidget {
   const CommentsScreen({super.key});
@@ -230,17 +231,12 @@ class _CommentsScreenState extends State<CommentsScreen> {
             if (_loading && _items.isEmpty)
               const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (_items.isEmpty)
-              SliverFillRemaining(
+              const SliverFillRemaining(
                 hasScrollBody: false,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.chat_bubble_outline, size: 48, color: AppColors.textMuted),
-                      const SizedBox(height: 12),
-                      Text('Chưa có bình luận nào', style: body(const TextStyle(color: AppColors.textMuted))),
-                    ],
-                  ),
+                child: EmptyState(
+                  icon: Icons.chat_bubble_outline,
+                  title: 'Chưa có bình luận',
+                  subtitle: 'Bình luận mới nhất từ cộng đồng sẽ hiển thị ở đây.',
                 ),
               )
             else
