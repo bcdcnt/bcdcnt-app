@@ -171,7 +171,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final thumbSize = isDesktop ? 200.0 : 120.0;
     final titleSize = isDesktop ? 32.0 : 19.0;
     final usernameSize = isDesktop ? 14.0 : 12.0;
-    final metaSize = isDesktop ? 13.0 : 11.0;
+    // Tier-3 (golden ratio anchored on 32 → 14 → 11). Mobile shrinks one
+    // notch since the hero is narrower.
+    final metaSize = isDesktop ? 14.0 : 11.0;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -190,7 +192,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               sliver: SliverList(delegate: SliverChildListDelegate([
                 // Hero
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       width: thumbSize, height: thumbSize,
@@ -219,7 +221,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(pl['title'] ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 14),
                           if (user?['username'] != null) Row(children: [
                             CircleAvatar(
                               radius: isDesktop ? 13 : 10,
@@ -230,14 +232,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             Flexible(child: Text(user['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: usernameSize, color: AppColors.textSecondary, fontWeight: FontWeight.w600)))),
                           ]),
                           if (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) Padding(
-                            padding: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.only(top: 6),
                             child: Row(children: [
                               Icon(Icons.event_outlined, size: isDesktop ? 14 : 12, color: AppColors.accentLight),
                               const SizedBox(width: 4),
                               Flexible(child: Text(_formatEventDate(pl['event_date']), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: metaSize, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
                             ]),
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 6),
                           Text('${_formatInt(_items.length)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textMuted))),
                         ],
                       ),
