@@ -165,7 +165,11 @@ class _CommandPaletteState extends State<CommandPalette> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    // Material ancestor is required by TextField/InkWell. Use transparent
+    // so the surrounding scrim stays visible.
+    return Material(
+      type: MaterialType.transparency,
+      child: Center(
       child: Container(
         width: 640,
         constraints: const BoxConstraints(maxHeight: 480),
@@ -250,6 +254,7 @@ class _CommandPaletteState extends State<CommandPalette> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
