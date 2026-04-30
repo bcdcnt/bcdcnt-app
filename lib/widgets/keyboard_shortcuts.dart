@@ -11,14 +11,16 @@ import 'command_palette.dart';
 ///   Space            → play/pause
 ///   Arrow Left/Right → seek -5s / +5s
 ///   Shift+Arrow      → previous / next track
+///   Cmd+K            → open command palette
 ///   Cmd+F            → focus the search route
-///   Cmd+L            → open the full player (lyrics tab)
 ///   Cmd+,            → open settings
 ///
-/// Wraps a child and intercepts keys via [Focus] + a raw key listener so we
-/// can inspect modifiers without paying for an Actions/Intents tree (the set
-/// is small and global). Skips handling whenever a text input has focus so
-/// typing in search/comments isn't hijacked.
+/// Hooks into [HardwareKeyboard] directly instead of relying on the [Focus]
+/// tree so the shortcuts keep firing after a [TextField] grabs focus or a
+/// modal route pushes on top — those scenarios broke the previous Focus-based
+/// implementation. The handler still defers to the focused widget for
+/// non-modifier keys (Space, arrows) when a text input is active so typing
+/// isn't hijacked.
 class KeyboardShortcuts extends StatefulWidget {
   final Widget child;
   const KeyboardShortcuts({super.key, required this.child});
@@ -28,11 +30,23 @@ class KeyboardShortcuts extends StatefulWidget {
 }
 
 class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
-  final FocusNode _focus = FocusNode(debugLabel: 'KeyboardShortcuts', skipTraversal: true);
+  bool _registered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final isDesktop = kIsWeb || defaultTargetPlatform == TargetPlatform.macOS
+        || defaultTargetPlatform == TargetPlatform.windows
+        || defaultTargetPlatform == TargetPlatform.linux;
+    if (isDesktop) {
+      HardwareKeyboard.instance.addHandler(_handler);
+      _registered = true;
+    }
+  }
 
   @override
   void dispose() {
-    _focus.dispose();
+    if (_registered) HardwareKeyboard.instance.removeHandler(_handler);
     super.dispose();
   }
 
@@ -41,16 +55,13 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
     if (primary == null) return false;
     final ctx = primary.context;
     if (ctx == null) return false;
-    // Editable text widgets register themselves in the focus tree; checking
-    // their context is the cheapest way to detect "user is typing".
-    return ctx.findAncestorWidgetOfExactType<EditableText>() != null
-        || primary.debugLabel?.contains('EditableText') == true;
+    return ctx.findAncestorWidgetOfExactType<EditableText>() != null;
   }
 
-  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
+  bool _handler(KeyEvent event) {
+    if (!mounted) return false;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+
     final key = event.logicalKey;
     final pressed = HardwareKeyboard.instance.logicalKeysPressed;
     final meta = pressed.contains(LogicalKeyboardKey.metaLeft)
@@ -61,36 +72,31 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
         || pressed.contains(LogicalKeyboardKey.shiftRight);
 
     final typing = _isTextFieldFocused();
-    final player = context.read<PlayerProvider>();
 
-    // Cmd/Ctrl shortcuts always run, even while typing — Cmd+F is the
-    // canonical way to jump to search regardless of current focus.
+    // Cmd/Ctrl shortcuts run regardless of typing — they're system-style
+    // navigation that shouldn't be blocked by a focused TextField.
     if (meta) {
       if (key == LogicalKeyboardKey.keyK) {
         CommandPalette.show(context);
-        return KeyEventResult.handled;
+        return true;
       }
       if (key == LogicalKeyboardKey.keyF) {
         context.go('/search');
-        return KeyEventResult.handled;
-      }
-      if (key == LogicalKeyboardKey.keyL) {
-        // TODO(sprint3): open FullPlayer with lyrics tab pre-selected.
-        // For now navigate to search as no-op route lookup; replace once
-        // FullPlayer accepts an initial-tab argument.
-        return KeyEventResult.ignored;
+        return true;
       }
       if (key == LogicalKeyboardKey.comma) {
         context.go('/cai-dat');
-        return KeyEventResult.handled;
+        return true;
       }
+      return false;
     }
 
-    if (typing) return KeyEventResult.ignored;
+    if (typing) return false;
 
+    final player = context.read<PlayerProvider>();
     if (key == LogicalKeyboardKey.space) {
       player.togglePlay();
-      return KeyEventResult.handled;
+      return true;
     }
     if (key == LogicalKeyboardKey.arrowLeft) {
       if (shift) {
@@ -99,7 +105,7 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
         final newPos = player.position - const Duration(seconds: 5);
         player.seek(newPos < Duration.zero ? Duration.zero : newPos);
       }
-      return KeyEventResult.handled;
+      return true;
     }
     if (key == LogicalKeyboardKey.arrowRight) {
       if (shift) {
@@ -109,23 +115,13 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
         final target = player.position + const Duration(seconds: 5);
         player.seek(target > dur ? dur : target);
       }
-      return KeyEventResult.handled;
+      return true;
     }
-    return KeyEventResult.ignored;
+    return false;
   }
 
   @override
   Widget build(BuildContext context) {
-    // Only enable on desktop platforms — mobile uses on-screen controls.
-    final isDesktop = kIsWeb || defaultTargetPlatform == TargetPlatform.macOS
-        || defaultTargetPlatform == TargetPlatform.windows
-        || defaultTargetPlatform == TargetPlatform.linux;
-    if (!isDesktop) return widget.child;
-    return Focus(
-      focusNode: _focus,
-      autofocus: true,
-      onKeyEvent: _onKey,
-      child: widget.child,
-    );
+    return widget.child;
   }
 }
