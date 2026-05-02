@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -121,6 +122,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         _previewPoints = ((user['recentPoints']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
       });
+      logActivity(context.read<AuthProvider>(), 'view', 'user', user['id']);
     } catch (e) {
       // ignore: avoid_print
       print('[user_detail] fetch failed: $e');

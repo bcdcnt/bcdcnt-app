@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -68,6 +70,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
         return;
       }
       setState(() => _tag = Map<String, dynamic>.from(t));
+      logActivity(context.read<AuthProvider>(), 'view', 'tag', t['id']);
       // Pre-fetch active tab + others lazy
       _fetchPage('song', 1);
     } catch (_) { if (mounted) setState(() => _tag = null); }

@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'play_tracker.dart';
 
 enum PlayerRepeatMode { off, all, one }
 
@@ -29,6 +30,7 @@ class PlayerProvider extends ChangeNotifier {
   // Track which user's settings we've already applied so we don't re-apply
   // (and re-trigger sync to server) on every notifyListeners.
   String? _appliedForUserId;
+  PlayTracker? _tracker;
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
@@ -48,10 +50,18 @@ class PlayerProvider extends ChangeNotifier {
   PlayerProvider() {
     _player.playingStream.listen((playing) {
       _isPlaying = playing;
+      // Hand pause/resume signals to the play tracker so accumulated time
+      // reflects only foreground listening.
+      if (playing) {
+        _tracker?.onResume();
+      } else {
+        _tracker?.onPause();
+      }
       notifyListeners();
     });
     _player.positionStream.listen((pos) {
       _position = pos;
+      _tracker?.onTimeUpdate();
       notifyListeners();
     });
     _player.durationStream.listen((dur) {
@@ -60,9 +70,16 @@ class PlayerProvider extends ChangeNotifier {
     });
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
+        _tracker?.endSession(reason: 'completed');
         _onSongEnded();
       }
     });
+  }
+
+  /// Wire the listen-tracker. Called once from the auth bridge on app
+  /// start. Pass `null` to disable tracking (e.g. user signed out).
+  void setLogListenFn(LogListenFn? fn) {
+    _tracker = fn == null ? null : PlayTracker(fn);
   }
 
   Future<void> _onSongEnded() async {
@@ -74,13 +91,13 @@ class PlayerProvider extends ChangeNotifier {
     if (_queue.isEmpty) return;
     final next = _currentIndex + 1;
     if (next < _queue.length) {
-      await playAtIndex(next);
+      await playAtIndex(next, source: 'queue');
     } else if (_repeat == PlayerRepeatMode.all) {
-      await playAtIndex(0);
+      await playAtIndex(0, source: 'queue');
     }
   }
 
-  Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list]) async {
+  Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual']) async {
     _currentSong = song;
     if (list != null) {
       _queue = list;
@@ -91,6 +108,17 @@ class PlayerProvider extends ChangeNotifier {
 
     final url = song['audioUrl'] ?? song['file']?['audio_url'];
     if (url == null) return;
+
+    // Begin a tracking session before audio loads so we accumulate time
+    // from the very first frame. `source=manual` means the user actively
+    // chose to play this song; `queue` is auto-advance; `autoplay` is the
+    // (now-removed) detail-page auto-start, which never logs.
+    final id = song['id']?.toString();
+    final type = (song['file_type'] ?? 'song').toString();
+    final dur = (song['file']?['duration'] is num) ? (song['file']['duration'] as num).toDouble() : null;
+    if (id != null) {
+      _tracker?.startSession(songId: id, objectType: type, songDuration: dur, source: source);
+    }
 
     try {
       await _player.setUrl(url);
@@ -113,10 +141,10 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> playAtIndex(int index) async {
+  Future<void> playAtIndex(int index, {String source = 'manual'}) async {
     if (index < 0 || index >= _queue.length) return;
     _currentIndex = index;
-    await playSong(_queue[index]);
+    await playSong(_queue[index], null, source);
     _maybeRefillQueue();
   }
 

@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_media.dart';
@@ -44,6 +46,9 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
         _d = data['discussion'] != null ? Map<String, dynamic>.from(data['discussion'] as Map) : null;
         _loading = false;
       });
+      if (_d?['id'] != null) {
+        logActivity(context.read<AuthProvider>(), 'view', 'discussion', _d!['id']);
+      }
     } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 
@@ -126,7 +131,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
               // a waveform player and images use CachedNetworkImage (parity
               // with how the same author's posts render in song comments).
               if ((d['content'] ?? '').toString().isNotEmpty)
-                CommentMedia(html: d['content'] ?? ''),
+                CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString()),
 
               // Polls / "đánh giá" — render each poll with its options and
               // current vote counts. Voting itself is read-only here for now.

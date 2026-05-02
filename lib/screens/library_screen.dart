@@ -20,8 +20,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<dynamic> _latest = [];
   // Folk-music sub-data — populated lazily so the grid can show melodies +
   // folk categories under the Dân ca section (parity with web's Library).
-  List<dynamic> _melodies = [];
-  List<dynamic> _folkCats = [];
   // Recently-listened — only populated when authenticated. Renders as a
   // horizontal carousel above the "Của bạn" tile grid.
   List<Map<String, dynamic>> _recent = [];
@@ -80,22 +78,17 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   Future<void> _fetch() async {
     try {
+      // Library only needs the latest-songs carousel now — folk vocabulary
+      // (melodies + fcats) is fetched on demand by the dedicated index
+      // pages, so we don't pre-load 400 chips for a tile dashboard.
       final data = await ApiClient.query(r'''query {
         songs(first: 8, orderBy: [{column: "id", order: DESC}]) {
           data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
-        }
-        melodies(first: 200, orderBy: [{column: "title", order: ASC}]) {
-          data { id title slug }
-        }
-        fcats(first: 200, orderBy: [{column: "title", order: ASC}]) {
-          data { id title slug }
         }
       }''');
       if (!mounted) return;
       setState(() {
         _latest = data['songs']?['data'] ?? [];
-        _melodies = (data['melodies']?['data'] ?? []) as List;
-        _folkCats = (data['fcats']?['data'] ?? []) as List;
         _loading = false;
       });
     } catch (_) { if (mounted) setState(() => _loading = false); }
@@ -165,6 +158,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _Tile(label: 'Nhạc tiền chiến', icon: Icons.history_toggle_off, color: const Color(0xFFA89060), onTap: () => context.push('/tag/nhac-tien-chien')),
             _Tile(label: 'Nhạc phim', icon: Icons.movie_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag/nhac-phim')),
             _Tile(label: 'Video', icon: Icons.play_circle_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/tag/video')),
+          ]),
+          const SizedBox(height: 28),
+
+          // Dân ca — sub-tiles for the two reference indexes (genres /
+          // melodies). Mirrors the "Tân nhạc — sub-categories" layout so
+          // the library reads as a flat tile dashboard.
+          const SectionHeader(icon: Icons.album_outlined, title: 'Dân ca'),
+          _grid([
+            _Tile(label: 'Thể loại dân ca', icon: Icons.category_outlined, color: const Color(0xFF8B6914), onTap: () => context.push('/the-loai-dan-ca')),
+            _Tile(label: 'Làn điệu dân ca', icon: Icons.graphic_eq, color: const Color(0xFFA89060), onTap: () => context.push('/lan-dieu')),
           ]),
           const SizedBox(height: 28),
 
@@ -254,44 +257,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ]),
           const SizedBox(height: 28),
 
-          // Dân ca — Làn điệu + thể loại con (full list, dynamic from API)
-          if (_melodies.isNotEmpty || _folkCats.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.album_outlined, title: 'Dân ca'),
-            if (_melodies.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
-                child: Text('Làn điệu (${_melodies.length})', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
-              ),
-              Wrap(
-                spacing: 8, runSpacing: 8,
-                children: _melodies.map((m) {
-                  final mm = Map<String, dynamic>.from(m);
-                  return _Chip(
-                    label: (mm['title'] ?? '').toString(),
-                    onTap: () => context.push('/lan-dieu/${mm['slug']}'),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
-            if (_folkCats.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 8),
-                child: Text('Thể loại (${_folkCats.length})', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
-              ),
-              Wrap(
-                spacing: 8, runSpacing: 8,
-                children: _folkCats.map((f) {
-                  final ff = Map<String, dynamic>.from(f);
-                  return _Chip(
-                    label: (ff['title'] ?? '').toString(),
-                    onTap: () => context.push('/tag/${ff['slug']}'),
-                  );
-                }).toList(),
-              ),
-            ],
-          ],
+          // (Dân ca section moved up to sit beneath Tân nhạc — see above.)
 
           const SizedBox(height: 100),
         ],
@@ -390,33 +356,6 @@ class _Tile extends StatelessWidget {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _Chip({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return HoverHighlight(
-      borderRadius: BorderRadius.circular(20),
-      color: AppColors.surfaceHover,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceLight,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: Text(label, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
         ),
       ),
     );

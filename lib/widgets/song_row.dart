@@ -37,9 +37,28 @@ class SongRow extends StatelessWidget {
           ),
         child: Row(
           children: [
-            if (showIndex)
-              SizedBox(width: 22, child: Text('${(index ?? 0) + 1}', textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isPlaying ? AppColors.accent : AppColors.textMuted))),
-            if (showIndex) const SizedBox(width: 8),
+            if (showIndex) ...[
+              SizedBox(
+                width: 28,
+                child: Builder(builder: (_) {
+                  final rank = (index ?? 0);
+                  final isTop3 = rank < 3;
+                  return Text(
+                    '${rank + 1}',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isTop3 ? 18 : 13,
+                      fontWeight: isTop3 ? FontWeight.w900 : FontWeight.w600,
+                      color: isPlaying
+                          ? AppColors.accent
+                          : (isTop3 ? AppColors.accentLight : AppColors.textMuted),
+                      letterSpacing: -0.5,
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(width: 10),
+            ],
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: thumb != null

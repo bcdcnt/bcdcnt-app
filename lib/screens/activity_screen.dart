@@ -17,20 +17,21 @@ class ActivityScreen extends StatefulWidget {
 }
 
 class _ActivityScreenState extends State<ActivityScreen> {
+  // Long-form labels matching web's `activity.*` i18n keys (vi locale).
   static const _actionLabels = {
-    'update_lyric': 'cập nhật lời',
+    'update_lyric': 'cập nhật lời bài hát',
     'comment': 'bình luận',
     'love_comment': 'thích bình luận',
-    'create_sheet': 'đăng bản nhạc',
-    'create_document': 'đăng tư liệu',
-    'create_song': 'đăng tân nhạc',
-    'create_folk': 'đăng dân ca',
-    'create_instrumental': 'đăng khí nhạc',
-    'create_karaoke': 'đăng karaoke',
-    'create_poem': 'đăng tiếng thơ',
+    'create_sheet': 'đăng sheet nhạc mới',
+    'create_document': 'đăng tư liệu mới',
+    'create_song': 'đăng bài hát mới',
+    'create_folk': 'đăng bài dân ca mới',
+    'create_instrumental': 'đăng bài khí nhạc mới',
+    'create_karaoke': 'đăng bài thành viên hát mới',
+    'create_poem': 'đăng bài tiếng thơ mới',
     'approve_upload': 'duyệt bài gửi',
     'reject_upload': 'từ chối bài gửi',
-    'create_discussion': 'mở thảo luận',
+    'create_discussion': 'đăng thảo luận mới',
   };
   static const _actionIcons = {
     'update_lyric': Icons.edit_outlined,

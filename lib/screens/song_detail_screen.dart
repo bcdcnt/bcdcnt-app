@@ -7,6 +7,7 @@ import 'package:flutter_html/flutter_html.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/song_row.dart';
@@ -104,8 +105,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             uploader { id username }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
-            composers(first: 20) { data { id slug title } }
-            recomposers(first: 20) { data { id slug title } }
+            composers(first: 20) { data { id slug title avatar { url } } }
+            recomposers(first: 20) { data { id slug title avatar { url } } }
             fcats(first: 10) { data { id slug title } }
             melodies(first: 10) { data { id slug title } }
             tags { id name slug }
@@ -123,7 +124,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             uploader { id username }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
-            composers(first: 20) { data { id slug title } }
+            composers(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
@@ -138,7 +139,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
             sheet { id slug title year lyric_type content description }
-            poets(first: 20) { data { id slug title } }
+            poets(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
@@ -152,7 +153,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             imageCreditor { id username }
             file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
-            sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title } } poets(first: 20) { data { id slug title } } }
+            sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             song { id slug title }
             users(first: 100) { data { id username avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
@@ -167,7 +168,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
-            sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title } } poets(first: 20) { data { id slug title } } }
+            sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             artists(first: 100) { data { id title slug avatar { url } } }
             loves(first: 100) { data { user_id user { id username avatar { url } } } }
           } }''';
@@ -244,7 +245,18 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       }
       _fetchSuggestions();
 
-      // Auto-play on first visit
+      // Log view activity — mirrors web's SongDetailClient. Uses the
+      // resolved type so folk/karaoke/etc. log to the right object_type.
+      logActivity(context.read<AuthProvider>(), 'view', _resolvedType, _song?['id']);
+
+      // Auto-play on detail visit. Source is read from the route's extra
+      // map so callers can decide whether the navigation should count as
+      // an intentional listen:
+      //   * default `manual`  — song row tap, "Phát" button, recent
+      //     listens etc. — counts in Nghe gần đây
+      //   * `autoplay`        — search hit, "Bài gốc" karaoke link,
+      //     suggestion click — plays so the user hears it but does NOT
+      //     log to recentListens (PlayTracker filters by source)
       if (_song != null && mounted) {
         final player = context.read<PlayerProvider>();
         final isCurrent = player.currentSong?['id']?.toString() == _song!['id'].toString();
@@ -321,6 +333,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         for (final s in (sheet['karaokes']?['data'] ?? []) as List) {
           final m = Map<String, dynamic>.from(s);
           m['file_type'] = 'karaoke';
+          // Karaoke API exposes performers as `users` (id+username+avatar);
+          // SongRow + downstream UI read `artists`. Map shape so member
+          // names render in "Thành viên hát bài này" rows.
+          if (m['users']?['data'] != null && m['artists'] == null) {
+            m['artists'] = {
+              'data': ((m['users']['data']) as List).map((u) => {
+                'id': u['id'],
+                'title': u['username'],
+                'slug': u['username'],
+                'avatar': u['avatar'],
+              }).toList(),
+            };
+          }
           if (m['id'].toString() != widget.songId) allSongs.add(m);
         }
         for (final s in (sheet['instrumentals']?['data'] ?? []) as List) {
@@ -455,7 +480,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     } catch (_) { return []; }
   }
 
-  void _play() {
+  void _play({String? source}) {
     if (_song == null) return;
     final s = Map<String, dynamic>.from(_song!);
     s['audioUrl'] = _song!['file']?['audio_url'];
@@ -465,7 +490,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       m['audioUrl'] = m['file']?['audio_url'];
       queue.add(m);
     }
-    context.read<PlayerProvider>().playSong(s, queue);
+    // Caller's source falls back to the navigation `extra._source` (set
+    // when the route was pushed) and finally to 'manual' if nothing set.
+    final effectiveSource = source ?? (widget.initialSong?['_source']?.toString()) ?? 'manual';
+    context.read<PlayerProvider>().playSong(s, queue, effectiveSource);
   }
 
   /// Play a section's song list as the active queue. Used by the Phát tất
@@ -1064,15 +1092,24 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       _ExpandCard(
         expanded: _lyricsExpanded,
         onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
-        child: isCurrent
-            ? SizedBox(
-                height: _lyricsExpanded ? 420 : 220,
-                child: TimedLyrics(
-                  raw: str,
-                  fallback: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
-                ),
-              )
-            : Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+        // Use the timed scroll viewport only when the lyrics are LRC-tagged
+        // (the active line needs a fixed-height frame to centre-scroll).
+        // Plain lyrics render as flowing Html so the expanded mode can grow
+        // naturally — fixes the "last line clipped" issue when lyrics
+        // exceed the SizedBox cap.
+        child: () {
+          final isLrc = RegExp(r'^\s*\[\d{1,2}:\d{2}', multiLine: true).hasMatch(str);
+          if (isCurrent && isLrc) {
+            return SizedBox(
+              height: _lyricsExpanded ? 640 : 220,
+              child: TimedLyrics(
+                raw: str,
+                fallback: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+              ),
+            );
+          }
+          return Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)});
+        }(),
       ),
     ];
   }
@@ -1250,6 +1287,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
             onPlayAll: () => _playList(songs),
             count: songs.length,
+            // Composer / poet / recomposer = creator → square avatar.
+            squareAvatar: true,
           ),
           ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
@@ -1389,6 +1428,10 @@ class _ArtistBanner extends StatelessWidget {
   final int count;
   final VoidCallback? onTap;
   final VoidCallback onPlayAll;
+  /// Avatar shape — circle for performers (Trình bày / Thể hiện), rounded
+  /// square for creators (Sáng tác / Soạn giả / Tác giả). Mirrors the
+  /// person carousel/list pattern across the app.
+  final bool squareAvatar;
 
   const _ArtistBanner({
     required this.name,
@@ -1397,10 +1440,12 @@ class _ArtistBanner extends StatelessWidget {
     this.avatar,
     this.onTap,
     required this.onPlayAll,
+    this.squareAvatar = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final radius = squareAvatar ? BorderRadius.circular(8) : BorderRadius.circular(20);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -1412,8 +1457,13 @@ class _ArtistBanner extends StatelessWidget {
             children: [
               Container(
                 width: 40, height: 40,
-                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
-                child: ClipOval(
+                decoration: BoxDecoration(
+                  shape: squareAvatar ? BoxShape.rectangle : BoxShape.circle,
+                  borderRadius: squareAvatar ? radius : null,
+                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                ),
+                child: ClipRRect(
+                  borderRadius: radius,
                   child: avatar != null && avatar!.isNotEmpty
                       ? CachedNetworkImage(imageUrl: avatar!, fit: BoxFit.cover, errorWidget: (_, _, _) => Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))))
                       : Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))),
@@ -1935,7 +1985,7 @@ class _OverflowActionPill extends StatelessWidget {
             child: Row(children: [
               const Icon(Icons.history, size: 16, color: AppColors.text),
               const SizedBox(width: 10),
-              Text('Lịch sử bản nhạc', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+              Text('Lịch sử bản thu', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
             ]),
           ),
       ],

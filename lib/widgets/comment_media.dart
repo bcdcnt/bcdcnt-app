@@ -10,7 +10,11 @@ import 'waveform_player.dart';
 /// CachedNetworkImage, audio shows the WaveformPlayer, video opens externally.
 class CommentMedia extends StatefulWidget {
   final String html;
-  const CommentMedia({super.key, required this.html});
+  /// Username of the comment / discussion author. When provided, image
+  /// popups show "Ảnh: <username>" credit (parity with sheet music
+  /// captions on song detail).
+  final String? authorName;
+  const CommentMedia({super.key, required this.html, this.authorName});
 
   @override
   State<CommentMedia> createState() => _CommentMediaState();
@@ -225,6 +229,24 @@ class _CommentMediaState extends State<CommentMedia> {
                   onPressed: () => Navigator.pop(ctx),
                 ),
               ),
+              if (widget.authorName != null && widget.authorName!.isNotEmpty)
+                Positioned(
+                  left: 0, right: 0, bottom: 24,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Text(
+                        'Ảnh: ${widget.authorName}',
+                        style: body(const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

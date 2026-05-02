@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'command_palette.dart';
+import 'desktop_shell.dart' show desktopPanelOpen;
 
 /// Top-level keyboard shortcuts for the desktop app, modelled after
 /// Spotify / Apple Music:
@@ -15,6 +16,7 @@ import 'command_palette.dart';
 ///   Cmd+K            → open command palette
 ///   Cmd+F            → focus the search route
 ///   Cmd+,            → open settings
+///   Cmd+I            → toggle the right inspector panel
 ///
 /// Hooks into [HardwareKeyboard] directly instead of relying on the [Focus]
 /// tree so the shortcuts keep firing after a [TextField] grabs focus or a
@@ -92,6 +94,11 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
       }
       if (key == LogicalKeyboardKey.comma) {
         if (navCtx != null) navCtx.go('/cai-dat');
+        return true;
+      }
+      if (key == LogicalKeyboardKey.keyI) {
+        // Toggle the desktop right inspector panel (Bình luận / Hàng đợi).
+        desktopPanelOpen.value = !desktopPanelOpen.value;
         return true;
       }
       return false;

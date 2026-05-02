@@ -9,7 +9,11 @@ import '../constants/theme.dart';
 class HeroSpotlight extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final void Function(Map<String, dynamic> item)? onTap;
-  const HeroSpotlight({super.key, required this.items, this.onTap});
+  /// Optional inline play callback — wires the "Phát" CTA on each card so
+  /// users can start playback without leaving the home feed. When null
+  /// the CTA falls back to [onTap].
+  final void Function(Map<String, dynamic> item)? onPlay;
+  const HeroSpotlight({super.key, required this.items, this.onTap, this.onPlay});
 
   @override
   State<HeroSpotlight> createState() => _HeroSpotlightState();
@@ -75,6 +79,7 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
               itemBuilder: (ctx, i) => _SpotlightCard(
                 item: items[i],
                 onTap: widget.onTap == null ? null : () => widget.onTap!(items[i]),
+                onPlay: widget.onPlay == null ? null : () => widget.onPlay!(items[i]),
                 fmt: _fmt,
               ),
             ),
@@ -108,8 +113,9 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
 class _SpotlightCard extends StatefulWidget {
   final Map<String, dynamic> item;
   final VoidCallback? onTap;
+  final VoidCallback? onPlay;
   final String Function(int) fmt;
-  const _SpotlightCard({required this.item, required this.onTap, required this.fmt});
+  const _SpotlightCard({required this.item, required this.onTap, this.onPlay, required this.fmt});
 
   @override
   State<_SpotlightCard> createState() => _SpotlightCardState();
@@ -223,18 +229,28 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                             const SizedBox(height: 10),
                             Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
+                                // Inline Phát CTA — taps here trigger playback
+                                // directly via onPlay (falling back to onTap
+                                // when no separate handler is wired). Material
+                                // wrap stops the gesture from bubbling to the
+                                // parent card-open handler.
+                                Material(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  elevation: 2,
+                                  shadowColor: Colors.black.withValues(alpha: 0.25),
+                                  child: InkWell(
                                     borderRadius: BorderRadius.circular(20),
-                                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+                                    onTap: widget.onPlay ?? widget.onTap,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                        const Icon(Icons.play_arrow, size: 16, color: AppColors.accent),
+                                        const SizedBox(width: 4),
+                                        Text('Phát', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
+                                      ]),
+                                    ),
                                   ),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    const Icon(Icons.play_arrow, size: 14, color: AppColors.accent),
-                                    const SizedBox(width: 4),
-                                    Text('Phát', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
-                                  ]),
                                 ),
                                 if (weekly != null && weekly is num && weekly.toInt() > 0) ...[
                                   const SizedBox(width: 8),

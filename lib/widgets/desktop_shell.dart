@@ -9,6 +9,7 @@ import '../services/player.dart';
 import 'mini_player.dart';
 import 'desktop_comment_sidebar.dart';
 import 'desktop_queue_panel.dart';
+import 'desktop_activity_sidebar.dart';
 import 'notifications_dropdown.dart';
 
 /// Native macOS-style shell — Apple Music / Spotify pattern:
@@ -29,17 +30,25 @@ class DesktopShell extends StatefulWidget {
   State<DesktopShell> createState() => _DesktopShellState();
 }
 
-enum _RightPanelTab { queue, comments }
+enum _RightPanelTab { queue, comments, activity }
+
+/// Global toggle for the desktop right inspector panel — exposed so the
+/// keyboard handler (above the navigator) can flip the panel without
+/// reaching into [_DesktopShellState]. The shell binds to this notifier
+/// as its source of truth.
+final ValueNotifier<bool> desktopPanelOpen = ValueNotifier<bool>(true);
 
 class _DesktopShellState extends State<DesktopShell> {
-  // Default open — desktop always exposes the inspector panel; the web's
-  // show_comment_sidebar setting does not apply here. User can close per
-  // session via the ✕ button.
-  bool _panelOpen = true;
   // Which sub-tab is selected when panel is open. Persisted to prefs so a
   // user who always wants Hàng đợi gets it back next launch.
   _RightPanelTab _panelTab = _RightPanelTab.comments;
   static const _prefsKey = 'desktop_panel_tab';
+  static const _prefsWidthKey = 'desktop_panel_width';
+  // Right panel width — persisted across sessions. Clamped on read so a
+  // bad/stale value can't break the layout.
+  double _panelWidth = 320;
+  static const _minPanelWidth = 240.0;
+  static const _maxPanelWidth = 480.0;
 
   // Sub-screens already overlay their own MiniPlayer in a Stack. Only the
   // top-level routes rely on the shell to render the bottom player bar.
@@ -57,20 +66,56 @@ class _DesktopShellState extends State<DesktopShell> {
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
-    if (raw == 'comments' && mounted) {
-      setState(() => _panelTab = _RightPanelTab.comments);
-    }
+    final w = prefs.getDouble(_prefsWidthKey);
+    if (!mounted) return;
+    setState(() {
+      if (raw == 'queue') {
+        _panelTab = _RightPanelTab.queue;
+      } else if (raw == 'activity') {
+        _panelTab = _RightPanelTab.activity;
+      } else if (raw == 'comments') {
+        _panelTab = _RightPanelTab.comments;
+      }
+      if (w != null) {
+        _panelWidth = w.clamp(_minPanelWidth, _maxPanelWidth);
+      }
+    });
+  }
+
+  Future<void> _saveWidth(double w) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_prefsWidthKey, w);
   }
 
   Future<void> _saveTab(_RightPanelTab tab) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsKey, tab == _RightPanelTab.queue ? 'queue' : 'comments');
+    final key = switch (tab) {
+      _RightPanelTab.queue => 'queue',
+      _RightPanelTab.activity => 'activity',
+      _RightPanelTab.comments => 'comments',
+    };
+    await prefs.setString(_prefsKey, key);
   }
 
   void _setTab(_RightPanelTab tab) {
     if (_panelTab == tab) return;
     setState(() => _panelTab = tab);
     _saveTab(tab);
+  }
+
+  /// Header icon button click. Three flows:
+  ///   * panel closed → open it and switch to this tab
+  ///   * panel open + same tab active → close panel (toggle off)
+  ///   * panel open + different tab active → just switch the tab
+  void _onHeaderTab(_RightPanelTab tab, bool isOpen) {
+    if (!isOpen) {
+      desktopPanelOpen.value = true;
+      _setTab(tab);
+    } else if (_panelTab == tab) {
+      desktopPanelOpen.value = false;
+    } else {
+      _setTab(tab);
+    }
   }
 
   @override
@@ -85,46 +130,95 @@ class _DesktopShellState extends State<DesktopShell> {
       body: Column(
         children: [
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const _Sidebar(),
-                Expanded(
-                  // Soft cap so song lists / forms don't span 2000+px on
-                  // ultrawide displays. Matches Apple Music's behaviour where
-                  // content is centred with breathing room rather than
-                  // stretched edge-to-edge.
-                  child: Stack(
-                    children: [
-                      Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1400),
-                          child: widget.child,
-                        ),
-                      ),
-                      // Single open-panel button at top-right when panel is
-                      // closed. Tooltip says what it does; once open, the
-                      // close affordance lives inside the panel header so
-                      // the button isn't overlaid on content twice.
-                      if (!_panelOpen)
-                        Positioned(
-                          top: 10, right: 12,
-                          child: _PanelToggleBtn(
-                            tooltip: 'Mở bảng phụ',
-                            icon: Icons.view_sidebar_outlined,
-                            onTap: () => setState(() => _panelOpen = true),
+            child: ValueListenableBuilder<bool>(
+              valueListenable: desktopPanelOpen,
+              builder: (ctx, isOpen, _) => Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _Sidebar(),
+                  Expanded(
+                    // Soft cap so song lists / forms don't span 2000+px on
+                    // ultrawide displays. Matches Apple Music's behaviour where
+                    // content is centred with breathing room rather than
+                    // stretched edge-to-edge.
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 1400),
+                            child: widget.child,
                           ),
                         ),
-                    ],
+                        // Apple Music-style header icon strip — each
+                        // button opens the panel + selects its tab; tap
+                        // again to close. Replaces the previous single
+                        // toggle + in-panel tab switcher.
+                        Positioned(
+                          top: 8, right: 12,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            _HeaderTabBtn(
+                              tooltip: 'Bình luận',
+                              icon: Icons.chat_bubble_outline,
+                              active: isOpen && _panelTab == _RightPanelTab.comments,
+                              onTap: () => _onHeaderTab(_RightPanelTab.comments, isOpen),
+                            ),
+                            const SizedBox(width: 4),
+                            _HeaderTabBtn(
+                              tooltip: 'Hoạt động',
+                              icon: Icons.timeline,
+                              active: isOpen && _panelTab == _RightPanelTab.activity,
+                              onTap: () => _onHeaderTab(_RightPanelTab.activity, isOpen),
+                            ),
+                            const SizedBox(width: 4),
+                            _HeaderTabBtn(
+                              tooltip: 'Hàng đợi  ⌘I',
+                              icon: Icons.queue_music,
+                              active: isOpen && _panelTab == _RightPanelTab.queue,
+                              onTap: () => _onHeaderTab(_RightPanelTab.queue, isOpen),
+                            ),
+                          ]),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                if (_panelOpen)
-                  _RightPanelContainer(
-                    activeTab: effectiveTab,
-                    onSelectTab: _setTab,
-                    onClose: () => setState(() => _panelOpen = false),
-                  ),
-              ],
+                  if (isOpen) ...[
+                    // Drag splitter — 6px wide invisible hit area on the
+                    // panel's left edge. Drag to resize; double-click to
+                    // reset to default 320.
+                    MouseRegion(
+                      cursor: SystemMouseCursors.resizeColumn,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onDoubleTap: () {
+                          setState(() => _panelWidth = 320);
+                          _saveWidth(320);
+                        },
+                        onHorizontalDragUpdate: (d) {
+                          setState(() {
+                            _panelWidth = (_panelWidth - d.delta.dx).clamp(_minPanelWidth, _maxPanelWidth);
+                          });
+                        },
+                        onHorizontalDragEnd: (_) => _saveWidth(_panelWidth),
+                        child: Container(
+                          width: 6,
+                          color: Colors.transparent,
+                          // Subtle 1px guide line — only visible when the
+                          // user hovers (Material's InkWell handles cursor;
+                          // here we just suggest the splitter exists).
+                          child: const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: _panelWidth,
+                      child: _RightPanelContainer(
+                        activeTab: effectiveTab,
+                        onSelectTab: _setTab,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           if (shellShouldShowMiniPlayer)
@@ -141,52 +235,47 @@ class _DesktopShellState extends State<DesktopShell> {
 class _RightPanelContainer extends StatelessWidget {
   final _RightPanelTab activeTab;
   final ValueChanged<_RightPanelTab> onSelectTab;
-  final VoidCallback onClose;
   const _RightPanelContainer({
     required this.activeTab,
     required this.onSelectTab,
-    required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Width controlled by parent via SizedBox (resizable splitter on left
+    // edge — drag to resize, double-click to reset). Persists across
+    // sessions in SharedPreferences.
+    //
+    // Tab switcher moved out to the main-area header (Apple Music
+    // style icon strip) so the panel itself just shows: Now Playing
+    // strip → small tab title → content.
+    final title = switch (activeTab) {
+      _RightPanelTab.comments => 'Bình luận',
+      _RightPanelTab.activity => 'Hoạt động',
+      _RightPanelTab.queue => 'Hàng đợi',
+    };
+    // Now-playing strip removed — duplicated the bottom MiniPlayer (same
+    // thumb + title + artist, no extra controls). Bottom player is always
+    // visible while audio is active, so the strip was dead weight.
     return Container(
-      width: 320,
-      decoration: BoxDecoration(
-        color: AppColors.bg,
-        border: Border(left: BorderSide(color: AppColors.border)),
-      ),
+      decoration: const BoxDecoration(color: AppColors.bg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Unified header — segmented tab switch on the left, close on right.
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SegmentedTabs(
-                    activeTab: activeTab,
-                    onSelect: onSelectTab,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  iconSize: 18,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  tooltip: 'Đóng bảng',
-                  icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                  onPressed: onClose,
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(14, 14, 12, 10),
+            child: Text(
+              title,
+              style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)),
             ),
           ),
           const Divider(height: 1, color: AppColors.border),
           Expanded(
-            child: activeTab == _RightPanelTab.queue
-                ? const DesktopQueuePanel(embedded: true)
-                : const DesktopCommentSidebar(embedded: true),
+            child: switch (activeTab) {
+              _RightPanelTab.queue => const DesktopQueuePanel(embedded: true),
+              _RightPanelTab.activity => const DesktopActivitySidebar(embedded: true),
+              _RightPanelTab.comments => const DesktopCommentSidebar(embedded: true),
+            },
           ),
         ],
       ),
@@ -194,101 +283,28 @@ class _RightPanelContainer extends StatelessWidget {
   }
 }
 
-class _SegmentedTabs extends StatelessWidget {
-  final _RightPanelTab activeTab;
-  final ValueChanged<_RightPanelTab> onSelect;
-  const _SegmentedTabs({required this.activeTab, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.all(2),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _SegmentBtn(
-            icon: Icons.chat_bubble_outline,
-            label: 'Bình luận',
-            active: activeTab == _RightPanelTab.comments,
-            onTap: () => onSelect(_RightPanelTab.comments),
-          ),
-          _SegmentBtn(
-            icon: Icons.queue_music,
-            label: 'Hàng đợi',
-            active: activeTab == _RightPanelTab.queue,
-            onTap: () => onSelect(_RightPanelTab.queue),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _SegmentBtn({required this.icon, required this.label, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: active ? AppColors.accent : Colors.transparent,
-      borderRadius: BorderRadius.circular(6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 14, color: active ? Colors.white : AppColors.textSecondary),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: body(TextStyle(
-                  fontSize: 12,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  color: active ? Colors.white : AppColors.textSecondary,
-                )),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PanelToggleBtn extends StatelessWidget {
+/// Apple Music-style header icon button — compact, transparent by
+/// default, accent-tinted bg + filled icon when its tab is active.
+class _HeaderTabBtn extends StatelessWidget {
   final IconData icon;
   final String tooltip;
+  final bool active;
   final VoidCallback onTap;
-  const _PanelToggleBtn({required this.icon, required this.tooltip, required this.onTap});
+  const _HeaderTabBtn({required this.icon, required this.tooltip, required this.active, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: AppColors.surface.withValues(alpha: 0.9),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: AppColors.border),
-        ),
+        color: active ? AppColors.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: onTap,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Icon(Icons.view_sidebar_outlined, size: 18, color: AppColors.textSecondary),
+          child: Padding(
+            padding: const EdgeInsets.all(7),
+            child: Icon(icon, size: 18, color: active ? AppColors.accentLight : AppColors.textSecondary),
           ),
         ),
       ),
@@ -303,15 +319,38 @@ class _NavItem {
   const _NavItem(this.label, this.path, this.icon);
 }
 
-const _primaryNav = <_NavItem>[
-  _NavItem('Trang chủ', '/', Icons.home_outlined),
-  _NavItem('Tìm kiếm', '/search', Icons.search),
-  _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
-  _NavItem('Diễn đàn', '/thao-luan', Icons.forum_outlined),
-  _NavItem('Hoạt động', '/cong-dong/hoat-dong-thanh-vien', Icons.timeline),
-  _NavItem('Bảng xếp hạng', '/bang-xep-hang', Icons.leaderboard_outlined),
-  _NavItem('Thư viện', '/library', Icons.library_music_outlined),
+/// Sidebar nav grouped into clusters with section labels — 13 flat items
+/// were too long to scan. Mirror the "THƯ VIỆN" group label style for the
+/// other clusters so the typography hierarchy is consistent.
+class _NavGroup {
+  final String? label;
+  final List<_NavItem> items;
+  const _NavGroup({this.label, required this.items});
+}
+
+const _primaryNavGroups = <_NavGroup>[
+  _NavGroup(items: [
+    _NavItem('Trang chủ', '/', Icons.home_outlined),
+    _NavItem('Tìm kiếm', '/search', Icons.search),
+    _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
+  ]),
+  _NavGroup(label: 'THỂ LOẠI', items: [
+    _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
+    _NavItem('Nhạc sĩ', '/nhac-si', Icons.piano_outlined),
+    _NavItem('Nhà thơ', '/nha-tho', Icons.menu_book_outlined),
+    _NavItem('Soạn giả', '/soan-gia', Icons.edit_note),
+    _NavItem('Tân nhạc', '/the-loai/tan-nhac', Icons.music_note),
+    _NavItem('Dân ca', '/the-loai/dan-ca', Icons.queue_music),
+    _NavItem('Khí nhạc', '/the-loai/khi-nhac', Icons.piano),
+    _NavItem('Tiếng thơ', '/the-loai/tieng-tho', Icons.auto_stories_outlined),
+    _NavItem('Thành viên hát', '/the-loai/thanh-vien-hat', Icons.mic),
+  ]),
 ];
+
+/// Always-visible bottom anchor — `Thư viện` hub link must be reachable
+/// whether or not the user is logged in (shortcuts below it are
+/// auth-gated).
+const _libraryAnchor = _NavItem('Thư viện', '/library', Icons.library_music_outlined);
 
 // Library shortcuts — only shown when authenticated
 const _libraryShortcuts = <_NavItem>[
@@ -367,14 +406,30 @@ class _Sidebar extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               children: [
-                for (final item in _primaryNav)
-                  _SidebarLink(item: item, active: _isActive(path, item.path)),
+                for (var g = 0; g < _primaryNavGroups.length; g++) ...[
+                  if (_primaryNavGroups[g].label != null) ...[
+                    SizedBox(height: g == 0 ? 0 : 14),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                      child: Text(
+                        _primaryNavGroups[g].label!,
+                        style: body(const TextStyle(
+                          fontSize: 10, fontWeight: FontWeight.w700,
+                          letterSpacing: 1.2, color: AppColors.textMuted,
+                        )),
+                      ),
+                    ),
+                  ],
+                  for (final item in _primaryNavGroups[g].items)
+                    _SidebarLink(item: item, active: _isActive(path, item.path)),
+                ],
+                const SizedBox(height: 14),
+                _SidebarLink(item: _libraryAnchor, active: _isActive(path, _libraryAnchor.path)),
                 if (isAuth) ...[
-                  const SizedBox(height: 14),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                     child: Text(
-                      'THƯ VIỆN',
+                      'THƯ VIỆN CỦA TÔI',
                       style: body(const TextStyle(
                         fontSize: 10, fontWeight: FontWeight.w700,
                         letterSpacing: 1.2, color: AppColors.textMuted,
@@ -408,6 +463,10 @@ class _SidebarLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Active row gets a 2px accent stripe on the left + bg surfaceLight,
+    // mirrors Apple Music's sidebar active marker. Stripe is implemented
+    // via a left border on the inner row so the rounded corners on the
+    // outer Material still clip nicely.
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: Material(
@@ -416,8 +475,13 @@ class _SidebarLink extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () => context.go(item.path),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2),
+              ),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
                 Icon(

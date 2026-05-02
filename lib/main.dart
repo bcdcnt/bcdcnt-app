@@ -39,6 +39,7 @@ import 'screens/user_detail_screen.dart';
 import 'screens/document_detail_screen.dart';
 import 'screens/forum_detail_screen.dart';
 import 'screens/melody_detail_screen.dart';
+import 'screens/folk_index_screen.dart';
 import 'screens/folk_category_screen.dart';
 import 'screens/upload_detail_screen.dart';
 import 'widgets/mini_player.dart';
@@ -98,6 +99,20 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     final auth = context.read<AuthProvider>();
     final player = context.read<PlayerProvider>();
     player.setOnSettingChanged(auth.updatePlayerSetting);
+    // Wire the listen-tracker so PlayTracker can fire `logListen` when a
+    // user-initiated play crosses the 30s threshold. Web does the same via
+    // `PlayerContext` → playTracker.js.
+    player.setLogListenFn((p) async {
+      if (!auth.isAuthenticated) return;
+      try {
+        await auth.authedMutate(
+          r'''mutation($event_id: String!, $object_type: String!, $object_id: ID!, $duration_played: Float!, $song_duration: Float, $source: String, $completed: Boolean) {
+            logListen(event_id: $event_id, object_type: $object_type, object_id: $object_id, duration_played: $duration_played, song_duration: $song_duration, source: $source, completed: $completed) { id }
+          }''',
+          p.toVariables(),
+        );
+      } catch (_) {}
+    });
     // Apply current cached user (if already restored from prefs) immediately.
     player.applyUserSettings(auth.user);
   }
@@ -197,6 +212,9 @@ final _router = GoRouter(
         GoRoute(path: '/dien-dan/:id', builder: (c, s) => ForumDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/lan-dieu/:slug', builder: (c, s) => MelodyDetailScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/dan-ca/:slug', builder: (c, s) => FolkCategoryScreen(slug: s.pathParameters['slug']!)),
+        GoRoute(path: '/dan-ca-tu-vung', builder: (c, s) => const FolkIndexScreen()),
+        GoRoute(path: '/lan-dieu', builder: (c, s) => const FolkIndexScreen(mode: FolkIndexMode.melody)),
+        GoRoute(path: '/the-loai-dan-ca', builder: (c, s) => const FolkIndexScreen(mode: FolkIndexMode.fcat)),
         GoRoute(path: '/bai-gui/:id', builder: (c, s) => UploadDetailScreen(id: s.pathParameters['id']!)),
       ],
     ),

@@ -180,7 +180,10 @@ class _SearchScreenState extends State<SearchScreen> {
       case 'instrumental':
       case 'poem':
       case 'karaoke':
-        // Build minimal song map for player
+        // Build minimal song map for player. Source defaults to 'manual'
+        // — even though navigation came from a search result, the user
+        // who clicks AND lets the song play 30s+ is genuinely listening,
+        // so it should count (web tracker does the same).
         final song = <String, dynamic>{
           'id': id, 'title': hit['title'], 'slug': slug, 'file_type': t,
           if (hit['image'] != null) 'thumbnail': {'url': hit['image']},

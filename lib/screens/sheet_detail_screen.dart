@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -61,6 +63,7 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
         _images = imgs;
         _loading = false;
       });
+      logActivity(context.read<AuthProvider>(), 'view', 'sheet', sh['id']);
     } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 

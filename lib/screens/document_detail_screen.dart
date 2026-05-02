@@ -9,6 +9,7 @@ import 'package:chewie/chewie.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
@@ -69,6 +70,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           );
         }
         setState(() { _doc = doc; _loading = false; });
+        logActivity(context.read<AuthProvider>(), 'view', 'document', doc['id']);
         _fetchRelated(doc['type']?.toString());
       } else {
         setState(() => _loading = false);

@@ -27,7 +27,7 @@ const _stickyQuery = '''query {
 }''';
 
 const _latestQuery = '''query(\$page: Int, \$cat: String!) {
-  songs: catSongs(category: \$cat, first: 5, page: \$page, orderBy: [{column: "id", order: DESC}]) {
+  songs: catSongs(category: \$cat, first: 10, page: \$page, orderBy: [{column: "id", order: DESC}]) {
     data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
     paginatorInfo { currentPage lastPage }
   }
@@ -68,13 +68,13 @@ const _videoQuery = '''query {
 }''';
 
 const _trendingQuery = '''query {
-  statisticListen(first: 5, type: "song", period: "week") {
+  statisticListen(first: 10, type: "song", period: "week") {
     data { total object { ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } } } }
   }
 }''';
 
 const _rankingQuery = '''query {
-  statisticListen(first: 5, type: "song", period: "week") {
+  statisticListen(first: 10, type: "song", period: "week") {
     data { total object { ... on Song { id title subtitle slug views play_type thumbnail { url } artists(first: 5) { data { id title slug } } } } }
   }
 }''';
@@ -201,7 +201,12 @@ class _HomeScreenState extends State<HomeScreen> {
   String _chartType = 'song';
   bool _chartLoading = false;
 
-  // Top-level ranking tab: 0=listens 1=contributors 2=uploaders 3=commentLoves
+  // Outer BXH tab: 0 = song chart, 1 = member chart. Lets us collapse two
+  // separate ranking sections into one combined block.
+  int _bxhOuterTab = 0;
+  // ĐẶC BIỆT (Tưởng niệm + Sự kiện) outer tab.
+  int _specialTab = 0;
+  // Top-level member ranking tab: 0=listens 1=contributors 2=uploaders 3=commentLoves
   int _rankTab = 0;
   final Map<String, List<Map<String, dynamic>>> _memberRanks = {};
   final Map<String, bool> _memberLoading = {};
@@ -442,7 +447,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? 'users(first: 5) { data { id slug: username title: username avatar { url } } }'
           : 'artists(first: 5) { data { id slug title avatar { url } } }';
       final q = '''query(\$page: Int) {
-        ${cat.query}(first: 5, page: \$page, orderBy: [{column: "id", order: DESC}]) {
+        ${cat.query}(first: 10, page: \$page, orderBy: [{column: "id", order: DESC}]) {
           data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } $artistField }
           paginatorInfo { currentPage lastPage }
         }
@@ -468,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() { _chartLoading = true; _chartPeriod = p; _chartType = t; });
     try {
       final q = '''query(\$period: String, \$type: String!) {
-        statisticListen(first: 5, page: 1, period: \$period, type: \$type) {
+        statisticListen(first: 10, page: 1, period: \$period, type: \$type) {
           data { total object {
             ... on Song { id title subtitle slug views play_type thumbnail { url } artists(first: 5) { data { id title slug } } }
             ... on Folk { id title subtitle slug views play_type thumbnail { url } artists(first: 5) { data { id title slug } } }
@@ -494,14 +499,14 @@ class _HomeScreenState extends State<HomeScreen> {
       List<Map<String, dynamic>> items = [];
       if (kind == 'listeners' || kind == 'contributors') {
         final field = kind == 'listeners' ? 'listen' : 'point';
-        q = 'query { users(first: 5, orderBy: [{column: "$field", order: DESC}], where: {AND: [{column: "$field", value: 0, operator: GT}, {column: "id", value: 1, operator: NEQ}]}) { data { id username avatar { url } $field } } }';
+        q = 'query { users(first: 10, orderBy: [{column: "$field", order: DESC}], where: {AND: [{column: "$field", value: 0, operator: GT}, {column: "id", value: 1, operator: NEQ}]}) { data { id username avatar { url } $field } } }';
         final data = await ApiClient.query(q);
         items = ((data['users']?['data'] ?? []) as List).map((u) => {
           'id': u['id'], 'username': u['username'], 'avatar': u['avatar']?['url'], 'value': u[field],
         }).toList();
       } else {
         final queryName = kind == 'uploaders' ? 'topUpload' : 'topCommentLove';
-        q = 'query { $queryName(first: 5) { data { username avatar user_id total } } }';
+        q = 'query { $queryName(first: 10) { data { username avatar user_id total } } }';
         final data = await ApiClient.query(q);
         items = ((data[queryName]?['data'] ?? []) as List).map((u) => {
           'id': u['user_id'], 'username': u['username'], 'avatar': u['avatar'], 'value': u['total'],
@@ -518,6 +523,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _openSong(Map<String, dynamic> song) => context.push('/song/${song['id']}', extra: song);
+
+  /// Play the spotlight song immediately without navigating away. Used by
+  /// the inline "Phát" CTA on hero spotlight cards.
+  void _playSpotlight(Map<String, dynamic> song) {
+    final player = context.read<PlayerProvider>();
+    player.playSong(Map<String, dynamic>.from(song));
+  }
 
   String _greeting() {
     final h = DateTime.now().hour;
@@ -557,21 +569,53 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   List<Widget> _feedItems() {
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
     return [
-          // Compact hero greeting
-          _StaggerFadeIn(index: 0, child: _hero()),
-          const SizedBox(height: 14),
+          // Greeting hero — mobile only. Desktop sidebar already covers
+          // the functions (avatar in account footer, notif bell, search
+          // nav, login). On desktop the greeting collapses into a tiny
+          // overline above the spotlight (handled below).
+          if (!isDesktop) ...[
+            _StaggerFadeIn(index: 0, child: _hero()),
+            const SizedBox(height: 14),
+          ],
 
-          // Quick action chips (logged-in only)
-          if (context.watch<AuthProvider>().isAuthenticated) ...[
+          // Quick action chips (Yêu thích / Nghe gần đây / Playlist của
+          // tôi) — mobile only. Desktop sidebar has these as library
+          // shortcuts so duplicating the row would just add clutter.
+          if (!isDesktop && context.watch<AuthProvider>().isAuthenticated) ...[
             _StaggerFadeIn(index: 1, child: _quickChips()),
             const SizedBox(height: 22),
-          ] else
-            const SizedBox(height: 6),
+          ] else if (!isDesktop)
+            const SizedBox(height: 6)
+          else
+            const SizedBox(height: 8),
+
+          // Desktop greeting overline — single muted line above spotlight,
+          // preserves the personalisation warmth without the full card.
+          if (isDesktop) ...[
+            _StaggerFadeIn(
+              index: 0,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 10),
+                child: Builder(builder: (ctx) {
+                  final auth = ctx.watch<AuthProvider>();
+                  final name = auth.user?['username']?.toString();
+                  final label = name != null
+                      ? '${_greeting()}, $name · NỔI BẬT HÔM NAY'
+                      : '${_greeting()} · NỔI BẬT HÔM NAY';
+                  return Text(
+                    label.toUpperCase(),
+                    style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1.2)),
+                  );
+                }),
+              ),
+            ),
+          ],
 
           // ─── HERO SPOTLIGHT (rotating featured) ───
           if (_spotlightItems().isNotEmpty) ...[
-            _StaggerFadeIn(index: 2, child: HeroSpotlight(items: _spotlightItems(), onTap: _openSong)),
+            _StaggerFadeIn(index: 2, child: HeroSpotlight(items: _spotlightItems(), onTap: _openSong, onPlay: _playSpotlight)),
             const SizedBox(height: 28),
           ],
 
@@ -621,11 +665,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _latestList(),
           const SizedBox(height: 32),
 
-          if (_hotSongs.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.trending_up, title: 'Có thể bạn muốn nghe'),
-            _songCarousel(_hotSongs),
-            const SizedBox(height: 32),
-          ],
+          // "Có thể bạn muốn nghe" (hot songs) removed — overlaps the
+          // "Top nghe nhiều" chart which now sits prominently below
+          // KHÁM PHÁ. Keep the data fetched in case a future personalized
+          // mix uses it, but don't render a separate carousel here.
 
           if (_videos.isNotEmpty) ...[
             const SectionHeader(icon: Icons.movie_outlined, title: 'Video'),
@@ -639,11 +682,48 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
 
-          const SectionHeader(icon: Icons.album_outlined, title: 'Thể loại'),
-          _categoryTiles(),
+          // Thể loại tiles — desktop already has these as primary nav in
+          // the left sidebar (Tân nhạc / Dân ca / Khí nhạc / Tiếng thơ /
+          // Thành viên hát), so the duplicate row is redundant. Mobile
+          // keeps it because the bottom nav doesn't surface categories.
+          if (MediaQuery.of(context).size.width < 900) ...[
+            const SectionHeader(icon: Icons.album_outlined, title: 'Thể loại'),
+            _categoryTiles(),
+            const SizedBox(height: 32),
+          ],
+
+          // ─── BẢNG XẾP HẠNG (single combined section with outer tabs —
+          // collapses the previous two stacked sections so the page doesn't
+          // run two ranking blocks back-to-back) ───
+          const _GroupLabel('BẢNG XẾP HẠNG'),
+          SectionHeader(
+            icon: _bxhOuterTab == 0 ? Icons.headphones : Icons.workspace_premium_outlined,
+            title: _bxhOuterTab == 0 ? 'Top nghe nhiều' : 'Top thành viên',
+            subtitle: _bxhOuterTab == 0
+                ? 'Bài hát nhiều lượt nghe cập nhật theo giờ'
+                : 'Thành viên đóng góp nhiều nhất',
+            actionText: 'Xem tất cả',
+            onAction: () => _bxhOuterTab == 0
+                ? context.push('/bang-xep-hang')
+                : context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
+          ),
+          _bxhOuterTabsBar(),
+          const SizedBox(height: 12),
+          if (_bxhOuterTab == 0) ...[
+            _rankingTabs(),
+            const SizedBox(height: 10),
+            _rankingList(_chartSongs),
+          ] else ...[
+            _memberTabsBar(),
+            const SizedBox(height: 10),
+            _memberBody(),
+          ],
           const SizedBox(height: 32),
 
-          // ─── NGHỆ SĨ ───
+          // ─── NGHỆ SĨ — split into Nghệ sĩ + Nhạc sĩ. Both keep circular
+          // avatars (square shape on people read as off). Differentiation
+          // comes from the section header icon (mic vs music note) and
+          // title — that's enough since the cards live in distinct rows.
           if (_artists.isNotEmpty || _composers.isNotEmpty)
             const _GroupLabel('NGHỆ SĨ'),
 
@@ -669,19 +749,28 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
 
-          // ─── TƯỞNG NHỚ & SỰ KIỆN ───
-          if (_memorial.isNotEmpty || _events.isNotEmpty)
-            const _GroupLabel('TƯỞNG NHỚ & SỰ KIỆN'),
-
-          if (_memorial.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.local_florist_outlined, title: 'Tưởng niệm', subtitle: 'Những nghệ sĩ đã khuất'),
-            ..._memorial.take(3).map(_memorialCard),
-            const SizedBox(height: 24),
-          ],
-
-          if (_events.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.event_outlined, title: 'Theo dòng sự kiện'),
-            ..._events.map(_eventCard),
+          // ─── ĐẶC BIỆT — Tưởng niệm + Sự kiện gộp 1 section với outer
+          // tabs. Trước đây 2 section riêng, mỗi cái 1 header; giờ chia
+          // sẻ chung 1 header + tabs nhỏ phía dưới.
+          if (_memorial.isNotEmpty || _events.isNotEmpty) ...[
+            const _GroupLabel('ĐẶC BIỆT'),
+            SectionHeader(
+              icon: _specialTab == 0 ? Icons.local_florist_outlined : Icons.event_outlined,
+              title: _specialTab == 0 ? 'Tưởng niệm' : 'Theo dòng sự kiện',
+              subtitle: _specialTab == 0 ? 'Những nghệ sĩ đã khuất' : null,
+            ),
+            if (_memorial.isNotEmpty && _events.isNotEmpty) ...[
+              _specialTabsBar(),
+              const SizedBox(height: 14),
+            ],
+            if (_specialTab == 0 && _memorial.isNotEmpty)
+              ..._memorial.take(3).map(_memorialCard)
+            else if (_specialTab == 1 && _events.isNotEmpty)
+              ..._events.map(_eventCard)
+            else if (_memorial.isNotEmpty)
+              ..._memorial.take(3).map(_memorialCard)
+            else
+              ..._events.map(_eventCard),
             const SizedBox(height: 24),
           ],
 
@@ -703,31 +792,6 @@ class _HomeScreenState extends State<HomeScreen> {
             _archiveContent(),
             const SizedBox(height: 32),
           ],
-
-          // ─── BẢNG XẾP HẠNG (positioned at the end of the home feed) ───
-          const _GroupLabel('BẢNG XẾP HẠNG'),
-          SectionHeader(
-            icon: Icons.headphones,
-            title: 'Top nghe nhiều',
-            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
-            actionText: 'Xem tất cả',
-            onAction: () => context.push('/bang-xep-hang'),
-          ),
-          _rankingTabs(),
-          const SizedBox(height: 10),
-          _rankingList(_chartSongs),
-          const SizedBox(height: 28),
-          SectionHeader(
-            icon: Icons.workspace_premium_outlined,
-            title: 'Top thành viên',
-            subtitle: 'Thành viên đóng góp nhiều nhất',
-            actionText: 'Xem tất cả',
-            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
-          ),
-          _memberTabsBar(),
-          const SizedBox(height: 10),
-          _memberBody(),
-          const SizedBox(height: 32),
 
           // Footer signature — slogan at the very bottom of the page.
           Padding(
@@ -1399,13 +1463,35 @@ class _HomeScreenState extends State<HomeScreen> {
       return const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     }
     if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa có bài', style: body(const TextStyle(color: AppColors.textMuted))));
-    return Column(
-      children: items.take(5).map((s) {
-        final song = Map<String, dynamic>.from(s);
-        song['file_type'] = cat.fileType;
-        return SongRow(song: song, onTap: () => _openSong(song));
-      }).toList(),
-    );
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    // 10 on desktop (split 5+5) to match BXH chart density and avoid the
+    // big empty space on the right of single-column rows. 5 on mobile.
+    final take = items.take(isDesktop ? 10 : 5).toList();
+    Widget rowFor(int i, dynamic s) {
+      final song = Map<String, dynamic>.from(s);
+      song['file_type'] = cat.fileType;
+      // showIndex: true → SongRow renders the position number on the left,
+      // matching the BXH chart visual rhythm so the page reads as one
+      // unified list pattern.
+      return SongRow(song: song, index: i, showIndex: true, onTap: () => _openSong(song));
+    }
+    if (isDesktop && take.length > 1) {
+      final half = (take.length / 2).ceil();
+      final left = <Widget>[];
+      final right = <Widget>[];
+      for (var i = 0; i < take.length; i++) {
+        (i < half ? left : right).add(rowFor(i, take[i]));
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Column(children: left)),
+          const SizedBox(width: 24),
+          Expanded(child: Column(children: right)),
+        ],
+      );
+    }
+    return Column(children: [for (var i = 0; i < take.length; i++) rowFor(i, take[i])]);
   }
 
   Widget _categoryTiles() {
@@ -1539,7 +1625,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _personCarousel(List<dynamic> people, String routePrefix) {
+  /// Combine artists + composers into one alternating list, tagging each
+  /// with `_kind` so the unified carousel can route to the right detail.
+  List<dynamic> _mixPeople() {
+    final out = <dynamic>[];
+    final maxLen = _artists.length > _composers.length ? _artists.length : _composers.length;
+    for (var i = 0; i < maxLen; i++) {
+      if (i < _artists.length) out.add({...(_artists[i] as Map), '_kind': 'artist'});
+      if (i < _composers.length) out.add({...(_composers[i] as Map), '_kind': 'composer'});
+    }
+    return out;
+  }
+
+  /// [routePrefix] null → each item carries its own `_kind` and routes to
+  /// the matching detail page (`/nghe-si/<slug>` for artist,
+  /// `/nhac-si/<slug>` for composer).
+  Widget _personCarousel(List<dynamic> people, String? routePrefix) {
     final w = MediaQuery.of(context).size.width;
     final av = w >= 1280 ? 110.0 : (w >= 900 ? 96.0 : 80.0);
     return SizedBox(
@@ -1551,16 +1652,23 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (context, i) {
           final p = people[i];
           final avatar = p['avatar']?['url'];
+          final route = routePrefix != null
+              ? '$routePrefix${p['slug']}'
+              : (p['_kind'] == 'composer' ? '/nhac-si/${p['slug']}' : '/nghe-si/${p['slug']}');
           return HoverScale(
             child: InkWell(
-              onTap: () => context.push('$routePrefix${p['slug']}'),
+              onTap: () => context.push(route),
+              borderRadius: BorderRadius.circular(av / 2),
               child: SizedBox(
                 width: av,
                 child: Column(
                   children: [
                     Container(
                       width: av, height: av,
-                      decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                      ),
                       child: ClipOval(
                         child: avatar != null
                             ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
@@ -1698,7 +1806,78 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// ĐẶC BIỆT outer tabs — switch between Tưởng niệm and Sự kiện cards.
+  Widget _specialTabsBar() {
+    const tabs = [
+      (Icons.local_florist_outlined, 'Tưởng niệm'),
+      (Icons.event_outlined, 'Sự kiện'),
+    ];
+    return Row(
+      children: List.generate(tabs.length, (i) {
+        final t = tabs[i];
+        final active = i == _specialTab;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: InkWell(
+            onTap: active ? null : () => setState(() => _specialTab = i),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: active ? AppColors.accentSoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(t.$1, size: 14, color: active ? AppColors.accentLight : AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+              ]),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  /// Outer BXH tabs — switch between song chart and member chart inside
+  /// one section header. Inner tab bars (period / member kind) stay
+  /// scoped to their respective panel.
+  Widget _bxhOuterTabsBar() {
+    const tabs = [
+      (Icons.headphones, 'Bài hát'),
+      (Icons.people_outline, 'Thành viên'),
+    ];
+    return Row(
+      children: List.generate(tabs.length, (i) {
+        final t = tabs[i];
+        final active = i == _bxhOuterTab;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: InkWell(
+            onTap: active ? null : () => setState(() => _bxhOuterTab = i),
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: active ? AppColors.accentSoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(t.$1, size: 14, color: active ? AppColors.accentLight : AppColors.textSecondary),
+                const SizedBox(width: 6),
+                Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+              ]),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
   Widget _memberTabsBar() {
+    // Unified underline style — matches `_latestTabsBar` + `_rankingTabs`.
     const tabs = [
       ('Cống hiến', 'contributors'),
       ('Bản thu', 'uploaders'),
@@ -1711,11 +1890,11 @@ class _HomeScreenState extends State<HomeScreen> {
       if (_memberRanks[cur] == null && _memberLoading[cur] != true) _fetchMemberRank(cur);
     });
     return SizedBox(
-      height: 30,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: tabs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (ctx, i) {
           final t = tabs[i];
           final active = i == _rankTab;
@@ -1724,15 +1903,12 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() => _rankTab = i);
               if (_memberRanks[t.$2] == null) _fetchMemberRank(t.$2);
             },
-            borderRadius: BorderRadius.circular(14),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
               ),
-              child: Text(t.$1, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+              child: Text(t.$1, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
             ),
           );
         },
@@ -1755,96 +1931,100 @@ class _HomeScreenState extends State<HomeScreen> {
     final items = _memberRanks[kind] ?? [];
     if (loading && items.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))));
-    const medals = [Color(0xFFFFD54F), Color(0xFFB0BEC5), Color(0xFFA87451)];
-    return Column(
-      children: items.asMap().entries.map((e) {
-        final i = e.key;
-        final u = e.value;
-        final isTop3 = i < 3;
-        final value = u['value'] is num ? (u['value'] as num).toInt() : 0;
-        return InkWell(
-          onTap: u['id'] != null ? () => context.push('/user/${u['id']}') : null,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isTop3 ? medals[i].withValues(alpha: 0.4) : AppColors.border, width: isTop3 ? 1.2 : 1),
-              boxShadow: isTop3 ? [BoxShadow(color: medals[i].withValues(alpha: 0.12), blurRadius: 12, spreadRadius: -2)] : null,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 32, height: 32,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: isTop3 ? LinearGradient(colors: [medals[i], medals[i].withValues(alpha: 0.6)], begin: Alignment.topLeft, end: Alignment.bottomRight) : null,
-                    color: isTop3 ? null : AppColors.surface,
-                    boxShadow: isTop3 ? [BoxShadow(color: medals[i].withValues(alpha: 0.5), blurRadius: 8, spreadRadius: -1)] : null,
-                  ),
-                  child: isTop3
-                      ? Icon(i == 0 ? Icons.emoji_events : Icons.military_tech, color: Colors.white, size: 16)
-                      : Text('${i + 1}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                ),
-                const SizedBox(width: 10),
-                Container(
-                  width: 36, height: 36,
-                  decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
-                  child: ClipOval(
-                    child: u['avatar'] != null
-                        ? CachedNetworkImage(imageUrl: u['avatar'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white70))
-                        : const Icon(Icons.person, color: Colors.white70),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    u['username'] ?? '?',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(_formatInt(value), style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
-                    Text(valueLabel, style: body(const TextStyle(fontSize: 9, color: AppColors.textMuted))),
-                  ],
-                ),
-              ],
-            ),
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final rows = items.asMap().entries.map((e) => _memberRow(e.key, e.value as Map<String, dynamic>, valueLabel)).toList();
+    if (isDesktop && rows.length > 1) {
+      // Match BXH song chart: 2-col grid, fills wide column instead of
+      // leaving a sparse single-column list.
+      final half = (rows.length / 2).ceil();
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Column(children: rows.sublist(0, half))),
+          const SizedBox(width: 24),
+          Expanded(child: Column(children: rows.sublist(half))),
+        ],
+      );
+    }
+    return Column(children: rows);
+  }
+
+  Widget _memberRow(int i, Map<String, dynamic> u, String valueLabel) {
+    final isTop3 = i < 3;
+    final value = u['value'] is num ? (u['value'] as num).toInt() : 0;
+    return HoverHighlight(
+      borderRadius: BorderRadius.zero,
+      child: InkWell(
+        onTap: u['id'] != null ? () => context.push('/user/${u['id']}') : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
           ),
-        );
-      }).toList(),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '${i + 1}',
+                  textAlign: TextAlign.center,
+                  style: body(TextStyle(
+                    fontSize: isTop3 ? 18 : 13,
+                    fontWeight: isTop3 ? FontWeight.w900 : FontWeight.w600,
+                    color: isTop3 ? AppColors.accentLight : AppColors.textMuted,
+                    letterSpacing: -0.5,
+                  )),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                width: 40, height: 40,
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                child: ClipOval(
+                  child: u['avatar'] != null
+                      ? CachedNetworkImage(imageUrl: u['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
+                      : const Icon(Icons.person, color: Colors.white70),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  u['username'] ?? '?',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('${_formatCompact(value)} $valueLabel', style: AppText.caption),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _rankingTabs() {
+    // Unified underline style — matches `_latestTabsBar` so the page reads
+    // with one tab idiom instead of mixing pill + underline.
     const periods = [('week', 'Tuần'), ('month', 'Tháng'), ('year', 'Năm'), ('', 'Tất cả')];
     return SizedBox(
-      height: 30,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: periods.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (ctx, i) {
           final p = periods[i];
           final active = _chartPeriod == p.$1;
           return InkWell(
             onTap: active ? null : () => _fetchRanking(period: p.$1),
-            borderRadius: BorderRadius.circular(14),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(vertical: 6),
               decoration: BoxDecoration(
-                color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
               ),
-              child: Text(p.$2, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+              child: Text(p.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
             ),
           );
         },
@@ -1855,79 +2035,46 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _rankingList(List<dynamic> chart) {
     if (_chartLoading) return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (chart.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))));
-    const medals = [Color(0xFFFFD54F), Color(0xFFB0BEC5), Color(0xFFA87451)]; // gold, silver, bronze
-    return Column(
-      children: chart.asMap().entries.map((e) {
-        final i = e.key;
-        final item = e.value;
-        final s = Map<String, dynamic>.from(item['object']);
-        final total = item['total'] ?? 0;
-        final artists = (s['artists']?['data'] ?? []) as List;
-        final isTop3 = i < 3;
-        return InkWell(
-          onTap: () => _openSong(s),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isTop3 ? medals[i].withValues(alpha: 0.4) : AppColors.border, width: isTop3 ? 1.2 : 1),
-              boxShadow: isTop3 ? [BoxShadow(color: medals[i].withValues(alpha: 0.12), blurRadius: 12, spreadRadius: -2)] : null,
-            ),
-            child: Row(
-              children: [
-                // Medal or rank
-                Container(
-                  width: 32, height: 32,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: isTop3
-                        ? LinearGradient(colors: [medals[i], medals[i].withValues(alpha: 0.6)], begin: Alignment.topLeft, end: Alignment.bottomRight)
-                        : null,
-                    color: isTop3 ? null : AppColors.surface,
-                    boxShadow: isTop3 ? [BoxShadow(color: medals[i].withValues(alpha: 0.5), blurRadius: 8, spreadRadius: -1)] : null,
-                  ),
-                  child: isTop3
-                      ? Icon(i == 0 ? Icons.emoji_events : Icons.military_tech, color: Colors.white, size: 16)
-                      : Text('${i + 1}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                ),
-                const SizedBox(width: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: s['thumbnail']?['url'] != null
-                      ? CachedNetworkImage(imageUrl: s['thumbnail']['url'], width: 44, height: 44, fit: BoxFit.cover)
-                      : Container(width: 44, height: 44, color: AppColors.surface, child: const Icon(Icons.music_note, color: AppColors.textMuted)),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                      if (artists.isNotEmpty) Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(_formatInt(total is num ? total.toInt() : 0), style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
-                    Text('lượt', style: body(const TextStyle(fontSize: 9, color: AppColors.textMuted))),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
+    // Editorial chart row — same visual rhythm as SongRow elsewhere on the
+    // page (no boxed cards, no medal gradients). Top-3 rank is bold accent
+    // type; everyone else is muted. Listen count reads as "1.2K lượt
+    // nghe" inline next to the row.
+    final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final rows = chart.asMap().entries.map(_chartRow).toList();
+    if (isDesktop && rows.length > 1) {
+      // Split 10 into 2 cols of 5 — fills the wide main column instead of
+      // leaving big empty whitespace right of the listen count.
+      final half = (rows.length / 2).ceil();
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Column(children: rows.sublist(0, half))),
+          const SizedBox(width: 24),
+          Expanded(child: Column(children: rows.sublist(half))),
+        ],
+      );
+    }
+    return Column(children: rows);
+  }
+
+  Widget _chartRow(MapEntry<int, dynamic> e) {
+    final i = e.key;
+    final item = e.value;
+    final s = Map<String, dynamic>.from(item['object']);
+    // Stuff the period total into `weeklyListens` so SongRow surfaces it
+    // with the headphones icon (otherwise it would fall back to lifetime
+    // `views`). SongRow with showIndex already handles top-3 highlight.
+    if (item['total'] != null) s['weeklyListens'] = item['total'];
+    return SongRow(song: s, index: i, showIndex: true, onTap: () => _openSong(s));
+  }
+
+  /// Compact integer formatter — 1234 → "1.2K", 1234567 → "1.2M". Returns
+  /// `_formatInt(n)` (full grouping) for values < 1K so small numbers stay
+  /// exact.
+  String _formatCompact(int n) {
+    if (n.abs() < 1000) return _formatInt(n);
+    if (n.abs() < 1000000) return '${(n / 1000).toStringAsFixed(n.abs() < 10000 ? 1 : 0)}K';
+    return '${(n / 1000000).toStringAsFixed(n.abs() < 10000000 ? 1 : 0)}M';
   }
 
   Widget _songCardGrid(List<dynamic> songs) {

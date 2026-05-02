@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
+import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -136,6 +138,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         }
         _loading = false;
       });
+      logActivity(context.read<AuthProvider>(), 'view', _cfg.queryName, p['id']);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -368,24 +371,33 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          InkWell(
-            onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
-            borderRadius: BorderRadius.circular(110),
-            child: Container(
-              width: 200, height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 36, spreadRadius: -4)],
-                border: Border.all(color: AppColors.border, width: 3),
+          // Avatar shape — performers (Nghệ sĩ) get circle; creators
+          // (Nhạc sĩ / Nhà thơ / Soạn giả) get rounded-square. Same
+          // pattern Spotify uses (people = circle, works = square).
+          Builder(builder: (_) {
+            final isPerformer = widget.type == PersonType.artist;
+            final radius = isPerformer ? BorderRadius.circular(100) : BorderRadius.circular(20);
+            return InkWell(
+              onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
+              borderRadius: radius,
+              child: Container(
+                width: 200, height: 200,
+                decoration: BoxDecoration(
+                  shape: isPerformer ? BoxShape.circle : BoxShape.rectangle,
+                  borderRadius: isPerformer ? null : radius,
+                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 36, spreadRadius: -4)],
+                  border: Border.all(color: AppColors.border, width: 3),
+                ),
+                child: ClipRRect(
+                  borderRadius: radius,
+                  child: p['avatar']?['url'] != null
+                      ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
+                      : _initialsFallback(p),
+                ),
               ),
-              child: ClipOval(
-                child: p['avatar']?['url'] != null
-                    ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
-                    : _initialsFallback(p),
-              ),
-            ),
-          ),
+            );
+          }),
           const SizedBox(width: 32),
           Expanded(
             child: Column(
@@ -446,24 +458,30 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         children: [
           const SizedBox(height: 8),
           Center(
-            child: InkWell(
-              onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
-              borderRadius: BorderRadius.circular(80),
-              child: Container(
-                width: 140, height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: -5)],
-                  border: Border.all(color: AppColors.border, width: 3),
+            child: Builder(builder: (_) {
+              final isPerformer = widget.type == PersonType.artist;
+              final radius = isPerformer ? BorderRadius.circular(70) : BorderRadius.circular(16);
+              return InkWell(
+                onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
+                borderRadius: radius,
+                child: Container(
+                  width: 140, height: 140,
+                  decoration: BoxDecoration(
+                    shape: isPerformer ? BoxShape.circle : BoxShape.rectangle,
+                    borderRadius: isPerformer ? null : radius,
+                    gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                    boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: -5)],
+                    border: Border.all(color: AppColors.border, width: 3),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: radius,
+                    child: p['avatar']?['url'] != null
+                        ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
+                        : _initialsFallback(p),
+                  ),
                 ),
-                child: ClipOval(
-                  child: p['avatar']?['url'] != null
-                      ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
-                      : _initialsFallback(p),
-                ),
-              ),
-            ),
+              );
+            }),
           ),
           const SizedBox(height: 16),
           Text(

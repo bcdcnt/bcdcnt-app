@@ -160,52 +160,76 @@ class _PersonListScreenState extends State<PersonListScreen> {
   }
 
   Widget _buildFilters() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final currentYear = DateTime.now().year;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // A–Z row (horizontal scroll)
-        SizedBox(
-          height: 32,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _filterChip(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
-              for (final c in _alphabet)
-                _filterChip(label: c, active: _letter == c, onTap: () => _setLetter(c), compact: true),
-            ],
+        // A-Z index — text-only letters, active gets accent + bold. Reads
+        // as a typographic index strip rather than a row of chip pills.
+        Expanded(
+          child: SizedBox(
+            height: 32,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _letterBtn(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
+                for (final c in _alphabet)
+                  _letterBtn(label: c, active: _letter == c, onTap: () => _setLetter(c)),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 8),
-        // Birth year row — wide range, scrollable horizontally.
-        SizedBox(
-          height: 32,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _filterChip(label: 'Mọi năm', active: _year == null, onTap: () => _setYear(null)),
-              for (var y = DateTime.now().year; y >= 1900; y--)
-                _filterChip(label: '$y', active: _year == y, onTap: () => _setYear(y)),
-            ],
+        const SizedBox(width: 12),
+        // Year — replaced the 125-chip scroll with a popup picker. Far less
+        // visual noise; shows current selection inline.
+        PopupMenuButton<int?>(
+          tooltip: 'Năm sinh',
+          position: PopupMenuPosition.under,
+          color: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: AppColors.border)),
+          onSelected: _setYear,
+          itemBuilder: (ctx) => [
+            const PopupMenuItem<int?>(value: null, child: Text('Mọi năm', style: TextStyle(fontSize: 13, color: AppColors.text))),
+            for (var y = currentYear; y >= 1900; y--)
+              PopupMenuItem<int?>(value: y, child: Text('$y', style: const TextStyle(fontSize: 13, color: AppColors.text))),
+          ],
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(
+              color: _year != null ? AppColors.accentSoft : AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _year != null ? AppColors.accent : AppColors.border),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.calendar_today_outlined, size: 13, color: _year != null ? AppColors.accentLight : AppColors.textMuted),
+              const SizedBox(width: 6),
+              Text(
+                _year != null ? '$_year' : 'Năm sinh',
+                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _year != null ? AppColors.accentLight : AppColors.textSecondary)),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.expand_more, size: 14, color: _year != null ? AppColors.accentLight : AppColors.textMuted),
+            ]),
           ),
         ),
       ],
     );
   }
 
-  Widget _filterChip({required String label, required bool active, required VoidCallback onTap, bool compact = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: active ? AppColors.accent : AppColors.border),
-          ),
-          child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+  Widget _letterBtn({required String label, required bool active, required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Text(
+          label,
+          style: body(TextStyle(
+            fontSize: 13,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w500,
+            color: active ? AppColors.accentLight : AppColors.textMuted,
+            letterSpacing: 0.3,
+          )),
         ),
       ),
     );
@@ -286,27 +310,40 @@ class _PersonListScreenState extends State<PersonListScreen> {
                   sliver: SliverGrid(
                     // Responsive cols: more on desktop so each tile doesn't
                     // stretch with huge horizontal gaps between rows.
-                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                       maxCrossAxisExtent: 180,
                       crossAxisSpacing: 14,
                       mainAxisSpacing: 18,
-                      childAspectRatio: 0.72,
+                      // Tile content stack ≈ 80 (avatar) + 8 + ~32 (name) +
+                      // 14 (listen count) ≈ 134px. ratio 1.2 gives a 150px
+                      // tall cell — content lives in ~134, leaving a small
+                      // breath room. Was 0.72 → 250px tall, leaving 110+ px
+                      // empty per row.
+                      childAspectRatio: 1.2,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final p = _items[i];
                         final avatar = p['avatar']?['url'];
+                        // Avatar shape: circle for performers (Nghệ sĩ),
+                        // rounded-square for composers/poets/recomposers
+                        // (creators of works) — Spotify pattern.
+                        final isPerformer = widget.type == PersonType.artist;
+                        final radius = isPerformer ? BorderRadius.circular(40) : BorderRadius.circular(12);
                         return InkWell(
                           onTap: () => context.push('$_routePrefix${p['slug']}'),
+                          borderRadius: radius,
                           child: Column(
                             children: [
                               Container(
                                 width: 80, height: 80,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                                decoration: BoxDecoration(
+                                  shape: isPerformer ? BoxShape.circle : BoxShape.rectangle,
+                                  borderRadius: isPerformer ? null : radius,
+                                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                                 ),
-                                child: ClipOval(
+                                child: ClipRRect(
+                                  borderRadius: radius,
                                   child: avatar != null
                                       ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white70))
                                       : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white70)))),

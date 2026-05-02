@@ -56,8 +56,12 @@ class _NotificationsDropdownState extends State<NotificationsDropdown> {
           child: CompositedTransformFollower(
             link: _link,
             showWhenUnlinked: false,
-            // Open below the bell, right-edge aligned.
-            offset: const Offset(-328, 36),
+            // Open below the bell, expanding into the main content area
+            // (right of the sidebar). Previous offset (-328, 36) assumed
+            // there's 328px of space to the LEFT of the bell — true on
+            // mobile but the desktop sidebar is only 220px wide, so the
+            // popup spilled off-screen behind it.
+            offset: const Offset(8, 40),
             child: Material(
               color: Colors.transparent,
               child: _NotifPanel(onClose: _close),
@@ -103,12 +107,17 @@ class _NotifPanelState extends State<_NotifPanel> {
         if (mounted) setState(() { _items = []; _loading = false; });
         return;
       }
+      // Notifications live on `me`, not at the root — querying root
+      // returns nothing (or only admin-scoped data). Mirror what the
+      // notifications screen does.
       final data = await auth.authedQuery(r'''query {
-        notifications(first: 5, page: 1, orderBy: [{column: "created_at", order: DESC}]) {
-          data { id content action object_type object_id is_read created_at sender { id username avatar { url } } }
+        me {
+          notifications(first: 5, page: 1, orderBy: [{column: "created_at", order: DESC}]) {
+            data { id code content action extra object_type object_id is_read created_at sender { id username avatar { url } } }
+          }
         }
       }''');
-      final list = ((data['notifications']?['data'] ?? []) as List)
+      final list = ((data['me']?['notifications']?['data'] ?? []) as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
       if (!mounted) return;
@@ -121,7 +130,7 @@ class _NotifPanelState extends State<_NotifPanel> {
   Future<void> _markAllRead() async {
     try {
       final auth = context.read<AuthProvider>();
-      await auth.authedMutate(r'mutation { readAllNotifications }', null);
+      await auth.authedMutate(r'mutation { markAsReadAll }', null);
       if (!mounted) return;
       setState(() { _items = _items.map((n) { n['is_read'] = 1; return n; }).toList(); });
       await auth.clearUnread();

@@ -442,7 +442,7 @@ class _CommentSectionState extends State<CommentSection> {
                           Text(timeago(c['created_at']), style: AppText.caption),
                         ]),
                         const SizedBox(height: 4),
-                        CommentMedia(html: content),
+                        CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString()),
                         const SizedBox(height: 4),
                         Row(children: [
                           InkWell(
