@@ -265,7 +265,19 @@ class _NotifRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text(content, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.text, height: 1.4, fontWeight: unread ? FontWeight.w600 : FontWeight.w500))),
+              // Prefix sender username (bold) before raw content — mirrors
+              // web's NotificationClient row: "<username> <content>".
+              RichText(
+                maxLines: 3, overflow: TextOverflow.ellipsis,
+                text: TextSpan(
+                  style: body(TextStyle(fontSize: 12, color: AppColors.text, height: 1.4, fontWeight: unread ? FontWeight.w600 : FontWeight.w500)),
+                  children: [
+                    if (username.isNotEmpty)
+                      TextSpan(text: '$username ', style: const TextStyle(fontWeight: FontWeight.w700)),
+                    TextSpan(text: content),
+                  ],
+                ),
+              ),
               const SizedBox(height: 2),
               Text(timeagoLabel, style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
             ]),
