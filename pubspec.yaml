@@ -24,6 +24,7 @@ dependencies:
   chewie: ^1.8.5
   file_picker: ^8.1.4
   palette_generator: ^0.3.3+7
+  web_socket_channel: ^3.0.0
 
 dev_dependencies:
   flutter_test:

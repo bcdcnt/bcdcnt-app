@@ -251,7 +251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
       );
     }
@@ -262,12 +262,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('CÀI ĐẶT', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('CÀI ĐẶT', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else
             SliverFillRemaining(
               hasScrollBody: true,
@@ -296,7 +296,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 : null,
           ),
           child: _bgUrl == null
-              ? const Center(child: Icon(Icons.image_outlined, color: AppColors.textMuted, size: 32))
+              ? Center(child: Icon(Icons.image_outlined, color: AppColors.textMuted, size: 32))
               : null,
         ),
         Positioned(
@@ -332,7 +332,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : null,
             ),
             child: _avatarUrl == null
-                ? const Center(child: Icon(Icons.person, color: AppColors.textMuted, size: 32))
+                ? Center(child: Icon(Icons.person, color: AppColors.textMuted, size: 32))
                 : null,
           ),
           if (_uploading == 'avatar')
@@ -343,9 +343,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ]),
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Ảnh đại diện', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+          Text('Ảnh đại diện', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
           const SizedBox(height: 4),
-          Text('JPG / PNG / WEBP', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text('JPG / PNG / WEBP', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
         ])),
         OutlinedButton.icon(
           onPressed: _uploading != null ? null : () => _uploadImage('avatar'),
@@ -353,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: Text('Đổi', style: body(const TextStyle(fontSize: 12))),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.accentLight,
-            side: const BorderSide(color: AppColors.accent),
+            side: BorderSide(color: AppColors.accent),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
@@ -378,7 +378,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Expanded(child: Text('${r['old_username']} → ${r['new_username']}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)))),
+          Expanded(child: Text('${r['old_username']} → ${r['new_username']}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)))),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
@@ -388,7 +388,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(width: 6),
             InkWell(
               onTap: () => _cancelUsername(r['id'].toString()),
-              child: const Icon(Icons.close, size: 16, color: AppColors.textMuted),
+              child: Icon(Icons.close, size: 16, color: AppColors.textMuted),
             ),
           ],
         ]),
@@ -411,9 +411,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Icon(icon, size: 18, color: AppColors.textSecondary),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text))),
+            Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text))),
             if (subtitle != null)
-              Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+              Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
           ])),
           Switch(
             value: value,
@@ -430,7 +430,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(padding: const EdgeInsets.only(bottom: 14), child: Text(title, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+        Padding(padding: const EdgeInsets.only(bottom: 14), child: Text(title, style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
         ...children,
       ]),
     );
@@ -440,22 +440,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(label, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+        Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
         TextField(
           controller: ctl,
           keyboardType: keyboardType,
           obscureText: obscure,
-          style: body(const TextStyle(fontSize: 14, color: AppColors.text)),
+          style: body(TextStyle(fontSize: 14, color: AppColors.text)),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: body(const TextStyle(color: AppColors.textMuted)),
+            hintStyle: body(TextStyle(color: AppColors.textMuted)),
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             filled: true,
             fillColor: AppColors.surfaceLight,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.accent)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.accent)),
           ),
         ),
       ]),
@@ -539,7 +539,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
           ]),
           Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
             Row(children: [
               _genderChip('male', 'Nam'),
               const SizedBox(width: 8),
@@ -570,7 +570,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           ),
           _field('Tên đăng nhập mới', _newUsernameCtl),
           _field('Lý do', _usernameReasonCtl),
@@ -578,7 +578,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
           if (_usernameReqs.isNotEmpty) ...[
             const SizedBox(height: 14),
-            Text('LỊCH SỬ', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+            Text('LỊCH SỬ', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
             const SizedBox(height: 6),
             ..._usernameReqs.map(_usernameReqRow),
           ],
@@ -645,7 +645,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
             child: Row(children: [
               Icon(s.icon, size: 16, color: AppColors.accentLight),
               const SizedBox(width: 8),
-              Text(s.title, style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+              Text(s.title, style: display(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
             ]),
           ),
           s.builder(),
@@ -738,7 +738,7 @@ class _ThemePicker extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 14),
           child: Text(
             'Tông màu chủ đạo của ứng dụng. Hiện áp dụng cho gradient nền player; bản cập nhật sau sẽ phủ toàn UI.',
-            style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.5)),
+            style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.5)),
           ),
         ),
         Wrap(
@@ -806,9 +806,9 @@ class _ShortcutsList extends StatelessWidget {
       children: shortcuts.map((s) {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
           child: Row(children: [
-            Expanded(child: Text(s.$1, style: body(const TextStyle(fontSize: 13, color: AppColors.text)))),
+            Expanded(child: Text(s.$1, style: body(TextStyle(fontSize: 13, color: AppColors.text)))),
             ...s.$2.map((k) => Padding(
               padding: const EdgeInsets.only(left: 6),
               child: Container(
@@ -818,7 +818,7 @@ class _ShortcutsList extends StatelessWidget {
                   borderRadius: BorderRadius.circular(5),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: Text(k, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+                child: Text(k, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
               ),
             )),
           ]),

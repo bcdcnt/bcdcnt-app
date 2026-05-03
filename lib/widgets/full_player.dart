@@ -116,8 +116,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       }
     }
     if (entries.isEmpty) return const SizedBox.shrink();
-    final style = body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.accentLight));
-    final sepStyle = body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textMuted));
+    final style = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.accentLight));
+    final sepStyle = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textMuted));
     final children = <Widget>[];
     for (var i = 0; i < entries.length; i++) {
       final a = entries[i];
@@ -237,26 +237,51 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   void _showMoreSheet(BuildContext ctx, Map<String, dynamic> song, PlayerProvider player) {
     final speedLabel = '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x';
     final loveCount = _lovers.length > 99 ? '99+' : (_lovers.isEmpty ? null : '${_lovers.length}');
+    final isInstrumental = song['file_type'] == 'instrumental';
+    final hasQueue = player.queue.isNotEmpty;
     showModalBottomSheet(
       context: ctx,
       backgroundColor: AppColors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (sheetCtx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Panel toggles — moved out of the header to keep it clean. The
+          // active panel gets the accent treatment so the user knows which
+          // view is up; tapping toggles back to the vinyl.
+          if (!isInstrumental)
+            ListTile(
+              leading: Icon(Icons.lyrics_outlined, color: _panel == _PanelMode.lyrics ? AppColors.accentLight : AppColors.textSecondary),
+              title: Text(
+                _panel == _PanelMode.lyrics ? 'Ẩn lời bài hát' : 'Lời bài hát',
+                style: body(TextStyle(color: _panel == _PanelMode.lyrics ? AppColors.accentLight : AppColors.text, fontWeight: _panel == _PanelMode.lyrics ? FontWeight.w700 : FontWeight.w500)),
+              ),
+              onTap: () { Navigator.pop(sheetCtx); setState(() => _panel = _panel == _PanelMode.lyrics ? _PanelMode.vinyl : _PanelMode.lyrics); },
+            ),
+          if (hasQueue)
+            ListTile(
+              leading: Icon(Icons.queue_music, color: _panel == _PanelMode.queue ? AppColors.accentLight : AppColors.textSecondary),
+              title: Text(
+                _panel == _PanelMode.queue ? 'Ẩn hàng đợi' : 'Hàng đợi',
+                style: body(TextStyle(color: _panel == _PanelMode.queue ? AppColors.accentLight : AppColors.text, fontWeight: _panel == _PanelMode.queue ? FontWeight.w700 : FontWeight.w500)),
+              ),
+              trailing: Text('${player.queue.length}', style: body(TextStyle(color: AppColors.textMuted, fontSize: 13))),
+              onTap: () { Navigator.pop(sheetCtx); setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue); },
+            ),
+          if (!isInstrumental || hasQueue) Divider(height: 1, color: AppColors.borderSubtle),
           ListTile(
             leading: Icon(_liked ? Icons.favorite : Icons.favorite_border, color: _liked ? AppColors.accent : AppColors.textSecondary),
-            title: Text(_liked ? 'Đã thích' : 'Yêu thích', style: body(const TextStyle(color: AppColors.text))),
-            trailing: loveCount != null ? Text(loveCount, style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13))) : null,
+            title: Text(_liked ? 'Đã thích' : 'Yêu thích', style: body(TextStyle(color: AppColors.text))),
+            trailing: loveCount != null ? Text(loveCount, style: body(TextStyle(color: AppColors.textMuted, fontSize: 13))) : null,
             onTap: () { Navigator.pop(sheetCtx); _handleLove(song); },
           ),
           ListTile(
-            leading: const Icon(Icons.ios_share, color: AppColors.textSecondary),
-            title: Text('Chia sẻ', style: body(const TextStyle(color: AppColors.text))),
+            leading: Icon(Icons.ios_share, color: AppColors.textSecondary),
+            title: Text('Chia sẻ', style: body(TextStyle(color: AppColors.text))),
             onTap: () { Navigator.pop(sheetCtx); _handleShare(song); },
           ),
           ListTile(
             leading: Icon(Icons.speed, color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textSecondary),
-            title: Text('Tốc độ phát', style: body(const TextStyle(color: AppColors.text))),
+            title: Text('Tốc độ phát', style: body(TextStyle(color: AppColors.text))),
             trailing: Text(speedLabel, style: body(TextStyle(
               color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textMuted,
               fontSize: 13, fontWeight: FontWeight.w700,
@@ -265,12 +290,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ),
           ListTile(
             leading: Icon(_downloading ? Icons.hourglass_empty : Icons.download_outlined, color: AppColors.textSecondary),
-            title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(const TextStyle(color: AppColors.text))),
+            title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(TextStyle(color: AppColors.text))),
             onTap: () { Navigator.pop(sheetCtx); _handleDownload(song); },
           ),
           ListTile(
             leading: Icon(player.muted ? Icons.volume_off : Icons.volume_up, color: AppColors.textSecondary),
-            title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(const TextStyle(color: AppColors.text))),
+            title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(TextStyle(color: AppColors.text))),
             onTap: () { Navigator.pop(sheetCtx); player.toggleMute(); },
           ),
           const SizedBox(height: 8),
@@ -293,13 +318,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Text('Tốc độ phát', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                child: Text('Tốc độ phát', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
               ),
               ..._speedPresets.map((s) {
                 final active = (player.playbackRate - s).abs() < 0.01;
                 return ListTile(
                   title: Text('${s}x', style: body(TextStyle(color: active ? AppColors.accentLight : AppColors.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
-                  trailing: active ? const Icon(Icons.check, color: AppColors.accentLight) : null,
+                  trailing: active ? Icon(Icons.check, color: AppColors.accentLight) : null,
                   onTap: () { player.setPlaybackRate(s); Navigator.pop(ctx); },
                 );
               }),
@@ -370,38 +395,23 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           SafeArea(
             child: Column(
               children: [
-                // Header — back · context · panel toggles · more
+                // Header — back · centered title · more. Lyrics + queue
+                // toggles relocated into the more sheet so the title sits
+                // perfectly centered (back and more are equal-width
+                // IconButtons, balancing the row on both sides).
                 Padding(
                   padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
                   child: Row(
                     children: [
-                      IconButton(icon: const Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text), onPressed: () => Navigator.pop(context)),
+                      IconButton(icon: Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text), onPressed: () => Navigator.pop(context)),
                       Expanded(
                         child: Text(
                           'ĐANG PHÁT',
                           textAlign: TextAlign.center,
-                          style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
+                          style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
                         ),
                       ),
-                      if (!isInstrumental)
-                        IconButton(
-                          tooltip: 'Lời bài hát',
-                          icon: Icon(
-                            Icons.lyrics_outlined,
-                            color: _panel == _PanelMode.lyrics ? AppColors.accentLight : AppColors.textSecondary,
-                          ),
-                          onPressed: () => setState(() => _panel = _panel == _PanelMode.lyrics ? _PanelMode.vinyl : _PanelMode.lyrics),
-                        ),
-                      if (queue.isNotEmpty)
-                        IconButton(
-                          tooltip: 'Danh sách phát',
-                          icon: Icon(
-                            Icons.queue_music,
-                            color: _panel == _PanelMode.queue ? AppColors.accentLight : AppColors.textSecondary,
-                          ),
-                          onPressed: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
-                        ),
-                      IconButton(icon: const Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
+                      IconButton(icon: Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
                     ],
                   ),
                 ),
@@ -430,11 +440,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 textAlign: TextAlign.center,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+                                style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
                               ),
                               if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
                                 const SizedBox(height: 2),
-                                Text(song['subtitle'], style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
+                                Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
                               ],
                             ],
                           ),
@@ -472,8 +482,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(_fmt(player.position), style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
-                            Text(_fmt(player.duration), style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                            Text(_fmt(player.position), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                            Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
                           ],
                         ),
                       ),
@@ -488,12 +498,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                      IconButton(tooltip: 'Bài trước  ⇧ ←', icon: const Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
+                      IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
                       Container(
                         width: 68, height: 68,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                          gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                           boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
                         ),
                         child: IconButton(
@@ -502,7 +512,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           onPressed: player.togglePlay,
                         ),
                       ),
-                      IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: const Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
+                      IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
                       _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
                     ],
                   ),
@@ -535,7 +545,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         height: vinylSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             colors: [AppColors.accent, AppColors.accentLight],
             begin: Alignment.topLeft, end: Alignment.bottomRight,
           ),
@@ -580,7 +590,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
               ),
               Container(
                 width: 8, height: 8,
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
               ),
             ],
           ),
@@ -598,7 +608,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         borderRadius: BorderRadius.circular(16),
       ),
       child: (_songLyrics == null || _songLyrics!.isEmpty)
-          ? Center(child: Text('Chưa có lời bài hát', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 14))))
+          ? Center(child: Text('Chưa có lời bài hát', style: body(TextStyle(color: AppColors.textMuted, fontSize: 14))))
           : TimedLyrics(
               raw: _songLyrics,
               fallback: SingleChildScrollView(
@@ -655,8 +665,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                       width: 24,
                       child: Center(
                         child: isActive
-                            ? const Icon(Icons.graphic_eq, size: 14, color: AppColors.accentLight)
-                            : Text('${idx + 1}', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                            ? Icon(Icons.graphic_eq, size: 14, color: AppColors.accentLight)
+                            : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -664,7 +674,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                       borderRadius: BorderRadius.circular(6),
                       child: thumb != null
                           ? CachedNetworkImage(imageUrl: thumb, width: 36, height: 36, fit: BoxFit.cover)
-                          : Container(width: 36, height: 36, color: AppColors.surface, child: const Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
+                          : Container(width: 36, height: 36, color: AppColors.surface, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -724,7 +734,7 @@ class _ShuffleButton extends StatelessWidget {
                   bottom: -5,
                   child: Container(
                     width: 4, height: 4,
-                    decoration: const BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
                   ),
                 ),
             ],
@@ -761,13 +771,13 @@ class _RepeatButton extends StatelessWidget {
                   bottom: -5,
                   child: Container(
                     width: 4, height: 4,
-                    decoration: const BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
                   ),
                 ),
               if (mode == PlayerRepeatMode.one)
                 Positioned(
                   top: -4, right: -5,
-                  child: Text('1', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                  child: Text('1', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
                 ),
             ],
           ),

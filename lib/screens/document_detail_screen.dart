@@ -119,11 +119,11 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    if (_loading) return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (_doc == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy tư liệu', style: AppText.bodyText)),
       );
     }
@@ -138,9 +138,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text(typeLabel.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text(typeLabel.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -180,7 +180,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 ),
 
               // Title
-              Text(d['title'] ?? '', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.3))),
+              Text(d['title'] ?? '', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.3))),
               const SizedBox(height: 10),
 
               // Type / time / uploader
@@ -188,13 +188,13 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(10)),
-                  child: Text(typeLabel, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accent))),
+                  child: Text(typeLabel, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accent))),
                 ),
-                Text(timeago(d['created_at']), style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                 if (d['uploader']?['username'] != null)
                   InkWell(
                     onTap: () => context.push('/user/${d['uploader']['id']}'),
-                    child: Text(d['uploader']['username'], style: body(const TextStyle(fontSize: 12, color: AppColors.accentLight))),
+                    child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 12, color: AppColors.accentLight))),
                   ),
               ]),
               const SizedBox(height: 16),
@@ -202,19 +202,19 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               // Stats bar
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.border), bottom: BorderSide(color: AppColors.border))),
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border), bottom: BorderSide(color: AppColors.border))),
                 child: Row(children: [
                   Expanded(child: Wrap(spacing: 16, runSpacing: 4, children: [
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.visibility_outlined, size: 14, color: AppColors.textSecondary),
+                      Icon(Icons.visibility_outlined, size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 6),
-                      Text('${_formatInt(d['views'] is num ? (d['views'] as num).toInt() : 0)} lượt xem', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                      Text('${_formatInt(d['views'] is num ? (d['views'] as num).toInt() : 0)} lượt xem', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
                     ]),
                     if ((d['downloads'] ?? 0) > 0)
                       Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.download_outlined, size: 14, color: AppColors.textSecondary),
+                        Icon(Icons.download_outlined, size: 14, color: AppColors.textSecondary),
                         const SizedBox(width: 6),
-                        Text('${_formatInt(d['downloads'] is num ? (d['downloads'] as num).toInt() : 0)} lượt tải', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                        Text('${_formatInt(d['downloads'] is num ? (d['downloads'] as num).toInt() : 0)} lượt tải', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
                       ]),
                   ])),
                   if (hasFile || (type == 'image' && d['thumbnail']?['url'] != null))
@@ -224,7 +224,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       child: Container(
                         width: 36, height: 36,
                         decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
-                        child: const Icon(Icons.download, size: 18, color: AppColors.textSecondary),
+                        child: Icon(Icons.download, size: 18, color: AppColors.textSecondary),
                       ),
                     ),
                 ]),
@@ -254,7 +254,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Row(children: [
                   Icon(_typeIcons[type] ?? Icons.folder_outlined, size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text('Tư liệu khác', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Text('Tư liệu khác', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ]),
                 const SizedBox(height: 10),
                 ..._related.map((r) => InkWell(
@@ -273,9 +273,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
+                        Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
                         const SizedBox(height: 4),
-                        Text(timeago(r['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(timeago(r['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ])),
                     ]),
                   ),
@@ -283,7 +283,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               ],
 
               const SizedBox(height: 24),
-              const Divider(color: AppColors.border, height: 1),
+              Divider(color: AppColors.border, height: 1),
               const SizedBox(height: 20),
               CommentSection(type: 'document', id: widget.id),
               SizedBox(height: player.currentSong != null ? 90 : 20),

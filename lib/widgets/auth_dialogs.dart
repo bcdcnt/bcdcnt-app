@@ -69,7 +69,7 @@ class _LoginDialogState extends State<LoginDialog> {
                 showDialog(context: context, builder: (_) => const ForgotPasswordDialog());
               },
               style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-              child: Text('Quên mật khẩu?', style: body(const TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
+              child: Text('Quên mật khẩu?', style: body(TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
             ),
           ),
         ),
@@ -345,9 +345,9 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
             margin: const EdgeInsets.only(bottom: 10),
             decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
             child: Row(children: [
-              const Icon(Icons.mail_outline, color: AppColors.textMuted, size: 14),
+              Icon(Icons.mail_outline, color: AppColors.textMuted, size: 14),
               const SizedBox(width: 6),
-              Expanded(child: Text(_identity.text.trim(), style: body(const TextStyle(fontSize: 12, color: AppColors.text)), overflow: TextOverflow.ellipsis)),
+              Expanded(child: Text(_identity.text.trim(), style: body(TextStyle(fontSize: 12, color: AppColors.text)), overflow: TextOverflow.ellipsis)),
             ]),
           ),
           _AuthField(controller: _code, hint: 'Mã xác thực', icon: Icons.pin_outlined, onSubmitted: (_) => _verifyCode()),
@@ -358,7 +358,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
           Center(
             child: TextButton(
               onPressed: _loading ? null : _sendCode,
-              child: Text('Gửi lại mã', style: body(const TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
+              child: Text('Gửi lại mã', style: body(TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
             ),
           ),
         ] else ...[
@@ -419,7 +419,7 @@ class _AuthShell extends StatelessWidget {
                     width: 38, height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                       boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -2)],
                     ),
                     child: Icon(icon, color: Colors.white, size: 20),
@@ -430,13 +430,13 @@ class _AuthShell extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(title, style: display(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
+                        Text(title, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
                         const SizedBox(height: 2),
-                        Text(subtitle, maxLines: 2, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(subtitle, maxLines: 2, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ],
                     ),
                   ),
-                  IconButton(icon: const Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
+                  IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
                 ],
               ),
               const SizedBox(height: 18),
@@ -463,19 +463,19 @@ class _AuthField extends StatelessWidget {
     return TextField(
       controller: controller,
       obscureText: obscure,
-      style: body(const TextStyle(color: AppColors.text, fontSize: 14)),
+      style: body(TextStyle(color: AppColors.text, fontSize: 14)),
       onSubmitted: onSubmitted,
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+        hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
         prefixIcon: Icon(icon, color: AppColors.textMuted, size: 18),
         suffixIcon: trailing,
         filled: true,
         fillColor: AppColors.surfaceLight,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.accent)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.accent)),
       ),
     );
   }
@@ -544,10 +544,10 @@ class _AuthSwitch extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (prompt.isNotEmpty) Text('$prompt ', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+          if (prompt.isNotEmpty) Text('$prompt ', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           GestureDetector(
             onTap: onTap,
-            child: Text(actionLabel, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+            child: Text(actionLabel, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
           ),
         ],
       ),

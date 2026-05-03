@@ -25,9 +25,20 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
   bool _loading = true;
   List _melodies = [];
   List _folkCats = [];
+  String _query = '';
+  final _searchCtl = TextEditingController();
 
   bool get _wantMelodies => widget.mode == FolkIndexMode.melody || widget.mode == FolkIndexMode.both;
   bool get _wantFcats => widget.mode == FolkIndexMode.fcat || widget.mode == FolkIndexMode.both;
+
+  @override
+  void dispose() { _searchCtl.dispose(); super.dispose(); }
+
+  bool _matches(String? title) {
+    if (_query.isEmpty) return true;
+    if (title == null) return false;
+    return title.toLowerCase().contains(_query);
+  }
 
   @override
   void initState() {
@@ -71,38 +82,79 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: Text(_appBarTitle, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+        title: Text(_appBarTitle, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
         centerTitle: true,
-        leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+        leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
       ),
       body: Stack(children: [
         if (_loading)
-          const Center(child: CircularProgressIndicator(color: AppColors.accent))
+          Center(child: CircularProgressIndicator(color: AppColors.accent))
         else
           ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
             children: [
-              if (_wantMelodies && _melodies.isNotEmpty) ...[
-                SectionHeader(icon: Icons.graphic_eq, title: 'Làn điệu', count: '(${_melodies.length})'),
-                Wrap(
-                  spacing: 8, runSpacing: 8,
-                  children: _melodies.map((m) {
-                    final mm = Map<String, dynamic>.from(m);
-                    return _Chip(label: mm['title']?.toString() ?? '', onTap: () => context.push('/lan-dieu/${mm['slug']}'));
-                  }).toList(),
+              // Inline filter — both lists can hold 50+ chips, easier to
+              // scan by typing than by scrolling.
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
                 ),
-                if (widget.mode == FolkIndexMode.both) const SizedBox(height: 24),
-              ],
-              if (_wantFcats && _folkCats.isNotEmpty) ...[
-                SectionHeader(icon: Icons.category_outlined, title: 'Thể loại dân ca', count: '(${_folkCats.length})'),
-                Wrap(
-                  spacing: 8, runSpacing: 8,
-                  children: _folkCats.map((f) {
-                    final ff = Map<String, dynamic>.from(f);
-                    return _Chip(label: ff['title']?.toString() ?? '', onTap: () => context.push('/dan-ca/${ff['slug']}'));
-                  }).toList(),
+                child: TextField(
+                  controller: _searchCtl,
+                  onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                  style: body(TextStyle(fontSize: 14, color: AppColors.text)),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    hintText: 'Lọc theo tên...',
+                    hintStyle: body(TextStyle(fontSize: 14, color: AppColors.textMuted)),
+                    prefixIcon: Icon(Icons.search, size: 18, color: AppColors.textMuted),
+                    suffixIcon: _query.isEmpty ? null : IconButton(
+                      icon: Icon(Icons.close, size: 18, color: AppColors.textMuted),
+                      onPressed: () { _searchCtl.clear(); setState(() => _query = ''); },
+                    ),
+                  ),
                 ),
-              ],
+              ),
+              ...() {
+                final filteredMelodies = _melodies.where((m) => _matches((m as Map)['title']?.toString())).toList();
+                final filteredFcats = _folkCats.where((f) => _matches((f as Map)['title']?.toString())).toList();
+                final showMelodies = _wantMelodies && filteredMelodies.isNotEmpty;
+                final showFcats = _wantFcats && filteredFcats.isNotEmpty;
+                final widgets = <Widget>[];
+                if (showMelodies) {
+                  widgets.add(SectionHeader(icon: Icons.graphic_eq, title: 'Làn điệu', count: '(${filteredMelodies.length}${_query.isEmpty ? '' : '/${_melodies.length}'})'));
+                  widgets.add(Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: filteredMelodies.map((m) {
+                      final mm = Map<String, dynamic>.from(m);
+                      return _Chip(label: mm['title']?.toString() ?? '', onTap: () => context.push('/lan-dieu/${mm['slug']}'));
+                    }).toList(),
+                  ));
+                  if (widget.mode == FolkIndexMode.both) widgets.add(const SizedBox(height: 24));
+                }
+                if (showFcats) {
+                  widgets.add(SectionHeader(icon: Icons.category_outlined, title: 'Thể loại dân ca', count: '(${filteredFcats.length}${_query.isEmpty ? '' : '/${_folkCats.length}'})'));
+                  widgets.add(Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: filteredFcats.map((f) {
+                      final ff = Map<String, dynamic>.from(f);
+                      return _Chip(label: ff['title']?.toString() ?? '', onTap: () => context.push('/dan-ca/${ff['slug']}'));
+                    }).toList(),
+                  ));
+                }
+                if (widgets.isEmpty && _query.isNotEmpty) {
+                  widgets.add(Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 40),
+                    child: Center(child: Text('Không có kết quả cho "${_searchCtl.text}"', style: body(TextStyle(color: AppColors.textMuted)))),
+                  ));
+                }
+                return widgets;
+              }(),
             ],
           ),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
@@ -128,7 +180,7 @@ class _Chip extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: AppColors.border),
         ),
-        child: Text(label, style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+        child: Text(label, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
       ),
     );
   }

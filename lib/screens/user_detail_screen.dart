@@ -333,11 +333,11 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    if (_loading) return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (_user == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy thành viên', style: AppText.bodyText)),
       );
     }
@@ -362,13 +362,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
                   onPressed: _share,
                 ),
               ],
-              title: innerBoxScrolled ? Text((u['username'] ?? '').toString().toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.text))) : null,
+              title: innerBoxScrolled ? Text((u['username'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.text))) : null,
               flexibleSpace: FlexibleSpaceBar(
                 background: Stack(fit: StackFit.expand, children: [
                   if (u['background']?['url'] != null)
                     CachedNetworkImage(imageUrl: u['background']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surface))
                   else
-                    Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight))),
+                    Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight))),
                   Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
                   Positioned(left: 16, right: 16, bottom: 12, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                     Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -499,10 +499,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         itemBuilder: (ctx, i) {
           if (i == _karaokes.length) {
             if (_karaokeLoadingMore) {
-              return const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+              return Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
             }
             if (_karaokePage >= _karaokeLastPage) {
-              return Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: Text('Đã hết', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted)))));
+              return Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))));
             }
             return const SizedBox(height: 16);
           }
@@ -514,7 +514,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
   }
 
   Widget _commentsTab() {
-    if (_commentsLoading && _comments.isEmpty) return const Center(child: CircularProgressIndicator(color: AppColors.accent));
+    if (_commentsLoading && _comments.isEmpty) return Center(child: CircularProgressIndicator(color: AppColors.accent));
     if (_comments.isEmpty) return Center(child: Text('Chưa có bình luận', style: AppText.bodyText));
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -524,7 +524,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
   }
 
   Widget _pointsTab() {
-    if (_pointsLoading && _points.isEmpty) return const Center(child: CircularProgressIndicator(color: AppColors.accent));
+    if (_pointsLoading && _points.isEmpty) return Center(child: CircularProgressIndicator(color: AppColors.accent));
     if (_points.isEmpty) return Center(child: Text('Chưa có cống hiến', style: AppText.bodyText));
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
@@ -548,12 +548,12 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
           Text(
             obj?['title']?.toString() ?? _objectTypeLabel(obj?['__typename']?.toString()),
             maxLines: 1, overflow: TextOverflow.ellipsis,
-            style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
+            style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
           ),
           const SizedBox(height: 4),
-          Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
+          Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
           const SizedBox(height: 6),
-          Text(timeago(c['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
         ]),
       ),
     );
@@ -588,13 +588,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(reason.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+            Text(reason.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text))),
             if (target?['title'] != null) ...[
               const SizedBox(height: 2),
-              Text(target!['title'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.accentLight))),
+              Text(target!['title'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.accentLight))),
             ],
             const SizedBox(height: 2),
-            Text(timeago(pt['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text(timeago(pt['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
           ])),
         ]),
       ),
@@ -605,7 +605,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
     return Row(children: [
       Icon(icon, size: 14, color: AppColors.textSecondary),
       const SizedBox(width: 6),
-      Text(title, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+      Text(title, style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
       const Spacer(),
       InkWell(
         onTap: onSeeAll,
@@ -613,8 +613,8 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text('Xem tất cả', style: body(const TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
-            const Icon(Icons.chevron_right, size: 16, color: AppColors.accentLight),
+            Text('Xem tất cả', style: body(TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
+            Icon(Icons.chevron_right, size: 16, color: AppColors.accentLight),
           ]),
         ),
       ),
@@ -626,9 +626,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(_formatInt(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+        Text(_formatInt(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
         const SizedBox(height: 4),
-        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
       ]),
     );
     if (onTap == null) return tile;

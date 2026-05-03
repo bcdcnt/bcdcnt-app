@@ -68,9 +68,9 @@ class _SheetListScreenState extends State<SheetListScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BẢN NHẠC', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('BẢN NHẠC', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -96,7 +96,7 @@ class _SheetListScreenState extends State<SheetListScreen> {
             ])),
           ),
           if (_loading && _items.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -112,20 +112,20 @@ class _SheetListScreenState extends State<SheetListScreen> {
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
                       child: Row(children: [
-                        Container(width: 38, height: 38, decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.music_note_outlined, color: AppColors.accentLight, size: 18)),
+                        Container(width: 38, height: 38, decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)), child: Icon(Icons.music_note_outlined, color: AppColors.accentLight, size: 18)),
                         const SizedBox(width: 12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                          Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                          Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                           const SizedBox(height: 2),
                           Row(children: [
-                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
                             if (s['year'] != null && s['year'].toString().isNotEmpty) ...[
                               if (composers.isNotEmpty) const SizedBox(width: 6),
-                              Text('(${s['year']})', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('(${s['year']})', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                             ],
                           ]),
                         ])),
-                        const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+                        Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
                       ]),
                     ),
                   );
@@ -134,7 +134,7 @@ class _SheetListScreenState extends State<SheetListScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

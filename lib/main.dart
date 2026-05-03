@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'constants/theme.dart';
 import 'services/auth.dart';
 import 'services/player.dart';
+import 'services/realtime.dart';
 import 'services/theme_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/search_screen.dart';
@@ -73,12 +74,22 @@ class BcdcntApp extends StatelessWidget {
 class _AppRoot extends StatelessWidget {
   const _AppRoot();
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
-        title: 'BCĐCNT',
-        theme: appTheme(),
-        debugShowCheckedModeBanner: false,
-        routerConfig: _router,
-      );
+  Widget build(BuildContext context) {
+    // Watch ThemeProvider so MaterialApp rebuilds with fresh ThemeData when
+    // the user picks a new accent. The palette name is also baked into a
+    // ValueKey on MaterialApp so the *entire* GoRouter widget tree gets
+    // re-mounted — without this, existing pages keep their rendered state
+    // and don't pick up the new AppColors statics until you navigate away
+    // and back.
+    final theme = context.watch<ThemeProvider>();
+    return MaterialApp.router(
+      key: ValueKey('app-${theme.name}'),
+      title: 'BCĐCNT',
+      theme: appTheme(),
+      debugShowCheckedModeBanner: false,
+      routerConfig: _router,
+    );
+  }
 }
 
 /// Wires AuthProvider <-> PlayerProvider:
@@ -115,6 +126,18 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     });
     // Apply current cached user (if already restored from prefs) immediately.
     player.applyUserSettings(auth.user);
+    // Boot the realtime socket — Pusher protocol over a raw WebSocket.
+    // Subscribes to the public new-comments channel immediately and to
+    // the private notification channel once the user is authed.
+    realtimeService = RealtimeService(apiBase: apiBase, auth: auth);
+    realtimeService!.connect();
+  }
+
+  @override
+  void dispose() {
+    realtimeService?.dispose();
+    realtimeService = null;
+    super.dispose();
   }
 
   @override
@@ -122,6 +145,9 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     // Re-apply whenever the authed user changes (login, /me refresh, logout).
     final user = context.watch<AuthProvider>().user;
     context.read<PlayerProvider>().applyUserSettings(user);
+    // Re-bootstrap private notification subscription whenever auth flips
+    // — login pushes us into the private channel; logout drops us out.
+    realtimeService?.onAuthChanged();
     return widget.child;
   }
 }

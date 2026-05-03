@@ -149,8 +149,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.bg,
           elevation: 0,
-          leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          title: Text('PLAYLIST', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
           centerTitle: true,
         ),
         body: const SingleChildScrollView(child: Column(children: [
@@ -162,7 +162,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     if (_playlist == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy playlist', style: AppText.bodyText)),
       );
     }
@@ -186,9 +186,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('PLAYLIST', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(isDesktop ? 32 : 20, isDesktop ? 16 : 8, isDesktop ? 32 : 20, 24),
@@ -206,8 +206,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
                         child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
-                            : Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted, size: 60)),
+                            ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
+                            : Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted, size: 60)),
                       ),
                     ),
                     SizedBox(width: isDesktop ? 24 : 14),
@@ -278,14 +278,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     onPressed: () => _playAll(shuffle: true),
                     icon: const Icon(Icons.shuffle, size: 16),
                     label: const Text('Ngẫu nhiên'),
-                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentLight, side: const BorderSide(color: AppColors.accent), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
+                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentLight, side: BorderSide(color: AppColors.accent), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
                   )),
                 ]),
                 const SizedBox(height: 16),
               ])),
             ),
             if (_items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Playlist trống', style: body(const TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Playlist trống', style: body(TextStyle(color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -311,7 +311,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        const Divider(color: AppColors.border, height: 1),
+                        Divider(color: AppColors.border, height: 1),
                         const SizedBox(height: 16),
                         CommentSection(type: 'playlist', id: widget.id),
                       ]),
@@ -340,7 +340,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       const SizedBox(width: 6),
                       Text(
                         (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? 'Playlist sự kiện khác' : 'Playlist khác',
-                        style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
                       ),
                     ]),
                     const SizedBox(height: 10),
@@ -359,7 +359,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                     ),
                     const SizedBox(height: 24),
                   ],
-                  const Divider(color: AppColors.border, height: 1),
+                  Divider(color: AppColors.border, height: 1),
                   const SizedBox(height: 16),
                   CommentSection(type: 'playlist', id: widget.id),
                 ],
@@ -420,8 +420,8 @@ class _RelatedCardCompact extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: thumb != null
-                ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)))
-                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
+                ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
+                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -429,12 +429,12 @@ class _RelatedCardCompact extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+                Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
                 const SizedBox(height: 3),
                 if (ev != null && ev.toString().isNotEmpty)
-                  Text(formatEventDate(ev), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+                  Text(formatEventDate(ev), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
                 else if (total > 0)
-                  Text('$total bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
               ],
             ),
           ),
@@ -469,17 +469,17 @@ class _RelatedCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: thumb != null
-                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)))
-                  : Container(color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
+                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
+                  : Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
               ),
             ),
             const SizedBox(height: 6),
-            Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+            Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
             const SizedBox(height: 2),
             if (ev != null && ev.toString().isNotEmpty)
-              Text(formatEventDate(ev), style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+              Text(formatEventDate(ev), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
             else if (total > 0)
-              Text('$total bài', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+              Text('$total bài', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
           ],
         ),
       ),

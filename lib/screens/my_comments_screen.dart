@@ -94,12 +94,12 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BÌNH LUẬN CỦA TÔI', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('BÌNH LUẬN CỦA TÔI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _items.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.chat_bubble_outline,
@@ -123,11 +123,11 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
                       decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         if (obj?['title'] != null)
-                          Text(obj!['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                          Text(obj!['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                         const SizedBox(height: 4),
-                        Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
+                        Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
                         const SizedBox(height: 6),
-                        Text(timeago(c['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ]),
                     ),
                   );
@@ -136,7 +136,7 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

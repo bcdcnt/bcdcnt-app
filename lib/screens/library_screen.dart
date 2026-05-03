@@ -109,12 +109,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
           // Header
           Text(
             'Thư viện',
-            style: display(const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.text, letterSpacing: -0.5)),
+            style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.text, letterSpacing: -0.5)),
           ),
           const SizedBox(height: 6),
           Text(
             'Khám phá kho nhạc theo thể loại, thập niên, nghệ sĩ và tư liệu',
-            style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted)),
+            style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)),
           ),
           const SizedBox(height: 24),
 
@@ -191,7 +191,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             _latestCarousel(),
             const SizedBox(height: 28),
           ] else if (_loading) ...[
-            const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
+            Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
           ],
 
           // Khám phá
@@ -240,7 +240,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: Text('${d}s', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  child: Text('${d}s', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ),
               );
             }).toList(),
@@ -303,12 +303,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     borderRadius: BorderRadius.circular(14),
                     child: thumb != null
                         ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover)
-                        : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+                        : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
                   ),
                   const SizedBox(height: 8),
                   Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
                   if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                    Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                 ],
               ),
             ),
@@ -397,14 +397,14 @@ class _RecentCarousel extends StatelessWidget {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
-                          : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+                          ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
+                          : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
                     ),
                     const SizedBox(height: 8),
                     Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
                     if (artistText.isNotEmpty) ...[
                       const SizedBox(height: 2),
-                      Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                      Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
                     ],
                   ],
                 ),

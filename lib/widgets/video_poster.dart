@@ -45,7 +45,7 @@ class _VideoPosterState extends State<VideoPoster> {
 
   @override
   Widget build(BuildContext context) {
-    if (_failed) return Container(color: AppColors.surfaceLight, child: const Icon(Icons.movie, color: AppColors.textMuted));
+    if (_failed) return Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted));
     if (!_ready || _ctl == null) {
       return Container(color: AppColors.surfaceLight);
     }

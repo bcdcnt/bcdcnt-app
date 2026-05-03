@@ -96,9 +96,9 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('PLAYLIST', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -126,9 +126,9 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
               ])),
             ),
             if (_loading && _items.isEmpty)
-              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (_items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có playlist', style: body(const TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có playlist', style: body(TextStyle(color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -145,22 +145,22 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
                         child: Row(children: [
-                          ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: const Icon(Icons.queue_music, color: AppColors.textMuted))),
+                          ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted))),
                           const SizedBox(width: 12),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                            Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                             const SizedBox(height: 4),
                             Row(children: [
                               if (pl['user']?['username'] != null) ...[
-                                const Icon(Icons.person, size: 11, color: AppColors.textMuted),
+                                Icon(Icons.person, size: 11, color: AppColors.textMuted),
                                 const SizedBox(width: 3),
-                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
                                 const SizedBox(width: 8),
                               ],
-                              Text('$total bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                             ]),
                           ])),
-                          const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+                          Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
                         ]),
                       ),
                     );
@@ -169,7 +169,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                 )),
               ),
             SliverToBoxAdapter(child: Column(children: [
-              if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+              if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ],

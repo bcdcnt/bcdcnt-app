@@ -14,15 +14,46 @@ class SongRow extends StatelessWidget {
   final bool showIndex;
   final bool isPlaying;
   final VoidCallback? onTap;
+  // Drives the trailing metric column. Defaults to listens (matches existing
+  // behaviour). Set to 'likes' / 'downloads' / 'time' to mirror the active
+  // sort tab on category lists, BXH detail, etc.
+  final String metricKey;
 
-  const SongRow({super.key, required this.song, this.index, this.showIndex = false, this.isPlaying = false, this.onTap});
+  const SongRow({super.key, required this.song, this.index, this.showIndex = false, this.isPlaying = false, this.onTap, this.metricKey = 'views'});
+
+  ({IconData icon, String? text}) _resolveMetric() {
+    switch (metricKey) {
+      case 'likes': {
+        final n = song['likes'];
+        if (n is num && n > 0) return (icon: Icons.favorite_outline, text: formatViews(n.toInt()));
+        return (icon: Icons.favorite_outline, text: null);
+      }
+      case 'downloads': {
+        final n = song['downloads'];
+        if (n is num && n > 0) return (icon: Icons.download_outlined, text: formatViews(n.toInt()));
+        return (icon: Icons.download_outlined, text: null);
+      }
+      case 'time':
+      case 'newest': {
+        final ts = song['created_at']?.toString();
+        final s = timeago(ts);
+        return (icon: Icons.schedule, text: s.isEmpty ? null : s);
+      }
+      case 'views':
+      default: {
+        final v = song['weeklyListens'] ?? song['views'] ?? 0;
+        if (v is num && v > 0) return (icon: Icons.headphones, text: formatViews(v.toInt()));
+        return (icon: Icons.headphones, text: null);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final artists = song['artists'] is List ? song['artists'] : (song['artists']?['data'] ?? []);
     final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', ');
     final thumb = song['thumbnail']?['url'];
-    final views = song['weeklyListens'] ?? song['views'] ?? 0;
+    final metric = _resolveMetric();
 
     return HoverHighlight(
       borderRadius: BorderRadius.zero,
@@ -32,7 +63,7 @@ class SongRow extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
           ),
         child: Row(
@@ -63,7 +94,7 @@ class SongRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
               child: thumb != null
                   ? CachedNetworkImage(imageUrl: thumb, width: 48, height: 48, fit: BoxFit.cover, placeholder: (_, __) => Container(width: 48, height: 48, color: AppColors.surfaceLight))
-                  : Container(width: 48, height: 48, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 18)),
+                  : Container(width: 48, height: 48, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 18)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -74,16 +105,16 @@ class SongRow extends StatelessWidget {
                   Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                   if (artistText.isNotEmpty) ...[
                     const SizedBox(height: 2),
-                    Text(artistText, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(artistText, style: TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ],
               ),
             ),
-            if (views > 0) ...[
+            if (metric.text != null) ...[
               const SizedBox(width: 8),
-              const Icon(Icons.headphones, size: 11, color: AppColors.textMuted),
+              Icon(metric.icon, size: 11, color: AppColors.textMuted),
               const SizedBox(width: 4),
-              Text(formatViews(views), style: AppText.caption),
+              Text(metric.text!, style: AppText.caption),
             ],
           ],
         ),
@@ -105,7 +136,7 @@ class SongRow extends StatelessWidget {
       color: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: AppColors.border),
+        side: BorderSide(color: AppColors.border),
       ),
       items: [
         _menuItem('play',     Icons.play_arrow,        'Phát'),
@@ -154,7 +185,7 @@ class SongRow extends StatelessWidget {
       child: Row(children: [
         Icon(icon, size: 16, color: AppColors.textSecondary),
         const SizedBox(width: 10),
-        Text(label, style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+        Text(label, style: body(TextStyle(fontSize: 13, color: AppColors.text))),
       ]),
     );
   }

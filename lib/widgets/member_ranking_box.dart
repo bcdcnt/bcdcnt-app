@@ -136,10 +136,10 @@ class _MemberRankingBoxState extends State<MemberRankingBox> {
                   Expanded(
                     child: Text(
                       widget.title,
-                      style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+                  Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
                 ],
               ),
             ),
@@ -149,7 +149,7 @@ class _MemberRankingBoxState extends State<MemberRankingBox> {
           if (_loading)
             const Padding(padding: EdgeInsets.all(16), child: Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))))
           else if (_items.isEmpty)
-            Padding(padding: const EdgeInsets.all(14), child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 12))))
+            Padding(padding: const EdgeInsets.all(14), child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted, fontSize: 12))))
           else
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -207,12 +207,12 @@ class _RankRow extends StatelessWidget {
                 item.username,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)),
+                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)),
               ),
             ),
             Text(
               format(item.value),
-              style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
+              style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
             ),
           ],
         ),
@@ -223,6 +223,6 @@ class _RankRow extends StatelessWidget {
   Widget _placeholder() => Container(
         color: AppColors.surfaceLight,
         alignment: Alignment.center,
-        child: const Icon(Icons.person, size: 14, color: AppColors.textMuted),
+        child: Icon(Icons.person, size: 14, color: AppColors.textMuted),
       );
 }

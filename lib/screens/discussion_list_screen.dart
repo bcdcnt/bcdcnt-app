@@ -57,12 +57,12 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THẢO LUẬN', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('THẢO LUẬN', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_forums.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có diễn đàn nào', style: AppText.bodyText)))
           else
@@ -106,14 +106,14 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
+          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
         ),
         if (children.isEmpty)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
             alignment: Alignment.center,
-            child: Text('Chưa có box nào', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            child: Text('Chưa có box nào', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           )
         else
           _ForumChildrenLayout(children: children, buildBox: _forumBox),
@@ -133,26 +133,26 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
           onTap: () => context.push('/dien-dan/${forum['id']}'),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            decoration: const BoxDecoration(color: AppColors.surfaceLight, border: Border(bottom: BorderSide(color: AppColors.border))),
+            decoration: BoxDecoration(color: AppColors.surfaceLight, border: Border(bottom: BorderSide(color: AppColors.border))),
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(forum['title'] ?? '', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                Text(forum['title'] ?? '', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                 if ((forum['content'] ?? '').toString().isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
               ])),
               if (total > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
-                  child: Text('$total chủ đề', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  child: Text('$total chủ đề', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                 ),
               const SizedBox(width: 6),
-              const Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+              Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
             ]),
           ),
         ),
         if (discussions.isEmpty)
-          Padding(padding: const EdgeInsets.all(20), child: Center(child: Text('Chưa có chủ đề nào', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted)))))
+          Padding(padding: const EdgeInsets.all(20), child: Center(child: Text('Chưa có chủ đề nào', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))))
         else ...[
           ...discussions.map(_discussionRow),
           if (total > 5)
@@ -161,9 +161,9 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
                 alignment: Alignment.center,
-                child: Text('Xem tất cả $total chủ đề →', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                child: Text('Xem tất cả $total chủ đề →', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
               ),
             ),
         ],
@@ -177,37 +177,37 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       onTap: () => context.push('/thao-luan/${d['id']}'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             width: 32, height: 32, margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
               child: author?['avatar']?['url'] != null
-                  ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: AppColors.accentLight, size: 16))
-                  : const Icon(Icons.person, color: AppColors.accentLight, size: 16),
+                  ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 16))
+                  : Icon(Icons.person, color: AppColors.accentLight, size: 16),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
+            Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
             const SizedBox(height: 4),
             Wrap(spacing: 8, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
-              Text(timeago(d['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
             ]),
           ])),
           const SizedBox(width: 8),
           if ((d['comment_count'] ?? 0) > 0) ...[
-            const Icon(Icons.chat_bubble_outline, size: 12, color: AppColors.textMuted),
+            Icon(Icons.chat_bubble_outline, size: 12, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['comment_count']}', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text('${d['comment_count']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
             const SizedBox(width: 8),
           ],
           if ((d['views'] ?? 0) > 0) ...[
-            const Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
+            Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['views']}', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text('${d['views']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
           ],
         ]),
       ),

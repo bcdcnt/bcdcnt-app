@@ -522,6 +522,87 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
+  void _showLoversSheet(List loves) {
+    if (loves.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.7;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
+              child: Row(children: [
+                Icon(Icons.favorite, size: 18, color: AppColors.accentLight),
+                const SizedBox(width: 8),
+                Expanded(child: Text('${loves.length} người yêu thích', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.of(ctx).pop()),
+              ]),
+            ),
+            Divider(height: 1, color: AppColors.border),
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: loves.length,
+                separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.borderSubtle, indent: 64),
+                itemBuilder: (c, i) {
+                  final l = loves[i] as Map;
+                  final user = l['user'] as Map?;
+                  final username = user?['username']?.toString() ?? 'Ẩn danh';
+                  final avatar = user?['avatar']?['url']?.toString();
+                  final id = user?['id'] ?? l['user_id'];
+                  return InkWell(
+                    onTap: id == null ? null : () { Navigator.of(c).pop(); context.push('/user/$id'); },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      child: Row(children: [
+                        Container(
+                          width: 36, height: 36,
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
+                          child: ClipOval(
+                            child: avatar != null
+                                ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 18, color: AppColors.textMuted))
+                                : Icon(Icons.person, size: 18, color: AppColors.textMuted),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text(username, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)))),
+                        Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ]),
+        );
+      },
+    );
+  }
+
+  // Plain-text copy of the lyrics: strips HTML tags, removes [mm:ss.xx]
+  // LRC timestamps so the user pastes a clean text-only version.
+  Future<void> _copyLyrics(String raw) async {
+    final stripped = raw
+        .replaceAll(RegExp(r'\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]'), '')
+        .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'</p\s*>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]+>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&quot;', '"')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    if (stripped.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: stripped));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép lời bài hát'), backgroundColor: AppColors.success, duration: Duration(seconds: 2)));
+  }
+
   Future<void> _download() async {
     final auth = context.read<AuthProvider>();
     try {
@@ -644,8 +725,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         backgroundColor: AppColors.bg,
         appBar: AppBar(
           backgroundColor: AppColors.bg, elevation: 0,
-          leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          title: Text('CHI TIẾT', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('CHI TIẾT', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
           centerTitle: true,
         ),
         body: const SingleChildScrollView(child: Column(children: [
@@ -691,9 +772,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     Widget? creditsRow;
     {
       final segs = <InlineSpan>[];
-      const muted = TextStyle(color: AppColors.textMuted);
+      final muted = TextStyle(color: AppColors.textMuted);
       void addSep() {
-        if (segs.isNotEmpty) segs.add(const TextSpan(text: '  ·  ', style: muted));
+        if (segs.isNotEmpty) segs.add(TextSpan(text: '  ·  ', style: muted));
       }
       void addFact(String label, List<InlineSpan> linkSpans) {
         if (linkSpans.isEmpty) return;
@@ -704,7 +785,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
       if (composers.isNotEmpty) {
         addSep();
-        segs.add(const TextSpan(text: 'Sáng tác ', style: muted));
+        segs.add(TextSpan(text: 'Sáng tác ', style: muted));
         segs.addAll(_linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')));
         if (year != null) segs.add(TextSpan(text: ' ($year)', style: muted));
       }
@@ -723,20 +804,20 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       }
       if (recordYear != null && isDesktop) {
         addSep();
-        segs.add(const TextSpan(text: 'Thu ', style: muted));
-        segs.add(TextSpan(text: recordYear, style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
+        segs.add(TextSpan(text: 'Thu ', style: muted));
+        segs.add(TextSpan(text: recordYear, style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
       }
       if (song['created_at'] != null) {
         addSep();
-        segs.add(const TextSpan(text: 'Đăng ', style: muted));
-        segs.add(TextSpan(text: _formatDate(song['created_at']), style: const TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
+        segs.add(TextSpan(text: 'Đăng ', style: muted));
+        segs.add(TextSpan(text: _formatDate(song['created_at']), style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
       }
       if (segs.isNotEmpty) {
         creditsRow = Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: RichText(
             text: TextSpan(
-              style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5)),
+              style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5)),
               children: segs,
             ),
           ),
@@ -760,7 +841,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               context.push('/nghe-si/${a['slug']}');
             }
           }),
-          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: const TextStyle(color: AppColors.textMuted)),
+          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: TextStyle(color: AppColors.textMuted)),
         ],
       ),
       if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null)
@@ -772,7 +853,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               baseline: TextBaseline.alphabetic,
               child: GestureDetector(
                 onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
-                child: Text(song['song']['title'] ?? '', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
+                child: Text(song['song']['title'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
               ),
             ),
           ],
@@ -783,7 +864,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           spacing: 14, runSpacing: 4,
           children: tags.map<Widget>((t) => InkWell(
             onTap: () => context.push('/tag/${t['slug']}'),
-            child: Text('#${t['name'] ?? ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+            child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
           )).toList(),
         ),
       ),
@@ -807,21 +888,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                            Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
                             if (artists.isNotEmpty) Text(
                               (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', '),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                              style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
                             ),
                           ],
                         )
-                      : const Text('CHI TIẾT', key: ValueKey('label'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
+                      : Text('CHI TIẾT', key: ValueKey('label'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
                 ),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
                 actions: MediaQuery.of(context).size.width >= 900
                     ? const []
-                    : [IconButton(icon: const Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
+                    : [IconButton(icon: Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
               ),
 
               SliverPadding(
@@ -855,6 +936,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         onAddToPlaylist: _openPlaylistDialog,
                         onShare: _share,
                         onHistory: uploads.isNotEmpty ? _openFileHistory : null,
+                        onShowLovers: () => _showLoversSheet(loves),
                         onArtistTap: (a) {
                           if (_resolvedType == 'karaoke') {
                             final id = a['id'];
@@ -915,7 +997,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     if (!isDesktop)
                       Container(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           border: Border(
                             top: BorderSide(color: AppColors.border),
                             bottom: BorderSide(color: AppColors.border),
@@ -923,14 +1005,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.visibility, size: 16, color: AppColors.textSecondary),
+                            Icon(Icons.visibility, size: 16, color: AppColors.textSecondary),
                             const SizedBox(width: 6),
-                            Text('${_formatInt(song['views'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            Text('${_formatInt(song['views'])}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                             if ((song['downloads'] ?? 0) > 0) ...[
                               const SizedBox(width: 16),
-                              const Icon(Icons.download, size: 16, color: AppColors.textSecondary),
+                              Icon(Icons.download, size: 16, color: AppColors.textSecondary),
                               const SizedBox(width: 6),
-                              Text('${_formatInt(song['downloads'])}', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                              Text('${_formatInt(song['downloads'])}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                             ],
                             const Spacer(),
                             _IconBtn(
@@ -1041,7 +1123,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   imageUrl: _sheetImages[i],
                   height: thumbH,
                   fit: BoxFit.contain,
-                  errorWidget: (ctx, url, err) => Container(width: 140, height: thumbH, color: AppColors.surfaceLight, child: const Icon(Icons.broken_image, color: AppColors.textMuted)),
+                  errorWidget: (ctx, url, err) => Container(width: 140, height: thumbH, color: AppColors.surfaceLight, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
                 ),
               ),
             ),
@@ -1088,7 +1170,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     if (str.isEmpty) return const [];
     return [
       const SizedBox(height: 16),
-      const SectionHeader(icon: Icons.article_outlined, title: 'Lời bài hát'),
+      SectionHeader(
+        icon: Icons.article_outlined,
+        title: 'Lời bài hát',
+        actionIcon: Icons.copy_outlined,
+        actionText: 'Sao chép lời',
+        onAction: () => _copyLyrics(str),
+      ),
       _ExpandCard(
         expanded: _lyricsExpanded,
         onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
@@ -1134,7 +1222,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       child: ClipOval(
                         child: _lyricEditors[i]['avatar']?['url'] != null
                             ? CachedNetworkImage(imageUrl: _lyricEditors[i]['avatar']['url'], width: 24, height: 24, fit: BoxFit.cover)
-                            : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: const Icon(Icons.person, size: 12, color: AppColors.textMuted)),
+                            : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: Icon(Icons.person, size: 12, color: AppColors.textMuted)),
                       ),
                     ),
                   ),
@@ -1142,15 +1230,15 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          const Text('·', style: TextStyle(color: AppColors.border)),
+          Text('·', style: TextStyle(color: AppColors.border)),
           const SizedBox(width: 8),
           InkWell(
             onTap: _openLyricHistory,
             child: Row(
               children: [
-                const Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
+                Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
                 const SizedBox(width: 4),
-                Text('Lịch sử sửa lời', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                Text('Lịch sử sửa lời', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
               ],
             ),
           ),
@@ -1287,8 +1375,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
             onPlayAll: () => _playList(songs),
             count: songs.length,
-            // Composer / poet / recomposer = creator → square avatar.
-            squareAvatar: true,
           ),
           ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
@@ -1313,7 +1399,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           onTap: () => onTap(Map<String, dynamic>.from(item)),
           child: Text(
             item[key] ?? '',
-            style: body(const TextStyle(
+            style: body(TextStyle(
               fontSize: 13, fontWeight: FontWeight.w600,
               color: AppColors.accentLight,
               decoration: TextDecoration.underline,
@@ -1373,7 +1459,7 @@ class _PrimaryPlayButton extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+              gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
               borderRadius: BorderRadius.circular(28),
               boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 14, offset: const Offset(0, 4))],
             ),
@@ -1406,7 +1492,7 @@ class _MetaLine extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
         text: TextSpan(
-          style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
+          style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
           children: [
             TextSpan(text: '$label: '),
             ...children,
@@ -1428,10 +1514,6 @@ class _ArtistBanner extends StatelessWidget {
   final int count;
   final VoidCallback? onTap;
   final VoidCallback onPlayAll;
-  /// Avatar shape — circle for performers (Trình bày / Thể hiện), rounded
-  /// square for creators (Sáng tác / Soạn giả / Tác giả). Mirrors the
-  /// person carousel/list pattern across the app.
-  final bool squareAvatar;
 
   const _ArtistBanner({
     required this.name,
@@ -1440,12 +1522,10 @@ class _ArtistBanner extends StatelessWidget {
     this.avatar,
     this.onTap,
     required this.onPlayAll,
-    this.squareAvatar = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final radius = squareAvatar ? BorderRadius.circular(8) : BorderRadius.circular(20);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -1458,12 +1538,10 @@ class _ArtistBanner extends StatelessWidget {
               Container(
                 width: 40, height: 40,
                 decoration: BoxDecoration(
-                  shape: squareAvatar ? BoxShape.rectangle : BoxShape.circle,
-                  borderRadius: squareAvatar ? radius : null,
-                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                 ),
-                child: ClipRRect(
-                  borderRadius: radius,
+                child: ClipOval(
                   child: avatar != null && avatar!.isNotEmpty
                       ? CachedNetworkImage(imageUrl: avatar!, fit: BoxFit.cover, errorWidget: (_, _, _) => Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))))
                       : Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))),
@@ -1475,12 +1553,12 @@ class _ArtistBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label.toUpperCase(), style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
+                    Text(label.toUpperCase(), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
                     const SizedBox(height: 2),
                     Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                      Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2)))),
+                      Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2)))),
                       const SizedBox(width: 6),
-                      Text('($count)', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                      Text('($count)', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
                     ]),
                   ],
                 ),
@@ -1492,7 +1570,7 @@ class _ArtistBanner extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1535,7 +1613,7 @@ class _ExpandCard extends StatelessWidget {
             onTap: onToggle,
             child: Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: Text(expanded ? 'Thu gọn' : 'Xem thêm', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+              child: Text(expanded ? 'Thu gọn' : 'Xem thêm', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
             ),
           ),
         ],
@@ -1610,7 +1688,7 @@ class _ShowMoreButton extends StatelessWidget {
           children: [
             Text(
               expanded ? 'Thu gọn' : 'Xem thêm ($remaining bài)',
-              style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
+              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
             ),
             const SizedBox(width: 6),
             Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
@@ -1667,6 +1745,7 @@ class _DesktopHero extends StatelessWidget {
   final VoidCallback onAddToPlaylist;
   final VoidCallback onShare;
   final VoidCallback? onHistory;
+  final VoidCallback? onShowLovers;
   final void Function(Map artist) onArtistTap;
   final VoidCallback? onArtworkTap;
   final Widget? metaContent;
@@ -1686,6 +1765,7 @@ class _DesktopHero extends StatelessWidget {
     required this.onAddToPlaylist,
     required this.onShare,
     this.onHistory,
+    this.onShowLovers,
     required this.onArtistTap,
     this.onArtworkTap,
     this.metaContent,
@@ -1720,7 +1800,7 @@ class _DesktopHero extends StatelessWidget {
                   child: thumb != null
                       ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
                       : Container(
-                          decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                          decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
                           child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
                         ),
                 ),
@@ -1740,7 +1820,7 @@ class _DesktopHero extends StatelessWidget {
                 // Groups: [TYPE] · [TITLE] · [ARTIST + STATS] · [ACTIONS] · [META].
                 Text(
                   _typeLabelFor(resolvedType).toUpperCase(),
-                  style: body(const TextStyle(fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
+                  style: body(TextStyle(fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
                 ),
                 const SizedBox(height: 6),
                 // Title with subtitle inlined as a smaller muted suffix —
@@ -1750,11 +1830,11 @@ class _DesktopHero extends StatelessWidget {
                 RichText(
                   maxLines: 2, overflow: TextOverflow.ellipsis,
                   text: TextSpan(
-                    style: display(const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
+                    style: display(TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
                     children: [
                       TextSpan(text: song['title'] ?? ''),
                       if (subtitle != null && subtitle.isNotEmpty)
-                        TextSpan(text: ' $subtitle', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.textMuted, letterSpacing: -0.2))),
+                        TextSpan(text: ' $subtitle', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.textMuted, letterSpacing: -0.2))),
                     ],
                   ),
                 ),
@@ -1769,10 +1849,10 @@ class _DesktopHero extends StatelessWidget {
                           borderRadius: BorderRadius.circular(4),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                            child: Text(a['title'] ?? a['username'] ?? '', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                            child: Text(a['title'] ?? a['username'] ?? '', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                           ),
                         ),
-                        if (a != artists.last) Text('·', style: body(const TextStyle(fontSize: 14, color: AppColors.textMuted))),
+                        if (a != artists.last) Text('·', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
                       ],
                     ],
                   ),
@@ -1780,20 +1860,29 @@ class _DesktopHero extends StatelessWidget {
                 const SizedBox(height: 6),
                 // Stat strip — same group as artist row (small gap).
                 Row(children: [
-                  const Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
+                  Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
                   const SizedBox(width: 4),
-                  Text('${_formatIntStatic(views)} lượt nghe', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                  Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                   if (downloads > 0) ...[
                     const SizedBox(width: 14),
-                    const Icon(Icons.download, size: 13, color: AppColors.textMuted),
+                    Icon(Icons.download, size: 13, color: AppColors.textMuted),
                     const SizedBox(width: 4),
-                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                   ],
                   if (loveCount > 0) ...[
                     const SizedBox(width: 14),
-                    const Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
-                    const SizedBox(width: 4),
-                    Text('${_formatIntStatic(loveCount)} yêu thích', style: body(const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                    InkWell(
+                      onTap: onShowLovers,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
+                          const SizedBox(width: 4),
+                          Text('${_formatIntStatic(loveCount)} yêu thích', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: AppColors.textMuted))),
+                        ]),
+                      ),
+                    ),
                   ],
                 ]),
                 const SizedBox(height: 22),
@@ -1868,7 +1957,7 @@ class _MobileHero extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                   ),
                 ),
@@ -1876,7 +1965,7 @@ class _MobileHero extends StatelessWidget {
                   CachedNetworkImage(imageUrl: thumb!, fit: BoxFit.cover, errorWidget: (_, _, _) => const Center(child: Icon(Icons.music_note, size: 80, color: Colors.white38))),
                 Positioned(
                   left: 0, right: 0, bottom: 0, height: 80,
-                  child: Container(decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, AppColors.bg]))),
+                  child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, AppColors.bg]))),
                 ),
               ],
             ),
@@ -1887,9 +1976,9 @@ class _MobileHero extends StatelessWidget {
         RichText(
           text: TextSpan(
             children: [
-              TextSpan(text: song['title'] ?? '', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
+              TextSpan(text: song['title'] ?? '', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
               if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty)
-                TextSpan(text: ' ${song['subtitle']}', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: AppColors.textMuted))),
+                TextSpan(text: ' ${song['subtitle']}', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: AppColors.textMuted))),
             ],
           ),
         ),
@@ -1934,7 +2023,7 @@ class _PrimaryActionPill extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            gradient: primary ? const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]) : null,
+            gradient: primary ? LinearGradient(colors: [AppColors.accent, AppColors.accentLight]) : null,
             color: bgColor,
             borderRadius: BorderRadius.circular(24),
             border: primary || activeAccent ? null : Border.all(color: AppColors.border),
@@ -1965,7 +2054,7 @@ class _OverflowActionPill extends StatelessWidget {
       tooltip: '',
       offset: const Offset(0, 48),
       color: AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: AppColors.border)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.border)),
       onSelected: (v) {
         if (v == 'share') onShare();
         if (v == 'history' && onHistory != null) onHistory!();
@@ -1974,18 +2063,18 @@ class _OverflowActionPill extends StatelessWidget {
         PopupMenuItem(
           value: 'share',
           child: Row(children: [
-            const Icon(Icons.ios_share, size: 16, color: AppColors.text),
+            Icon(Icons.ios_share, size: 16, color: AppColors.text),
             const SizedBox(width: 10),
-            Text('Chia sẻ', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+            Text('Chia sẻ', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
           ]),
         ),
         if (onHistory != null)
           PopupMenuItem(
             value: 'history',
             child: Row(children: [
-              const Icon(Icons.history, size: 16, color: AppColors.text),
+              Icon(Icons.history, size: 16, color: AppColors.text),
               const SizedBox(width: 10),
-              Text('Lịch sử bản thu', style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+              Text('Lịch sử bản thu', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
             ]),
           ),
       ],
@@ -1996,7 +2085,7 @@ class _OverflowActionPill extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: AppColors.border),
         ),
-        child: const Icon(Icons.more_horiz, size: 18, color: AppColors.text),
+        child: Icon(Icons.more_horiz, size: 18, color: AppColors.text),
       ),
     );
   }

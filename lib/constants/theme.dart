@@ -2,18 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const bg = Color(0xFF0C0A0A);
-  static const surface = Color(0xFF1A1414);
-  static const surfaceLight = Color(0xFF241C1C);
-  static const surfaceHover = Color(0xFF2E2424);
-  static const accent = Color(0xFF711313);
-  static const accentLight = Color(0xFFB48988);
-  static const accentSoft = Color(0x26711313);
-  static const text = Color(0xFFF5F0EB);
-  static const textSecondary = Color(0xFFA09090);
-  static const textMuted = Color(0xFF6B5858);
-  static const border = Color(0x14FFFFFF);
-  static const borderSubtle = Color(0x0AFFFFFF);
+  // Full palette is mutable so ThemeProvider.setTheme() can swap every
+  // surface, accent, text, and border colour at runtime — mirrors how the
+  // web build's `[data-theme=*]` CSS vars cascade across every component.
+  // Each field is still initialised with a `const Color(...)` literal so the
+  // *values* are canonical-cached; only the bindings are non-const. Any call
+  // site that sat inside a `const` constructor reading these has to drop its
+  // outer `const` (sweep done in same change via /tmp/fix_const.py).
+  static Color bg = const Color(0xFF0C0A0A);
+  static Color surface = const Color(0xFF1A1414);
+  static Color surfaceLight = const Color(0xFF241C1C);
+  static Color surfaceHover = const Color(0xFF2E2424);
+  static Color accent = const Color(0xFF711313);
+  static Color accentLight = const Color(0xFFB48988);
+  static Color accentSoft = const Color(0x26711313);
+  static Color text = const Color(0xFFF5F0EB);
+  static Color textSecondary = const Color(0xFFA09090);
+  static Color textMuted = const Color(0xFF6B5858);
+  static Color border = const Color(0x14FFFFFF);
+  static Color borderSubtle = const Color(0x0AFFFFFF);
+  // Static accents that don't change per theme.
   static const gold = Color(0xFFC9A96E);
   static const error = Color(0xFFE57373);
   static const success = Color(0xFF66BB6A);
@@ -41,15 +49,15 @@ TextStyle brand([TextStyle? style]) => GoogleFonts.nunito(textStyle: style);
 ///   meta         12   — metadata rows
 ///   caption      11   — caption / overline / timestamp
 class AppText {
-  static TextStyle get hero => display(const TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.1, color: AppColors.text));
-  static TextStyle get displayLarge => display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text));
-  static TextStyle get displayMedium => display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text));
-  static TextStyle get sectionTitle => display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
-  static TextStyle get emphasized => body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.text));
-  static TextStyle get title => body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text));
-  static TextStyle get bodyText => body(const TextStyle(fontSize: 13, color: AppColors.textSecondary));
-  static TextStyle get meta => body(const TextStyle(fontSize: 12, color: AppColors.textMuted));
-  static TextStyle get caption => body(const TextStyle(fontSize: 11, color: AppColors.textMuted));
+  static TextStyle get hero => display(TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.1, color: AppColors.text));
+  static TextStyle get displayLarge => display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text));
+  static TextStyle get displayMedium => display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text));
+  static TextStyle get sectionTitle => display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
+  static TextStyle get emphasized => body(TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.text));
+  static TextStyle get title => body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text));
+  static TextStyle get bodyText => body(TextStyle(fontSize: 13, color: AppColors.textSecondary));
+  static TextStyle get meta => body(TextStyle(fontSize: 12, color: AppColors.textMuted));
+  static TextStyle get caption => body(TextStyle(fontSize: 11, color: AppColors.textMuted));
 }
 
 ThemeData appTheme() {
@@ -61,7 +69,7 @@ ThemeData appTheme() {
       bodyColor: AppColors.text,
       displayColor: AppColors.text,
     ),
-    colorScheme: const ColorScheme.dark(
+    colorScheme: ColorScheme.dark(
       primary: AppColors.accent,
       secondary: AppColors.accentLight,
       surface: AppColors.surface,
@@ -70,8 +78,8 @@ ThemeData appTheme() {
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.bg,
       elevation: 0,
-      iconTheme: const IconThemeData(color: AppColors.text),
-      titleTextStyle: body(const TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w700)),
+      iconTheme: IconThemeData(color: AppColors.text),
+      titleTextStyle: body(TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w700)),
     ),
   );
 }

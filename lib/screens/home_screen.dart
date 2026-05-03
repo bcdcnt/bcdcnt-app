@@ -649,7 +649,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       : '${_greeting()} · NỔI BẬT HÔM NAY';
                   return Text(
                     label.toUpperCase(),
-                    style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1.2)),
+                    style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1.2)),
                   );
                 }),
               ),
@@ -856,12 +856,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     'BCĐCNT',
-                    style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppColors.textMuted, letterSpacing: 4)),
+                    style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppColors.textMuted, letterSpacing: 4)),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Bài ca đi cùng năm tháng',
-                    style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
+                    style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
                   ),
                 ],
               ),
@@ -992,7 +992,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 44, height: 44,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 16, spreadRadius: -2)],
                   ),
                   child: ClipOval(
@@ -1030,12 +1030,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   loggedIn && username != null ? '${_greeting()}, $username' : _greeting(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 0.3)),
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 0.3)),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   'Bài ca đi cùng năm tháng',
-                  style: display(const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3, height: 1.15)),
+                  style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3, height: 1.15)),
                 ),
               ],
             ),
@@ -1047,7 +1047,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-              child: const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+              child: Icon(Icons.search, color: AppColors.textSecondary, size: 20),
             ),
           ),
           // Login pill (when not logged in)
@@ -1062,7 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
-                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                   boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 12, spreadRadius: -2, offset: const Offset(0, 3))],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1112,7 +1112,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Icon(c.$1, size: 13, color: c.$3),
                     ),
                     const SizedBox(width: 8),
-                    Text(c.$2, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+                    Text(c.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
                   ],
                 ),
               ),
@@ -1143,7 +1143,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Container(
                 width: 32, height: 32,
-                decoration: const BoxDecoration(
+                decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                 ),
@@ -1155,12 +1155,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(label, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                    Text('$count bài • bật ngẫu nhiên', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                    Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                    Text('$count bài • bật ngẫu nhiên', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                   ],
                 ),
               ),
-              const Icon(Icons.play_arrow, color: AppColors.accentLight, size: 22),
+              Icon(Icons.play_arrow, color: AppColors.accentLight, size: 22),
             ],
           ),
         ),
@@ -1227,7 +1227,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ClipOval(
                             child: p['avatar']?['url'] != null
                                 ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover)
-                                : Container(color: AppColors.surface, child: const Icon(Icons.person, color: AppColors.textMuted)),
+                                : Container(color: AppColors.surface, child: Icon(Icons.person, color: AppColors.textMuted)),
                           ),
                         ),
                       ),
@@ -1236,7 +1236,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(p['title'] ?? '', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
+                            Text(p['title'] ?? '', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
                             const SizedBox(height: 3),
                             Row(
                               children: [
@@ -1257,7 +1257,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+                      Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
                     ],
                   ),
                 ),
@@ -1277,13 +1277,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               width: 20, height: 20,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(5)),
-                              child: Text('${e.key + 1}', style: body(const TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
+                              child: Text('${e.key + 1}', style: body(TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, color: AppColors.text))),
+                              child: Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text))),
                             ),
-                            const Icon(Icons.play_arrow, color: AppColors.textMuted, size: 16),
+                            Icon(Icons.play_arrow, color: AppColors.textMuted, size: 16),
                           ],
                         ),
                       ),
@@ -1324,7 +1324,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // Banner
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.centerLeft, end: Alignment.centerRight),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
               ),
@@ -1355,7 +1355,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (desc.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                child: Text(desc, style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5))),
+                child: Text(desc, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5))),
               ),
           ],
         ),
@@ -1373,7 +1373,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
-          gradient: const LinearGradient(
+          gradient: LinearGradient(
             colors: [Color(0xFF8A1717), AppColors.accent, Color(0xFFC67068)],
             begin: Alignment.topLeft, end: Alignment.bottomRight,
           ),
@@ -1418,7 +1418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         Container(
                           width: 32, height: 32,
                           decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8)]),
-                          child: const Icon(Icons.play_arrow, size: 20, color: AppColors.accent),
+                          child: Icon(Icons.play_arrow, size: 20, color: AppColors.accent),
                         ),
                       ],
                     ),
@@ -1515,9 +1515,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final cat = _categories[_latestTab];
     final items = _latestCat[cat.slug] ?? [];
     if (_latestLoading && items.isEmpty) {
-      return const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     }
-    if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa có bài', style: body(const TextStyle(color: AppColors.textMuted))));
+    if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa có bài', style: body(TextStyle(color: AppColors.textMuted))));
     final isDesktop = MediaQuery.of(context).size.width >= 900;
     // 10 on desktop (split 5+5) to match BXH chart density and avoid the
     // big empty space on the right of single-column rows. 5 on mobile.
@@ -1653,13 +1653,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(14),
                           child: thumb != null
                               ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
-                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
+                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
                         ),
                         if (showRank) Positioned(
                           bottom: 6, left: 6,
                           child: Container(
                             width: 22, height: 22,
-                            decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                            decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                             alignment: Alignment.center,
                             child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
                           ),
@@ -1669,7 +1669,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 8),
                     Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                     if (artists.isNotEmpty)
-                      Text(artists.map((a) => a['title'] ?? '').join(', '), style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(artists.map((a) => a['title'] ?? '').join(', '), style: TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -1720,7 +1720,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Container(
                       width: av, height: av,
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                       ),
@@ -1731,7 +1731,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(p['title'] ?? '', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(p['title'] ?? '', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)), textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -1766,7 +1766,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(12),
                         child: thumb != null
                             ? CachedNetworkImage(imageUrl: thumb, width: 200, height: 112, fit: BoxFit.cover)
-                            : Container(width: 200, height: 112, color: AppColors.surfaceLight, child: const Icon(Icons.movie, color: AppColors.textMuted)),
+                            : Container(width: 200, height: 112, color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted)),
                       ),
                       Positioned(
                         bottom: 6, right: 6,
@@ -1785,7 +1785,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 6),
                   Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                   if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), style: const TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(artists.map((a) => a['title'] ?? '').join(', '), style: TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -1823,7 +1823,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           borderRadius: BorderRadius.circular(14),
                           child: thumb != null
                               ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
-                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: const Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
+                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
                         ),
                       Positioned(
                         bottom: 6, right: 6,
@@ -1984,8 +1984,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _memberList(String kind, {required String valueLabel}) {
     final loading = _memberLoading[kind] == true;
     final items = _memberRanks[kind] ?? [];
-    if (loading && items.isEmpty) return const Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
-    if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))));
+    if (loading && items.isEmpty) return Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (items.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))));
     final isDesktop = MediaQuery.of(context).size.width >= 900;
     final rows = items.asMap().entries.map((e) => _memberRow(e.key, e.value as Map<String, dynamic>, valueLabel)).toList();
     if (isDesktop && rows.length > 1) {
@@ -2013,7 +2013,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: u['id'] != null ? () => context.push('/user/${u['id']}') : null,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
           ),
           child: Row(
@@ -2034,7 +2034,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 10),
               Container(
                 width: 40, height: 40,
-                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
                 child: ClipOval(
                   child: u['avatar'] != null
                       ? CachedNetworkImage(imageUrl: u['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
@@ -2047,7 +2047,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   u['username'] ?? '?',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
                 ),
               ),
               const SizedBox(width: 8),
@@ -2088,8 +2088,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _rankingList(List<dynamic> chart) {
-    if (_chartLoading) return const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
-    if (chart.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))));
+    if (_chartLoading) return Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (chart.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))));
     // Editorial chart row — same visual rhythm as SongRow elsewhere on the
     // page (no boxed cards, no medal gradients). Top-3 rank is bold accent
     // type; everyone else is muted. Listen count reads as "1.2K lượt
@@ -2159,7 +2159,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
                   child: thumb != null
                       ? CachedNetworkImage(imageUrl: thumb, width: 64, height: 64, fit: BoxFit.cover)
-                      : Container(width: 64, height: 64, color: AppColors.surface, child: const Icon(Icons.music_note, color: AppColors.textMuted)),
+                      : Container(width: 64, height: 64, color: AppColors.surface, child: Icon(Icons.music_note, color: AppColors.textMuted)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2168,10 +2168,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text))),
+                      Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text))),
                       if (artists.isNotEmpty) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        child: Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
@@ -2180,7 +2180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.only(right: 10),
                   child: Container(
                     width: 28, height: 28,
-                    decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                     child: const Icon(Icons.play_arrow, color: Colors.white, size: 16),
                   ),
                 ),
@@ -2199,37 +2199,37 @@ class _HomeScreenState extends State<HomeScreen> {
       (Icons.video_library_outlined, 'Video', _videoDocs.length),
       (Icons.article_outlined, 'Bài viết', _newsDocs.length),
     ];
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: tabs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (ctx, i) {
-          final t = tabs[i];
-          final active = i == _archiveTab;
-          if (t.$3 == 0) return const SizedBox.shrink();
-          return InkWell(
-            onTap: active ? null : () => setState(() => _archiveTab = i),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: active ? AppColors.accent : AppColors.border),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+    // Filter out empty tabs so the bar collapses naturally; keep original
+    // index so tap dispatch still maps correctly.
+    final visible = tabs.asMap().entries.where((e) => e.value.$3 > 0).toList();
+    return Container(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: SizedBox(
+        height: 38,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: visible.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 18),
+          itemBuilder: (ctx, i) {
+            final originalIndex = visible[i].key;
+            final t = visible[i].value;
+            final active = originalIndex == _archiveTab;
+            return InkWell(
+              onTap: active ? null : () => setState(() => _archiveTab = originalIndex),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Icon(t.$1, size: 14, color: active ? AppColors.accentLight : AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text(t.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                ],
+                  Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+                ]),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
@@ -2282,7 +2282,7 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(8),
             child: thumb != null
                 ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
-                : Container(color: AppColors.surfaceLight, child: const Icon(Icons.image, color: AppColors.textMuted)),
+                : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
           ),
         );
       },
@@ -2360,7 +2360,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Container(
                   width: 40, height: 40,
-                  decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                   child: const Icon(Icons.play_arrow, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
@@ -2370,11 +2370,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                      if (d['uploader']?['username'] != null) Text(d['uploader']['username'], style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                      if (d['uploader']?['username'] != null) Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                     ],
                   ),
                 ),
-                const Icon(Icons.graphic_eq, size: 18, color: AppColors.textMuted),
+                Icon(Icons.graphic_eq, size: 18, color: AppColors.textMuted),
               ],
             ),
           ),
@@ -2410,7 +2410,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                           : (videoUrl != null
                               ? VideoPoster(videoUrl: videoUrl)
-                              : Container(color: AppColors.surfaceLight, child: const Icon(Icons.movie, color: AppColors.textMuted))),
+                              : Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
                     ),
                     Center(
                       child: Container(
@@ -2428,7 +2428,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   d['title'] ?? '',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3)),
+                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3)),
                 ),
               ),
             ],
@@ -2457,7 +2457,7 @@ class _HomeScreenState extends State<HomeScreen> {
               borderRadius: BorderRadius.circular(8),
               child: thumb != null
                   ? CachedNetworkImage(imageUrl: thumb, width: 64, height: 64, fit: BoxFit.cover)
-                  : Container(width: 64, height: 64, color: AppColors.surface, child: const Icon(Icons.article, color: AppColors.textMuted)),
+                  : Container(width: 64, height: 64, color: AppColors.surface, child: Icon(Icons.article, color: AppColors.textMuted)),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -2468,11 +2468,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
                   if (excerpt.isNotEmpty) Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
+                    child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
                   ),
                   if (d['uploader']?['username'] != null) Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(d['uploader']['username'], style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                    child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                   ),
                 ],
               ),
@@ -2506,7 +2506,7 @@ class _Pager extends StatelessWidget {
     int prev = 0;
     for (final p in ordered) {
       if (prev != 0 && p - prev > 1) {
-        children.add(const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
+        children.add(Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
       }
       children.add(_PageBtn(label: '$p', enabled: p != currentPage && !loading, active: p == currentPage, onTap: () => onGoto(p)));
       prev = p;
@@ -2646,7 +2646,7 @@ class _WelcomeBanner extends StatelessWidget {
       child: Row(children: [
         Container(
           width: 44, height: 44,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             shape: BoxShape.circle,
             gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
           ),
@@ -2658,9 +2658,9 @@ class _WelcomeBanner extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Trải nghiệm cá nhân hoá', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+              Text('Trải nghiệm cá nhân hoá', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
               const SizedBox(height: 2),
-              Text('Đăng nhập để lưu bài yêu thích, lịch sử nghe và tạo playlist riêng.', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
+              Text('Đăng nhập để lưu bài yêu thích, lịch sử nghe và tạo playlist riêng.', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
             ],
           ),
         ),
@@ -2694,14 +2694,14 @@ class _GroupLabel extends StatelessWidget {
           Container(
             width: 18, height: 2,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [AppColors.accent, Colors.transparent]),
+              gradient: LinearGradient(colors: [AppColors.accent, Colors.transparent]),
               borderRadius: BorderRadius.circular(1),
             ),
           ),
           const SizedBox(width: 10),
           Text(
             text,
-            style: body(const TextStyle(
+            style: body(TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
               color: AppColors.accentLight,
@@ -2712,7 +2712,7 @@ class _GroupLabel extends StatelessWidget {
           Expanded(
             child: Container(
               height: 1,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(colors: [AppColors.border, Colors.transparent]),
               ),
             ),

@@ -99,8 +99,8 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-                title: Text('THỂ LOẠI DÂN CA', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                title: Text('THỂ LOẠI DÂN CA', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
               ),
               SliverPadding(
@@ -110,7 +110,7 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> {
                   Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(children: [
@@ -134,9 +134,9 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> {
                 ])),
               ),
               if (_loading && _songs.isEmpty)
-                const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
               else if (_songs.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài', style: body(const TextStyle(color: AppColors.textMuted)))))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài', style: body(TextStyle(color: AppColors.textMuted)))))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -149,7 +149,7 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> {
                   )),
                 ),
               if (_loadingMore)
-                const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))),
+                SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))),
               SliverToBoxAdapter(child: SizedBox(height: hasPlayer ? 90 : 20)),
             ],
           ),

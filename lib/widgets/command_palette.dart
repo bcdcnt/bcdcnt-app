@@ -203,7 +203,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                 padding: const EdgeInsets.fromLTRB(16, 14, 14, 12),
                 child: Row(
                   children: [
-                    const Icon(Icons.search, size: 20, color: AppColors.textMuted),
+                    Icon(Icons.search, size: 20, color: AppColors.textMuted),
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
@@ -212,12 +212,12 @@ class _CommandPaletteState extends State<CommandPalette> {
                         autofocus: true,
                         onChanged: _onChanged,
                         cursorColor: AppColors.accent,
-                        style: body(const TextStyle(fontSize: 16, color: AppColors.text)),
+                        style: body(TextStyle(fontSize: 16, color: AppColors.text)),
                         decoration: InputDecoration(
                           isDense: true,
                           border: InputBorder.none,
                           hintText: 'Tìm bài hát, nghệ sĩ, nhạc sĩ...',
-                          hintStyle: body(const TextStyle(fontSize: 16, color: AppColors.textMuted)),
+                          hintStyle: body(TextStyle(fontSize: 16, color: AppColors.textMuted)),
                         ),
                       ),
                     ),
@@ -227,22 +227,22 @@ class _CommandPaletteState extends State<CommandPalette> {
                         color: AppColors.surfaceLight,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text('Esc', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                      child: Text('Esc', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1, color: AppColors.border),
+              Divider(height: 1, color: AppColors.border),
               Expanded(
                 child: _loading
-                    ? const Center(child: CircularProgressIndicator(color: AppColors.accent))
+                    ? Center(child: CircularProgressIndicator(color: AppColors.accent))
                     : _ctrl.text.trim().isEmpty
                         ? Padding(
                             padding: const EdgeInsets.all(24),
                             child: Center(
                               child: Text(
                                 'Gõ để tìm. Dùng ↑↓ chọn, Enter mở, Esc đóng.',
-                                style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                                style: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
                                 textAlign: TextAlign.center,
                               ),
                             ),
@@ -253,7 +253,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                                 child: Center(
                                   child: Text(
                                     'Không tìm thấy kết quả',
-                                    style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                                    style: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
                                     textAlign: TextAlign.center,
                                   ),
                                 ),
@@ -321,8 +321,8 @@ class _PaletteRow extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: image != null
-                    ? CachedNetworkImage(imageUrl: image, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 36, height: 36, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 16, color: AppColors.textMuted)))
-                    : Container(width: 36, height: 36, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
+                    ? CachedNetworkImage(imageUrl: image, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)))
+                    : Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -330,10 +330,10 @@ class _PaletteRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(hit['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                    Text(hit['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                     if (hit['artist'] != null) ...[
                       const SizedBox(height: 1),
-                      Text(hit['artist'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                      Text(hit['artist'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
                     ],
                   ],
                 ),
@@ -345,7 +345,7 @@ class _PaletteRow extends StatelessWidget {
                   color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(_typeLabel(type), style: body(const TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
+                child: Text(_typeLabel(type), style: body(TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
               ),
             ],
           ),

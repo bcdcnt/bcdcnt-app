@@ -158,14 +158,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('HOẠT ĐỘNG', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('HOẠT ĐỘNG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
             sliver: SliverToBoxAdapter(child: Container(
-              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: _filters.map((f) {
@@ -183,7 +183,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             )),
           ),
           if (_loading && _items.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.timeline,
@@ -203,7 +203,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),
@@ -226,7 +226,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Avatar
         InkWell(
@@ -245,20 +245,20 @@ class _ActivityScreenState extends State<ActivityScreen> {
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           DefaultTextStyle(
-            style: body(const TextStyle(fontSize: 13, color: AppColors.text, height: 1.5)),
+            style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5)),
             child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
               if (user != null)
                 InkWell(
                   onTap: () => context.push('/user/${user['id']}'),
-                  child: Text(user['username'] ?? '', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  child: Text(user['username'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ),
               const Text(' '),
-              Text(actionLabel, style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+              Text(actionLabel, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
               if (isComment && obj != null && obj['user']?['username'] != null) ...[
-                Text(' của ', style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+                Text(' của ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                 InkWell(
                   onTap: () => context.push('/user/${obj['user']['id']}'),
-                  child: Text(obj['user']['username'], style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                  child: Text(obj['user']['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                 ),
               ],
               if (isUpload && obj != null && obj['user']?['username'] != null) ...[
@@ -266,26 +266,26 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   const Text(' '),
                   InkWell(
                     onTap: () => _openObject(obj),
-                    child: Text(objTitle.toString(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                    child: Text(objTitle.toString(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
                   ),
                 ],
-                Text(' của ', style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+                Text(' của ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                 InkWell(
                   onTap: () => context.push('/user/${obj['user']['id']}'),
-                  child: Text(obj['user']['username'], style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                  child: Text(obj['user']['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                 ),
               ],
               if (objTitle != null && !isUpload) ...[
-                Text(isComment || action == 'comment' || action == 'love_comment' ? ' trong ' : ' ', style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+                Text(isComment || action == 'comment' || action == 'love_comment' ? ' trong ' : ' ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                 InkWell(
                   onTap: () => _openObject(obj),
-                  child: Text(objTitle.toString(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                  child: Text(objTitle.toString(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
                 ),
               ],
             ]),
           ),
           const SizedBox(height: 4),
-          Text(timeago(a['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text(timeago(a['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
         ])),
         const SizedBox(width: 8),
         Container(
@@ -308,7 +308,7 @@ class _DayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
       child: Text(
         label.toUpperCase(),
-        style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

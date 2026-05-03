@@ -27,10 +27,10 @@ const _cats = <String, _CatCfg>{
 };
 
 const _sortOptions = [
-  ('views', 'Nghe nhiều nhất', 'views'),
+  ('views', 'Nghe nhiều', 'views'),
   ('newest', 'Mới nhất', 'id'),
-  ('likes', 'Yêu thích nhất', 'likes'),
-  ('downloads', 'Tải nhiều nhất', 'downloads'),
+  ('likes', 'Yêu thích', 'likes'),
+  ('downloads', 'Tải nhiều', 'downloads'),
 ];
 
 class CategoryDetailScreen extends StatefulWidget {
@@ -76,7 +76,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ? 'users(first: 5) { data { id username } }'
         : 'artists(first: 5) { data { id title slug avatar { url } } }';
     final composerNested = '${cfg.composerField}(first: 20) { data { id slug title } }';
-    final q = 'query(\$page: Int) { ${cfg.query}(first: 10, page: \$page, orderBy: [{column: "$sortCol", order: DESC}]) { data { id title subtitle slug views downloads play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
+    final q = 'query(\$page: Int) { ${cfg.query}(first: 10, page: \$page, orderBy: [{column: "$sortCol", order: DESC}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
 
     try {
       final data = await ApiClient.query(q, {'page': page});
@@ -134,7 +134,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (cfg == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy thể loại', style: AppText.bodyText)),
       );
     }
@@ -149,9 +149,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('THỂ LOẠI', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('THỂ LOẠI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
 
               SliverPadding(
@@ -213,39 +213,41 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         ),
                       ),
 
-                    // Sort tabs
-                    SizedBox(
-                      height: 34,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _sortOptions.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 6),
-                        itemBuilder: (ctx, i) {
-                          final opt = _sortOptions[i];
-                          final active = _sort == opt.$1;
-                          return InkWell(
-                            onTap: active ? null : () => _fetch(1, sort: opt.$1),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                    // Sort tabs — underline style for app-wide consistency
+                    // (matches search filter, BXH period tabs, in-page
+                    // section tabs).
+                    Container(
+                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+                      child: SizedBox(
+                        height: 38,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _sortOptions.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 16),
+                          itemBuilder: (ctx, i) {
+                            final opt = _sortOptions[i];
+                            final active = _sort == opt.$1;
+                            return InkWell(
+                              onTap: active ? null : () => _fetch(1, sort: opt.$1),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                decoration: BoxDecoration(
+                                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
+                                ),
+                                child: Text(opt.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
                               ),
-                              child: Text(opt.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                            ),
-                          );
-                        },
+                            );
+                          },
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
 
                     // List / loader
                     if (_loading && _items.isEmpty)
-                      const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                      Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
                     else if (_items.isEmpty)
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(const TextStyle(color: AppColors.textMuted)))))
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(color: AppColors.textMuted)))))
                     else
                       ..._items.asMap().entries.map((e) {
                         final song = Map<String, dynamic>.from(e.value as Map);
@@ -254,6 +256,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           song: song,
                           index: (_page - 1) * 10 + e.key,
                           showIndex: true,
+                          metricKey: _sort == 'newest' ? 'time' : _sort,
                           onTap: () => context.push('/song/${song['id']}', extra: song),
                         );
                       }),
@@ -303,7 +306,7 @@ class _Pager extends StatelessWidget {
     int prev = 0;
     for (final p in ordered) {
       if (prev != 0 && p - prev > 1) {
-        children.add(const Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
+        children.add(Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
       }
       children.add(_PageBtn(label: '$p', enabled: p != currentPage && !loading, active: p == currentPage, onTap: () => onGoto(p)));
       prev = p;

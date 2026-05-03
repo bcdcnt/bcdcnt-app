@@ -414,7 +414,7 @@ class _AudioLightboxState extends State<AudioLightbox> with _PagedLightbox {
                         width: 120, height: 120,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(24),
-                          gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                          gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                           boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 32, spreadRadius: -4)],
                         ),
                         child: const Icon(Icons.music_note, color: Colors.white, size: 56),

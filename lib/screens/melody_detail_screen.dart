@@ -89,12 +89,12 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('LÀN ĐIỆU', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('LÀN ĐIỆU', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _songs.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_melody == null)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Không tìm thấy làn điệu', style: AppText.bodyText)))
           else ...[
@@ -160,7 +160,7 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
             ),
           ],
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

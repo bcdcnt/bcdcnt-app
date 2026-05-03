@@ -4,13 +4,16 @@ import '../constants/theme.dart';
 /// Animated diagonal sheen sweeping across child to fake skeleton loading.
 class Shimmer extends StatefulWidget {
   final Widget child;
-  final Color baseColor;
+  // baseColor is nullable so we can resolve it lazily from the theme-mutable
+  // AppColors.surfaceLight in build(). Default-value parameters must be
+  // const, but AppColors fields are now mutable per the theme refactor.
+  final Color? baseColor;
   final Color highlightColor;
   final Duration duration;
   const Shimmer({
     super.key,
     required this.child,
-    this.baseColor = AppColors.surfaceLight,
+    this.baseColor,
     this.highlightColor = const Color(0xFF302424),
     this.duration = const Duration(milliseconds: 1400),
   });
@@ -43,10 +46,11 @@ class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
           blendMode: BlendMode.srcATop,
           shaderCallback: (bounds) {
             final dx = bounds.width * 2 * _ctl.value - bounds.width;
+            final base = widget.baseColor ?? AppColors.surfaceLight;
             return LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [widget.baseColor, widget.highlightColor, widget.baseColor],
+              colors: [base, widget.highlightColor, base],
               stops: const [0.35, 0.5, 0.65],
               transform: _SlideTransform(dx),
             ).createShader(bounds);
@@ -97,7 +101,7 @@ class SongListSkeleton extends StatelessWidget {
       child: Column(
         children: List.generate(rows, (i) => Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1))),
           child: Row(
             children: [
               if (showIndex) ...[

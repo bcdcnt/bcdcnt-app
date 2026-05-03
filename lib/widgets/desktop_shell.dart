@@ -103,21 +103,6 @@ class _DesktopShellState extends State<DesktopShell> {
     _saveTab(tab);
   }
 
-  /// Header icon button click. Three flows:
-  ///   * panel closed → open it and switch to this tab
-  ///   * panel open + same tab active → close panel (toggle off)
-  ///   * panel open + different tab active → just switch the tab
-  void _onHeaderTab(_RightPanelTab tab, bool isOpen) {
-    if (!isOpen) {
-      desktopPanelOpen.value = true;
-      _setTab(tab);
-    } else if (_panelTab == tab) {
-      desktopPanelOpen.value = false;
-    } else {
-      _setTab(tab);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final hasPlayer = context.watch<PlayerProvider>().currentSong != null;
@@ -149,35 +134,22 @@ class _DesktopShellState extends State<DesktopShell> {
                             child: widget.child,
                           ),
                         ),
-                        // Apple Music-style header icon strip — each
-                        // button opens the panel + selects its tab; tap
-                        // again to close. Replaces the previous single
-                        // toggle + in-panel tab switcher.
-                        Positioned(
-                          top: 8, right: 12,
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            _HeaderTabBtn(
-                              tooltip: 'Bình luận',
-                              icon: Icons.chat_bubble_outline,
-                              active: isOpen && _panelTab == _RightPanelTab.comments,
-                              onTap: () => _onHeaderTab(_RightPanelTab.comments, isOpen),
+                        // When the panel is closed we still need a way to
+                        // re-open it, so a single Apple-style sidebar
+                        // toggle stays on the center column. The 3-icon
+                        // tab strip lives inside the panel header itself
+                        // so it never overlaps detail page actions
+                        // (Share, Like, …).
+                        if (!isOpen)
+                          Positioned(
+                            top: 8, right: 12,
+                            child: _HeaderTabBtn(
+                              tooltip: 'Mở bảng phụ  ⌘I',
+                              icon: Icons.view_sidebar_outlined,
+                              active: false,
+                              onTap: () { desktopPanelOpen.value = true; },
                             ),
-                            const SizedBox(width: 4),
-                            _HeaderTabBtn(
-                              tooltip: 'Hoạt động',
-                              icon: Icons.timeline,
-                              active: isOpen && _panelTab == _RightPanelTab.activity,
-                              onTap: () => _onHeaderTab(_RightPanelTab.activity, isOpen),
-                            ),
-                            const SizedBox(width: 4),
-                            _HeaderTabBtn(
-                              tooltip: 'Hàng đợi  ⌘I',
-                              icon: Icons.queue_music,
-                              active: isOpen && _panelTab == _RightPanelTab.queue,
-                              onTap: () => _onHeaderTab(_RightPanelTab.queue, isOpen),
-                            ),
-                          ]),
-                        ),
+                          ),
                       ],
                     ),
                   ),
@@ -205,7 +177,7 @@ class _DesktopShellState extends State<DesktopShell> {
                           // Subtle 1px guide line — only visible when the
                           // user hovers (Material's InkWell handles cursor;
                           // here we just suggest the splitter exists).
-                          child: const VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                          child: VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
                         ),
                       ),
                     ),
@@ -242,34 +214,46 @@ class _RightPanelContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Width controlled by parent via SizedBox (resizable splitter on left
-    // edge — drag to resize, double-click to reset). Persists across
-    // sessions in SharedPreferences.
-    //
-    // Tab switcher moved out to the main-area header (Apple Music
-    // style icon strip) so the panel itself just shows: Now Playing
-    // strip → small tab title → content.
-    final title = switch (activeTab) {
-      _RightPanelTab.comments => 'Bình luận',
-      _RightPanelTab.activity => 'Hoạt động',
-      _RightPanelTab.queue => 'Hàng đợi',
-    };
-    // Now-playing strip removed — duplicated the bottom MiniPlayer (same
-    // thumb + title + artist, no extra controls). Bottom player is always
-    // visible while audio is active, so the strip was dead weight.
+    // Tab switcher lives in this panel's own header (used to be on
+    // the center-column header but it overlapped detail-page actions like
+    // Share). Strip is intentionally small + flat — 3 ghost icons +
+    // animated underline indicator (no box bg) for an Apple Music feel.
     return Container(
-      decoration: const BoxDecoration(color: AppColors.bg),
+      decoration: BoxDecoration(color: AppColors.bg),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 12, 10),
-            child: Text(
-              title,
-              style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)),
-            ),
+            padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
+            child: Row(children: [
+              _HeaderTabBtn(
+                tooltip: 'Bình luận',
+                icon: Icons.chat_bubble_outline,
+                active: activeTab == _RightPanelTab.comments,
+                onTap: () => onSelectTab(_RightPanelTab.comments),
+              ),
+              _HeaderTabBtn(
+                tooltip: 'Hoạt động',
+                icon: Icons.timeline,
+                active: activeTab == _RightPanelTab.activity,
+                onTap: () => onSelectTab(_RightPanelTab.activity),
+              ),
+              _HeaderTabBtn(
+                tooltip: 'Hàng đợi  ⌘I',
+                icon: Icons.queue_music,
+                active: activeTab == _RightPanelTab.queue,
+                onTap: () => onSelectTab(_RightPanelTab.queue),
+              ),
+              const Spacer(),
+              _HeaderTabBtn(
+                tooltip: 'Đóng bảng phụ',
+                icon: Icons.close,
+                active: false,
+                onTap: () { desktopPanelOpen.value = false; },
+              ),
+            ]),
           ),
-          const Divider(height: 1, color: AppColors.border),
+          Divider(height: 1, color: AppColors.border),
           Expanded(
             child: switch (activeTab) {
               _RightPanelTab.queue => const DesktopQueuePanel(embedded: true),
@@ -294,17 +278,32 @@ class _HeaderTabBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Compact ghost button — tighter than before (16px icon, 6px padding,
+    // no chunky bg/border). Active state = accent icon + 2px underline
+    // indicator. Reads cleaner and reclaims a few px of vertical space in
+    // the panel header.
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: active ? AppColors.accentSoft : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
           onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(7),
-            child: Icon(icon, size: 18, color: active ? AppColors.accentLight : AppColors.textSecondary),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: active ? AppColors.accentLight : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 16,
+              color: active ? AppColors.accentLight : AppColors.textSecondary,
+            ),
           ),
         ),
       ),
@@ -333,6 +332,7 @@ const _primaryNavGroups = <_NavGroup>[
     _NavItem('Trang chủ', '/', Icons.home_outlined),
     _NavItem('Tìm kiếm', '/search', Icons.search),
     _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
+    _NavItem('Bảng xếp hạng', '/bang-xep-hang', Icons.leaderboard_outlined),
   ]),
   _NavGroup(label: 'THỂ LOẠI', items: [
     _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
@@ -390,7 +390,7 @@ class _Sidebar extends StatelessWidget {
               children: [
                 Text(
                   'BCĐCNT',
-                  style: brand(const TextStyle(
+                  style: brand(TextStyle(
                     fontSize: 18, fontWeight: FontWeight.w800,
                     letterSpacing: 0.5, color: AppColors.text,
                   )),
@@ -413,7 +413,7 @@ class _Sidebar extends StatelessWidget {
                       padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
                       child: Text(
                         _primaryNavGroups[g].label!,
-                        style: body(const TextStyle(
+                        style: body(TextStyle(
                           fontSize: 10, fontWeight: FontWeight.w700,
                           letterSpacing: 1.2, color: AppColors.textMuted,
                         )),
@@ -430,7 +430,7 @@ class _Sidebar extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                     child: Text(
                       'THƯ VIỆN CỦA TÔI',
-                      style: body(const TextStyle(
+                      style: body(TextStyle(
                         fontSize: 10, fontWeight: FontWeight.w700,
                         letterSpacing: 1.2, color: AppColors.textMuted,
                       )),
@@ -523,7 +523,7 @@ class _NotifBell extends StatelessWidget {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             tooltip: 'Thông báo',
-            icon: const Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
+            icon: Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
             onPressed: openDropdown,
           ),
           if (unread > 0)
@@ -531,7 +531,7 @@ class _NotifBell extends StatelessWidget {
               top: 4, right: 4,
               child: Container(
                 width: 8, height: 8,
-                decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
               ),
             ),
         ],
@@ -594,10 +594,10 @@ class _AccountFooter extends StatelessWidget {
                 username,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
+                style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
               ),
             ),
-            const Icon(Icons.expand_less, size: 16, color: AppColors.textMuted),
+            Icon(Icons.expand_less, size: 16, color: AppColors.textMuted),
           ],
         ),
       ),

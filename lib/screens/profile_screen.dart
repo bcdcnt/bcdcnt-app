@@ -72,9 +72,9 @@ class ProfileScreen extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 28),
           child: Center(child: Column(children: [
-            Text('BCĐCNT', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppColors.textMuted, letterSpacing: 4))),
+            Text('BCĐCNT', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppColors.textMuted, letterSpacing: 4))),
             const SizedBox(height: 4),
-            Text('Bài ca đi cùng năm tháng', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic))),
+            Text('Bài ca đi cùng năm tháng', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic))),
           ])),
         ),
       ],
@@ -92,7 +92,7 @@ class ProfileScreen extends StatelessWidget {
             margin: const EdgeInsets.symmetric(horizontal: 0),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
               image: user['background'] != null
                   ? DecorationImage(image: CachedNetworkImageProvider(user['background']), fit: BoxFit.cover)
                   : null,
@@ -113,7 +113,7 @@ class ProfileScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.bg, width: 4),
-                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                 ),
                 child: ClipOval(
                   child: user['avatar'] != null
@@ -126,9 +126,9 @@ class ProfileScreen extends StatelessWidget {
         ]),
       ),
       const SizedBox(height: 6),
-      Text(user['username'] ?? '', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+      Text(user['username'] ?? '', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
       if (user['email'] != null)
-        Padding(padding: const EdgeInsets.only(top: 2), child: Text(user['email'], style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary)))),
+        Padding(padding: const EdgeInsets.only(top: 2), child: Text(user['email'], style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary)))),
       const SizedBox(height: 10),
       InkWell(
         onTap: () => context.push('/user/${user['id']}'),
@@ -136,7 +136,7 @@ class ProfileScreen extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: AppColors.accentSoft, border: Border.all(color: AppColors.accent.withValues(alpha: 0.3))),
-          child: Text('Xem trang cá nhân', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+          child: Text('Xem trang cá nhân', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
         ),
       ),
     ]);
@@ -180,7 +180,7 @@ class ProfileScreen extends StatelessWidget {
       onTap: onTap ?? (route != null ? () => _go(context, route, requireAuth: requireAuth) : null),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(children: [
           Container(
             width: 36, height: 36,
@@ -188,7 +188,7 @@ class ProfileScreen extends StatelessWidget {
             child: Icon(icon, size: 18, color: AppColors.textSecondary),
           ),
           const SizedBox(width: 14),
-          Expanded(child: Text(label, style: body(const TextStyle(fontSize: 15, color: AppColors.text, fontWeight: FontWeight.w500)))),
+          Expanded(child: Text(label, style: body(TextStyle(fontSize: 15, color: AppColors.text, fontWeight: FontWeight.w500)))),
           if (badge > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
@@ -198,7 +198,7 @@ class ProfileScreen extends StatelessWidget {
               child: Text(badge > 99 ? '99+' : '$badge', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
             ),
           const SizedBox(width: 6),
-          const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+          Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
         ]),
       ),
     );
@@ -211,8 +211,8 @@ class ProfileScreen extends StatelessWidget {
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.surface,
-            title: Text('Đăng xuất', style: display(const TextStyle(color: AppColors.text))),
-            content: Text('Bạn có chắc muốn đăng xuất?', style: body(const TextStyle(color: AppColors.textSecondary))),
+            title: Text('Đăng xuất', style: display(TextStyle(color: AppColors.text))),
+            content: Text('Bạn có chắc muốn đăng xuất?', style: body(TextStyle(color: AppColors.textSecondary))),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
               TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất', style: TextStyle(color: AppColors.error))),
@@ -223,7 +223,7 @@ class ProfileScreen extends StatelessWidget {
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(children: [
           Container(
             width: 36, height: 36,

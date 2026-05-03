@@ -194,18 +194,18 @@ class _LyricHistoryDialogState extends State<LyricHistoryDialog> {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.history_edu, color: AppColors.textSecondary, size: 20),
+                  Icon(Icons.history_edu, color: AppColors.textSecondary, size: 20),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('Lịch sử sửa lời', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)))),
-                  IconButton(icon: const Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
+                  Expanded(child: Text('Lịch sử sửa lời', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)))),
+                  IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),
-            const Divider(color: AppColors.border, height: 1),
+            Divider(color: AppColors.border, height: 1),
             if (_loading)
-              const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.accent))
+              Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.accent))
             else if (_items.isEmpty)
-              Padding(padding: const EdgeInsets.all(30), child: Text('Chưa có lịch sử sửa lời', style: body(const TextStyle(color: AppColors.textMuted))))
+              Padding(padding: const EdgeInsets.all(30), child: Text('Chưa có lịch sử sửa lời', style: body(TextStyle(color: AppColors.textMuted))))
             else
               Flexible(
                 child: ListView.separated(
@@ -236,9 +236,9 @@ class _LyricHistoryDialogState extends State<LyricHistoryDialog> {
                                     : null,
                               ),
                               const SizedBox(width: 8),
-                              Text(user?['username'] ?? '?', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                              Text(user?['username'] ?? '?', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                               const SizedBox(width: 8),
-                              Text(_timeAgo(item['created_at']?.toString()), style: body(const TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.textMuted))),
+                              Text(_timeAgo(item['created_at']?.toString()), style: body(TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.textMuted))),
                             ],
                           ),
                           const SizedBox(height: 10),

@@ -54,15 +54,15 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
               child: Row(
                 children: [
-                  const Icon(Icons.history, color: AppColors.textSecondary, size: 20),
+                  Icon(Icons.history, color: AppColors.textSecondary, size: 20),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('Lịch sử bản thu', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)))),
-                  Text('(${widget.uploads.length})', style: body(const TextStyle(fontSize: 12, color: AppColors.textMuted))),
-                  IconButton(icon: const Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
+                  Expanded(child: Text('Lịch sử bản thu', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)))),
+                  Text('(${widget.uploads.length})', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                  IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),
-            const Divider(color: AppColors.border, height: 1),
+            Divider(color: AppColors.border, height: 1),
             if (widget.uploader != null) ...[
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
@@ -87,21 +87,21 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Đăng bài', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.6))),
+                          Text('Đăng bài', style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.6))),
                           const SizedBox(height: 2),
                           Text(
                             widget.uploader?['username'] ?? '',
-                            style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
+                            style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
                           ),
                           if (widget.songCreatedAt != null && widget.songCreatedAt!.isNotEmpty)
-                            Text(_formatDate(widget.songCreatedAt), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                            Text(_formatDate(widget.songCreatedAt), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const Divider(color: AppColors.border, height: 1, indent: 16, endIndent: 16),
+              Divider(color: AppColors.border, height: 1, indent: 16, endIndent: 16),
             ],
             Flexible(
               child: ListView.separated(
@@ -149,13 +149,13 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                                     children: [
                                       Row(
                                         children: [
-                                          Flexible(child: Text(user?['username'] ?? 'Ẩn danh', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)), overflow: TextOverflow.ellipsis)),
+                                          Flexible(child: Text(user?['username'] ?? 'Ẩn danh', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)), overflow: TextOverflow.ellipsis)),
                                           if (isCurrent) ...[
                                             const SizedBox(width: 6),
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                               decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
-                                              child: Text('ĐANG DÙNG', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                                              child: Text('ĐANG DÙNG', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                                             ),
                                           ],
                                           if (file['is_hq'] == true || file['is_hq'] == 1) ...[
@@ -169,21 +169,21 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                                         ],
                                       ),
                                       const SizedBox(height: 2),
-                                      Text(_formatDate(file['created_at']?.toString()), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                                      Text(_formatDate(file['created_at']?.toString()), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                                     ],
                                   ),
                                 ),
                                 AnimatedRotation(
                                   turns: isExpanded ? 0.5 : 0,
                                   duration: const Duration(milliseconds: 200),
-                                  child: const Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted),
+                                  child: Icon(Icons.keyboard_arrow_down, color: AppColors.textMuted),
                                 ),
                               ],
                             ),
                           ),
                         ),
                         if (isExpanded && audioUrl != null) ...[
-                          const Divider(color: AppColors.border, height: 1),
+                          Divider(color: AppColors.border, height: 1),
                           Padding(
                             padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
                             child: WaveformPlayer(

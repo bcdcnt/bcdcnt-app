@@ -29,11 +29,13 @@ class _PersonListScreenState extends State<PersonListScreen> {
   // means "all". Selecting either resets pagination.
   String? _letter;
   int? _year;
-  // Vietnamese alphabet — includes Đ and the diacritic vowels separately so
-  // the user can quickly jump to e.g. "Ơ".
+  // Base Vietnamese alphabet only — the backend uses MySQL LIKE with a
+  // utf8_general_ci collation, so 'O%' already matches Ô/Ơ etc. Showing the
+  // diacritic vowels gave duplicate results with the base letter (E vs Ê,
+  // O vs Ô/Ơ, U vs Ư, A vs Ă/Â). Đ stays — distinct phoneme + sort key.
   static const _alphabet = [
-    'A','Ă','Â','B','C','D','Đ','E','Ê','G','H','I','K','L','M','N',
-    'O','Ô','Ơ','P','Q','R','S','T','U','Ư','V','X','Y',
+    'A','B','C','D','Đ','E','G','H','I','K','L','M','N',
+    'O','P','Q','R','S','T','U','V','X','Y',
   ];
 
   String get _queryName {
@@ -164,18 +166,21 @@ class _PersonListScreenState extends State<PersonListScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // A-Z index — text-only letters, active gets accent + bold. Reads
-        // as a typographic index strip rather than a row of chip pills.
+        // A-Z index — underline tab style (matches search/category/BXH/tag
+        // sort tabs across the app for visual consistency).
         Expanded(
-          child: SizedBox(
-            height: 32,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                _letterBtn(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
-                for (final c in _alphabet)
-                  _letterBtn(label: c, active: _letter == c, onTap: () => _setLetter(c)),
-              ],
+          child: Container(
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+            child: SizedBox(
+              height: 36,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  _letterBtn(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
+                  for (final c in _alphabet)
+                    _letterBtn(label: c, active: _letter == c, onTap: () => _setLetter(c)),
+                ],
+              ),
             ),
           ),
         ),
@@ -186,12 +191,12 @@ class _PersonListScreenState extends State<PersonListScreen> {
           tooltip: 'Năm sinh',
           position: PopupMenuPosition.under,
           color: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: AppColors.border)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.border)),
           onSelected: _setYear,
           itemBuilder: (ctx) => [
-            const PopupMenuItem<int?>(value: null, child: Text('Mọi năm', style: TextStyle(fontSize: 13, color: AppColors.text))),
+            PopupMenuItem<int?>(value: null, child: Text('Mọi năm', style: TextStyle(fontSize: 13, color: AppColors.text))),
             for (var y = currentYear; y >= 1900; y--)
-              PopupMenuItem<int?>(value: y, child: Text('$y', style: const TextStyle(fontSize: 13, color: AppColors.text))),
+              PopupMenuItem<int?>(value: y, child: Text('$y', style: TextStyle(fontSize: 13, color: AppColors.text))),
           ],
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -219,15 +224,17 @@ class _PersonListScreenState extends State<PersonListScreen> {
   Widget _letterBtn({required String label, required bool active, required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
+        ),
         child: Text(
           label,
           style: body(TextStyle(
             fontSize: 13,
-            fontWeight: active ? FontWeight.w800 : FontWeight.w500,
-            color: active ? AppColors.accentLight : AppColors.textMuted,
+            fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+            color: active ? AppColors.accentLight : AppColors.textSecondary,
             letterSpacing: 0.3,
           )),
         ),
@@ -258,9 +265,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text(_label.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text(_label.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -301,9 +308,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
                 ])),
               ),
               if (_loading && _items.isEmpty)
-                const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
               else if (_items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -314,22 +321,23 @@ class _PersonListScreenState extends State<PersonListScreen> {
                       maxCrossAxisExtent: 180,
                       crossAxisSpacing: 14,
                       mainAxisSpacing: 18,
-                      // Tile content stack ≈ 80 (avatar) + 8 + ~32 (name) +
-                      // 14 (listen count) ≈ 134px. ratio 1.2 gives a 150px
-                      // tall cell — content lives in ~134, leaving a small
-                      // breath room. Was 0.72 → 250px tall, leaving 110+ px
-                      // empty per row.
-                      childAspectRatio: 1.2,
+                      // Tile content: avatar 80 + 8 + name (2 lines @
+                      // 12px line-height ≈ 36) + 2 + listen count 14 =
+                      // 140. Use mainAxisExtent for a fixed 152px cell
+                      // — childAspectRatio caused 1-2px overflow because
+                      // cell width wasn't always exactly 180 (depends on
+                      // available width / cross axis).
+                      mainAxisExtent: 152,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final p = _items[i];
                         final avatar = p['avatar']?['url'];
-                        // Avatar shape: circle for performers (Nghệ sĩ),
-                        // rounded-square for composers/poets/recomposers
-                        // (creators of works) — Spotify pattern.
-                        final isPerformer = widget.type == PersonType.artist;
-                        final radius = isPerformer ? BorderRadius.circular(40) : BorderRadius.circular(12);
+                        // Circle avatars for everyone — composer/poet/recomposer
+                        // square treatment was reverted per user feedback. Section
+                        // header icon already differentiates the lists; making
+                        // avatar shapes vary just looked inconsistent.
+                        final radius = BorderRadius.circular(40);
                         return InkWell(
                           onTap: () => context.push('$_routePrefix${p['slug']}'),
                           borderRadius: radius,
@@ -338,22 +346,20 @@ class _PersonListScreenState extends State<PersonListScreen> {
                               Container(
                                 width: 80, height: 80,
                                 decoration: BoxDecoration(
-                                  shape: isPerformer ? BoxShape.circle : BoxShape.rectangle,
-                                  borderRadius: isPerformer ? null : radius,
-                                  gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                                 ),
-                                child: ClipRRect(
-                                  borderRadius: radius,
+                                child: ClipOval(
                                   child: avatar != null
-                                      ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white70))
+                                      ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
                                       : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white70)))),
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(p['title'] ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+                              Text(p['title'] ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
                               if ((p['total_listens'] ?? 0) > 0) Padding(
                                 padding: const EdgeInsets.only(top: 2),
-                                child: Text('${_formatInt(p['total_listens'])} nghe', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                                child: Text('${_formatInt(p['total_listens'])} nghe', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                               ),
                             ],
                           ),
@@ -365,7 +371,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                 ),
               SliverToBoxAdapter(
                 child: Column(children: [
-                  if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),

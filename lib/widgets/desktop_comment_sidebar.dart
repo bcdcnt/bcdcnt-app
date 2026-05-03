@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/realtime.dart';
 
 /// Narrow right-column sidebar showing the latest comments across the site —
 /// mirror of bcdcnt-web's CommentSidebar/LatestCommentsWidget. Visible when
@@ -57,15 +58,28 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
   int _page = 1;
   final _scrollController = ScrollController();
 
+  VoidCallback? _realtimeListener;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _fetch();
+    // Live refresh — RealtimeService bumps newCommentTick whenever any
+    // user posts a comment site-wide. Re-fetch the panel so it shows
+    // the new entry without manual reload.
+    final tick = realtimeService?.newCommentTick;
+    if (tick != null) {
+      _realtimeListener = () { if (mounted) _fetch(); };
+      tick.addListener(_realtimeListener!);
+    }
   }
 
   @override
   void dispose() {
+    if (_realtimeListener != null) {
+      realtimeService?.newCommentTick.removeListener(_realtimeListener!);
+    }
     _scrollController.dispose();
     super.dispose();
   }
@@ -172,7 +186,7 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
     Widget list = _loading
         ? const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))
         : _items.isEmpty
-            ? Padding(padding: const EdgeInsets.all(20), child: Text('Chưa có bình luận nào', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 13))))
+            ? Padding(padding: const EdgeInsets.all(20), child: Text('Chưa có bình luận nào', style: body(TextStyle(color: AppColors.textMuted, fontSize: 13))))
             : ListView.separated(
                 controller: inline ? null : _scrollController,
                 shrinkWrap: inline,
@@ -224,14 +238,14 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
             padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
             child: Row(
               children: [
-                Text('Bình luận mới', style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                Text('Bình luận mới', style: display(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                 const Spacer(),
                 IconButton(
                   iconSize: 18,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                   tooltip: 'Làm mới',
-                  icon: const Icon(Icons.refresh, color: AppColors.textSecondary),
+                  icon: Icon(Icons.refresh, color: AppColors.textSecondary),
                   onPressed: _refresh,
                 ),
               ],
@@ -314,11 +328,11 @@ class _CommentTile extends StatelessWidget {
                             objTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: body(const TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w700)),
+                            style: body(TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w700)),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        Text(t, style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        Text(t, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                       ],
                     ),
                   if (objTitle.isNotEmpty) const SizedBox(height: 1),
@@ -326,14 +340,14 @@ class _CommentTile extends StatelessWidget {
                     username,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: body(const TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w600)),
+                    style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     content,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.35)),
+                    style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.35)),
                   ),
                 ],
               ),

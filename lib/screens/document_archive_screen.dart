@@ -178,9 +178,9 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('TƯ LIỆU', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('TƯ LIỆU', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -220,7 +220,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                   const SizedBox(height: 16),
 
                   if (_loading && _items.isEmpty)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
                   else if (_items.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),
@@ -228,14 +228,14 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                         children: [
                           Icon(_cf.icon, size: 48, color: AppColors.textMuted),
                           const SizedBox(height: 12),
-                          Text('Chưa có tư liệu nào', style: body(const TextStyle(color: AppColors.textMuted))),
+                          Text('Chưa có tư liệu nào', style: body(TextStyle(color: AppColors.textMuted))),
                         ],
                       ),
                     )
                   else
                     _content(),
 
-                  if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
 
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ])),
@@ -277,7 +277,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
             borderRadius: BorderRadius.circular(8),
             child: thumb != null
                 ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
-                : Container(color: AppColors.surfaceLight, child: const Icon(Icons.image, color: AppColors.textMuted)),
+                : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
           ),
         );
       },
@@ -302,7 +302,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               children: [
                 Container(
                   width: 40, height: 40,
-                  decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                   child: const Icon(Icons.play_arrow, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
@@ -311,15 +311,15 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(d['uploader']['username'], style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
                 ),
-                const Icon(Icons.graphic_eq, size: 18, color: AppColors.textMuted),
+                Icon(Icons.graphic_eq, size: 18, color: AppColors.textMuted),
               ],
             ),
           ),
@@ -358,7 +358,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                             ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                             : (videoUrl != null
                                 ? VideoPoster(videoUrl: videoUrl)
-                                : Container(color: AppColors.surfaceLight, child: const Icon(Icons.movie, color: AppColors.textMuted))),
+                                : Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
                       ),
                       Center(
                         child: Container(
@@ -375,7 +375,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.35))),
+                  child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.35))),
                 ),
               ),
             ],
@@ -404,7 +404,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                   borderRadius: BorderRadius.circular(8),
                   child: thumb != null
                       ? CachedNetworkImage(imageUrl: thumb, width: 72, height: 72, fit: BoxFit.cover)
-                      : Container(width: 72, height: 72, color: AppColors.surface, child: const Icon(Icons.article, color: AppColors.textMuted)),
+                      : Container(width: 72, height: 72, color: AppColors.surface, child: Icon(Icons.article, color: AppColors.textMuted)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -412,14 +412,14 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                       if (excerpt.isNotEmpty) Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
+                        child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
                       ),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(d['uploader']['username'], style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                       ),
                     ],
                   ),

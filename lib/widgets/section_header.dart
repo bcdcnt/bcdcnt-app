@@ -9,6 +9,11 @@ class SectionHeader extends StatelessWidget {
   /// Helpful when the section has a known length to set expectations.
   final String? count;
   final String? actionText;
+  /// When set, the trailing action renders as an icon-only ghost button with
+  /// `actionText` (or its own tooltip) showing on hover instead of inline
+  /// label. Use for short universal actions (copy, refresh, share) where an
+  /// icon reads cleaner than a text link.
+  final IconData? actionIcon;
   final VoidCallback? onAction;
 
   const SectionHeader({
@@ -18,6 +23,7 @@ class SectionHeader extends StatelessWidget {
     this.subtitle,
     this.count,
     this.actionText,
+    this.actionIcon,
     this.onAction,
   });
 
@@ -32,7 +38,7 @@ class SectionHeader extends StatelessWidget {
             Container(
               width: 34, height: 34,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
+                gradient: LinearGradient(
                   colors: [AppColors.accentSoft, Color(0x00711313)],
                   begin: Alignment.topLeft, end: Alignment.bottomRight,
                 ),
@@ -57,7 +63,7 @@ class SectionHeader extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: display(const TextStyle(
+                        style: display(TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: AppColors.text,
@@ -70,7 +76,7 @@ class SectionHeader extends StatelessWidget {
                       padding: const EdgeInsets.only(left: 8),
                       child: Text(
                         count!,
-                        style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                        style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
                       ),
                     ),
                   ],
@@ -79,13 +85,29 @@ class SectionHeader extends StatelessWidget {
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(
                     subtitle!,
-                    style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                    style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
                   ),
                 ),
               ],
             ),
           ),
-          if (actionText != null && onAction != null)
+          if (actionIcon != null && onAction != null)
+            Tooltip(
+              message: actionText ?? '',
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                child: InkWell(
+                  onTap: onAction,
+                  customBorder: const CircleBorder(),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(actionIcon, size: 16, color: AppColors.textSecondary),
+                  ),
+                ),
+              ),
+            )
+          else if (actionText != null && onAction != null)
             InkWell(
               onTap: onAction,
               borderRadius: BorderRadius.circular(8),
@@ -93,8 +115,8 @@ class SectionHeader extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
                 child: Row(
                   children: [
-                    Text(actionText!, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                    const Icon(Icons.chevron_right, size: 14, color: AppColors.accentLight),
+                    Text(actionText!, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                    Icon(Icons.chevron_right, size: 14, color: AppColors.accentLight),
                   ],
                 ),
               ),

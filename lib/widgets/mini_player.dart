@@ -46,7 +46,7 @@ class MiniPlayer extends StatelessWidget {
               value: player.progress,
               minHeight: 3,
               backgroundColor: AppColors.border,
-              valueColor: const AlwaysStoppedAnimation(AppColors.accent),
+              valueColor: AlwaysStoppedAnimation(AppColors.accent),
             ),
           ),
           InkWell(
@@ -71,7 +71,7 @@ class MiniPlayer extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                     child: thumb != null
                         ? CachedNetworkImage(imageUrl: thumb, width: 44, height: 44, fit: BoxFit.cover)
-                        : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
+                        : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -80,14 +80,14 @@ class MiniPlayer extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        if (artistText.isNotEmpty) Text(artistText, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        if (artistText.isNotEmpty) Text(artistText, style: TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
-                  IconButton(tooltip: 'Bài trước  ⇧ ←', icon: const Icon(Icons.skip_previous, color: AppColors.text), onPressed: player.playPrev, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, color: AppColors.text), onPressed: player.playPrev, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
                   Container(
                     width: 36, height: 36,
-                    decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                     child: IconButton(
                       tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
                       icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 20),
@@ -95,7 +95,7 @@ class MiniPlayer extends StatelessWidget {
                       padding: EdgeInsets.zero,
                     ),
                   ),
-                  IconButton(tooltip: nextTooltip, icon: const Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  IconButton(tooltip: nextTooltip, icon: Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
                 ],
               ),
             ),

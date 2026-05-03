@@ -294,17 +294,17 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.search, size: 20, color: AppColors.textMuted),
+                Icon(Icons.search, size: 20, color: AppColors.textMuted),
                 const SizedBox(width: 10),
                 Expanded(
                   child: TextField(
                     controller: _ctrl,
                     focusNode: _focus,
                     autofocus: true,
-                    style: body(const TextStyle(color: AppColors.text, fontSize: 14)),
+                    style: body(TextStyle(color: AppColors.text, fontSize: 14)),
                     decoration: InputDecoration(
                       hintText: 'Tìm bài hát, nghệ sĩ, nhạc sĩ, tư liệu...',
-                      hintStyle: body(const TextStyle(color: AppColors.textMuted, fontSize: 14)),
+                      hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 14)),
                       border: InputBorder.none,
                       isDense: true,
                     ),
@@ -314,7 +314,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 if (hasQuery)
                   GestureDetector(
                     onTap: () { _ctrl.clear(); _onChanged(''); },
-                    child: const Padding(
+                    child: Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Icon(Icons.cancel, size: 18, color: AppColors.textMuted),
                     ),
@@ -350,7 +350,7 @@ class _SearchScreenState extends State<SearchScreen> {
             );
           }
           return Container(
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
             child: SizedBox(
               height: 40,
               child: ListView.separated(
@@ -378,13 +378,13 @@ class _SearchScreenState extends State<SearchScreen> {
         if (authed && _recentLoaded && _recent.isNotEmpty) ...[
           Row(
             children: [
-              const Icon(Icons.history, size: 16, color: AppColors.textSecondary),
+              Icon(Icons.history, size: 16, color: AppColors.textSecondary),
               const SizedBox(width: 8),
-              Expanded(child: Text('Tìm kiếm gần đây', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
+              Expanded(child: Text('Tìm kiếm gần đây', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
               TextButton(
                 onPressed: _clearAllRecent,
                 style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                child: Text('Xoá tất cả', style: body(const TextStyle(fontSize: 11, color: AppColors.accentLight))),
+                child: Text('Xoá tất cả', style: body(TextStyle(fontSize: 11, color: AppColors.accentLight))),
               ),
             ],
           ),
@@ -415,9 +415,9 @@ class _SearchScreenState extends State<SearchScreen> {
         ],
         if (_trendingLoaded && _trending.isNotEmpty) ...[
           Row(children: [
-            const Icon(Icons.local_fire_department, size: 16, color: AppColors.accentLight),
+            Icon(Icons.local_fire_department, size: 16, color: AppColors.accentLight),
             const SizedBox(width: 8),
-            Text('Xu hướng tìm kiếm', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+            Text('Xu hướng tìm kiếm', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
           ]),
           const SizedBox(height: 12),
           Wrap(
@@ -434,14 +434,14 @@ class _SearchScreenState extends State<SearchScreen> {
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: Text(name, style: body(const TextStyle(fontSize: 12, color: AppColors.text))),
+                  child: Text(name, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
                 ),
               );
             }).toList(),
           ),
         ],
         if (!_trendingLoaded && (!authed || _recent.isEmpty))
-          const Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
+          Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
       ],
     );
   }
@@ -466,7 +466,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResults() {
     if (_loading && _groups.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.accent));
+      return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
     if (_groups.isEmpty) {
       // No results — surface trending keywords as alternatives so the
@@ -485,7 +485,7 @@ class _SearchScreenState extends State<SearchScreen> {
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
-              child: Text('XU HƯỚNG TÌM KIẾM', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.textMuted))),
+              child: Text('XU HƯỚNG TÌM KIẾM', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.textMuted))),
             ),
             Wrap(
               spacing: 8, runSpacing: 8,
@@ -501,7 +501,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(color: AppColors.border),
                     ),
-                    child: Text(name, style: body(const TextStyle(fontSize: 12, color: AppColors.text))),
+                    child: Text(name, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
                   ),
                 );
               }).toList(),
@@ -530,7 +530,7 @@ class _SearchScreenState extends State<SearchScreen> {
         if (idx == 0) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 14),
-            child: Text('Tìm thấy $totalHits kết quả', style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+            child: Text('Tìm thấy $totalHits kết quả', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
           );
         }
         if (topHit != null && idx == 1) {
@@ -557,7 +557,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   Expanded(
                     child: Text(
                       label.toUpperCase(),
-                      style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
+                      style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
                     ),
                   ),
                   if (_filter == 'all' && type != null && type.isNotEmpty)
@@ -567,8 +567,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                         child: Row(children: [
-                          Text('Xem tất cả', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                          const Icon(Icons.chevron_right, size: 13, color: AppColors.textMuted),
+                          Text('Xem tất cả', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                          Icon(Icons.chevron_right, size: 13, color: AppColors.textMuted),
                         ]),
                       ),
                     ),
@@ -616,11 +616,11 @@ class _TopResultCard extends StatelessWidget {
             padding: const EdgeInsets.only(left: 2, bottom: 8),
             child: Row(
               children: [
-                const Icon(Icons.workspace_premium_outlined, size: 14, color: AppColors.accentLight),
+                Icon(Icons.workspace_premium_outlined, size: 14, color: AppColors.accentLight),
                 const SizedBox(width: 6),
                 Text(
                   'KẾT QUẢ HÀNG ĐẦU',
-                  style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
+                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
                 ),
               ],
             ),
@@ -660,7 +660,7 @@ class _TopResultCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
-                          child: Text(typeLabel.toUpperCase(), style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1))),
+                          child: Text(typeLabel.toUpperCase(), style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1))),
                         ),
                         SizedBox(height: isDesktop ? 10 : 6),
                         Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
@@ -706,7 +706,7 @@ class _RecentObjectRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
           children: [
-            const Icon(Icons.history, size: 14, color: AppColors.textMuted),
+            Icon(Icons.history, size: 14, color: AppColors.textMuted),
             const SizedBox(width: 10),
             Container(
               width: 36, height: 36,
@@ -726,13 +726,13 @@ class _RecentObjectRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
-                  if (typeLabel.isNotEmpty) Text(typeLabel, style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                  if (typeLabel.isNotEmpty) Text(typeLabel, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
                 ],
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.close, size: 14, color: AppColors.textMuted),
+              icon: Icon(Icons.close, size: 14, color: AppColors.textMuted),
               onPressed: onDelete,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -758,11 +758,11 @@ class _RecentRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Row(
           children: [
-            const Icon(Icons.history, size: 16, color: AppColors.textMuted),
+            Icon(Icons.history, size: 16, color: AppColors.textMuted),
             const SizedBox(width: 12),
-            Expanded(child: Text(keyword, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, color: AppColors.text)))),
+            Expanded(child: Text(keyword, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text)))),
             IconButton(
-              icon: const Icon(Icons.close, size: 14, color: AppColors.textMuted),
+              icon: Icon(Icons.close, size: 14, color: AppColors.textMuted),
               onPressed: onDelete,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -820,15 +820,15 @@ class _HitRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                   if (subtitle != null && subtitle.isNotEmpty) Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                    child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+            Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
           ],
         ),
       ),

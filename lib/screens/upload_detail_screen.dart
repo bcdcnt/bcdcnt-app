@@ -93,11 +93,11 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    if (_loading) return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (_error != null || _upload == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text(_error ?? 'Không tìm thấy bài gửi', style: AppText.bodyText)),
       );
     }
@@ -114,14 +114,14 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BÀI GỬI', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('BÀI GỬI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             sliver: SliverList(delegate: SliverChildListDelegate([
-              Text(up['title'] ?? '(Không tiêu đề)', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.3))),
+              Text(up['title'] ?? '(Không tiêu đề)', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.3))),
               const SizedBox(height: 14),
 
               // Status card
@@ -144,7 +144,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                     const SizedBox(height: 2),
                     Text(
                       '$typeLabel · ${timeago(up['created_at'])}${up['processor']?['username'] != null ? ' · BQT: ${up['processor']['username']}' : ''}',
-                      style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ),
                   ])),
                 ]),
@@ -168,7 +168,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                       Text('PHẢN HỒI BQT', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFEF5350), letterSpacing: 0.5))),
                     ]),
                     const SizedBox(height: 6),
-                    Text(up['reason'], style: body(const TextStyle(fontSize: 14, color: AppColors.text, height: 1.6))),
+                    Text(up['reason'], style: body(TextStyle(fontSize: 14, color: AppColors.text, height: 1.6))),
                   ]),
                 ),
 
@@ -190,7 +190,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                       const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Xem kết quả', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF66BB6A)))),
-                        Text(up['result'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                        Text(up['result'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
                       ])),
                     ]),
                   ),
@@ -226,20 +226,20 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                   _info('Năm sáng tác', up['year']),
                   _info('Năm thu', up['record_year']),
                   if ((up['link'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('LINK GỐC', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('LINK GỐC', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
                     InkWell(
                       onTap: () => launchUrl(Uri.parse(up['link']), mode: LaunchMode.externalApplication),
-                      child: Text(up['link'], style: body(const TextStyle(fontSize: 13, color: AppColors.accentLight, decoration: TextDecoration.underline))),
+                      child: Text(up['link'], style: body(TextStyle(fontSize: 13, color: AppColors.accentLight, decoration: TextDecoration.underline))),
                     ),
                     const SizedBox(height: 14),
                   ],
                   if ((up['note'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('GHI CHÚ', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
-                    Text(up['note'], style: body(const TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
+                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('GHI CHÚ', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Text(up['note'], style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
                     const SizedBox(height: 14),
                   ],
                   if ((up['content'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('NỘI DUNG', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('NỘI DUNG', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
                     Html(
                       data: up['content'],
                       style: {
@@ -269,9 +269,9 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label.toUpperCase(), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+        Text(label.toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
         const SizedBox(height: 4),
-        Text(value.toString(), style: body(const TextStyle(fontSize: 14, color: AppColors.text, height: 1.5))),
+        Text(value.toString(), style: body(TextStyle(fontSize: 14, color: AppColors.text, height: 1.5))),
       ]),
     );
   }

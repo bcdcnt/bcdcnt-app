@@ -117,9 +117,9 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('THẬP NIÊN', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('THẬP NIÊN', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -128,7 +128,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
-                      gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
@@ -167,16 +167,16 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
                         onPressed: () => _playAll(shuffle: true),
                         icon: const Icon(Icons.shuffle, size: 16),
                         label: const Text('Ngẫu nhiên'),
-                        style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentLight, side: const BorderSide(color: AppColors.accent), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
+                        style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentLight, side: BorderSide(color: AppColors.accent), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
                       )),
                     ]),
                   const SizedBox(height: 14),
                 ])),
               ),
               if (_loading && _items.isEmpty)
-                const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
               else if (_items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(const TextStyle(color: AppColors.textMuted)))))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(color: AppColors.textMuted)))))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -192,7 +192,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
                 ),
               SliverToBoxAdapter(
                 child: Column(children: [
-                  if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),

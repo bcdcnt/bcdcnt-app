@@ -120,7 +120,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
       );
     }
@@ -133,9 +133,9 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('BÀI TÔI GỬI', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('BÀI TÔI GỬI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -161,7 +161,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
               ])),
             ),
             if (_loading && _items.isEmpty)
-              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (_items.isEmpty)
               const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
                 icon: Icons.upload_outlined,
@@ -180,7 +180,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                 )),
               ),
             SliverToBoxAdapter(child: Column(children: [
-              if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+              if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ],

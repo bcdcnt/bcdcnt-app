@@ -167,9 +167,9 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text(_title.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text(_title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -179,7 +179,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
-                      gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
@@ -234,7 +234,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                             label: const Text('Ngẫu nhiên'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.accentLight,
-                              side: const BorderSide(color: AppColors.accent),
+                              side: BorderSide(color: AppColors.accent),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                             ),
@@ -246,7 +246,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
 
                   // List / loader / empty
                   if (_loading && _items.isEmpty)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
                   else if (_items.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),
@@ -256,7 +256,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             widget.kind == UserListKind.favorites ? 'Bạn chưa yêu thích bài nào' : 'Chưa có lịch sử nghe',
-                            style: body(const TextStyle(color: AppColors.textMuted)),
+                            style: body(TextStyle(color: AppColors.textMuted)),
                           ),
                         ],
                       ),
@@ -272,7 +272,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                       );
                     }),
 
-                  if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
 
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ])),
@@ -288,7 +288,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
 
   Widget _scaffoldEmpty(String msg) => Scaffold(
     backgroundColor: AppColors.bg,
-    appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+    appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
     body: Center(child: Text(msg, style: AppText.bodyText)),
   );
 }

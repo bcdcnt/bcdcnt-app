@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -60,7 +61,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
   Future<void> _fetchTag() async {
     try {
       final data = await ApiClient.query(
-        r'query($slug: String!) { tag(slug: $slug) { id name slug } }',
+        r'query($slug: String!) { tag(slug: $slug) { id name slug users { id username avatar { url } } } }',
         {'slug': widget.slug},
       );
       final t = data['tag'];
@@ -71,9 +72,62 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
       }
       setState(() => _tag = Map<String, dynamic>.from(t));
       logActivity(context.read<AuthProvider>(), 'view', 'tag', t['id']);
-      // Pre-fetch active tab + others lazy
+      // Prefetch counts for all tabs in one round-trip so the tab labels
+      // show totals immediately (not just after the user clicks them).
+      _prefetchCounts();
       _fetchPage('song', 1);
     } catch (_) { if (mounted) setState(() => _tag = null); }
+  }
+
+  Future<void> _prefetchCounts() async {
+    final tag = _tag;
+    if (tag == null) return;
+    try {
+      final data = await ApiClient.query(
+        r'''query($tag: String!) {
+          songsByTag(first: 1, page: 1, tag: $tag) { paginatorInfo { total } }
+          instrumentalsByTag(first: 1, page: 1, tag: $tag) { paginatorInfo { total } }
+          karaokesByTag(first: 1, page: 1, tag: $tag) { paginatorInfo { total } }
+        }''',
+        {'tag': tag['name']},
+      );
+      if (!mounted) return;
+      setState(() {
+        _tabs['song']!.total = data['songsByTag']?['paginatorInfo']?['total'] ?? 0;
+        _tabs['instrumental']!.total = data['instrumentalsByTag']?['paginatorInfo']?['total'] ?? 0;
+        _tabs['karaoke']!.total = data['karaokesByTag']?['paginatorInfo']?['total'] ?? 0;
+      });
+    } catch (_) {}
+  }
+
+  // Same id can show up multiple times because the relation joins through
+  // every taggable. Dedupe by id to match the legacy Vue behaviour.
+  List<Map<String, dynamic>> _dedupedContributors() {
+    final src = (_tag?['users'] as List?) ?? const [];
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final u in src) {
+      final m = Map<String, dynamic>.from(u as Map);
+      final id = m['id']?.toString();
+      if (id == null || !seen.add(id)) continue;
+      out.add(m);
+    }
+    return out;
+  }
+
+  void _playAll() {
+    final st = _tabs[_activeType]!;
+    if (st.items.isEmpty) return;
+    final player = context.read<PlayerProvider>();
+    final queue = <Map<String, dynamic>>[];
+    for (final s in st.items) {
+      final m = Map<String, dynamic>.from(s);
+      m['audioUrl'] = m['file']?['audio_url'];
+      if (m['audioUrl'] != null) queue.add(m);
+    }
+    if (queue.isEmpty) return;
+    player.playSong(queue.first, queue);
+    player.setFetchMore(null);
   }
 
   Future<void> _fetchPage(String type, int page) async {
@@ -133,7 +187,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_tag == null) {
-      return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     }
     final st = _tabs[_activeType]!;
     final activeLabel = _tabConfig.firstWhere((t) => t.$1 == _activeType).$2;
@@ -147,9 +201,9 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('TAG', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('TAG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -171,49 +225,70 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                     ])),
                   ]),
                 ),
+                if ((_tag!['users'] is List) && (_tag!['users'] as List).isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  _ContributorsStrip(users: _dedupedContributors()),
+                ],
                 const SizedBox(height: 14),
-                // Type tabs
-                SizedBox(
-                  height: 38,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _tabConfig.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (ctx, i) {
-                      final t = _tabConfig[i];
-                      final active = _activeType == t.$1;
-                      final total = _tabs[t.$1]!.total;
-                      return InkWell(
-                        onTap: active ? null : () => _setType(t.$1),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                // Type tabs — underline style for app-wide consistency.
+                Container(
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+                  child: SizedBox(
+                    height: 38,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _tabConfig.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 18),
+                      itemBuilder: (ctx, i) {
+                        final t = _tabConfig[i];
+                        final active = _activeType == t.$1;
+                        final total = _tabs[t.$1]!.total;
+                        return InkWell(
+                          onTap: active ? null : () => _setType(t.$1),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+                              if (total > 0) ...[
+                                const SizedBox(width: 6),
+                                Text('$total', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
+                              ],
+                            ]),
                           ),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Text(t.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                            if (total > 0) ...[
-                              const SizedBox(width: 5),
-                              Text('$total', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
-                            ],
-                          ]),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                Row(children: [
+                  Expanded(
+                    child: Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                  ),
+                  if (st.items.isNotEmpty)
+                    ElevatedButton.icon(
+                      onPressed: _playAll,
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label: const Text('Phát tất cả'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        textStyle: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                ]),
                 const SizedBox(height: 8),
               ])),
             ),
             if (st.loading && st.items.isEmpty)
-              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (st.items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(const TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -226,7 +301,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                 )),
               ),
             SliverToBoxAdapter(child: Column(children: [
-              if (st.loading && st.items.isNotEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+              if (st.loading && st.items.isNotEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ],
@@ -244,4 +319,65 @@ class _TabState {
   int lastPage = 1;
   int total = 0;
   bool loading = false;
+}
+
+/// "Xây dựng tag" — overlapping avatars of users who tagged content with
+/// this tag. Mirrors the legacy Vue version of TagDetail.
+class _ContributorsStrip extends StatelessWidget {
+  final List<Map<String, dynamic>> users;
+  const _ContributorsStrip({required this.users});
+
+  @override
+  Widget build(BuildContext context) {
+    const maxShown = 8;
+    final shown = users.take(maxShown).toList();
+    final extra = users.length - shown.length;
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      Text('Xây dựng tag', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.5))),
+      const SizedBox(width: 12),
+      Expanded(
+        child: SizedBox(
+          height: 32,
+          child: Stack(
+            children: [
+              for (int i = 0; i < shown.length; i++)
+                Positioned(
+                  left: i * 22.0,
+                  child: GestureDetector(
+                    onTap: () { final id = shown[i]['id']; if (id != null) context.push('/user/$id'); },
+                    child: Container(
+                      width: 32, height: 32,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.bg, width: 2),
+                        color: AppColors.surfaceLight,
+                      ),
+                      child: ClipOval(
+                        child: shown[i]['avatar']?['url'] != null
+                            ? CachedNetworkImage(imageUrl: shown[i]['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 16, color: AppColors.textMuted))
+                            : Icon(Icons.person, size: 16, color: AppColors.textMuted),
+                      ),
+                    ),
+                  ),
+                ),
+              if (extra > 0)
+                Positioned(
+                  left: shown.length * 22.0,
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.bg, width: 2),
+                      color: AppColors.surface,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text('+$extra', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ]);
+  }
 }

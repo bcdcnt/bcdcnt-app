@@ -51,19 +51,19 @@ class _StaticPageScreenState extends State<StaticPageScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text((_page?['title'] ?? '').toString().toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text((_page?['title'] ?? '').toString().toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_page == null)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Không tìm thấy trang', style: AppText.bodyText)))
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               sliver: SliverList(delegate: SliverChildListDelegate([
-                Text(_page!['title'] ?? '', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.5))),
+                Text(_page!['title'] ?? '', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.5))),
                 const SizedBox(height: 18),
                 Html(
                   data: _page!['content'] ?? '',

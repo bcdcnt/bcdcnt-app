@@ -106,11 +106,11 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    if (_loading) return const Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (_forum == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy diễn đàn', style: AppText.bodyText)),
       );
     }
@@ -122,9 +122,9 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text((f['title'] ?? '').toString().toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text((f['title'] ?? '').toString().toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
@@ -132,18 +132,18 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
               if (f['parent']?['title'] != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(f['parent']['title'], style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                  child: Text(f['parent']['title'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
                 ),
-              Text(f['title'] ?? '', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
+              Text(f['title'] ?? '', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
               if ((f['content'] ?? '').toString().isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: Text(f['content'], style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5))),
+                  child: Text(f['content'], style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5))),
                 ),
               const SizedBox(height: 16),
 
               if (_children.isNotEmpty) ...[
-                Text('BOX CON', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
+                Text('BOX CON', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
                 const SizedBox(height: 8),
                 ..._children.map((c) => InkWell(
                   onTap: () => context.push('/dien-dan/${c['id']}'),
@@ -156,15 +156,15 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
                       Container(
                         width: 32, height: 32,
                         decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.folder_outlined, size: 16, color: AppColors.accentLight),
+                        child: Icon(Icons.folder_outlined, size: 16, color: AppColors.accentLight),
                       ),
                       const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(c['title'] ?? '', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                        Text(c['title'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                         if ((c['content'] ?? '').toString().isNotEmpty)
-                          Padding(padding: const EdgeInsets.only(top: 2), child: Text(c['content'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                          Padding(padding: const EdgeInsets.only(top: 2), child: Text(c['content'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
                       ])),
-                      const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
+                      Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
                     ]),
                   ),
                 )),
@@ -172,9 +172,9 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
               ],
 
               Row(children: [
-                const Icon(Icons.forum_outlined, size: 14, color: AppColors.textSecondary),
+                Icon(Icons.forum_outlined, size: 14, color: AppColors.textSecondary),
                 const SizedBox(width: 6),
-                Text('Chủ đề (${_formatInt(_total)})', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                Text('Chủ đề (${_formatInt(_total)})', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
               ]),
               const SizedBox(height: 8),
             ])),
@@ -182,7 +182,7 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
           if (_discussions.isEmpty)
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              sliver: SliverToBoxAdapter(child: Center(child: Text('Chưa có chủ đề nào', style: body(const TextStyle(color: AppColors.textMuted))))),
+              sliver: SliverToBoxAdapter(child: Center(child: Text('Chưa có chủ đề nào', style: body(TextStyle(color: AppColors.textMuted))))),
             )
           else
             SliverPadding(
@@ -193,7 +193,7 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),
@@ -210,15 +210,15 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
       borderRadius: BorderRadius.circular(8),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             width: 36, height: 36, margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
               child: author?['avatar']?['url'] != null
-                  ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: AppColors.accentLight, size: 18))
-                  : const Icon(Icons.person, color: AppColors.accentLight, size: 18),
+                  ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 18))
+                  : Icon(Icons.person, color: AppColors.accentLight, size: 18),
             ),
           ),
           const SizedBox(width: 10),
@@ -229,26 +229,26 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
-                  child: Text('Ghim', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                  child: Text('Ghim', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                 ),
               ),
-              Expanded(child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4)))),
+              Expanded(child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4)))),
             ]),
             const SizedBox(height: 6),
             Wrap(spacing: 10, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
-              Text(timeago(d['created_at']), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
               if ((d['comment_count'] ?? 0) > 0)
                 Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.chat_bubble_outline, size: 11, color: AppColors.textMuted),
+                  Icon(Icons.chat_bubble_outline, size: 11, color: AppColors.textMuted),
                   const SizedBox(width: 3),
-                  Text('${d['comment_count']}', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text('${d['comment_count']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                 ]),
               if ((d['views'] ?? 0) > 0)
                 Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.visibility_outlined, size: 11, color: AppColors.textMuted),
+                  Icon(Icons.visibility_outlined, size: 11, color: AppColors.textMuted),
                   const SizedBox(width: 3),
-                  Text('${d['views']}', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text('${d['views']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                 ]),
             ]),
           ])),

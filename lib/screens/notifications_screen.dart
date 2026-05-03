@@ -157,7 +157,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập để xem thông báo', style: AppText.bodyText)),
       );
     }
@@ -169,16 +169,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THÔNG BÁO', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('THÔNG BÁO', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
             actions: [
               if (hasUnread)
-                TextButton(onPressed: _markAllRead, child: Text('Đọc tất cả', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
+                TextButton(onPressed: _markAllRead, child: Text('Đọc tất cả', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
             ],
           ),
           if (_loading && _items.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.notifications_none,
@@ -198,7 +198,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),
@@ -229,8 +229,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
               child: ClipOval(
                 child: sender?['avatar']?['url'] != null
-                    ? CachedNetworkImage(imageUrl: sender['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18))
-                    : const Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18),
+                    ? CachedNetworkImage(imageUrl: sender['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18))
+                    : Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18),
               ),
             ),
           ),
@@ -245,7 +245,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 11, color: unread ? AppColors.accentLight : AppColors.textMuted))),
           ])),
           if (unread)
-            Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 4), decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
+            Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 4), decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
           else
             const SizedBox(width: 14),
         ]),
@@ -264,7 +264,7 @@ class _NotifDayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 18, 8, 6),
       child: Text(
         label.toUpperCase(),
-        style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

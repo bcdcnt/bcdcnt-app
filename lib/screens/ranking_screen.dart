@@ -86,9 +86,9 @@ class _RankingScreenState extends State<RankingScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BẢNG XẾP HẠNG', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('BẢNG XẾP HẠNG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -115,9 +115,9 @@ class _RankingScreenState extends State<RankingScreen> {
 
               // Section: Listen
               Row(children: [
-                const Icon(Icons.trending_up, size: 16, color: AppColors.accentLight),
+                Icon(Icons.trending_up, size: 16, color: AppColors.accentLight),
                 const SizedBox(width: 6),
-                Text('Nghe nhiều', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text('Nghe nhiều', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
               ]),
               const SizedBox(height: 12),
 
@@ -151,7 +151,7 @@ class _RankingScreenState extends State<RankingScreen> {
 
               // Type tabs
               Container(
-                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(children: _types.map((t) {
@@ -173,7 +173,7 @@ class _RankingScreenState extends State<RankingScreen> {
               if (_loading)
                 const Padding(padding: EdgeInsets.only(top: 6), child: SongListSkeleton(rows: 8, showIndex: true))
               else if (_songs.isEmpty)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(const TextStyle(color: AppColors.textMuted)))))
+                Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))))
               else ...[
                 if (_songs.length >= 3) ...[
                   _RankingPodium(items: _songs.take(3).toList()),
@@ -191,9 +191,9 @@ class _RankingScreenState extends State<RankingScreen> {
 
               // Section: Artists
               Row(children: [
-                const Icon(Icons.mic, size: 16, color: AppColors.accentLight),
+                Icon(Icons.mic, size: 16, color: AppColors.accentLight),
                 const SizedBox(width: 6),
-                Text('Nghệ sĩ', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text('Nghệ sĩ', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
               ]),
               const SizedBox(height: 12),
               ..._artistTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
@@ -202,9 +202,9 @@ class _RankingScreenState extends State<RankingScreen> {
 
               // Section: Members
               Row(children: [
-                const Icon(Icons.people_outline, size: 16, color: AppColors.accentLight),
+                Icon(Icons.people_outline, size: 16, color: AppColors.accentLight),
                 const SizedBox(width: 6),
-                Text('Thành viên', style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text('Thành viên', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
               ]),
               const SizedBox(height: 12),
               ..._memberTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
@@ -385,12 +385,12 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text(title.toUpperCase(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text(title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
             centerTitle: true,
-            leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _items.isEmpty)
-            const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: AppText.bodyText)))
           else
@@ -402,7 +402,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),
@@ -411,50 +411,133 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
     );
   }
 
+  // Map metric label → icon so trailing icon matches what's being measured
+  // (instead of always showing headphones).
+  IconData _metricIcon(String label) {
+    switch (label) {
+      case 'điểm': return Icons.workspace_premium_outlined;
+      case 'bản thu': return Icons.upload_outlined;
+      case 'bình luận': return Icons.chat_bubble_outline;
+      case 'lượt thích': return Icons.favorite_outline;
+      case 'lượt nghe':
+      default: return Icons.headphones;
+    }
+  }
+
+  // Top-3: gold/silver/bronze accent + brighter rank colour
+  static const _medalColors = {1: Color(0xFFFFD700), 2: Color(0xFFC0C0C0), 3: Color(0xFFCD7F32)};
+
   Widget _row(int i, Map<String, dynamic> item) {
     final rank = i + 1;
     final isTop3 = rank <= 3;
-    const medals = [Color(0xFFFFD54F), Color(0xFFB0BEC5), Color(0xFFA87451)];
     final value = item['value'] is num ? (item['value'] as num).toInt() : 0;
+    final valueLabel = item['_valueLabel']?.toString() ?? '';
+    final medal = _medalColors[rank];
+
+    if (isTop3) {
+      // Distinct podium-style row: tinted background, larger avatar with
+      // medal ring, bigger rank + name. Mirrors the home BXH podium feel
+      // so top-3 trồi lên hẳn so với rest of the list.
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: InkWell(
+          onTap: () => context.push(item['_route'] as String),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              gradient: LinearGradient(
+                colors: [medal!.withValues(alpha: 0.14), medal.withValues(alpha: 0.04)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: medal.withValues(alpha: 0.35), width: 1),
+            ),
+            child: Row(children: [
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '$rank',
+                  textAlign: TextAlign.center,
+                  style: display(TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: medal,
+                    letterSpacing: -1,
+                    height: 1,
+                  )),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: medal, width: 2),
+                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                ),
+                padding: const EdgeInsets.all(2),
+                child: ClipOval(
+                  child: item['avatar'] != null
+                      ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 22))
+                      : const Icon(Icons.person, color: Colors.white, size: 22),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Icon(_metricIcon(valueLabel), size: 12, color: medal),
+                      const SizedBox(width: 4),
+                      Text('${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: medal))),
+                    ]),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+    }
+
     return InkWell(
       onTap: () => context.push(item['_route'] as String),
-      borderRadius: BorderRadius.circular(10),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: isTop3 ? medals[i].withValues(alpha: 0.4) : AppColors.border, width: isTop3 ? 1.2 : 1),
+          border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
         ),
         child: Row(children: [
-          Container(
-            width: 30, height: 30, alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: isTop3 ? LinearGradient(colors: [medals[i], medals[i].withValues(alpha: 0.6)]) : null,
-              color: isTop3 ? null : AppColors.surface,
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$rank',
+              textAlign: TextAlign.center,
+              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: -0.5)),
             ),
-            child: isTop3
-                ? Icon(i == 0 ? Icons.emoji_events : Icons.military_tech, color: Colors.white, size: 14)
-                : Text('$rank', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
           ),
           const SizedBox(width: 10),
           Container(
-            width: 36, height: 36,
-            decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+            width: 40, height: 40,
+            decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
             child: ClipOval(
               child: item['avatar'] != null
-                  ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white, size: 18))
+                  ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 18))
                   : const Icon(Icons.person, color: Colors.white, size: 18),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)))),
-          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            Text(_formatInt(value), style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
-            Text(item['_valueLabel']?.toString() ?? '', style: body(const TextStyle(fontSize: 9, color: AppColors.textMuted))),
-          ]),
+          const SizedBox(width: 12),
+          Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          const SizedBox(width: 8),
+          Icon(_metricIcon(valueLabel), size: 11, color: AppColors.textMuted),
+          const SizedBox(width: 4),
+          Text('${_formatInt(value)} $valueLabel', style: AppText.caption),
         ]),
       ),
     );
@@ -501,9 +584,9 @@ class _RankingPodium extends StatelessWidget {
             ? CachedNetworkImage(
                 imageUrl: thumb,
                 fit: BoxFit.cover,
-                errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
+                errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
               )
-            : Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
+            : Container(color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
       ),
     );
 
@@ -542,13 +625,13 @@ class _RankingPodium extends StatelessWidget {
             ),
             if (artistText.isNotEmpty) ...[
               const SizedBox(height: 2),
-              Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+              Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
             ],
             const SizedBox(height: 4),
             Row(children: [
-              const Icon(Icons.headphones, size: 11, color: AppColors.textMuted),
+              Icon(Icons.headphones, size: 11, color: AppColors.textMuted),
               const SizedBox(width: 4),
-              Text(_fmt(total), style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+              Text(_fmt(total), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
             ]),
           ],
         ),

@@ -29,20 +29,20 @@ class DesktopQueuePanel extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
             child: Row(
               children: [
-                Text('Danh sách phát', style: display(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                Text('Danh sách phát', style: display(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                 const Spacer(),
                 if (queue.isNotEmpty)
-                  Text('${queue.length} bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text('${queue.length} bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
               ],
             ),
           ),
         if (current != null) _NowPlayingBlock(song: current),
-        const Divider(height: 1, color: AppColors.borderSubtle),
+        Divider(height: 1, color: AppColors.borderSubtle),
         if (queue.isEmpty)
           Padding(
             padding: const EdgeInsets.all(20),
             child: Center(
-              child: Text('Chưa có bài nào trong danh sách', style: body(const TextStyle(color: AppColors.textMuted, fontSize: 12)), textAlign: TextAlign.center),
+              child: Text('Chưa có bài nào trong danh sách', style: body(TextStyle(color: AppColors.textMuted, fontSize: 12)), textAlign: TextAlign.center),
             ),
           )
         else
@@ -103,7 +103,7 @@ class _NowPlayingBlock extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: thumb != null
                 ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 56, height: 56, color: AppColors.surfaceLight))
-                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 24, color: AppColors.textMuted)),
+                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 24, color: AppColors.textMuted)),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -113,14 +113,14 @@ class _NowPlayingBlock extends StatelessWidget {
               children: [
                 Text(
                   'ĐANG PHÁT',
-                  style: body(const TextStyle(fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
+                  style: body(TextStyle(fontSize: 9, letterSpacing: 1.2, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   song['title']?.toString() ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
                 ),
                 if (artistText.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -128,7 +128,7 @@ class _NowPlayingBlock extends StatelessWidget {
                     artistText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: body(const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                    style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary)),
                   ),
                 ],
               ],
@@ -168,8 +168,8 @@ class _QueueRow extends StatelessWidget {
               width: 22,
               child: Center(
                 child: active
-                    ? const Icon(Icons.graphic_eq, size: 13, color: AppColors.accentLight)
-                    : Text('${index + 1}', style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                    ? Icon(Icons.graphic_eq, size: 13, color: AppColors.accentLight)
+                    : Text('${index + 1}', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
               ),
             ),
             const SizedBox(width: 8),
@@ -177,7 +177,7 @@ class _QueueRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(5),
               child: thumb != null
                   ? CachedNetworkImage(imageUrl: thumb, width: 32, height: 32, fit: BoxFit.cover)
-                  : Container(width: 32, height: 32, color: AppColors.surface, child: const Icon(Icons.music_note, size: 14, color: AppColors.textMuted)),
+                  : Container(width: 32, height: 32, color: AppColors.surface, child: Icon(Icons.music_note, size: 14, color: AppColors.textMuted)),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -197,7 +197,7 @@ class _QueueRow extends StatelessWidget {
                       artistText,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                      style: body(TextStyle(fontSize: 10, color: AppColors.textMuted)),
                     ),
                   ],
                 ],
@@ -205,7 +205,7 @@ class _QueueRow extends StatelessWidget {
             ),
             ReorderableDragStartListener(
               index: index,
-              child: const Padding(
+              child: Padding(
                 padding: EdgeInsets.only(left: 4),
                 child: Icon(Icons.drag_indicator, size: 16, color: AppColors.textMuted),
               ),

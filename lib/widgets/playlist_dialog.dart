@@ -74,15 +74,15 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
               padding: const EdgeInsets.fromLTRB(20, 20, 12, 12),
               child: Row(
                 children: [
-                  Expanded(child: Text('Thêm vào playlist', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)))),
-                  IconButton(icon: const Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
+                  Expanded(child: Text('Thêm vào playlist', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                  IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),
             if (!auth.isAuthenticated)
               Padding(padding: const EdgeInsets.all(24), child: Text('Đăng nhập để sử dụng tính năng này', style: AppText.bodyText))
             else if (_loading)
-              const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.accent))
+              Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.accent))
             else if (_playlists.isEmpty)
               Padding(padding: const EdgeInsets.all(24), child: Text('Bạn chưa có playlist nào', style: AppText.bodyText))
             else Flexible(
@@ -100,13 +100,13 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
                       borderRadius: BorderRadius.circular(8),
                       child: thumb != null
                           ? CachedNetworkImage(imageUrl: thumb, width: 44, height: 44, fit: BoxFit.cover)
-                          : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: const Icon(Icons.playlist_play, color: AppColors.textMuted)),
+                          : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: Icon(Icons.playlist_play, color: AppColors.textMuted)),
                     ),
                     title: Text(p['title'] ?? '', style: AppText.title),
                     subtitle: Text('$count bài', style: AppText.caption),
                     trailing: isAdding
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
-                        : const Icon(Icons.add, color: AppColors.textMuted),
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
+                        : Icon(Icons.add, color: AppColors.textMuted),
                     onTap: isAdding ? null : () => _addTo(id),
                   );
                 },

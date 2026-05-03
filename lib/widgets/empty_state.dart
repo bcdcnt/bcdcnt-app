@@ -41,14 +41,14 @@ class EmptyState extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+            style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 6),
             Text(
               subtitle!,
               textAlign: TextAlign.center,
-              style: body(const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+              style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
             ),
           ],
           if (ctaLabel != null && onCta != null) ...[

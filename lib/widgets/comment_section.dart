@@ -203,12 +203,12 @@ class _CommentSectionState extends State<CommentSection> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Sửa bình luận', style: display(const TextStyle(color: AppColors.text))),
+        title: Text('Sửa bình luận', style: display(TextStyle(color: AppColors.text))),
         content: TextField(
           controller: controller,
           maxLines: 4,
           autofocus: true,
-          style: body(const TextStyle(color: AppColors.text)),
+          style: body(TextStyle(color: AppColors.text)),
           decoration: InputDecoration(
             filled: true,
             fillColor: AppColors.surfaceLight,
@@ -217,7 +217,7 @@ class _CommentSectionState extends State<CommentSection> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
-          TextButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('Lưu', style: TextStyle(color: AppColors.accentLight))),
+          TextButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: Text('Lưu', style: TextStyle(color: AppColors.accentLight))),
         ],
       ),
     );
@@ -246,8 +246,8 @@ class _CommentSectionState extends State<CommentSection> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Xoá bình luận', style: display(const TextStyle(color: AppColors.text))),
-        content: Text('Bạn có chắc muốn xoá bình luận này?', style: body(const TextStyle(color: AppColors.textSecondary))),
+        title: Text('Xoá bình luận', style: display(TextStyle(color: AppColors.text))),
+        content: Text('Bạn có chắc muốn xoá bình luận này?', style: body(TextStyle(color: AppColors.textSecondary))),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Xoá', style: TextStyle(color: AppColors.error))),
@@ -283,12 +283,12 @@ class _CommentSectionState extends State<CommentSection> {
       children: [
         Row(
           children: [
-            const Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.accent),
+            Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.accent),
             const SizedBox(width: 8),
-            const Text('Bình luận', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)),
+            Text('Bình luận', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)),
             if (_total > 0) ...[
               const SizedBox(width: 6),
-              Text('($_total)', style: const TextStyle(fontSize: 14, color: AppColors.textMuted)),
+              Text('($_total)', style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
             ],
           ],
         ),
@@ -309,18 +309,18 @@ class _CommentSectionState extends State<CommentSection> {
                       radius: 16,
                       backgroundColor: AppColors.surfaceLight,
                       backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(auth.user!['avatar']) : null,
-                      child: auth.user?['avatar'] == null ? const Icon(Icons.person, size: 14, color: AppColors.textMuted) : null,
+                      child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 14, color: AppColors.textMuted) : null,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
                         controller: _controller,
-                        style: body(const TextStyle(color: AppColors.text, fontSize: 14)),
+                        style: body(TextStyle(color: AppColors.text, fontSize: 14)),
                         maxLines: null,
                         textAlignVertical: TextAlignVertical.center,
                         decoration: InputDecoration(
                           hintText: 'Viết bình luận...',
-                          hintStyle: body(const TextStyle(color: AppColors.textMuted, fontSize: 14)),
+                          hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 14)),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -332,8 +332,8 @@ class _CommentSectionState extends State<CommentSection> {
                     // Image attach button
                     IconButton(
                       icon: _uploadingImage
-                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
-                          : const Icon(Icons.image_outlined, size: 20, color: AppColors.textSecondary),
+                          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
+                          : Icon(Icons.image_outlined, size: 20, color: AppColors.textSecondary),
                       onPressed: _uploadingImage ? null : _pickAndUploadImage,
                       tooltip: 'Đính kèm ảnh',
                       padding: EdgeInsets.zero,
@@ -388,7 +388,7 @@ class _CommentSectionState extends State<CommentSection> {
         const SizedBox(height: 20),
 
         if (_loading)
-          const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.accent)))
+          Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.accent)))
         else if (_comments.isEmpty)
           Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Chưa có bình luận nào', style: AppText.bodyText)))
         else ...[
@@ -412,7 +412,7 @@ class _CommentSectionState extends State<CommentSection> {
                       radius: 18,
                       backgroundColor: AppColors.surfaceLight,
                       backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
-                      child: user['avatar']?['url'] == null ? const Icon(Icons.person, size: 16, color: AppColors.textMuted) : null,
+                      child: user['avatar']?['url'] == null ? Icon(Icons.person, size: 16, color: AppColors.textMuted) : null,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -423,7 +423,7 @@ class _CommentSectionState extends State<CommentSection> {
                         Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                           InkWell(
                             onTap: user['id'] != null ? () => context.push('/user/${user['id']}') : null,
-                            child: Text(user['username'] ?? c['nickname'] ?? 'Ẩn danh', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                            child: Text(user['username'] ?? c['nickname'] ?? 'Ẩn danh', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
                           ),
                           ...roles.map((r) {
                             final label = r['userRolePivot']?['custom_title'] ?? r['name'] ?? r['alias'] ?? '';
@@ -459,19 +459,19 @@ class _CommentSectionState extends State<CommentSection> {
                             ),
                           ),
                           if (isOwn) ...[
-                            const SizedBox(width: 14),
+                            SizedBox(width: 14),
                             InkWell(
                               onTap: () => _editComment(c),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.edit_outlined, size: 13, color: AppColors.textMuted),
                                 SizedBox(width: 3),
                                 Text('Sửa', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
                               ]),
                             ),
-                            const SizedBox(width: 10),
+                            SizedBox(width: 10),
                             InkWell(
                               onTap: () => _confirmDelete(c),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.delete_outline, size: 13, color: AppColors.textMuted),
                                 SizedBox(width: 3),
                                 Text('Xoá', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
@@ -555,7 +555,7 @@ class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: widget.loading
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
+            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
             : const SizedBox(width: 1, height: 1),
       ),
     );

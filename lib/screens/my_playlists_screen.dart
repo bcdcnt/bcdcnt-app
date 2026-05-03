@@ -112,7 +112,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
       );
     }
@@ -126,9 +126,9 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('PLAYLIST CỦA TÔI', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('PLAYLIST CỦA TÔI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
                 centerTitle: true,
-                leading: IconButton(icon: const Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -168,7 +168,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                   const SizedBox(height: 20),
 
                   if (_loading && _items.isEmpty)
-                    const Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
                   else if (_items.isEmpty)
                     const EmptyState(
                       icon: Icons.queue_music,
@@ -196,7 +196,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                                 borderRadius: BorderRadius.circular(10),
                                 child: thumb != null
                                     ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover)
-                                    : Container(width: 56, height: 56, color: AppColors.surface, child: const Icon(Icons.queue_music, color: AppColors.textMuted)),
+                                    : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -204,20 +204,20 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                                     const SizedBox(height: 4),
-                                    Text('$total bài', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                                    Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                                   ],
                                 ),
                               ),
-                              const Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+                              Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
                             ],
                           ),
                         ),
                       );
                     }),
 
-                  if (_loadingMore) const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
 
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ])),

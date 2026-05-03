@@ -205,7 +205,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                     Container(
                       width: 38, height: 38,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                        gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -2)],
                       ),
@@ -217,8 +217,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Bình luận mới nhất', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
-                          if (_total > 0) Text('${_formatInt(_total)} bình luận từ cộng đồng', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                          Text('Bình luận mới nhất', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
+                          if (_total > 0) Text('${_formatInt(_total)} bình luận từ cộng đồng', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                         ],
                       ),
                     ),
@@ -229,7 +229,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
             ),
 
             if (_loading && _items.isEmpty)
-              const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (_items.isEmpty)
               const SliverFillRemaining(
                 hasScrollBody: false,
@@ -246,7 +246,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                   delegate: SliverChildBuilderDelegate(
                     (ctx, i) {
                       if (i == _items.length) {
-                        if (_loadingMore) return const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2)));
+                        if (_loadingMore) return Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2)));
                         return SizedBox(height: player.currentSong != null ? 90 : 20);
                       }
                       return _CommentCard(
@@ -315,8 +315,8 @@ class _CommentCard extends StatelessWidget {
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: objImage != null
-                        ? CachedNetworkImage(imageUrl: objImage, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.music_note, color: AppColors.textMuted, size: 16))
-                        : const Icon(Icons.music_note, color: AppColors.textMuted, size: 16),
+                        ? CachedNetworkImage(imageUrl: objImage, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.music_note, color: AppColors.textMuted, size: 16))
+                        : Icon(Icons.music_note, color: AppColors.textMuted, size: 16),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -328,16 +328,16 @@ class _CommentCard extends StatelessWidget {
                           (obj['title'] ?? obj['name'] ?? '').toString(),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accentLight, height: 1.3)),
+                          style: display(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accentLight, height: 1.3)),
                         ),
                         if (objTypeLabel(tn).isNotEmpty) Text(
                           objTypeLabel(tn),
-                          style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                          style: body(TextStyle(fontSize: 10, color: AppColors.textMuted)),
                         ),
                       ],
                     ),
                   ),
-                  const Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+                  Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
                 ],
               ),
             ),
@@ -346,7 +346,7 @@ class _CommentCard extends StatelessWidget {
           // Comment content
           if (plain.isNotEmpty) Text(
             plain,
-            style: body(const TextStyle(fontSize: 13, color: AppColors.text, height: 1.55)),
+            style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.55)),
           ),
 
           if (plain.isNotEmpty) const SizedBox(height: 10),
@@ -359,7 +359,7 @@ class _CommentCard extends StatelessWidget {
                 backgroundColor: AppColors.surface,
                 backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
                 child: user?['avatar']?['url'] == null
-                    ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted)))
+                    ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted)))
                     : null,
               ),
               const SizedBox(width: 8),
@@ -367,13 +367,13 @@ class _CommentCard extends StatelessWidget {
                 child: Text(
                   user?['username'] ?? '?',
                   maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 timeAgo(comment['created_at']?.toString()),
-                style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
               ),
             ],
           ),

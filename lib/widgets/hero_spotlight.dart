@@ -245,9 +245,9 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                        const Icon(Icons.play_arrow, size: 16, color: AppColors.accent),
+                                        Icon(Icons.play_arrow, size: 16, color: AppColors.accent),
                                         const SizedBox(width: 4),
-                                        Text('Phát', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
+                                        Text('Phát', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
                                       ]),
                                     ),
                                   ),

@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/realtime.dart';
 
 /// Compact member-activity feed for the right inspector panel — mirrors
 /// the Bình luận sidebar but lists "thành viên X làm gì với Y" rows.
@@ -56,10 +57,25 @@ class _DesktopActivitySidebarState extends State<DesktopActivitySidebar> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
 
+  VoidCallback? _realtimeListener;
+
   @override
   void initState() {
     super.initState();
     _fetch();
+    final tick = realtimeService?.newCommentTick;
+    if (tick != null) {
+      _realtimeListener = () { if (mounted) _fetch(); };
+      tick.addListener(_realtimeListener!);
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_realtimeListener != null) {
+      realtimeService?.newCommentTick.removeListener(_realtimeListener!);
+    }
+    super.dispose();
   }
 
   Future<void> _fetch() async {
@@ -129,10 +145,10 @@ class _DesktopActivitySidebarState extends State<DesktopActivitySidebar> {
   @override
   Widget build(BuildContext context) {
     if (_loading && _items.isEmpty) {
-      return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: AppColors.accent)));
+      return Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: AppColors.accent)));
     }
     if (_items.isEmpty) {
-      return Center(child: Text('Chưa có hoạt động', style: body(const TextStyle(color: AppColors.textMuted))));
+      return Center(child: Text('Chưa có hoạt động', style: body(TextStyle(color: AppColors.textMuted))));
     }
     final list = RefreshIndicator(
       color: AppColors.accent,
@@ -210,7 +226,7 @@ class _ActivityTile extends StatelessWidget {
             RichText(
               maxLines: 3, overflow: TextOverflow.ellipsis,
               text: TextSpan(
-                style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
+                style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
                 children: _buildSpans(
                   username: username,
                   actionLabel: actionLabel,
@@ -224,7 +240,7 @@ class _ActivityTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            Text(shortTimeAgo(activity['created_at']?.toString()), style: body(const TextStyle(fontSize: 10, color: AppColors.textMuted))),
+            Text(shortTimeAgo(activity['created_at']?.toString()), style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
           ])),
           const SizedBox(width: 6),
           Container(
@@ -249,7 +265,7 @@ class _ActivityTile extends StatelessWidget {
   }) {
     final spans = <InlineSpan>[];
     if (username.isNotEmpty) {
-      spans.add(TextSpan(text: username, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)));
+      spans.add(TextSpan(text: username, style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)));
       spans.add(const TextSpan(text: ' '));
     }
     spans.add(TextSpan(text: actionLabel));
@@ -259,7 +275,7 @@ class _ActivityTile extends StatelessWidget {
       spans.add(const TextSpan(text: ' của '));
       spans.add(TextSpan(
         text: obj!['user']['username'].toString(),
-        style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.text),
+        style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.text),
       ));
     }
 
@@ -267,19 +283,19 @@ class _ActivityTile extends StatelessWidget {
       // "[user] duyệt bài gửi [obj.title] của [obj.user]"
       if (objTitle != null && objTitle.isNotEmpty) {
         spans.add(const TextSpan(text: ' '));
-        spans.add(TextSpan(text: objTitle, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.accentLight)));
+        spans.add(TextSpan(text: objTitle, style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.accentLight)));
       }
       spans.add(const TextSpan(text: ' của '));
       spans.add(TextSpan(
         text: obj!['user']['username'].toString(),
-        style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.text),
+        style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.text),
       ));
       return spans;
     }
 
     if (objTitle != null && objTitle.isNotEmpty && !isUpload) {
       spans.add(TextSpan(text: usesIn ? ' trong ' : ' '));
-      spans.add(TextSpan(text: objTitle, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.accentLight)));
+      spans.add(TextSpan(text: objTitle, style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.accentLight)));
     }
     return spans;
   }
