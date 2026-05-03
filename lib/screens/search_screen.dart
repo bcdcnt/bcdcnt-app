@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../widgets/empty_state.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -323,48 +324,42 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
 
-        // Filter pills — only when there's a query to narrow.
-        // Mobile: horizontal-scroll pills (compact). Desktop: wrap so all
-        // categories are visible without scrolling.
+        // Filter — only when there's a query to narrow. Underline tab
+        // style matches the rest of the app's in-page tabs (Bài hát mới
+        // cập nhật, BXH, Tab "Hoạt động"…). 12 categories scroll
+        // horizontally on every viewport so they stay one line.
         if (hasQuery) Builder(builder: (ctx) {
-          final isDesktop = MediaQuery.of(ctx).size.width >= 900;
-          final pill = (
-            String f,
-            String label,
-          ) {
+          Widget pill(String f, String label) {
             final active = _filter == f;
             return InkWell(
               onTap: active ? null : () => _setFilter(f),
-              borderRadius: BorderRadius.circular(18),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 decoration: BoxDecoration(
-                  color: active ? AppColors.accentSoft : AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: active ? AppColors.accent : AppColors.border),
+                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
                 ),
-                child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-              ),
-            );
-          };
-          if (isDesktop) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [for (final opt in _filterOptions) pill(opt.$1, opt.$2)],
+                child: Text(
+                  label,
+                  style: body(TextStyle(
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    color: active ? AppColors.accentLight : AppColors.textSecondary,
+                  )),
+                ),
               ),
             );
           }
-          return SizedBox(
-            height: 38,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _filterOptions.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (_, i) => pill(_filterOptions[i].$1, _filterOptions[i].$2),
+          return Container(
+            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+            child: SizedBox(
+              height: 40,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: _filterOptions.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 16),
+                itemBuilder: (_, i) => pill(_filterOptions[i].$1, _filterOptions[i].$2),
+              ),
             ),
           );
         }),
@@ -474,18 +469,45 @@ class _SearchScreenState extends State<SearchScreen> {
       return const Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
     if (_groups.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 60),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.search_off, size: 48, color: AppColors.textMuted),
-              const SizedBox(height: 12),
-              Text('Không tìm thấy kết quả', style: body(const TextStyle(color: AppColors.textMuted))),
-            ],
+      // No results — surface trending keywords as alternatives so the
+      // user has somewhere to go instead of bouncing.
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        children: [
+          EmptyState(
+            icon: Icons.search_off,
+            title: 'Không tìm thấy kết quả',
+            subtitle: 'Thử từ khoá khác hoặc bỏ bớt dấu, ký tự đặc biệt. Bộ lọc hiện tại: ${_filterOptions.firstWhere((o) => o.$1 == _filter).$2}.',
+            ctaLabel: _filter == 'all' ? null : 'Tìm trong "Tất cả"',
+            onCta: _filter == 'all' ? null : () => _setFilter('all'),
           ),
-        ),
+          if (_trending.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
+              child: Text('XU HƯỚNG TÌM KIẾM', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.textMuted))),
+            ),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _trending.take(8).map((t) {
+                final name = (t['name'] ?? '').toString();
+                return InkWell(
+                  onTap: () => _useKeyword(name),
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text(name, style: body(const TextStyle(fontSize: 12, color: AppColors.text))),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ],
       );
     }
 
