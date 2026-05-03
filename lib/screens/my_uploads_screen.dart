@@ -7,6 +7,7 @@ import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/empty_state.dart';
 
 class MyUploadsScreen extends StatefulWidget {
   const MyUploadsScreen({super.key});
@@ -162,14 +163,11 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
             if (_loading && _items.isEmpty)
               const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
             else if (_items.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.upload_outlined, size: 48, color: AppColors.textMuted),
-                  const SizedBox(height: 12),
-                  Text('Bạn chưa gửi bài nào', style: body(const TextStyle(color: AppColors.textMuted))),
-                ])),
-              )
+              const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
+                icon: Icons.upload_outlined,
+                title: 'Chưa có bài gửi',
+                subtitle: 'Bài bạn gửi đóng góp cho thư viện sẽ xuất hiện tại đây.',
+              ))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),

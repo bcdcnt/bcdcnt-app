@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../widgets/empty_state.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 
@@ -169,17 +170,10 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                   if (_loading && _items.isEmpty)
                     const Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
                   else if (_items.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 60),
-                      child: Column(
-                        children: [
-                          const Icon(Icons.queue_music, size: 48, color: AppColors.textMuted),
-                          const SizedBox(height: 12),
-                          Text('Bạn chưa tạo playlist nào', style: body(const TextStyle(color: AppColors.textMuted))),
-                          const SizedBox(height: 4),
-                          Text('Thêm bài hát vào playlist từ trang chi tiết', style: body(const TextStyle(fontSize: 11, color: AppColors.textMuted))),
-                        ],
-                      ),
+                    const EmptyState(
+                      icon: Icons.queue_music,
+                      title: 'Chưa có playlist',
+                      subtitle: 'Tạo playlist mới hoặc thêm bài hát vào playlist từ trang chi tiết.',
                     )
                   else
                     ..._items.map((pl) {

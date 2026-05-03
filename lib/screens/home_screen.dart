@@ -204,6 +204,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // Outer BXH tab: 0 = song chart, 1 = member chart. Lets us collapse two
   // separate ranking sections into one combined block.
   int _bxhOuterTab = 0;
+  /// True once we've fired the below-fold queries (BXH chart, document
+  /// archives, memorial people, events). Triggered by scroll past 600px
+  /// so users who only browse the top of the home don't pay for those
+  /// 9 extra round-trips on first paint.
+  bool _belowFoldFetched = false;
   // ĐẶC BIỆT (Tưởng niệm + Sự kiện) outer tab.
   int _specialTab = 0;
   // Top-level member ranking tab: 0=listens 1=contributors 2=uploaders 3=commentLoves
@@ -354,12 +359,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _fetch() async {
+    // Reset below-fold guard so pull-to-refresh re-fetches everything,
+    // not just the above-fold slice.
+    _belowFoldFetched = false;
     setState(() => _loading = true);
     try {
       // Per-query catch so one failing section (e.g. a schema mismatch) doesn't
       // wipe the whole homepage — Future.wait rejects on first error otherwise.
       Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) =>
           f.catchError((_) => <String, dynamic>{});
+      // Above-fold only — spotlight + KHÁM PHÁ + NGHỆ SĨ. Below-fold
+      // (BXH, ĐẶC BIỆT, THƯ VIỆN) loads on scroll via [_fetchBelowFold].
       final queries = await Future.wait<Map<String, dynamic>>([
         safe(ApiClient.query(_stickyQuery)),
         safe(ApiClient.query(_trendingQuery)),
@@ -367,6 +377,43 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(_composersQuery, _composersWhere)),
         safe(ApiClient.query(_videoQuery)),
         safe(ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'is_system', 'value': '1'}, {'column': 'is_public', 'value': '1'}]}})),
+      ]);
+      if (!mounted) return;
+
+      final trendingList = ((queries[1]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
+      Map<String, dynamic>? trending;
+      if (trendingList.isNotEmpty) {
+        final pick = trendingList[DateTime.now().microsecond % trendingList.length];
+        trending = Map<String, dynamic>.from(pick['object'] as Map);
+        trending['weeklyListens'] = pick['total'];
+      }
+
+      setState(() {
+        _hotSongs = (queries[0]['stickySongs'] ?? []) as List;
+        _trendingSong = trending;
+        _artists = queries[2]['artists']?['data'] ?? [];
+        _composers = queries[3]['composers']?['data'] ?? [];
+        _videos = queries[4]['songs']?['data'] ?? [];
+        _playlists = queries[5]['playlists']?['data'] ?? [];
+        _loading = false;
+      });
+      _fetchLatest(_categories[_latestTab], 1);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Fire the heavier below-fold queries — BXH chart, document archive,
+  /// memorial people, calendar events. Triggered by [_content]'s scroll
+  /// listener once the user has actually scrolled near these sections.
+  /// Idempotent — guarded by [_belowFoldFetched].
+  Future<void> _fetchBelowFold() async {
+    if (_belowFoldFetched) return;
+    _belowFoldFetched = true;
+    try {
+      Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) =>
+          f.catchError((_) => <String, dynamic>{});
+      final results = await Future.wait<Map<String, dynamic>>([
         safe(ApiClient.query(_rankingQuery)),
         safe(ApiClient.query(_galleryQuery, {'where': {'AND': [{'column': 'type', 'value': 'image'}]}})),
         safe(ApiClient.query(_audioQuery, {'where': {'AND': [{'column': 'type', 'value': 'audio'}]}})),
@@ -380,14 +427,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final events = await _fetchEvents();
       if (!mounted) return;
 
-      final trendingList = ((queries[1]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
-      Map<String, dynamic>? trending;
-      if (trendingList.isNotEmpty) {
-        final pick = trendingList[DateTime.now().microsecond % trendingList.length];
-        trending = Map<String, dynamic>.from(pick['object'] as Map);
-        trending['weeklyListens'] = pick['total'];
-      }
-
       final mem = <Map<String, dynamic>>[];
       void addMem(dynamic raw, String type, String songsKey) {
         for (final p in ((raw?['data'] ?? []) as List)) {
@@ -397,30 +436,23 @@ class _HomeScreenState extends State<HomeScreen> {
           mem.add(m);
         }
       }
-      addMem(queries[11]['artists'], 'artist', 'songs');
-      addMem(queries[12]['composers'], 'composer', 'songs');
-      addMem(queries[13]['poets'], 'poet', 'poems');
-      addMem(queries[14]['recomposers'], 'recomposer', 'folks');
+      addMem(results[5]['artists'], 'artist', 'songs');
+      addMem(results[6]['composers'], 'composer', 'songs');
+      addMem(results[7]['poets'], 'poet', 'poems');
+      addMem(results[8]['recomposers'], 'recomposer', 'folks');
 
       setState(() {
-        _hotSongs = (queries[0]['stickySongs'] ?? []) as List;
-        _trendingSong = trending;
-        _artists = queries[2]['artists']?['data'] ?? [];
-        _composers = queries[3]['composers']?['data'] ?? [];
-        _videos = queries[4]['songs']?['data'] ?? [];
-        _playlists = queries[5]['playlists']?['data'] ?? [];
-        _chartSongs = ((queries[6]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
-        _galleryDocs = queries[7]['documents']?['data'] ?? [];
-        _audioDocs = queries[8]['documents']?['data'] ?? [];
-        _videoDocs = queries[9]['documents']?['data'] ?? [];
-        _newsDocs = queries[10]['documents']?['data'] ?? [];
+        _chartSongs = ((results[0]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
+        _galleryDocs = results[1]['documents']?['data'] ?? [];
+        _audioDocs = results[2]['documents']?['data'] ?? [];
+        _videoDocs = results[3]['documents']?['data'] ?? [];
+        _newsDocs = results[4]['documents']?['data'] ?? [];
         _memorial = mem;
         _events = events;
-        _loading = false;
       });
-      _fetchLatest(_categories[_latestTab], 1);
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      // Allow retry on next scroll if this round failed entirely.
+      _belowFoldFetched = false;
     }
   }
 
@@ -561,9 +593,20 @@ class _HomeScreenState extends State<HomeScreen> {
     return RefreshIndicator(
       color: AppColors.accent,
       onRefresh: _fetch,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        children: _feedItems(),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (n) {
+          // Trigger below-fold fetch once user scrolls past the spotlight
+          // (~600px). Saves ~9 GraphQL requests on first paint when the
+          // user only stays on top of the page.
+          if (!_belowFoldFetched && n.metrics.pixels > 600) {
+            _fetchBelowFold();
+          }
+          return false;
+        },
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          children: _feedItems(),
+        ),
       ),
     );
   }
@@ -616,6 +659,18 @@ class _HomeScreenState extends State<HomeScreen> {
           // ─── HERO SPOTLIGHT (rotating featured) ───
           if (_spotlightItems().isNotEmpty) ...[
             _StaggerFadeIn(index: 2, child: HeroSpotlight(items: _spotlightItems(), onTap: _openSong, onPlay: _playSpotlight)),
+            const SizedBox(height: 28),
+          ],
+
+          // ─── ONBOARDING — non-authed user lands on a page that's
+          // mostly editorial; surface a soft login CTA so they know
+          // personalisation exists. Logged-in users skip this entirely.
+          if (!context.watch<AuthProvider>().isAuthenticated) ...[
+            _StaggerFadeIn(index: 3, child: _WelcomeBanner(
+              onLogin: () => showDialog(context: context, builder: (_) => const LoginDialog()).then((_) {
+                if (context.read<AuthProvider>().isAuthenticated) _fetchPersonalized();
+              }),
+            )),
             const SizedBox(height: 28),
           ],
 
@@ -2564,6 +2619,64 @@ class _PressScaleState extends State<PressScale> {
         curve: Curves.easeOut,
         child: widget.child,
       ),
+    );
+  }
+}
+
+/// Soft-sell login banner shown to non-authed users on home, right
+/// after the spotlight. Frames sign-in as the path to personalised
+/// content (yêu thích, lịch sử, playlist) without hard-blocking the
+/// editorial content below.
+class _WelcomeBanner extends StatelessWidget {
+  final VoidCallback onLogin;
+  const _WelcomeBanner({required this.onLogin});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          colors: [AppColors.accent.withValues(alpha: 0.18), AppColors.surface],
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        Container(
+          width: 44, height: 44,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+          ),
+          child: const Icon(Icons.favorite_outline, color: Colors.white, size: 22),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Trải nghiệm cá nhân hoá', style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+              const SizedBox(height: 2),
+              Text('Đăng nhập để lưu bài yêu thích, lịch sử nghe và tạo playlist riêng.', style: body(const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton(
+          onPressed: onLogin,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.accent,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            elevation: 0,
+          ),
+          child: Text('Đăng nhập', style: body(const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+        ),
+      ]),
     );
   }
 }

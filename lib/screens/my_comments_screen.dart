@@ -6,6 +6,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/empty_state.dart';
 
 class MyCommentsScreen extends StatefulWidget {
   const MyCommentsScreen({super.key});
@@ -100,7 +101,11 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
           if (_loading && _items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Bạn chưa có bình luận nào', style: AppText.bodyText)))
+            const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
+              icon: Icons.chat_bubble_outline,
+              title: 'Chưa có bình luận',
+              subtitle: 'Bình luận của bạn ở các bài hát, bản nhạc, thảo luận sẽ xuất hiện tại đây.',
+            ))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
