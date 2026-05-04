@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -32,10 +33,114 @@ class _CommentSectionState extends State<CommentSection> {
   bool _submitting = false;
   final _controller = TextEditingController();
 
+  // @mention autocomplete state — tracked when the cursor sits inside a
+  // bare `@token` token. _mentionStart is the position of the `@` (so we
+  // know what range to replace when a user is picked).
+  int _mentionStart = -1;
+  String _mentionQuery = '';
+  List<Map<String, dynamic>> _mentionResults = [];
+  bool _mentionLoading = false;
+  Timer? _mentionDebounce;
+
   @override
   void initState() {
     super.initState();
+    _controller.addListener(_onCommentTextChanged);
     _fetchComments(1);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onCommentTextChanged);
+    _mentionDebounce?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  // Detect whether the caret sits inside an `@token` token. Walks backwards
+  // from the cursor stopping at whitespace; if the run starts with `@`
+  // (and `@` is at start-of-string OR preceded by whitespace) we've found
+  // a mention. Otherwise clears mention state.
+  void _onCommentTextChanged() {
+    final text = _controller.text;
+    final cursor = _controller.selection.baseOffset;
+    if (cursor < 0 || cursor > text.length) { _clearMention(); return; }
+    int i = cursor - 1;
+    while (i >= 0) {
+      final ch = text[i];
+      if (ch == ' ' || ch == '\n' || ch == '\t') { _clearMention(); return; }
+      if (ch == '@') {
+        // Must be at line start or preceded by whitespace — avoids
+        // catching emails / inline `@` tokens mid-word.
+        if (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\n') {
+          final query = text.substring(i + 1, cursor);
+          _mentionStart = i;
+          _mentionQuery = query;
+          _scheduleMentionFetch(query);
+          return;
+        } else {
+          _clearMention();
+          return;
+        }
+      }
+      i--;
+    }
+    _clearMention();
+  }
+
+  void _clearMention() {
+    if (_mentionStart < 0 && _mentionResults.isEmpty) return;
+    _mentionDebounce?.cancel();
+    setState(() {
+      _mentionStart = -1;
+      _mentionQuery = '';
+      _mentionResults = [];
+      _mentionLoading = false;
+    });
+  }
+
+  void _scheduleMentionFetch(String query) {
+    _mentionDebounce?.cancel();
+    _mentionDebounce = Timer(const Duration(milliseconds: 200), () => _fetchMentionUsers(query));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _fetchMentionUsers(String prefix) async {
+    if (prefix.isEmpty) {
+      // Show recent / suggested users would be nice — for now just clear
+      // results so the picker doesn't flood with random members.
+      if (mounted) setState(() { _mentionResults = []; _mentionLoading = false; });
+      return;
+    }
+    if (mounted) setState(() => _mentionLoading = true);
+    try {
+      // Inline LIKE pattern (mirrors person_list_screen) — passing the
+      // value through a GraphQL variable wasn't matching anything in
+      // testing. Escape `"` to keep the query safe for usernames that
+      // contain quotes (rare but possible).
+      final safe = prefix.replaceAll('"', '\\"');
+      final q = 'query { users(first: 5, where: {column: "username", operator: LIKE, value: "$safe%"}, orderBy: [{column: "views", order: DESC}]) { data { id username avatar { url } views } } }';
+      final data = await ApiClient.query(q, {});
+      final list = ((data['users']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      if (!mounted) return;
+      setState(() { _mentionResults = list; _mentionLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() { _mentionResults = []; _mentionLoading = false; });
+    }
+  }
+
+  void _insertMention(String username) {
+    if (_mentionStart < 0) return;
+    final before = _controller.text.substring(0, _mentionStart);
+    final cursor = _controller.selection.baseOffset.clamp(0, _controller.text.length);
+    final after = _controller.text.substring(cursor);
+    final replacement = '@$username ';
+    final newText = '$before$replacement$after';
+    _controller.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: before.length + replacement.length),
+    );
+    _clearMention();
   }
 
   String get _entityField {
@@ -302,6 +407,48 @@ class _CommentSectionState extends State<CommentSection> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // @mention picker — appears above the input when the
+                // cursor sits inside an `@token`. Tap to insert.
+                if (_mentionStart >= 0 && (_mentionResults.isNotEmpty || _mentionLoading || _mentionQuery.isNotEmpty))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: _mentionLoading && _mentionResults.isEmpty
+                          ? Padding(padding: const EdgeInsets.all(10), child: Row(children: [
+                              SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight)),
+                              const SizedBox(width: 8),
+                              Text('Đang tìm @${_mentionQuery}...', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                            ]))
+                          : _mentionResults.isEmpty
+                              ? Padding(padding: const EdgeInsets.all(10), child: Text('Không có thành viên @${_mentionQuery}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))))
+                              : Column(mainAxisSize: MainAxisSize.min, children: _mentionResults.map((u) {
+                                  final username = u['username']?.toString() ?? '';
+                                  final avatar = u['avatar']?['url']?.toString();
+                                  return InkWell(
+                                    onTap: () => _insertMention(username),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      child: Row(children: [
+                                        CircleAvatar(
+                                          radius: 12,
+                                          backgroundColor: AppColors.surface,
+                                          backgroundImage: avatar != null ? CachedNetworkImageProvider(avatar) : null,
+                                          child: avatar == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text('@$username', style: body(TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w600))),
+                                      ]),
+                                    ),
+                                  );
+                                }).toList()),
+                    ),
+                  ),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [

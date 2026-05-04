@@ -41,13 +41,30 @@ class MiniPlayer extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            child: LinearProgressIndicator(
-              value: player.progress,
-              minHeight: 3,
-              backgroundColor: AppColors.border,
-              valueColor: AlwaysStoppedAnimation(AppColors.accent),
+          // Tap-to-seek progress bar — bumped to 5px so it's an obvious
+          // hit target without dominating the row, and registers a tap
+          // anywhere along its width to seek to that position. Spotify /
+          // Apple Music desktop pattern.
+          MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (d) {
+                final w = (context.findRenderObject() as RenderBox?)?.size.width ?? 0;
+                if (w <= 0) return;
+                final ratio = (d.localPosition.dx / w).clamp(0.0, 1.0);
+                final ms = (player.duration.inMilliseconds * ratio).toInt();
+                player.seek(Duration(milliseconds: ms));
+              },
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                child: LinearProgressIndicator(
+                  value: player.progress,
+                  minHeight: 5,
+                  backgroundColor: AppColors.border,
+                  valueColor: AlwaysStoppedAnimation(AppColors.accent),
+                ),
+              ),
             ),
           ),
           InkWell(

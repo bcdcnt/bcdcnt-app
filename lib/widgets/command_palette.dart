@@ -1,10 +1,16 @@
 import 'dart:async';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/player.dart';
+import '../services/theme_provider.dart';
 
 /// Cmd+K spotlight-style search overlay. Debounced text input on top, up to
 /// 8 matching results below. Enter activates the highlighted result, Esc
@@ -44,6 +50,23 @@ class CommandPalette extends StatefulWidget {
   State<CommandPalette> createState() => _CommandPaletteState();
 }
 
+/// Quick action — palette entry that runs a closure rather than navigating
+/// to a search hit. Title shown in the row, hotkey hint surfaced when set.
+class _PaletteAction {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final String? hotkey;
+  final VoidCallback run;
+  const _PaletteAction({
+    required this.icon,
+    required this.title,
+    required this.run,
+    this.subtitle,
+    this.hotkey,
+  });
+}
+
 class _CommandPaletteState extends State<CommandPalette> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
@@ -53,6 +76,8 @@ class _CommandPaletteState extends State<CommandPalette> {
   bool _loading = false;
   int _selected = 0;
   static const _rowHeight = 54.0; // matches _PaletteRow padding + content
+
+  bool get _isDesktopOS => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   @override
   void initState() {
@@ -117,6 +142,82 @@ class _CommandPaletteState extends State<CommandPalette> {
     }
   }
 
+  // Curated quick actions — navigation, player controls, theme switcher.
+  // Built fresh per build so play state / current theme name stay live.
+  List<_PaletteAction> _buildActions(BuildContext context, PlayerProvider player, ThemeProvider theme) {
+    void close() => Navigator.of(context, rootNavigator: true).pop();
+    void go(String path) { close(); context.push(path); }
+    return [
+      // Navigation
+      _PaletteAction(icon: Icons.home_outlined, title: 'Trang chủ', subtitle: 'Đi tới /', run: () => go('/')),
+      _PaletteAction(icon: Icons.search, title: 'Tìm kiếm', subtitle: 'Đi tới /search', run: () => go('/search')),
+      _PaletteAction(icon: Icons.chat_bubble_outline, title: 'Bình luận', subtitle: 'Đi tới /binh-luan', run: () => go('/binh-luan')),
+      _PaletteAction(icon: Icons.leaderboard_outlined, title: 'Bảng xếp hạng', subtitle: 'Đi tới /bang-xep-hang', run: () => go('/bang-xep-hang')),
+      _PaletteAction(icon: Icons.library_music_outlined, title: 'Thư viện', subtitle: 'Đi tới /library', run: () => go('/library')),
+      _PaletteAction(icon: Icons.notifications_outlined, title: 'Thông báo', subtitle: 'Đi tới /thong-bao', run: () => go('/thong-bao')),
+      _PaletteAction(icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Đi tới /cai-dat', run: () => go('/cai-dat')),
+      _PaletteAction(icon: Icons.mic_outlined, title: 'Nghệ sĩ', subtitle: 'Đi tới /nghe-si', run: () => go('/nghe-si')),
+      _PaletteAction(icon: Icons.piano_outlined, title: 'Nhạc sĩ', subtitle: 'Đi tới /nhac-si', run: () => go('/nhac-si')),
+      _PaletteAction(icon: Icons.tag, title: 'Tag', subtitle: 'Đi tới /tag', run: () => go('/tag')),
+      // Player controls — only meaningful when something is loaded.
+      if (player.currentSong != null) ...[
+        _PaletteAction(
+          icon: player.isPlaying ? Icons.pause : Icons.play_arrow,
+          title: player.isPlaying ? 'Tạm dừng' : 'Phát',
+          hotkey: 'Space',
+          run: () { close(); player.togglePlay(); },
+        ),
+        _PaletteAction(icon: Icons.skip_next, title: 'Bài tiếp', hotkey: '⇧ →', run: () { close(); player.playNext(); }),
+        _PaletteAction(icon: Icons.skip_previous, title: 'Bài trước', hotkey: '⇧ ←', run: () { close(); player.playPrev(); }),
+        _PaletteAction(
+          icon: player.shuffle ? Icons.shuffle_on_outlined : Icons.shuffle,
+          title: player.shuffle ? 'Tắt phát ngẫu nhiên' : 'Bật phát ngẫu nhiên',
+          run: () { close(); player.toggleShuffle(); },
+        ),
+      ],
+      // Window — desktop only.
+      if (_isDesktopOS)
+        _PaletteAction(
+          icon: Icons.fullscreen,
+          title: 'Toàn màn hình',
+          hotkey: 'F',
+          run: () async { close(); final v = await windowManager.isFullScreen(); await windowManager.setFullScreen(!v); },
+        ),
+      // Theme cycler — picks the next palette in kAppPalettes after current.
+      _PaletteAction(
+        icon: Icons.palette_outlined,
+        title: 'Đổi phối màu',
+        subtitle: 'Hiện tại: ${theme.palette.label}',
+        run: () {
+          close();
+          final i = kAppPalettes.indexWhere((p) => p.name == theme.name);
+          final next = kAppPalettes[(i + 1) % kAppPalettes.length];
+          theme.setTheme(next.name);
+        },
+      ),
+    ];
+  }
+
+  Widget _sectionHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+      child: Text(
+        label.toUpperCase(),
+        style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
+      ),
+    );
+  }
+
+  // Substring match (case + diacritic-insensitive — only for ASCII so far,
+  // good enough for the action labels which are Vietnamese-with-diacritics
+  // text. Lower-cases both sides; doesn't strip diacritics — matching
+  // "tìm" requires typing "tìm").
+  bool _matchesAction(_PaletteAction a, String q) {
+    if (q.isEmpty) return true;
+    final ql = q.toLowerCase();
+    return a.title.toLowerCase().contains(ql) || (a.subtitle?.toLowerCase().contains(ql) ?? false);
+  }
+
   void _open(Map<String, dynamic> hit) {
     Navigator.of(context, rootNavigator: true).pop();
     final t = hit['_search_type']?.toString();
@@ -151,6 +252,15 @@ class _CommandPaletteState extends State<CommandPalette> {
     }
   }
 
+  // Compute the live combined list once per key/build call so handlers and
+  // renderer agree on what _selected points at. Actions first, then API
+  // search hits.
+  List<_PaletteAction> _filteredActions() {
+    final player = context.read<PlayerProvider>();
+    final theme = context.read<ThemeProvider>();
+    return _buildActions(context, player, theme).where((a) => _matchesAction(a, _ctrl.text.trim())).toList();
+  }
+
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return KeyEventResult.ignored;
     final k = event.logicalKey;
@@ -158,19 +268,25 @@ class _CommandPaletteState extends State<CommandPalette> {
       Navigator.of(context, rootNavigator: true).pop();
       return KeyEventResult.handled;
     }
-    if (_hits.isEmpty) return KeyEventResult.ignored;
+    final actions = _filteredActions();
+    final total = actions.length + _hits.length;
+    if (total == 0) return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.arrowDown) {
-      setState(() => _selected = (_selected + 1) % _hits.length);
+      setState(() => _selected = (_selected + 1) % total);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.arrowUp) {
-      setState(() => _selected = (_selected - 1 + _hits.length) % _hits.length);
+      setState(() => _selected = (_selected - 1 + total) % total);
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToSelected());
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.numpadEnter) {
-      _open(_hits[_selected]);
+      if (_selected < actions.length) {
+        actions[_selected].run();
+      } else {
+        _open(_hits[_selected - actions.length]);
+      }
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -233,46 +349,111 @@ class _CommandPaletteState extends State<CommandPalette> {
                 ),
               ),
               Divider(height: 1, color: AppColors.border),
-              Expanded(
-                child: _loading
-                    ? Center(child: CircularProgressIndicator(color: AppColors.accent))
-                    : _ctrl.text.trim().isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Center(
-                              child: Text(
-                                'Gõ để tìm. Dùng ↑↓ chọn, Enter mở, Esc đóng.',
-                                style: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          )
-                        : _hits.isEmpty
-                            ? Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Center(
-                                  child: Text(
-                                    'Không tìm thấy kết quả',
-                                    style: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: _listScroll,
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                itemCount: _hits.length,
-                                itemBuilder: (_, i) => _PaletteRow(
-                                  hit: _hits[i],
-                                  selected: i == _selected,
-                                  onTap: () => _open(_hits[i]),
-                                ),
-                              ),
-              ),
+              Expanded(child: Builder(builder: (ctx) {
+                final actions = _filteredActions();
+                final hasInput = _ctrl.text.trim().isNotEmpty;
+                if (_loading && _hits.isEmpty && actions.isEmpty) {
+                  return Center(child: CircularProgressIndicator(color: AppColors.accent));
+                }
+                if (actions.isEmpty && _hits.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        hasInput ? 'Không tìm thấy kết quả' : 'Gõ để tìm. Dùng ↑↓ chọn, Enter mở, Esc đóng.',
+                        style: body(TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                final children = <Widget>[];
+                if (actions.isNotEmpty) {
+                  children.add(_sectionHeader(hasInput ? 'Lệnh' : 'Hành động nhanh'));
+                  for (var i = 0; i < actions.length; i++) {
+                    children.add(_ActionRow(
+                      action: actions[i],
+                      selected: i == _selected,
+                      onTap: actions[i].run,
+                    ));
+                  }
+                }
+                if (_hits.isNotEmpty) {
+                  children.add(_sectionHeader('Kết quả tìm kiếm'));
+                  for (var i = 0; i < _hits.length; i++) {
+                    final globalIdx = actions.length + i;
+                    children.add(_PaletteRow(
+                      hit: _hits[i],
+                      selected: globalIdx == _selected,
+                      onTap: () => _open(_hits[i]),
+                    ));
+                  }
+                }
+                return ListView(
+                  controller: _listScroll,
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  children: children,
+                );
+              })),
             ],
           ),
         ),
       ),
+      ),
+    );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  final _PaletteAction action;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ActionRow({required this.action, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 80),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          color: selected ? AppColors.surfaceLight : Colors.transparent,
+          child: Row(children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Icon(action.icon, size: 18, color: selected ? AppColors.accentLight : AppColors.textSecondary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(action.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                  if (action.subtitle != null) ...[
+                    const SizedBox(height: 1),
+                    Text(action.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  ],
+                ],
+              ),
+            ),
+            if (action.hotkey != null) ...[
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(4), border: Border.all(color: AppColors.border)),
+                child: Text(action.hotkey!, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+              ),
+            ],
+          ]),
+        ),
       ),
     );
   }

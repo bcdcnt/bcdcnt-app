@@ -1858,33 +1858,40 @@ class _DesktopHero extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 6),
-                // Stat strip — same group as artist row (small gap).
-                Row(children: [
-                  Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
-                  const SizedBox(width: 4),
-                  Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-                  if (downloads > 0) ...[
-                    const SizedBox(width: 14),
-                    Icon(Icons.download, size: 13, color: AppColors.textMuted),
-                    const SizedBox(width: 4),
-                    Text('${_formatIntStatic(downloads)} lượt tải', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-                  ],
-                  if (loveCount > 0) ...[
-                    const SizedBox(width: 14),
-                    InkWell(
-                      onTap: onShowLovers,
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
-                          const SizedBox(width: 4),
-                          Text('${_formatIntStatic(loveCount)} yêu thích', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: AppColors.textMuted))),
-                        ]),
+                // Stat strip — Wrap so the 3 metric chunks reflow onto a
+                // second line when the info column gets squeezed (narrow
+                // desktop window). Row would just print "RenderFlex
+                // overflowed by N pixels" + clip the rightmost stat.
+                Wrap(
+                  spacing: 14, runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
+                      const SizedBox(width: 4),
+                      Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                    ]),
+                    if (downloads > 0)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.download, size: 13, color: AppColors.textMuted),
+                        const SizedBox(width: 4),
+                        Text('${_formatIntStatic(downloads)} lượt tải', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                      ]),
+                    if (loveCount > 0)
+                      InkWell(
+                        onTap: onShowLovers,
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
+                            const SizedBox(width: 4),
+                            Text('${_formatIntStatic(loveCount)} yêu thích', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: AppColors.textMuted))),
+                          ]),
+                        ),
                       ),
-                    ),
                   ],
-                ]),
+                ),
                 const SizedBox(height: 22),
                 // Action cluster
                 Wrap(spacing: 10, runSpacing: 10, children: [
