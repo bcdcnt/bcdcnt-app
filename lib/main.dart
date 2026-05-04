@@ -1,6 +1,9 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:window_manager/window_manager.dart';
 import 'constants/theme.dart';
 import 'services/auth.dart';
 import 'services/player.dart';
@@ -47,7 +50,14 @@ import 'widgets/mini_player.dart';
 import 'widgets/desktop_shell.dart';
 import 'widgets/keyboard_shortcuts.dart';
 
-void main() {
+void main() async {
+  // window_manager is desktop-only (used for the FullPlayer fullscreen
+  // toggle). Skip the bind on mobile/web so the app starts the same way
+  // it did before the dep was added.
+  if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    WidgetsFlutterBinding.ensureInitialized();
+    await windowManager.ensureInitialized();
+  }
   runApp(const BcdcntApp());
 }
 

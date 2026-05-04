@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -7,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:go_router/go_router.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:window_manager/window_manager.dart';
 import 'timed_lyrics.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
@@ -23,9 +28,23 @@ class FullPlayer extends StatefulWidget {
 
 enum _PanelMode { vinyl, lyrics, queue }
 
-class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateMixin {
+class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateMixin, WindowListener {
   late AnimationController _rotation;
+  // Stable focus node so the F key keyboard listener doesn't leak a new
+  // node each rebuild (creating a fresh FocusNode in build() spammed focus
+  // requests + caused the listener to drop key events on rapid setState).
+  final FocusNode _shortcutFocus = FocusNode(debugLabel: 'FullPlayer F shortcut');
   _PanelMode _panel = _PanelMode.vinyl;
+  // Mirrored locally so the icon flip is instant; window_manager itself
+  // is queried on the next build via _isDesktop guard.
+  bool _isFullScreen = false;
+  // Chrome auto-hide while in fullscreen + idle (no mouse movement). 3s
+  // delay matches Spotify / Apple Music Now Playing fullscreen behaviour.
+  // Header + footer fade out, cursor hides; mouse movement brings them
+  // back. Always visible when not fullscreen.
+  bool _chromeVisible = true;
+  Timer? _idleTimer;
+  static const _idleDelay = Duration(seconds: 3);
 
   bool _liked = false;
   List<dynamic> _lovers = [];
@@ -33,6 +52,46 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   bool _loversFetchedForId = false;
   String? _songLyrics;
   String? _lyricsFetchedForId;
+
+  bool get _isDesktopOS => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+
+  Future<void> _toggleFullScreen() async {
+    if (!_isDesktopOS) return;
+    final next = !_isFullScreen;
+    await windowManager.setFullScreen(next);
+    if (!mounted) return;
+    setState(() {
+      _isFullScreen = next;
+      // Reset idle state on each toggle so re-entering fullscreen doesn't
+      // start hidden.
+      _chromeVisible = true;
+      // Auto-switch to the karaoke lyrics view on enter when the song has
+      // LRC timestamps — the whole point of the fullscreen mode for music.
+      // Only switch from vinyl (don't override an explicit queue choice).
+      if (next && _panel == _PanelMode.vinyl && TimedLyrics.hasLrc(_songLyrics)) {
+        _panel = _PanelMode.lyrics;
+      }
+    });
+    if (next) {
+      _scheduleHideChrome();
+    } else {
+      _idleTimer?.cancel();
+      _idleTimer = null;
+    }
+  }
+
+  void _scheduleHideChrome() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleDelay, () {
+      if (mounted && _isFullScreen) setState(() => _chromeVisible = false);
+    });
+  }
+
+  void _onPointerActivity() {
+    if (!_isFullScreen) return;
+    if (!_chromeVisible) setState(() => _chromeVisible = true);
+    _scheduleHideChrome();
+  }
   // Dominant color extracted from the current artwork. Drives the top
   // radial-gradient backdrop so it looks colour-coordinated with the song,
   // matching Spotify's "now playing" vibe.
@@ -45,12 +104,53 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+    if (_isDesktopOS) {
+      windowManager.addListener(this);
+      windowManager.isFullScreen().then((v) {
+        if (mounted) {
+          setState(() => _isFullScreen = v);
+          // If user opened the FullPlayer while the window was already
+          // fullscreen (from a prior toggle / macOS green button), arm the
+          // idle hide so it behaves the same as if they'd just pressed F.
+          if (v) _scheduleHideChrome();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    if (_isDesktopOS) windowManager.removeListener(this);
     _rotation.dispose();
+    _shortcutFocus.dispose();
+    _idleTimer?.cancel();
     super.dispose();
+  }
+
+  // Keep _isFullScreen in lock-step with the OS — covers macOS green
+  // traffic light, Cmd+Ctrl+F, Mission Control swipes, etc. Without these
+  // hooks, exiting fullscreen via the system would leave _isFullScreen=true
+  // and the chrome would auto-hide in windowed mode. Bug surfaced in
+  // testing.
+  @override
+  void onWindowEnterFullScreen() {
+    if (!mounted) return;
+    setState(() {
+      _isFullScreen = true;
+      _chromeVisible = true;
+      if (_panel == _PanelMode.vinyl && TimedLyrics.hasLrc(_songLyrics)) {
+        _panel = _PanelMode.lyrics;
+      }
+    });
+    _scheduleHideChrome();
+  }
+
+  @override
+  void onWindowLeaveFullScreen() {
+    if (!mounted) return;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    setState(() { _isFullScreen = false; _chromeVisible = true; });
   }
 
   String _fmt(Duration d) {
@@ -298,8 +398,79 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(TextStyle(color: AppColors.text))),
             onTap: () { Navigator.pop(sheetCtx); player.toggleMute(); },
           ),
+          ListTile(
+            leading: Icon(Icons.bedtime_outlined, color: player.hasSleepTimer ? AppColors.accentLight : AppColors.textSecondary),
+            title: Text(
+              player.hasSleepTimer ? 'Hẹn giờ tắt' : 'Hẹn giờ tắt',
+              style: body(TextStyle(color: player.hasSleepTimer ? AppColors.accentLight : AppColors.text)),
+            ),
+            trailing: player.hasSleepTimer
+                ? Text(_sleepTimerLabel(player), style: body(TextStyle(color: AppColors.accentLight, fontSize: 13, fontWeight: FontWeight.w700)))
+                : null,
+            onTap: () { Navigator.pop(sheetCtx); _showSleepSheet(); },
+          ),
           const SizedBox(height: 8),
         ]),
+      ),
+    );
+  }
+
+  String _sleepTimerLabel(PlayerProvider player) {
+    if (player.sleepEndOfSong) return 'Hết bài này';
+    final r = player.sleepRemaining;
+    if (r == null) return '';
+    final m = r.inMinutes;
+    final s = r.inSeconds.remainder(60);
+    return m > 0 ? '${m}p${s.toString().padLeft(2, '0')}' : '${s}s';
+  }
+
+  void _showSleepSheet() {
+    final player = context.read<PlayerProvider>();
+    final presets = const [
+      (Duration(minutes: 5), '5 phút'),
+      (Duration(minutes: 10), '10 phút'),
+      (Duration(minutes: 15), '15 phút'),
+      (Duration(minutes: 30), '30 phút'),
+      (Duration(minutes: 60), '60 phút'),
+    ];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(children: [
+                Icon(Icons.bedtime_outlined, size: 18, color: AppColors.accentLight),
+                const SizedBox(width: 8),
+                Text('Hẹn giờ tắt', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                const Spacer(),
+                if (player.hasSleepTimer)
+                  TextButton(
+                    onPressed: () { player.cancelSleepTimer(); Navigator.pop(ctx); },
+                    child: Text('Huỷ', style: body(TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w700))),
+                  ),
+              ]),
+            ),
+            ...presets.map((p) {
+              final active = !player.sleepEndOfSong && player.sleepRemaining != null
+                  && (player.sleepRemaining!.inSeconds - p.$1.inSeconds).abs() < 60;
+              return ListTile(
+                title: Text(p.$2, style: body(TextStyle(color: active ? AppColors.accentLight : AppColors.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
+                trailing: active ? Icon(Icons.check, color: AppColors.accentLight) : null,
+                onTap: () { player.setSleepTimer(p.$1); Navigator.pop(ctx); },
+              );
+            }),
+            ListTile(
+              title: Text('Hết bài này', style: body(TextStyle(color: player.sleepEndOfSong ? AppColors.accentLight : AppColors.text, fontWeight: player.sleepEndOfSong ? FontWeight.w700 : FontWeight.w500))),
+              trailing: player.sleepEndOfSong ? Icon(Icons.check, color: AppColors.accentLight) : null,
+              onTap: () { player.setSleepEndOfSong(true); Navigator.pop(ctx); },
+            ),
+          ]),
+        ),
       ),
     );
   }
@@ -371,7 +542,29 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
 
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Stack(
+      // Auto-focus + KeyboardListener so 'F' (with no modifier) toggles
+      // fullscreen anywhere inside the player. Only swallows F; other keys
+      // bubble up to the parent shortcut handler. Disabled on mobile/web
+      // where there's no hardware keyboard / OS fullscreen.
+      body: KeyboardListener(
+        focusNode: _shortcutFocus,
+        autofocus: true,
+        onKeyEvent: (e) {
+          if (!_isDesktopOS) return;
+          if (e is! KeyDownEvent) return;
+          if (e.logicalKey == LogicalKeyboardKey.keyF &&
+              !HardwareKeyboard.instance.isMetaPressed &&
+              !HardwareKeyboard.instance.isControlPressed) {
+            _toggleFullScreen();
+          }
+        },
+        child: MouseRegion(
+          onHover: (_) => _onPointerActivity(),
+          // Hide cursor while idle in fullscreen, like Spotify / Apple
+          // Music's Now Playing fullscreen — minimises visual noise on
+          // top of the artwork.
+          cursor: (_isFullScreen && !_chromeVisible) ? SystemMouseCursors.none : MouseCursor.defer,
+          child: Stack(
         children: [
           Positioned(
             top: -100, left: 0, right: 0,
@@ -395,24 +588,55 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           SafeArea(
             child: Column(
               children: [
-                // Header — back · centered title · more. Lyrics + queue
-                // toggles relocated into the more sheet so the title sits
-                // perfectly centered (back and more are equal-width
-                // IconButtons, balancing the row on both sides).
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                  child: Row(
-                    children: [
-                      IconButton(icon: Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text), onPressed: () => Navigator.pop(context)),
-                      Expanded(
-                        child: Text(
-                          'ĐANG PHÁT',
-                          textAlign: TextAlign.center,
-                          style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
+                // Header — Stack so the centred title is independent of
+                // the icon-cluster width: back at left, fullscreen + more
+                // at right (Apple Music / Spotify pattern — fullscreen is
+                // a primary action, deserves a header slot, not buried in
+                // the overflow). Title stays perfectly centred regardless
+                // of how many trailing icons are visible (mobile = no
+                // fullscreen icon).
+                _FadeChrome(
+                  visible: _chromeVisible,
+                  child: SizedBox(
+                    height: 48,
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 120),
+                            child: Text(
+                              'ĐANG PHÁT',
+                              textAlign: TextAlign.center,
+                              style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary)),
+                            ),
+                          ),
                         ),
-                      ),
-                      IconButton(icon: Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
-                    ],
+                        Positioned(
+                          left: 8, top: 0, bottom: 0,
+                          child: Center(
+                            child: IconButton(
+                              icon: Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 8, top: 0, bottom: 0,
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            if (_isDesktopOS)
+                              IconButton(
+                                tooltip: _isFullScreen ? 'Thoát toàn màn hình  F' : 'Toàn màn hình  F',
+                                icon: Icon(
+                                  _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
+                                  color: _isFullScreen ? AppColors.accentLight : AppColors.textSecondary,
+                                ),
+                                onPressed: _toggleFullScreen,
+                              ),
+                            IconButton(icon: Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
+                          ]),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
 
@@ -423,106 +647,119 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   ),
                 ),
 
-                // Song info — tap title to open song detail
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+                // Song info + progress + transport — all fade together
+                // when the cursor goes idle in fullscreen, leaving the
+                // vinyl / lyrics / queue panel as the sole focus.
+                _FadeChrome(
+                  visible: _chromeVisible,
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      InkWell(
-                        onTap: () => _openSongDetail(song),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          child: Column(
-                            children: [
-                              Text(
-                                song['title'] ?? '',
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
-                              ),
-                              if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      _buildArtistRow(artists),
-                    ],
-                  ),
-                ),
-
-                // Progress bar
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    children: [
-                      SliderTheme(
-                        data: SliderThemeData(
-                          activeTrackColor: AppColors.accent,
-                          inactiveTrackColor: AppColors.border,
-                          thumbColor: AppColors.accent,
-                          overlayColor: AppColors.accent.withValues(alpha: 0.2),
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                        ),
-                        child: Slider(
-                          value: player.position.inMilliseconds.toDouble().clamp(0, player.duration.inMilliseconds.toDouble()),
-                          max: player.duration.inMilliseconds.toDouble() > 0 ? player.duration.inMilliseconds.toDouble() : 1,
-                          onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
-                        ),
-                      ),
+                      // Song info — tap title to open song detail
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+                        child: Column(
                           children: [
-                            Text(_fmt(player.position), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
-                            Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                            InkWell(
+                              onTap: () => _openSongDetail(song),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      song['title'] ?? '',
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+                                    ),
+                                    if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
+                                      const SizedBox(height: 2),
+                                      Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            _buildArtistRow(artists),
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
 
-                // Main transport controls
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                      IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
-                      Container(
-                        width: 68, height: 68,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
-                        ),
-                        child: IconButton(
-                          tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
-                          icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
-                          onPressed: player.togglePlay,
+                      // Progress bar
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        child: Column(
+                          children: [
+                            SliderTheme(
+                              data: SliderThemeData(
+                                activeTrackColor: AppColors.accent,
+                                inactiveTrackColor: AppColors.border,
+                                thumbColor: AppColors.accent,
+                                overlayColor: AppColors.accent.withValues(alpha: 0.2),
+                                trackHeight: 4,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                              ),
+                              child: Slider(
+                                value: player.position.inMilliseconds.toDouble().clamp(0, player.duration.inMilliseconds.toDouble()),
+                                max: player.duration.inMilliseconds.toDouble() > 0 ? player.duration.inMilliseconds.toDouble() : 1,
+                                onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(_fmt(player.position), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                                  Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
-                      _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
+
+                      // Main transport controls
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
+                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
+                            Container(
+                              width: 68, height: 68,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
+                              ),
+                              child: IconButton(
+                                tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
+                                icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
+                                onPressed: player.togglePlay,
+                              ),
+                            ),
+                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
+                            _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 24),
               ],
             ),
           ),
         ],
+      ),
+      ),
       ),
     );
   }
@@ -600,10 +837,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   Widget _buildLyricsPanel() {
+    // In fullscreen we drop the framed surface + use the karaoke variant
+    // so the lyrics fill the screen edge-to-edge for a Now Playing feel.
+    final useLarge = _isFullScreen;
     final container = Container(
-      margin: const EdgeInsets.symmetric(horizontal: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+      margin: useLarge ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 24),
+      padding: useLarge ? EdgeInsets.zero : const EdgeInsets.all(16),
+      decoration: useLarge ? null : BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
       ),
@@ -611,6 +851,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ? Center(child: Text('Chưa có lời bài hát', style: body(TextStyle(color: AppColors.textMuted, fontSize: 14))))
           : TimedLyrics(
               raw: _songLyrics,
+              large: useLarge,
               fallback: SingleChildScrollView(
                 child: Html(
                   data: _songLyrics!,
@@ -642,63 +883,98 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        child: ListView.builder(
+        // Reorderable + dismissible: drag the handle to reorder, swipe
+        // either direction to remove. Reorder/remove route through the
+        // PlayerProvider so playback survives an active-track shuffle.
+        child: ReorderableListView.builder(
           padding: const EdgeInsets.symmetric(vertical: 6),
           itemCount: queue.length,
+          buildDefaultDragHandles: false,
+          onReorder: (o, n) => player.reorderQueue(o, n),
+          proxyDecorator: (child, _, _) => Material(
+            color: Colors.transparent,
+            elevation: 6,
+            shadowColor: Colors.black.withValues(alpha: 0.4),
+            child: child,
+          ),
           itemBuilder: (ctx, idx) {
             final s = queue[idx];
             final isActive = idx == player.currentIndex;
             final artists = s['artists'] is List ? s['artists'] : (s['artists']?['data'] ?? []);
             final artistText = (artists as List).map((a) => a['title'] ?? '').join(', ');
             final thumb = s['thumbnail']?['url'];
-            return InkWell(
-              onTap: () => player.playAtIndex(idx),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive ? AppColors.accentSoft : Colors.transparent,
-                  border: Border(left: BorderSide(color: isActive ? AppColors.accent : Colors.transparent, width: 3)),
-                ),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 24,
-                      child: Center(
-                        child: isActive
-                            ? Icon(Icons.graphic_eq, size: 14, color: AppColors.accentLight)
-                            : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+            return Dismissible(
+              key: ValueKey('fp-q-${s['id']}-$idx'),
+              direction: DismissDirection.horizontal,
+              background: Container(
+                color: AppColors.accent.withValues(alpha: 0.85),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+              ),
+              secondaryBackground: Container(
+                color: AppColors.accent.withValues(alpha: 0.85),
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+              ),
+              onDismissed: (_) => player.removeFromQueue(idx),
+              child: InkWell(
+                onTap: () => player.playAtIndex(idx),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isActive ? AppColors.accentSoft : Colors.transparent,
+                    border: Border(left: BorderSide(color: isActive ? AppColors.accent : Colors.transparent, width: 3)),
+                  ),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        child: Center(
+                          child: isActive
+                              ? Icon(Icons.graphic_eq, size: 14, color: AppColors.accentLight)
+                              : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: 36, height: 36, fit: BoxFit.cover)
-                          : Container(width: 36, height: 36, color: AppColors.surface, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            s['title'] ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? AppColors.accentLight : AppColors.text)),
-                          ),
-                          if (artistText.isNotEmpty)
+                      const SizedBox(width: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: thumb != null
+                            ? CachedNetworkImage(imageUrl: thumb, width: 36, height: 36, fit: BoxFit.cover)
+                            : Container(width: 36, height: 36, color: AppColors.surface, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              artistText,
+                              s['title'] ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: body(TextStyle(fontSize: 11, color: isActive ? AppColors.accentLight.withValues(alpha: 0.8) : AppColors.textSecondary)),
+                              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? AppColors.accentLight : AppColors.text)),
                             ),
-                        ],
+                            if (artistText.isNotEmpty)
+                              Text(
+                                artistText,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: body(TextStyle(fontSize: 11, color: isActive ? AppColors.accentLight.withValues(alpha: 0.8) : AppColors.textSecondary)),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      ReorderableDragStartListener(
+                        index: idx,
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 4),
+                          child: Icon(Icons.drag_indicator, size: 18, color: AppColors.textMuted),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -783,6 +1059,26 @@ class _RepeatButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Header / footer wrapper that fades + ignores pointer when [visible] is
+/// false. Used to auto-hide the player chrome on idle in fullscreen mode
+/// without affecting layout (the slot still occupies its space so the
+/// vinyl panel doesn't jump when chrome reappears).
+class _FadeChrome extends StatelessWidget {
+  final bool visible;
+  final Widget child;
+  const _FadeChrome({required this.visible, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedOpacity(
+      opacity: visible ? 1 : 0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOut,
+      child: IgnorePointer(ignoring: !visible, child: child),
     );
   }
 }

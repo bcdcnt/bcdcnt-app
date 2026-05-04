@@ -76,10 +76,19 @@ List<_LrcLine>? _parseLrc(String? raw) {
 /// Highlights the currently-playing line of synced lyrics and auto-scrolls
 /// it into view. Click any line to seek there. When the lyrics aren't in
 /// LRC format, [fallback] is rendered instead.
+///
+/// [large] scales font + spacing for the FullPlayer fullscreen "karaoke"
+/// view (Apple Music / Spotify Now Playing pattern). At default size the
+/// active line is 20pt; large = 38pt active.
 class TimedLyrics extends StatefulWidget {
   final String? raw;
   final Widget fallback;
-  const TimedLyrics({super.key, required this.raw, required this.fallback});
+  final bool large;
+  const TimedLyrics({super.key, required this.raw, required this.fallback, this.large = false});
+
+  /// True when the input contains enough LRC tags to render the timed UI.
+  /// Lets callers (FullPlayer) decide to auto-switch panels.
+  static bool hasLrc(String? raw) => _parseLrc(raw) != null;
 
   @override
   State<TimedLyrics> createState() => _TimedLyricsState();
@@ -93,7 +102,7 @@ class _TimedLyricsState extends State<TimedLyrics> {
   // Average per-line height — used to compute scroll target. Refined on
   // first layout via a key on the active line, but a sensible default keeps
   // initial jumps reasonable.
-  double _lineHeight = 36;
+  double get _lineHeight => widget.large ? 72 : 36;
 
   @override
   void initState() {
@@ -154,14 +163,20 @@ class _TimedLyricsState extends State<TimedLyrics> {
           final color = active
               ? AppColors.text
               : Color.lerp(AppColors.text, AppColors.textMuted, 0.3 + dist * 0.7) ?? AppColors.textMuted;
-          final fontSize = active ? 20.0 : 16.0;
+          // Scale up for the fullscreen "karaoke" variant — larger active
+          // line + more breathing room between lines so the focal text
+          // reads at viewing distance (Apple Music / Spotify pattern).
+          final fontSize = widget.large
+              ? (active ? 38.0 : 24.0)
+              : (active ? 20.0 : 16.0);
           final fontWeight = active ? FontWeight.w800 : FontWeight.w500;
           final entry = Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+            padding: EdgeInsets.symmetric(vertical: widget.large ? 12 : 6, horizontal: 16),
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 220),
               style: body(TextStyle(
-                fontSize: fontSize, fontWeight: fontWeight, color: color, height: 1.45,
+                fontSize: fontSize, fontWeight: fontWeight, color: color, height: 1.35,
+                letterSpacing: widget.large ? -0.3 : 0,
               )),
               child: Text(l.text, textAlign: TextAlign.center),
             ),

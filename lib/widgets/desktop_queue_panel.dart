@@ -61,12 +61,31 @@ class DesktopQueuePanel extends StatelessWidget {
               itemBuilder: (_, i) {
                 final s = queue[i];
                 final isActive = i == player.currentIndex;
-                return _QueueRow(
+                return Dismissible(
                   key: ValueKey('q-${s['id']}-$i'),
-                  song: s,
-                  index: i,
-                  active: isActive,
-                  onTap: () => player.playAtIndex(i),
+                  // Swipe either direction → remove. Background tinted in
+                  // accent so it's obviously destructive even though the
+                  // delete is locally reversible (just re-add to queue).
+                  direction: DismissDirection.horizontal,
+                  background: Container(
+                    color: AppColors.accent.withValues(alpha: 0.85),
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                  ),
+                  secondaryBackground: Container(
+                    color: AppColors.accent.withValues(alpha: 0.85),
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                  ),
+                  onDismissed: (_) => player.removeFromQueue(i),
+                  child: _QueueRow(
+                    song: s,
+                    index: i,
+                    active: isActive,
+                    onTap: () => player.playAtIndex(i),
+                  ),
                 );
               },
             ),
@@ -145,7 +164,7 @@ class _QueueRow extends StatelessWidget {
   final int index;
   final bool active;
   final VoidCallback onTap;
-  const _QueueRow({super.key, required this.song, required this.index, required this.active, required this.onTap});
+  const _QueueRow({required this.song, required this.index, required this.active, required this.onTap});
 
   @override
   Widget build(BuildContext context) {

@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
+import '../main.dart' show rootNavigatorKey;
 import 'full_player.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -50,12 +51,12 @@ class MiniPlayer extends StatelessWidget {
             ),
           ),
           InkWell(
-            onTap: () => Navigator.push(
-              context,
+            // Push to ROOT navigator so the FullPlayer sits above the
+            // ShellRoute — otherwise the desktop sidebar + right-panel
+            // toggle/collapse stay visible behind the player and the
+            // player's "..." doesn't line up with anything.
+            onTap: () => rootNavigatorKey.currentState?.push(
               PageRouteBuilder(
-                // Opaque so the underlying DesktopShell chrome (top toolbar
-                // toggles, sidebar) doesn't bleed through behind the
-                // FullPlayer.
                 opaque: true,
                 pageBuilder: (_, anim, __) => SlideTransition(
                   position: anim.drive(Tween(begin: const Offset(0, 1), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),

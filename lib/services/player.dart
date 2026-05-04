@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -31,6 +32,12 @@ class PlayerProvider extends ChangeNotifier {
   // (and re-trigger sync to server) on every notifyListeners.
   String? _appliedForUserId;
   PlayTracker? _tracker;
+  // Sleep timer — either a fixed duration timer (5/10/15/30/60 min) or the
+  // sentinel "end of current song" mode (we wait for natural song completion
+  // and pause instead of advancing). UI binds to these getters.
+  Timer? _sleepTimer;
+  DateTime? _sleepFiresAt;
+  bool _sleepEndOfSong = false;
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
@@ -44,6 +51,15 @@ class PlayerProvider extends ChangeNotifier {
   double get volume => _volume;
   bool get muted => _muted;
   double get playbackRate => _playbackRate;
+  bool get hasSleepTimer => _sleepTimer != null || _sleepEndOfSong;
+  bool get sleepEndOfSong => _sleepEndOfSong;
+  // Remaining time on the fixed-duration sleep timer (null when no timer or
+  // when in end-of-song mode). UI uses this for the live countdown label.
+  Duration? get sleepRemaining {
+    if (_sleepFiresAt == null) return null;
+    final r = _sleepFiresAt!.difference(DateTime.now());
+    return r.isNegative ? Duration.zero : r;
+  }
 
   AudioPlayer get audioPlayer => _player;
 
@@ -83,6 +99,14 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> _onSongEnded() async {
+    // Sleep timer "end of song" mode — pause when this track finishes
+    // instead of auto-advancing. Clear the flag once consumed.
+    if (_sleepEndOfSong) {
+      _sleepEndOfSong = false;
+      notifyListeners();
+      await _player.pause();
+      return;
+    }
     if (_repeat == PlayerRepeatMode.one) {
       await _player.seek(Duration.zero);
       await _player.play();
@@ -95,6 +119,45 @@ class PlayerProvider extends ChangeNotifier {
     } else if (_repeat == PlayerRepeatMode.all) {
       await playAtIndex(0, source: 'queue');
     }
+  }
+
+  /// Start a fixed-duration sleep timer. Cancels any previous timer first.
+  /// Pass [Duration.zero] / negative to clear.
+  void setSleepTimer(Duration d) {
+    _sleepTimer?.cancel();
+    _sleepEndOfSong = false;
+    if (d <= Duration.zero) {
+      _sleepTimer = null;
+      _sleepFiresAt = null;
+      notifyListeners();
+      return;
+    }
+    _sleepFiresAt = DateTime.now().add(d);
+    _sleepTimer = Timer(d, () {
+      _player.pause();
+      _sleepTimer = null;
+      _sleepFiresAt = null;
+      notifyListeners();
+    });
+    notifyListeners();
+  }
+
+  /// Sleep at the end of the currently-playing song. No fixed countdown —
+  /// `_onSongEnded` consumes the flag and pauses instead of advancing.
+  void setSleepEndOfSong(bool on) {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepFiresAt = null;
+    _sleepEndOfSong = on;
+    notifyListeners();
+  }
+
+  void cancelSleepTimer() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepFiresAt = null;
+    _sleepEndOfSong = false;
+    notifyListeners();
   }
 
   Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual']) async {
@@ -260,6 +323,36 @@ class PlayerProvider extends ChangeNotifier {
       if (newCur >= 0) _currentIndex = newCur;
     }
     notifyListeners();
+  }
+
+  /// Drop a track from the queue at [index]. If the active track is removed,
+  /// jumps to whatever song now sits at that index (or stops if the queue
+  /// becomes empty / the removed track was the only one). Used by the queue
+  /// panel's swipe-to-remove gesture.
+  void removeFromQueue(int index) {
+    if (index < 0 || index >= _queue.length) return;
+    final wasActive = index == _currentIndex;
+    _queue.removeAt(index);
+    if (_queue.isEmpty) {
+      _currentIndex = 0;
+      _currentSong = null;
+      audioPlayer.stop();
+      notifyListeners();
+      return;
+    }
+    if (wasActive) {
+      // Resume at whatever shifted into the slot — clamp so the last track
+      // removal lands on the new last item instead of indexing past the end.
+      final next = index.clamp(0, _queue.length - 1);
+      playAtIndex(next);
+    } else if (index < _currentIndex) {
+      // A track before the active one was removed — keep playback unbroken
+      // by sliding the index back so it still points at the same song.
+      _currentIndex -= 1;
+      notifyListeners();
+    } else {
+      notifyListeners();
+    }
   }
 
   /// Apply persisted player settings from the authed user payload. No-op when

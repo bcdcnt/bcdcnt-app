@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
@@ -29,6 +30,10 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _recent = [];
   bool _trendingLoaded = false;
   bool _recentLoaded = false;
+  // Local recent — works for unauthed users (server-side recent requires
+  // login). Stored as a JSON list of plain query strings, max 10 entries.
+  List<String> _localRecent = [];
+  static const _localRecentKey = 'search_local_recent';
 
   static const _filterOptions = [
     ('all', 'Tất cả', null),
@@ -48,10 +53,40 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _loadLocalRecent();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchTrending();
       if (context.read<AuthProvider>().isAuthenticated) _fetchRecent();
     });
+  }
+
+  Future<void> _loadLocalRecent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getStringList(_localRecentKey) ?? const [];
+      if (mounted) setState(() => _localRecent = List<String>.from(saved));
+    } catch (_) {}
+  }
+
+  Future<void> _saveLocalRecent(String q) async {
+    if (q.trim().isEmpty) return;
+    final query = q.trim();
+    // Move-to-front + dedupe + cap at 10. Mirrors how Spotify / browsers
+    // surface "recent" — most-recent-first, no repeats.
+    final next = [query, ..._localRecent.where((r) => r.toLowerCase() != query.toLowerCase())].take(10).toList();
+    setState(() => _localRecent = next);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_localRecentKey, next);
+    } catch (_) {}
+  }
+
+  Future<void> _clearLocalRecent() async {
+    setState(() => _localRecent = []);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_localRecentKey);
+    } catch (_) {}
   }
 
   @override
@@ -112,7 +147,9 @@ class _SearchScreenState extends State<SearchScreen> {
       setState(() { _groups = []; _loading = false; });
       return;
     }
-    _debounce = Timer(const Duration(milliseconds: 400), () => _runSearch(v.trim()));
+    // 200ms feels noticeably snappier than 400ms — autocomplete-grade
+     // responsiveness without spamming the GraphQL endpoint.
+    _debounce = Timer(const Duration(milliseconds: 200), () => _runSearch(v.trim()));
   }
 
   Future<void> _runSearch(String q) async {
@@ -135,6 +172,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _trackKeyword(String q) async {
+    // Always remember locally — works for both authed and unauthed. The
+    // server-side recent (below) is the cross-device version for authed
+    // users; both lists merge in the empty state UI.
+    await _saveLocalRecent(q);
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) return;
     try {
@@ -411,6 +452,45 @@ class _SearchScreenState extends State<SearchScreen> {
             }
             return const SizedBox.shrink();
           }),
+          const SizedBox(height: 22),
+        ]
+        // Local recent — fallback for unauthed (no server-side history)
+        // and for authed users whose server list is still empty. Stored in
+        // SharedPreferences so it survives app restarts even without login.
+        else if (_localRecent.isNotEmpty) ...[
+          Row(children: [
+            Icon(Icons.history, size: 16, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Tìm kiếm gần đây', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
+            TextButton(
+              onPressed: _clearLocalRecent,
+              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              child: Text('Xoá tất cả', style: body(TextStyle(fontSize: 11, color: AppColors.accentLight))),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: _localRecent.map((q) {
+              return InkWell(
+                onTap: () => _useKeyword(q),
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.history, size: 13, color: AppColors.textMuted),
+                    const SizedBox(width: 6),
+                    Text(q, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
+                  ]),
+                ),
+              );
+            }).toList(),
+          ),
           const SizedBox(height: 22),
         ],
         if (_trendingLoaded && _trending.isNotEmpty) ...[
