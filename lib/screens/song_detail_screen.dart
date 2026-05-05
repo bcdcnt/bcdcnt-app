@@ -25,7 +25,10 @@ class SongDetailScreen extends StatefulWidget {
   final String songId;
   final String fileType;
   final Map<String, dynamic>? initialSong;
-  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong});
+  /// Optional comment id to deep-link to. CommentSection paginates
+  /// until it surfaces, then scrolls + flashes a highlight on it.
+  final String? highlightCommentId;
+  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong, this.highlightCommentId});
 
   @override
   State<SongDetailScreen> createState() => _SongDetailScreenState();
@@ -1046,7 +1049,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ..._buildLyricsSection(lyrics, isCurrent),
                         ..._buildLyricEditorsRow(),
                         const SizedBox(height: 28),
-                        CommentSection(type: _resolvedType, id: widget.songId),
+                        CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId),
                       ];
                       final rightItems = _buildRelatedSections(artists, composers);
 
@@ -1073,7 +1076,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           ...leftItems.sublist(0, leftItems.length - 2), // strip trailing comments
                           ...rightItems,
                           const SizedBox(height: 28),
-                          CommentSection(type: _resolvedType, id: widget.songId),
+                          CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId),
                         ],
                       );
                     }),

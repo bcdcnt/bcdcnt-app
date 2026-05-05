@@ -11,7 +11,10 @@ import '../services/auth.dart';
 import '../widgets/empty_state.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  /// Pre-fill the search box + auto-run on first build. Used by the home
+  /// page trending chip strip so taps land directly on results.
+  final String? initialQuery;
+  const SearchScreen({super.key, this.initialQuery});
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -54,9 +57,17 @@ class _SearchScreenState extends State<SearchScreen> {
   void initState() {
     super.initState();
     _loadLocalRecent();
+    // Pre-fill from initialQuery (e.g. trending chip click) so the user
+    // lands on results instead of an empty input.
+    final q = widget.initialQuery?.trim() ?? '';
+    if (q.isNotEmpty) {
+      _ctrl.text = q;
+      _query = q;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchTrending();
       if (context.read<AuthProvider>().isAuthenticated) _fetchRecent();
+      if (q.isNotEmpty) _runSearch(q);
     });
   }
 

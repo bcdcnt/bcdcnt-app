@@ -17,7 +17,13 @@ import 'comment_media.dart';
 class CommentSection extends StatefulWidget {
   final String type;
   final String id;
-  const CommentSection({super.key, required this.type, required this.id});
+  /// When set, after the initial fetch the section keeps paginating
+  /// until the comment with this id appears in the list, then scrolls
+  /// the surrounding Scrollable to bring it into view and briefly
+  /// flashes its background. Used by deep-links from Cảm nhận hay so
+  /// the user lands on the exact quote, not page 1.
+  final String? highlightCommentId;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -32,6 +38,13 @@ class _CommentSectionState extends State<CommentSection> {
   bool _loadingMore = false;
   bool _submitting = false;
   final _controller = TextEditingController();
+  // GlobalKey per highlighted comment so we can ScrollPosition.ensure-
+  // visible on it once it lands. Cleared when the highlight is done.
+  GlobalKey? _highlightKey;
+  bool _highlightAnimating = false;
+  // Guards against re-entrancy while we paginate looking for the
+  // highlight target.
+  bool _searchingHighlight = false;
 
   // @mention autocomplete state — tracked when the cursor sits inside a
   // bare `@token` token. _mentionStart is the position of the `@` (so we
@@ -183,6 +196,57 @@ class _CommentSectionState extends State<CommentSection> {
     } catch (_) {}
     if (!mounted) return;
     setState(() { _loading = false; _loadingMore = false; });
+    // Deep-link target — keep paginating until we find it (or run
+    // out of pages), then scroll to it + flash a highlight.
+    if (page == 1 && widget.highlightCommentId != null && !_searchingHighlight) {
+      _searchingHighlight = true;
+      _hydrateHighlight();
+      return;
+    }
+    // Auto-load remaining pages so the user doesn't have to scroll
+    // all the way down to trigger infinite-scroll. Caps at 50 pages
+    // (~500 comments) so a runaway thread can't burn through requests.
+    if (_hasMore && _page < 50 && widget.highlightCommentId == null) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        if (mounted && _hasMore && !_loadingMore) _fetchComments(_page + 1);
+      });
+    }
+  }
+
+  /// Walks pages until the highlighted comment id surfaces, then
+  /// triggers the scroll-into-view + flash. Idempotent — safely no-ops
+  /// when there's nothing to find or we've exhausted pagination.
+  Future<void> _hydrateHighlight() async {
+    final targetId = widget.highlightCommentId;
+    if (targetId == null) return;
+    while (mounted) {
+      final found = _comments.any((c) => c['id']?.toString() == targetId);
+      if (found) break;
+      if (!_hasMore) return;
+      await _fetchComments(_page + 1);
+    }
+    if (!mounted) return;
+    // Build phase needs to run before the GlobalKey can resolve, so
+    // schedule the scroll for the next frame.
+    setState(() {
+      _highlightKey = GlobalKey();
+      _highlightAnimating = true;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ctx = _highlightKey?.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 420),
+          curve: Curves.easeOutCubic,
+          alignment: 0.18,
+        );
+      }
+      // Hold the highlight for a moment, then fade it out.
+      await Future.delayed(const Duration(milliseconds: 1800));
+      if (!mounted) return;
+      setState(() => _highlightAnimating = false);
+    });
   }
 
   // Pending image attachments (final URLs after upload)
@@ -547,8 +611,22 @@ class _CommentSectionState extends State<CommentSection> {
             final roles = ((user['roles'] ?? []) as List).where((r) => r != null && r['display_in_comment'] == true).toList();
             final content = (c['content'] ?? '').toString();
             final isOwn = userId != null && user['id']?.toString() == userId.toString();
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
+            final isHighlight = widget.highlightCommentId != null && c['id']?.toString() == widget.highlightCommentId;
+            return AnimatedContainer(
+              key: isHighlight ? _highlightKey : null,
+              duration: const Duration(milliseconds: 700),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.only(bottom: 16),
+              padding: isHighlight ? const EdgeInsets.fromLTRB(10, 10, 10, 10) : EdgeInsets.zero,
+              decoration: BoxDecoration(
+                color: isHighlight && _highlightAnimating
+                    ? AppColors.accent.withValues(alpha: 0.18)
+                    : Colors.transparent,
+                border: isHighlight && _highlightAnimating
+                    ? Border.all(color: AppColors.accentLight.withValues(alpha: 0.6), width: 1)
+                    : Border.all(color: Colors.transparent, width: 1),
+                borderRadius: BorderRadius.circular(12),
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

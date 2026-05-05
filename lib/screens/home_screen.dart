@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../constants/theme.dart';
 import 'package:provider/provider.dart';
 import '../services/api.dart';
@@ -33,15 +36,25 @@ const _latestQuery = '''query(\$page: Int, \$cat: String!) {
   }
 }''';
 
+// Bio fields fetched alongside the avatar so the home Featured hero
+// can render bio chips (honour, real name, lifespan, hometown)
+// underneath the title — gives the card editorial substance instead
+// of leaving the lower half empty.
 const _artistsQuery = '''query(\$where: WhereConditions) {
   artists(first: 20, orderBy: [{column: "total_listens", order: DESC}], where: \$where) {
-    data { id slug title avatar { url } total_listens }
+    data {
+      id slug title avatar { url } total_listens
+      rank real_name yob yod born_address
+    }
   }
 }''';
 
 const _composersQuery = '''query(\$where: WhereConditions) {
   composers(first: 20, orderBy: [{column: "total_listens", order: DESC}], where: \$where) {
-    data { id slug title avatar { url } total_listens }
+    data {
+      id slug title avatar { url } total_listens
+      rank real_name yob yod born_address
+    }
   }
 }''';
 
@@ -75,7 +88,7 @@ const _trendingQuery = '''query {
 
 const _rankingQuery = '''query {
   statisticListen(first: 10, type: "song", period: "week") {
-    data { total object { ... on Song { id title subtitle slug views play_type thumbnail { url } artists(first: 5) { data { id title slug } } } } }
+    data { total object { ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } } } }
   }
 }''';
 
@@ -192,18 +205,31 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _hotSongs = [];
   Map<String, dynamic>? _trendingSong;
+  // Full trending list — kept around so the hero spotlight can fall
+  // back to it when sticky songs are empty (otherwise spotlight
+  // collapses to a single banner with no slider feel).
+  List<Map<String, dynamic>> _trendingList = [];
+  // Trending search keywords (chip strip above "Bài hát mới cập nhật").
+  // Populated in _fetch alongside the other above-fold queries.
+  List<Map<String, dynamic>> _trendingKeywords = [];
   List<dynamic> _artists = [];
+  // Persisted index into `_artists` for the standalone discovery hero
+  // card. -1 = pick a fresh random the next render. Reset whenever the
+  // artists pool rebuilds so we don't index past the new length.
+  int _featuredArtistIndex = -1;
   List<dynamic> _composers = [];
   List<dynamic> _videos = [];
   List<dynamic> _playlists = [];
+  // _videos / _playlists are shuffled in `_fetch` after they land so
+  // each visit to home shows a different ordering — keeps the
+  // "Video nổi bật" / "Playlist nổi bật" sections feeling fresh
+  // without an extra random API param.
   List<dynamic> _chartSongs = [];
   String _chartPeriod = 'week';
   String _chartType = 'song';
   bool _chartLoading = false;
 
   // Outer BXH tab: 0 = song chart, 1 = member chart. Lets us collapse two
-  // separate ranking sections into one combined block.
-  int _bxhOuterTab = 0;
   /// True once we've fired the below-fold queries (BXH chart, document
   /// archives, memorial people, events). Triggered by scroll past 600px
   /// so users who only browse the top of the home don't pay for those
@@ -215,6 +241,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _rankTab = 0;
   final Map<String, List<Map<String, dynamic>>> _memberRanks = {};
   final Map<String, bool> _memberLoading = {};
+  // Detail card (yob, points, uploads count, comments count) for the
+  // user shown in `_topMemberHero` — fetched on demand once we know
+  // the current top user's id, then cached so tab switching doesn't
+  // re-fire the same query.
+  final Map<String, Map<String, dynamic>> _memberDetails = {};
   List<dynamic> _galleryDocs = [];
   List<dynamic> _audioDocs = [];
   List<dynamic> _videoDocs = [];
@@ -239,6 +270,24 @@ class _HomeScreenState extends State<HomeScreen> {
   // Personalized (only when authenticated)
   List<Map<String, dynamic>> _recentListens = [];
   List<Map<String, dynamic>> _recentLoves = [];
+  // Personalised recommendations from `recommendedSongs` resolver. Each
+  // row carries a `reason` chip ("Vì bạn nghe X") used by the carousel.
+  List<Map<String, dynamic>> _recommendedSongs = [];
+
+  // Cảm nhận hay — slider of featured comments from the top-loved
+  // pool. Stable within a day, rotates daily.
+  List<Map<String, dynamic>> _featuredComments = [];
+  late final PageController _featuredCommentsCtrl = PageController();
+  int _featuredCommentIndex = 0;
+  Timer? _featuredCommentsTimer;
+
+  // Featured Person hero auto-rotate timer — re-picks `_featuredArtistIndex`
+  // every few seconds so the discovery card feels alive without an
+  // explicit slider.
+  Timer? _featuredArtistTimer;
+
+  // Khám phá thể loại — top tags with sample thumbnails for the mosaic.
+  List<Map<String, dynamic>> _popularTags = [];
 
   // Tracks whether we've successfully fetched personalized data for the
   // currently logged-in user. Reset on logout so a re-login re-fetches.
@@ -260,8 +309,56 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     context.read<AuthProvider>().removeListener(_onAuthChanged);
+    _featuredCommentsTimer?.cancel();
+    _featuredCommentsCtrl.dispose();
+    _featuredArtistTimer?.cancel();
     super.dispose();
   }
+
+  /// Re-pick the Featured Person hero on a slow rotation so the
+  /// discovery card cycles through the artist/composer pool without
+  /// a visible slider/dots indicator. The user can still hit shuffle
+  /// any time to advance manually.
+  void _restartFeaturedArtistTimer() {
+    _featuredArtistTimer?.cancel();
+    final poolSize = _artists.length + _composers.length;
+    if (poolSize < 2) return;
+    _featuredArtistTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (!mounted) return;
+      final pool = _artists.length + _composers.length;
+      if (pool < 2) return;
+      setState(() {
+        // Force a different index than current — re-roll until we get
+        // a fresh pick (avoids the rare "same person twice in a row"
+        // case on small pools).
+        var next = _featuredArtistIndex;
+        for (var i = 0; i < 5 && next == _featuredArtistIndex; i++) {
+          next = math.Random().nextInt(pool);
+        }
+        _featuredArtistIndex = next;
+      });
+    });
+  }
+
+  /// Auto-advance the featured-comments slider every 6s. Cancels the
+  /// previous timer when re-fetched (e.g. on pull-to-refresh) so the
+  /// page index stays in sync with the freshly populated list.
+  void _restartFeaturedCommentsTimer() {
+    _featuredCommentsTimer?.cancel();
+    if (_featuredComments.length < 2) return;
+    _featuredCommentsTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted || _featuredComments.length < 2) return;
+      final next = (_featuredCommentIndex + 1) % _featuredComments.length;
+      if (_featuredCommentsCtrl.hasClients) {
+        _featuredCommentsCtrl.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 480),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+  }
+
 
   void _onAuthChanged() {
     if (!mounted) return;
@@ -273,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (!auth.isAuthenticated && _personalizedUserId != null) {
       _personalizedUserId = null;
       if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty) {
-        setState(() { _recentListens = []; _recentLoves = []; });
+        setState(() { _recentListens = []; _recentLoves = []; _recommendedSongs = []; });
       }
     }
   }
@@ -325,6 +422,13 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           }
         }''', {'id': userId})),
+        // Personalised recommendations — flat shape with `reason` chip.
+        // Doesn't need auth because the resolver takes user_id explicitly.
+        safe(ApiClient.query(r'''query($id: ID!) {
+          recommendedSongs(user_id: $id, limit: 30) {
+            id title subtitle slug image audio_url video_url play_type file_type score reason
+          }
+        }''', {'id': userId})),
       ]);
       if (!mounted) return;
 
@@ -351,9 +455,29 @@ class _HomeScreenState extends State<HomeScreen> {
         return out;
       }
 
+      // Map recommendedSongs (flat shape from RecommendedSong type) into
+      // the same shape recentListens / recentLoves use, so `_songCarousel`
+      // and `_shufflePlay` work on it without special casing.
+      final recsRaw = ((results[2]['recommendedSongs'] ?? []) as List);
+      final recs = recsRaw.map((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return <String, dynamic>{
+          'id': m['id'],
+          'title': m['title'],
+          'subtitle': m['subtitle'],
+          'slug': m['slug'],
+          'thumbnail': {'url': m['image']},
+          'file': {'audio_url': m['audio_url'], 'video_url': m['video_url']},
+          'play_type': m['play_type'],
+          'file_type': m['file_type'] ?? 'song',
+          'reason': m['reason'],
+        };
+      }).toList();
+
       setState(() {
         _recentListens = mapResult(results[0]['user']?['recentListens']);
         _recentLoves = mapResult(results[1]['user']?['loves']);
+        _recommendedSongs = recs;
       });
     } catch (_) {}
   }
@@ -362,6 +486,14 @@ class _HomeScreenState extends State<HomeScreen> {
     // Reset below-fold guard so pull-to-refresh re-fetches everything,
     // not just the above-fold slice.
     _belowFoldFetched = false;
+    // Force personalized re-fetch on pull-to-refresh too — without this,
+    // a transient failure (e.g. backend timeout) sticks until the user
+    // logs out and back in, because `_personalizedUserId` is already
+    // pinned to the current uid.
+    if (mounted && context.read<AuthProvider>().isAuthenticated) {
+      _personalizedUserId = null;
+      _fetchPersonalized();
+    }
     setState(() => _loading = true);
     try {
       // Per-query catch so one failing section (e.g. a schema mismatch) doesn't
@@ -377,6 +509,16 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(_composersQuery, _composersWhere)),
         safe(ApiClient.query(_videoQuery)),
         safe(ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'is_system', 'value': '1'}, {'column': 'is_public', 'value': '1'}]}})),
+        // Trending search keywords for the chip strip — small response,
+        // batches with the existing above-fold queries to avoid an extra
+        // round-trip on first paint.
+        safe(ApiClient.query(r'query { trendingKeywords(limit: 12) { name object_type object_id } }')),
+        // Cảm nhận hay — typography slider showing a few top-loved
+        // comments. Tiny payload, daily-stable server side so it
+        // caches well.
+        safe(ApiClient.query(r'query { featuredComments(limit: 10) { id snippet likes created_at username user_avatar song_id song_title song_subtitle song_slug song_image audio_url video_url play_type file_type } }')),
+        // Khám phá thể loại — top tags + sample thumbs for the mosaic.
+        safe(ApiClient.query(r'query { popularTags(limit: 8) { id name slug song_count sample_images } }')),
       ]);
       if (!mounted) return;
 
@@ -391,10 +533,40 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _hotSongs = (queries[0]['stickySongs'] ?? []) as List;
         _trendingSong = trending;
+        _trendingList = trendingList
+            .map((d) {
+              final m = Map<String, dynamic>.from(d['object'] as Map);
+              m['weeklyListens'] = d['total'];
+              return m;
+            })
+            .toList();
         _artists = queries[2]['artists']?['data'] ?? [];
+        // Reset random pick when the pool rebuilds.
+        _featuredArtistIndex = -1;
         _composers = queries[3]['composers']?['data'] ?? [];
-        _videos = queries[4]['songs']?['data'] ?? [];
-        _playlists = queries[5]['playlists']?['data'] ?? [];
+        _restartFeaturedArtistTimer();
+        _videos = List.of(queries[4]['songs']?['data'] ?? [])..shuffle();
+        // Drop playlists without a thumbnail — placeholder grey tiles
+        // make the carousel look broken. Shuffle the rest so each visit
+        // surfaces a different ordering.
+        _playlists = (List.of(queries[5]['playlists']?['data'] ?? [])
+            ..removeWhere((p) {
+              final t = (p as Map?)?['thumbnail'];
+              final url = t is Map ? t['url']?.toString() : null;
+              return url == null || url.isEmpty;
+            }))
+          ..shuffle();
+        _trendingKeywords = ((queries[6]['trendingKeywords'] ?? []) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        _featuredComments = ((queries[7]['featuredComments'] ?? []) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        _featuredCommentIndex = 0;
+        _restartFeaturedCommentsTimer();
+        _popularTags = ((queries[8]['popularTags'] ?? []) as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
         _loading = false;
       });
       _fetchLatest(_categories[_latestTab], 1);
@@ -554,6 +726,35 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Fetch bio + counters for one user — fuels the stat row inside
+  /// `_topMemberHero`. paginatorInfo.total gives counts cheaply
+  /// without enumerating the lists. Idempotent per user id.
+  Future<void> _fetchMemberDetails(String userId) async {
+    if (_memberDetails.containsKey(userId)) return;
+    try {
+      final data = await ApiClient.query(
+        r'''query($id: ID!) {
+          user(id: $id) {
+            id yob point
+            comments(first: 1) { paginatorInfo { total } }
+            uploads(first: 1) { paginatorInfo { total } }
+          }
+        }''',
+        {'id': userId},
+      );
+      final u = data['user'];
+      if (u == null || !mounted) return;
+      setState(() {
+        _memberDetails[userId] = {
+          'yob': u['yob'],
+          'point': u['point'],
+          'comments': u['comments']?['paginatorInfo']?['total'] ?? 0,
+          'uploads': u['uploads']?['paginatorInfo']?['total'] ?? 0,
+        };
+      });
+    } catch (_) {}
+  }
+
   void _openSong(Map<String, dynamic> song) => context.push('/song/${song['id']}', extra: song);
 
   /// Play the spotlight song immediately without navigating away. Used by
@@ -675,8 +876,27 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
 
           // ─── DÀNH CHO BẠN (personalized — only when logged in) ───
-          if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty)
+          if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty || _recommendedSongs.isNotEmpty) ...[
             const _GroupLabel('DÀNH CHO BẠN'),
+            // Daily Mix — top of cluster as the dominant "phát ngay"
+            // CTA. Full width, dense content (mosaic + text + play
+            // button) so it earns the space.
+            _StaggerFadeIn(index: 4, child: _dailyMixCard()),
+            const SizedBox(height: 22),
+            // Personalised recommendations — collaborative-filtering style
+            // (artist + composer + tag overlap). Sits below Daily Mix
+            // so the user has the play-now option first, then the
+            // browse-the-picks experience.
+            if (_recommendedSongs.isNotEmpty) ...[
+              SectionHeader(
+                icon: Icons.auto_awesome,
+                title: 'Gợi ý cho bạn',
+                subtitle: 'Dựa trên nghệ sĩ, nhạc sĩ và chủ đề bạn nghe',
+              ),
+              _recommendedCarousel(_recommendedSongs),
+              const SizedBox(height: 22),
+            ],
+          ],
 
           if (_recentListens.isNotEmpty) ...[
             SectionHeader(
@@ -703,11 +923,56 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 12),
             _songCarousel(_recentLoves),
+            const SizedBox(height: 22),
+          ],
+
+          // Discovery hero — random featured artist / composer rotating
+          // through the combined pool. Closes out the personal cluster
+          // as a "you might also know..." surface — refreshes per
+          // session via _featuredArtistIndex; shuffle button re-rolls.
+          if (_artists.isNotEmpty || _composers.isNotEmpty) ...[
+            _featuredArtistHero(),
             const SizedBox(height: 32),
           ],
 
           // ─── KHÁM PHÁ ───
           const _GroupLabel('KHÁM PHÁ'),
+
+          // Cảm nhận hay — slider opens the editorial cluster with a
+          // rotating set of community voices (top-loved comments).
+          // Auto-advances every 6s with dot indicator.
+          if (_featuredComments.isNotEmpty) ...[
+            _featuredCommentsSlider(_featuredComments),
+            const SizedBox(height: 22),
+          ],
+
+          // Trending search keywords — quick-nav chips with a small
+          // header so users get the "what's hot to search" framing
+          // (without it the strip read as orphan navigation).
+          if (_trendingKeywords.isNotEmpty) ...[
+            const SectionHeader(
+              icon: Icons.trending_up,
+              title: 'Đang được tìm kiếm',
+              subtitle: 'Từ khoá thịnh hành tuần qua',
+            ),
+            _trendingChipsStrip(),
+            const SizedBox(height: 24),
+          ],
+
+          // Khám phá chủ đề — compact horizontal scroll strip of top
+          // tags. Slider+dots was tried but tag thumbnails are not
+          // editorial (no story to dwell on per page) so a flat
+          // scroll feels right.
+          if (_popularTags.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.tag,
+              title: 'Khám phá chủ đề',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/tag'),
+            ),
+            _popularTagsStrip(_popularTags),
+            const SizedBox(height: 32),
+          ],
 
           SectionHeader(
             icon: Icons.access_time,
@@ -725,84 +990,80 @@ class _HomeScreenState extends State<HomeScreen> {
           // KHÁM PHÁ. Keep the data fetched in case a future personalized
           // mix uses it, but don't render a separate carousel here.
 
+          // Video / Playlist / Thể loại as 3 separate sections rather
+          // than tabs. Tabs were too easy to overlook (user wouldn't
+          // bother clicking through), so each surface gets its own
+          // header. Order is shuffled in `_fetch` so the home feels
+          // fresh on each visit even when the underlying data is
+          // unchanged.
           if (_videos.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.movie_outlined, title: 'Video'),
+            SectionHeader(
+              icon: Icons.movie_outlined,
+              title: 'Video nổi bật',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/video'),
+            ),
             _videoCarousel(_videos),
             const SizedBox(height: 32),
           ],
-
           if (_playlists.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.queue_music, title: 'Playlist theo chủ đề'),
+            SectionHeader(
+              icon: Icons.queue_music,
+              title: 'Playlist nổi bật',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/playlist'),
+            ),
             _playlistCarousel(_playlists),
             const SizedBox(height: 32),
           ],
-
-          // Thể loại tiles — desktop already has these as primary nav in
-          // the left sidebar (Tân nhạc / Dân ca / Khí nhạc / Tiếng thơ /
-          // Thành viên hát), so the duplicate row is redundant. Mobile
-          // keeps it because the bottom nav doesn't surface categories.
-          if (MediaQuery.of(context).size.width < 900) ...[
-            const SectionHeader(icon: Icons.album_outlined, title: 'Thể loại'),
-            _categoryTiles(),
-            const SizedBox(height: 32),
-          ],
-
-          // ─── BẢNG XẾP HẠNG (single combined section with outer tabs —
-          // collapses the previous two stacked sections so the page doesn't
-          // run two ranking blocks back-to-back) ───
-          const _GroupLabel('BẢNG XẾP HẠNG'),
           SectionHeader(
-            icon: _bxhOuterTab == 0 ? Icons.headphones : Icons.workspace_premium_outlined,
-            title: _bxhOuterTab == 0 ? 'Top nghe nhiều' : 'Top thành viên',
-            subtitle: _bxhOuterTab == 0
-                ? 'Bài hát nhiều lượt nghe cập nhật theo giờ'
-                : 'Thành viên đóng góp nhiều nhất',
+            icon: Icons.album_outlined,
+            title: 'Thể loại',
             actionText: 'Xem tất cả',
-            onAction: () => _bxhOuterTab == 0
-                ? context.push('/bang-xep-hang')
-                : context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
+            onAction: () => context.push('/the-loai'),
           ),
-          _bxhOuterTabsBar(),
-          const SizedBox(height: 12),
-          if (_bxhOuterTab == 0) ...[
-            _rankingTabs(),
-            const SizedBox(height: 10),
-            _rankingList(_chartSongs),
-          ] else ...[
-            _memberTabsBar(),
-            const SizedBox(height: 10),
-            _memberBody(),
-          ],
+          _categoryTiles(),
           const SizedBox(height: 32),
 
-          // ─── NGHỆ SĨ — split into Nghệ sĩ + Nhạc sĩ. Both keep circular
-          // avatars (square shape on people read as off). Differentiation
-          // comes from the section header icon (mic vs music note) and
-          // title — that's enough since the cards live in distinct rows.
-          if (_artists.isNotEmpty || _composers.isNotEmpty)
-            const _GroupLabel('NGHỆ SĨ'),
+          // Nghe nhạc theo thập niên — quick-link chips into the
+          // existing /bai-hat/thap-nien/{decade} screen. Sits right
+          // after Thể loại as a sibling "browse-by-axis" surface.
+          const SectionHeader(
+            icon: Icons.history_edu_outlined,
+            title: 'Nghe theo thập niên',
+            subtitle: 'Bài hát theo năm sáng tác',
+          ),
+          _decadeStrip(),
+          const SizedBox(height: 32),
 
-          if (_artists.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.mic,
-              title: 'Nghệ sĩ tiêu biểu',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/nghe-si'),
-            ),
-            _personCarousel(_artists, '/nghe-si/'),
-            const SizedBox(height: 32),
-          ],
+          // ─── BẢNG XẾP HẠNG — gộp song ranking + member ranking dưới
+          // 1 group label. Cả 2 đều là rankings; tách thành 2 cluster
+          // riêng tạo thêm 1 group divider không cần thiết.
+          const _GroupLabel('BẢNG XẾP HẠNG'),
+          SectionHeader(
+            icon: Icons.headphones,
+            title: 'Top nghe nhiều',
+            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang'),
+          ),
+          _rankingTabs(),
+          const SizedBox(height: 10),
+          _rankingList(_chartSongs),
+          const SizedBox(height: 32),
 
-          if (_composers.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.music_note_outlined,
-              title: 'Nhạc sĩ tiêu biểu',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/nhac-si'),
-            ),
-            _personCarousel(_composers, '/nhac-si/'),
-            const SizedBox(height: 32),
-          ],
+          SectionHeader(
+            icon: Icons.workspace_premium_outlined,
+            title: 'Top thành viên',
+            subtitle: 'Thành viên đóng góp nhiều nhất cho cộng đồng',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
+          ),
+          _topMemberHero(),
+          _memberTabsBar(),
+          const SizedBox(height: 10),
+          _memberBody(),
+          const SizedBox(height: 32),
 
           // ─── ĐẶC BIỆT — Tưởng niệm + Sự kiện gộp 1 section với outer
           // tabs. Trước đây 2 section riêng, mỗi cái 1 header; giờ chia
@@ -829,24 +1090,10 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
           ],
 
-          // ─── THƯ VIỆN (gộp 4 mục thành 1 section + tabs) ───
-          if (_galleryDocs.isNotEmpty || _audioDocs.isNotEmpty || _videoDocs.isNotEmpty || _newsDocs.isNotEmpty) ...[
-            const _GroupLabel('THƯ VIỆN'),
-            SectionHeader(
-              icon: Icons.collections_bookmark_outlined,
-              title: 'Tư liệu',
-              subtitle: 'Kho ảnh, âm thanh, video và bài viết',
-              actionText: 'Xem tất cả',
-              onAction: () {
-                const slugs = ['hinh-anh', 'am-thanh', 'video', 'bai-viet'];
-                context.push('/tu-lieu/${slugs[_archiveTab]}');
-              },
-            ),
-            _archiveTabsBar(),
-            const SizedBox(height: 14),
-            _archiveContent(),
-            const SizedBox(height: 32),
-          ],
+          // THƯ VIỆN (Tư liệu) section dropped from the home feed — old
+          // photos rarely change and were dragging down the page's
+          // freshness. Still reachable via the /tu-lieu route from the
+          // sidebar / library page.
 
           // Footer signature — slogan at the very bottom of the page.
           Padding(
@@ -878,18 +1125,24 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _spotlightItems() {
     final out = <Map<String, dynamic>>[];
     final seen = <String>{};
-    if (_trendingSong != null) {
-      final m = Map<String, dynamic>.from(_trendingSong!);
-      out.add(m);
-      seen.add(m['id'].toString());
-    }
-    for (final s in _hotSongs) {
-      if (out.length >= 5) break;
-      final m = Map<String, dynamic>.from(s as Map);
-      final id = m['id'].toString();
-      if (seen.contains(id)) continue;
+    void add(Map<String, dynamic> m) {
+      if (out.length >= 5) return;
+      final id = m['id']?.toString();
+      if (id == null || seen.contains(id)) return;
       out.add(m);
       seen.add(id);
+    }
+    if (_trendingSong != null) add(Map<String, dynamic>.from(_trendingSong!));
+    for (final s in _hotSongs) {
+      if (out.length >= 5) break;
+      add(Map<String, dynamic>.from(s as Map));
+    }
+    // Fall back to the rest of the trending list when sticky songs
+    // didn't return enough — keeps the spotlight a real slider with
+    // 3-5 items even on a slim above-fold dataset.
+    for (final s in _trendingList) {
+      if (out.length >= 5) break;
+      add(Map<String, dynamic>.from(s));
     }
     return out;
   }
@@ -1074,6 +1327,520 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  // Spotify Daily Mix-style banner — 4-thumb mosaic on the left, title +
+  // CTA on the right. Tap → shuffle-play a blend of the user's recent
+  // loves and listens. Built fresh each frame from current state so the
+  // mosaic refreshes whenever new data lands.
+  Widget _dailyMixCard() {
+    // Blend pool: alternate loves + listens to avoid one source dominating
+    // when the user has e.g. 50 listens but only 2 loves. Dedupe by id.
+    final pool = <Map<String, dynamic>>[];
+    final seen = <String>{};
+    final maxLen = math.max(_recentLoves.length, _recentListens.length);
+    for (var i = 0; i < maxLen; i++) {
+      if (i < _recentLoves.length) {
+        final s = Map<String, dynamic>.from(_recentLoves[i]);
+        final id = s['id']?.toString();
+        if (id != null && seen.add(id)) pool.add(s);
+      }
+      if (i < _recentListens.length) {
+        final s = Map<String, dynamic>.from(_recentListens[i]);
+        final id = s['id']?.toString();
+        if (id != null && seen.add(id)) pool.add(s);
+      }
+    }
+    if (pool.isEmpty) return const SizedBox.shrink();
+    final mosaic = pool.take(4).toList();
+    final mosaicThumbs = mosaic.map((s) => s['thumbnail']?['url']?.toString()).toList();
+
+    return InkWell(
+      onTap: () => _shufflePlay(pool),
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          gradient: LinearGradient(
+            colors: [AppColors.accent.withValues(alpha: 0.85), AppColors.accentLight.withValues(alpha: 0.55)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.35), blurRadius: 22, spreadRadius: -6, offset: const Offset(0, 8))],
+        ),
+        child: Row(children: [
+          // 2×2 thumb mosaic. Falls back to gradient tile when a slot
+          // doesn't have an image.
+          SizedBox(
+            width: 88, height: 88,
+            child: GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 2,
+              crossAxisSpacing: 2,
+              children: List.generate(4, (i) {
+                final url = i < mosaicThumbs.length ? mosaicThumbs[i] : null;
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: url != null
+                      ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: Colors.white.withValues(alpha: 0.18)))
+                      : Container(color: Colors.white.withValues(alpha: 0.12)),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text('MIX HÔM NAY', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white70))),
+              const SizedBox(height: 4),
+              Text('Mix dành cho bạn', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3))),
+              const SizedBox(height: 2),
+              Text('${pool.length} bài • blend yêu thích & nghe gần đây', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: Colors.white70))),
+            ]),
+          ),
+          // CTA — circular play button. Tappable area is the whole card,
+          // this is just the visual affordance.
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
+            child: Icon(Icons.play_arrow, color: AppColors.accent, size: 26),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // Carousel of personalised recommendations — same visual rhythm as
+  // _songCarousel, plus a small "reason" chip below the title (Vì bạn
+  // nghe X / Cùng nhạc sĩ Y / Cùng chủ đề #Z) so the rec feels
+  // intentional, not random.
+  Widget _recommendedCarousel(List<Map<String, dynamic>> songs) {
+    return SizedBox(
+      height: 220,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: songs.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) {
+          final s = songs[i];
+          final thumb = s['thumbnail']?['url']?.toString();
+          final reason = s['reason']?.toString() ?? '';
+          return InkWell(
+            onTap: () => _openSong(s),
+            borderRadius: BorderRadius.circular(10),
+            child: SizedBox(
+              width: 140,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _HoverRevealPlay(
+                  size: 140,
+                  onPlay: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s)),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: thumb != null
+                        ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight))
+                        : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                if (reason.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w500, height: 1.25))),
+                ],
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Cảm nhận hay — auto-advancing slider of top-loved comments.
+  // PageView holds the cards; a dot indicator under the slider shows
+  // progress and lets the user tap to jump. Auto-advance is wired in
+  // `_restartFeaturedCommentsTimer` and cancelled on dispose. Hover
+  // (desktop) suspends rotation so the user has time to read.
+  Widget _featuredCommentsSlider(List<Map<String, dynamic>> data) {
+    if (data.isEmpty) return const SizedBox.shrink();
+    return MouseRegion(
+      onEnter: (_) => _featuredCommentsTimer?.cancel(),
+      onExit: (_) => _restartFeaturedCommentsTimer(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      // Fixed height so auto-advance between cards of different snippet
+      // length doesn't reflow the whole feed. 380 + 14px text + 12
+      // maxLines lets ~720 chars of comment surface — matches the
+      // backend's 700-char snippet cap so the user rarely hits a
+      // mid-sentence truncation.
+      SizedBox(
+        height: 380,
+        child: PageView.builder(
+          controller: _featuredCommentsCtrl,
+          itemCount: data.length,
+          onPageChanged: (i) {
+            if (mounted) setState(() => _featuredCommentIndex = i);
+          },
+          itemBuilder: (_, i) => _featuredCommentCard(data[i]),
+        ),
+      ),
+      const SizedBox(height: 10),
+      // Dot indicator. Tappable so a user who doesn't want to wait can
+      // jump straight to a particular card.
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(data.length, (i) {
+          final active = i == _featuredCommentIndex;
+          return GestureDetector(
+            onTap: () {
+              _featuredCommentsCtrl.animateToPage(
+                i,
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOut,
+              );
+              _restartFeaturedCommentsTimer();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 240),
+              margin: const EdgeInsets.symmetric(horizontal: 3),
+              width: active ? 18 : 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: active ? AppColors.accentLight : AppColors.border,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          );
+        }),
+      ),
+    ]),
+    );
+  }
+
+  // Cảm nhận hay — full-width typography card showing a top-loved
+  // user comment on a song. Layout: gradient surface, big italic
+  // quote, then a footer row with the commenter avatar/name on the
+  // left and the song reference on the right. Tap opens the song.
+  Widget _featuredCommentCard(Map<String, dynamic> data) {
+    final snippet = (data['snippet'] ?? '').toString();
+    if (snippet.trim().isEmpty) return const SizedBox.shrink();
+    final username = (data['username'] ?? '').toString();
+    final userAvatar = data['user_avatar']?.toString();
+    final songTitle = (data['song_title'] ?? '').toString();
+    final songImage = data['song_image']?.toString();
+    final likes = data['likes'] is int
+        ? data['likes'] as int
+        : int.tryParse('${data['likes']}') ?? 0;
+    final relTime = _formatRelative(data['created_at']?.toString());
+
+    final song = <String, dynamic>{
+      'id': data['song_id'],
+      'title': data['song_title'],
+      'subtitle': data['song_subtitle'],
+      'slug': data['song_slug'],
+      'thumbnail': {'url': data['song_image']},
+      'file': {'audio_url': data['audio_url'], 'video_url': data['video_url']},
+      'play_type': data['play_type'],
+      'file_type': data['file_type'] ?? 'song',
+      // Deep-link the comment so song detail scrolls to + flashes it
+      // instead of dropping the user on page 1 of the comment list
+      // (where the highlighted comment may not be visible).
+      'highlightCommentId': data['id']?.toString(),
+    };
+
+    return InkWell(
+      onTap: () => _openSong(song),
+      borderRadius: BorderRadius.circular(18),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.accentLight.withValues(alpha: 0.35), width: 1.2),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22), blurRadius: 22, spreadRadius: -6, offset: const Offset(0, 6))],
+          ),
+        child: Stack(fit: StackFit.expand, children: [
+          // Song thumbnail full-bleed background — gives each comment
+          // its own visual identity tied to the song it's about.
+          if (songImage != null && songImage.isNotEmpty)
+            CachedNetworkImage(
+              imageUrl: songImage,
+              fit: BoxFit.cover,
+              errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight),
+            )
+          else
+            Container(color: AppColors.surfaceLight),
+          // Heavy dark + accent overlay so the comment text stays
+          // legible no matter what's on the thumbnail. Bumped up
+          // (~0.78 / ~0.92) so the typography really pops; the
+          // thumbnail is still visible as a moody backdrop, not a
+          // background image competing with the text.
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  AppColors.accent.withValues(alpha: 0.78),
+                  Colors.black.withValues(alpha: 0.92),
+                ],
+              ),
+            ),
+          ),
+          // Big decorative quote glyph in the top-right corner —
+          // editorial feel, signals "this is a quote" at a glance.
+          Positioned(
+            top: -6, right: -2,
+            child: Icon(Icons.format_quote, size: 56, color: Colors.white.withValues(alpha: 0.18)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 22, 26, 18),
+            // spaceBetween pins header to top + footer to bottom and
+            // lets the snippet sit in the middle. Shorter quotes feel
+            // centred instead of bunched at the top with empty space
+            // under them.
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'CẢM NHẬN HAY',
+                  style: body(TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 1.2,
+                  )),
+                ),
+              ),
+              const Spacer(),
+              if (likes > 0) ...[
+                Icon(Icons.favorite, size: 12, color: Colors.white.withValues(alpha: 0.85)),
+                const SizedBox(width: 4),
+                Text(
+                  '$likes',
+                  style: body(TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.9),
+                  )),
+                ),
+              ],
+              if (relTime.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '· $relTime',
+                  style: body(TextStyle(
+                    fontSize: 11,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  )),
+                ),
+              ],
+              const SizedBox(width: 32),
+            ]),
+            // Snippet keeps its natural height — Column's
+            // spaceBetween distributes any leftover space between
+            // header/footer instead of bunching it under the text.
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                snippet,
+                maxLines: 11,
+                overflow: TextOverflow.ellipsis,
+                style: brand(TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white.withValues(alpha: 0.95),
+                  height: 1.55,
+                  fontStyle: FontStyle.italic,
+                  letterSpacing: 0.1,
+                )),
+              ),
+            ),
+            Row(children: [
+              // Commenter avatar — small circle. Falls back to a tinted
+              // initial when no image is set.
+              Container(
+                width: 24, height: 24,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.18),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
+                ),
+                child: ClipOval(
+                  child: userAvatar != null && userAvatar.isNotEmpty
+                      ? CachedNetworkImage(imageUrl: userAvatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, size: 14, color: Colors.white54))
+                      : Center(child: Text(
+                          username.isNotEmpty ? username.characters.first.toUpperCase() : '?',
+                          style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                        )),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  username,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Song reference — tiny thumb + title — on the right.
+              // Indicates this comment is *about* a specific song.
+              if (songTitle.isNotEmpty) ...[
+                Icon(Icons.subdirectory_arrow_right, size: 12, color: Colors.white.withValues(alpha: 0.6)),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    songTitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: body(TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.85), fontStyle: FontStyle.italic)),
+                  ),
+                ),
+              ],
+            ]),
+          ]),
+        ),
+        ]),
+      ),
+      ),
+    );
+  }
+
+  // Khám phá chủ đề — compact horizontal scroll strip of top tags.
+  // 130×130 tiles, free flick — different rhythm to the auto-rotating
+  // comment slider above so the two sliders don't compete.
+  Widget _popularTagsStrip(List<Map<String, dynamic>> tags) {
+    return SizedBox(
+      height: 130,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tags.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => SizedBox(width: 130, child: _popularTagTile(tags[i])),
+      ),
+    );
+  }
+
+  Widget _popularTagTile(Map<String, dynamic> tag) {
+    final name = (tag['name'] ?? '').toString();
+    final slug = (tag['slug'] ?? '').toString();
+    final count = tag['song_count'] is int ? tag['song_count'] as int : int.tryParse('${tag['song_count']}') ?? 0;
+    final samples = ((tag['sample_images'] as List?) ?? const [])
+        .map((e) => e?.toString())
+        .whereType<String>()
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final thumb = samples.isNotEmpty ? samples.first : null;
+    return InkWell(
+      onTap: () => slug.isNotEmpty ? context.push('/tag/$slug') : null,
+      borderRadius: BorderRadius.circular(14),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(fit: StackFit.expand, children: [
+          // Single representative thumbnail.
+          if (thumb == null)
+            Container(color: AppColors.surfaceLight)
+          else
+            CachedNetworkImage(
+              imageUrl: thumb,
+              fit: BoxFit.cover,
+              errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight),
+            ),
+          // Diagonal dark + accent gradient — title sits in the
+          // bottom-left corner over the heaviest part of the overlay.
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topRight,
+                end: Alignment.bottomLeft,
+                colors: [
+                  Colors.black.withValues(alpha: 0.25),
+                  Colors.black.withValues(alpha: 0.82),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: display(TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.2,
+                  )),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '$count bài',
+                  style: body(TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.78),
+                  )),
+                ),
+              ],
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _trendingChipsStrip() {
+    return SizedBox(
+      height: 32,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _trendingKeywords.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final kw = _trendingKeywords[i];
+          final name = kw['name']?.toString() ?? '';
+          if (name.isEmpty) return const SizedBox.shrink();
+          return InkWell(
+            // Pass the keyword as `extra` so the search screen can
+            // pre-fill its input + auto-run the search on first build.
+            onTap: () => context.push('/search', extra: name),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (i == 0) ...[
+                  Icon(Icons.local_fire_department, size: 13, color: AppColors.accentLight),
+                  const SizedBox(width: 5),
+                ],
+                Text(name, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+              ]),
+            ),
+          );
+        },
       ),
     );
   }
@@ -1525,10 +2292,10 @@ class _HomeScreenState extends State<HomeScreen> {
     Widget rowFor(int i, dynamic s) {
       final song = Map<String, dynamic>.from(s);
       song['file_type'] = cat.fileType;
-      // showIndex: true → SongRow renders the position number on the left,
-      // matching the BXH chart visual rhythm so the page reads as one
-      // unified list pattern.
-      return SongRow(song: song, index: i, showIndex: true, onTap: () => _openSong(song));
+      // No rank highlight on "Bài hát mới cập nhật" — newly uploaded
+      // songs aren't a ranking, so emphasising slots 1-3 misled the
+      // reader. Index suppressed; thumbnail leads the row instead.
+      return SongRow(song: song, index: i, showIndex: false, onTap: () => _openSong(song));
     }
     if (isDesktop && take.length > 1) {
       final half = (take.length / 2).ceil();
@@ -1550,73 +2317,156 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _categoryTiles() {
+    // 2×2 grid of the 4 main categories. Drop "Thành viên hát" — it's
+    // a community surface that already has its own home moment via
+    // CỘNG ĐỒNG NỔI BẬT, and 5 tiles broke the grid symmetry. Use
+    // LayoutBuilder to size against the actual content width (not the
+    // window width) so the desktop sidebar doesn't push tiles into
+    // single-column wraps.
+    final cats = _categories.where((c) => c.slug != 'thanh-vien-hat').toList();
+    return LayoutBuilder(builder: (ctx, c) {
+      final tileW = (c.maxWidth - 12) / 2;
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: cats.map((cat) => SizedBox(
+          width: tileW,
+          child: _categoryBanner(cat),
+        )).toList(),
+      );
+    });
+  }
+
+  Widget _categoryBanner(_Cat c) {
+    return InkWell(
+      onTap: () => context.push('/the-loai/${c.slug}'),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        height: 80,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [c.bg, Color.lerp(c.bg, Colors.black, 0.3)!],
+            begin: Alignment.centerLeft, end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(color: c.bg.withValues(alpha: 0.35), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6)),
+          ],
+        ),
+        child: Row(children: [
+          // Sheen accent — soft circle on the right side.
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
+            child: Icon(c.icon, color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  c.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: display(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.2)),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Khám phá ${c.name.toLowerCase()}',
+                  style: body(const TextStyle(fontSize: 11, color: Colors.white70)),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.arrow_forward, color: Colors.white70, size: 18),
+        ]),
+      ),
+    );
+  }
+
+  // Decade quick-links — horizontal strip into /bai-hat/thap-nien/{d}.
+  // Older decades come first (chronological reading) since BCĐCNT's
+  // identity is tied to older eras anyway.
+  Widget _decadeStrip() {
+    final now = DateTime.now().year;
+    final decades = <int>[];
+    for (var d = 1940; d <= now; d += 10) {
+      decades.add(d);
+    }
     return SizedBox(
-      height: 124,
+      height: 96,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (ctx, i) {
-          final c = _categories[i];
+        itemCount: decades.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final d = decades[i];
+          final tint = HSLColor.fromAHSL(
+            1,
+            (i * 38) % 360,
+            0.45,
+            0.32,
+          ).toColor();
           return InkWell(
-            onTap: () => context.push('/the-loai/${c.slug}'),
-            borderRadius: BorderRadius.circular(16),
+            onTap: () => context.push('/bai-hat/thap-nien/$d'),
+            borderRadius: BorderRadius.circular(14),
             child: Container(
-              width: 144,
-              padding: const EdgeInsets.all(14),
+              width: 124,
+              padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [c.bg, Color.lerp(c.bg, Colors.black, 0.3)!],
+                  colors: [tint, Color.lerp(tint, Colors.black, 0.35)!],
                   begin: Alignment.topLeft, end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(color: c.bg.withValues(alpha: 0.35), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6)),
-                ],
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: tint.withValues(alpha: 0.35), blurRadius: 14, spreadRadius: -4, offset: const Offset(0, 4))],
               ),
-              child: Stack(
-                children: [
-                  // Subtle sheen
-                  Positioned(
-                    right: -18, top: -10,
-                    child: Container(
-                      width: 70, height: 70,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
+              child: Stack(clipBehavior: Clip.hardEdge, children: [
+                // Decorative 2-digit year stamp — clipped by the
+                // outer ClipRRect so it never bleeds past the rounded
+                // corners.
+                Positioned(
+                  right: -4, top: -6,
+                  child: Text(
+                    '${d % 100}',
+                    style: display(TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white.withValues(alpha: 0.12),
+                      height: 1,
+                    )),
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Icon(Icons.album, size: 18, color: Colors.white.withValues(alpha: 0.85)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'THẬP NIÊN',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.0, color: Colors.white.withValues(alpha: 0.7))),
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          '$d',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ),
+                      ],
                     ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        width: 38, height: 38,
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
-                        child: Icon(c.icon, color: Colors.white, size: 20),
-                      ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            c.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.1, height: 1.15)),
-                          ),
-                          const SizedBox(height: 2),
-                          Row(children: [
-                            Text('Khám phá', style: body(const TextStyle(fontSize: 10, color: Colors.white70))),
-                            const SizedBox(width: 2),
-                            const Icon(Icons.arrow_forward, size: 10, color: Colors.white70),
-                          ]),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ]),
             ),
           );
         },
@@ -1647,24 +2497,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Stack(
-                      children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: thumb != null
-                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
-                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
-                        ),
-                        if (showRank) Positioned(
-                          bottom: 6, left: 6,
-                          child: Container(
-                            width: 22, height: 22,
-                            decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                            alignment: Alignment.center,
-                            child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                    _HoverRevealPlay(
+                      size: card,
+                      onPlay: () => context.read<PlayerProvider>().playSong(song),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: thumb != null
+                                ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
+                                : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
                           ),
-                        ),
-                      ],
+                          if (showRank) Positioned(
+                            bottom: 6, left: 6,
+                            child: Container(
+                              width: 22, height: 22,
+                              decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                              alignment: Alignment.center,
+                              child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 8),
                     Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1753,6 +2607,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final song = Map<String, dynamic>.from(videos[i]);
           final artists = (song['artists']?['data'] ?? []) as List;
           final thumb = song['thumbnail']?['url'];
+          final videoUrl = song['file']?['video_url']?.toString();
           return InkWell(
             onTap: () => _openSong(song),
             child: SizedBox(
@@ -1766,7 +2621,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderRadius: BorderRadius.circular(12),
                         child: thumb != null
                             ? CachedNetworkImage(imageUrl: thumb, width: 200, height: 112, fit: BoxFit.cover)
-                            : Container(width: 200, height: 112, color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted)),
+                            : (videoUrl != null && videoUrl.isNotEmpty
+                                ? _VideoFrameThumbnail(url: videoUrl, width: 200, height: 112)
+                                : Container(width: 200, height: 112, color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
                       ),
                       Positioned(
                         bottom: 6, right: 6,
@@ -1895,41 +2752,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Outer BXH tabs — switch between song chart and member chart inside
-  /// one section header. Inner tab bars (period / member kind) stay
-  /// scoped to their respective panel.
-  Widget _bxhOuterTabsBar() {
-    const tabs = [
-      (Icons.headphones, 'Bài hát'),
-      (Icons.people_outline, 'Thành viên'),
-    ];
-    return Row(
-      children: List.generate(tabs.length, (i) {
-        final t = tabs[i];
-        final active = i == _bxhOuterTab;
-        return Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: InkWell(
-            onTap: active ? null : () => setState(() => _bxhOuterTab = i),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                color: active ? AppColors.accentSoft : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: active ? AppColors.accent : AppColors.border),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(t.$1, size: 14, color: active ? AppColors.accentLight : AppColors.textSecondary),
-                const SizedBox(width: 6),
-                Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-              ]),
-            ),
-          ),
-        );
-      }),
-    );
-  }
 
   Widget _memberTabsBar() {
     // Unified underline style — matches `_latestTabsBar` + `_rankingTabs`.
@@ -1969,6 +2791,352 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       ),
     );
+  }
+
+  // Spotlight card for the #1 member of the currently-selected ranking
+  // tab. Sits above the tab bar so the leading contributor gets a hero
+  // moment regardless of which leaderboard the user is browsing.
+  // Header copy follows the active tab (Top Cống hiến / Top Bản thu /
+  // Top Bình luận / Top Nghe nhiều) — tab strip below already lets the
+  // user switch, so we don't need a separate stats strip inside the
+  // hero.
+  Widget _topMemberHero() {
+    const labels = {
+      0: ('Cống hiến', 'điểm'),
+      1: ('Bản thu', 'bản thu'),
+      2: ('Bình luận', 'lượt thích'),
+      3: ('Nghe nhiều', 'lượt nghe'),
+    };
+    final kind = switch (_rankTab) {
+      0 => 'contributors', 1 => 'uploaders', 2 => 'commentLoves', 3 => 'listeners',
+      _ => 'contributors',
+    };
+    final items = _memberRanks[kind] ?? [];
+    if (items.isEmpty) return const SizedBox.shrink();
+    final top = Map<String, dynamic>.from(items.first as Map);
+    final username = top['username']?.toString() ?? '?';
+    final value = top['value'] is num ? (top['value'] as num).toInt() : 0;
+    final avatar = top['avatar']?.toString();
+    final userId = top['id']?.toString();
+    final activeLabel = labels[_rankTab] ?? labels[0]!;
+    const gold = Color(0xFFFFD700);
+
+    // Lazy-fetch the bio + counter detail block for this user.
+    if (userId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_memberDetails.containsKey(userId)) _fetchMemberDetails(userId);
+      });
+    }
+    final details = userId != null ? _memberDetails[userId] : null;
+    final age = _ageFromYob(details?['yob']?.toString());
+    final cmtCount = details?['comments'] is num ? (details!['comments'] as num).toInt() : null;
+    final uploadCount = details?['uploads'] is num ? (details!['uploads'] as num).toInt() : null;
+    final point = details?['point'] is num ? (details!['point'] as num).toInt() : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: userId != null ? () => context.push('/user/$userId') : null,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              colors: [gold.withValues(alpha: 0.22), AppColors.surfaceLight.withValues(alpha: 0.6)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: gold.withValues(alpha: 0.45), width: 1.2),
+            boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.18), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Stack(clipBehavior: Clip.none, children: [
+                Container(
+                  width: 68, height: 68,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                    border: Border.all(color: gold, width: 2),
+                  ),
+                  child: ClipOval(
+                    child: avatar != null
+                        ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 32))
+                        : const Icon(Icons.person, color: Colors.white70, size: 32),
+                  ),
+                ),
+                Positioned(
+                  top: -10, right: -6,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)]),
+                    child: const Icon(Icons.workspace_premium, size: 16, color: Colors.black87),
+                  ),
+                ),
+              ]),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    'TOP ${activeLabel.$1.toUpperCase()}',
+                    style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: gold)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  const SizedBox(height: 3),
+                  Text('${_formatCompact(value)} ${activeLabel.$2}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              if (userId != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: gold.withValues(alpha: 0.65)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.person_outline, size: 13, color: gold),
+                    const SizedBox(width: 5),
+                    Text('Hồ sơ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: gold))),
+                  ]),
+                ),
+            ]),
+            // Stat strip — secondary numbers about the spotlit user.
+            // Each chip falls out when its value is unknown (e.g. the
+            // user has no DOB on file).
+            () {
+              final chips = <Widget>[];
+              if (age != null) chips.add(_topMemberStatChip(Icons.cake_outlined, '$age tuổi'));
+              if (point != null && point > 0) chips.add(_topMemberStatChip(Icons.workspace_premium_outlined, '${_formatCompact(point)} điểm'));
+              if (uploadCount != null && uploadCount > 0) chips.add(_topMemberStatChip(Icons.upload_outlined, '${_formatCompact(uploadCount)} bản thu'));
+              if (cmtCount != null && cmtCount > 0) chips.add(_topMemberStatChip(Icons.chat_bubble_outline, '${_formatCompact(cmtCount)} bình luận'));
+              if (chips.isEmpty) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Wrap(spacing: 8, runSpacing: 6, children: chips),
+              );
+            }(),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _topMemberStatChip(IconData icon, String text) {
+    const gold = Color(0xFFFFD700);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: gold),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: body(TextStyle(fontSize: 12, color: AppColors.text, fontWeight: FontWeight.w500)),
+        ),
+      ]),
+    );
+  }
+
+  /// Years between yob (4-digit) and the current year. Null when yob
+  /// is empty / unparseable / clearly nonsense.
+  /// "2 năm trước" / "3 ngày trước" — Vietnamese relative time. Null
+  /// when the input doesn't parse as a date.
+  String _formatRelative(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final t = DateTime.tryParse(iso);
+    if (t == null) return '';
+    final diff = DateTime.now().difference(t);
+    if (diff.inDays >= 365) return '${diff.inDays ~/ 365} năm trước';
+    if (diff.inDays >= 30) return '${diff.inDays ~/ 30} tháng trước';
+    if (diff.inDays >= 1) return '${diff.inDays} ngày trước';
+    if (diff.inHours >= 1) return '${diff.inHours} giờ trước';
+    if (diff.inMinutes >= 1) return '${diff.inMinutes} phút trước';
+    return 'vừa xong';
+  }
+
+  int? _ageFromYob(String? yob) {
+    if (yob == null || yob.isEmpty) return null;
+    final n = int.tryParse(yob);
+    if (n == null) return null;
+    final now = DateTime.now().year;
+    if (n < 1900 || n > now) return null;
+    return now - n;
+  }
+
+  // Discovery hero — picks a RANDOM person (artist OR composer) so each
+  // refresh surfaces a different face from either pool. The card now
+  // also previews the person's top 3 songs underneath the header so
+  // it feels substantive rather than a single avatar floating in
+  // gradient space. Shuffle button re-rolls.
+  Widget _featuredArtistHero() {
+    final pool = <Map<String, dynamic>>[
+      for (final a in _artists) {...Map<String, dynamic>.from(a as Map), '_kind': 'artist'},
+      for (final c in _composers) {...Map<String, dynamic>.from(c as Map), '_kind': 'composer'},
+    ];
+    if (pool.isEmpty) return const SizedBox.shrink();
+    if (_featuredArtistIndex < 0 || _featuredArtistIndex >= pool.length) {
+      _featuredArtistIndex = math.Random().nextInt(pool.length);
+    }
+    final top = pool[_featuredArtistIndex];
+    final isComposer = top['_kind'] == 'composer';
+    final name = top['title']?.toString() ?? '?';
+    final slug = top['slug']?.toString();
+    final avatar = top['avatar']?['url']?.toString();
+    final listens = top['total_listens'] is num ? (top['total_listens'] as num).toInt() : 0;
+    final realName = top['real_name']?.toString().trim() ?? '';
+    final rank = top['rank']?.toString().trim() ?? '';
+    final yob = top['yob']?.toString().trim() ?? '';
+    final yod = top['yod']?.toString().trim() ?? '';
+    final bornAt = top['born_address']?.toString().trim() ?? '';
+    final route = isComposer ? '/nhac-si/' : '/nghe-si/';
+    final label = isComposer ? 'KHÁM PHÁ NHẠC SĨ' : 'KHÁM PHÁ NGHỆ SĨ';
+    return MouseRegion(
+      onEnter: (_) => _featuredArtistTimer?.cancel(),
+      onExit: (_) => _restartFeaturedArtistTimer(),
+      child: InkWell(
+      onTap: slug != null ? () => context.push('$route$slug') : null,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: LinearGradient(
+            colors: [AppColors.accent.withValues(alpha: 0.32), AppColors.surfaceLight.withValues(alpha: 0.6)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: AppColors.accentLight.withValues(alpha: 0.45), width: 1.2),
+          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                border: Border.all(color: AppColors.accentLight, width: 2),
+              ),
+              child: ClipOval(
+                child: avatar != null
+                    ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 30))
+                    : const Icon(Icons.person, color: Colors.white70, size: 30),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Row(children: [
+                  Icon(isComposer ? Icons.music_note_outlined : Icons.mic, size: 12, color: AppColors.accentLight),
+                  const SizedBox(width: 5),
+                  Text(label, style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.3, color: AppColors.accentLight))),
+                ]),
+                const SizedBox(height: 4),
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text))),
+                if (listens > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_formatCompact(listens)} lượt nghe',
+                    style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ]),
+            ),
+            const SizedBox(width: 8),
+            // Shuffle CTA — re-pick a different person from the pool.
+            InkWell(
+              onTap: () => setState(() => _featuredArtistIndex = math.Random().nextInt(pool.length)),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: AppColors.surfaceLight, shape: BoxShape.circle, border: Border.all(color: AppColors.border)),
+                child: Icon(Icons.shuffle, size: 16, color: AppColors.textSecondary),
+              ),
+            ),
+          ]),
+          // Bio row — real name, lifespan, hometown. Each fact is a
+          // small icon-prefixed chip so the row reads as "encyclopaedia
+          // entry" not as a paragraph. Skips facts that are empty so
+          // we never render a chip with nothing inside.
+          () {
+            final chips = <Widget>[];
+            // Award/honour first (NSƯT / NSND / Giải thưởng …) —
+            // visually heaviest and most newsworthy, so it leads.
+            if (rank.isNotEmpty) {
+              chips.add(_featuredArtistBioChip(Icons.workspace_premium_outlined, rank, accent: true));
+            }
+            if (realName.isNotEmpty && realName.toLowerCase() != name.toLowerCase()) {
+              chips.add(_featuredArtistBioChip(Icons.badge_outlined, realName));
+            }
+            final lifespan = _formatLifespan(yob, yod);
+            if (lifespan.isNotEmpty) {
+              chips.add(_featuredArtistBioChip(Icons.cake_outlined, lifespan));
+            }
+            if (bornAt.isNotEmpty) {
+              chips.add(_featuredArtistBioChip(Icons.location_on_outlined, bornAt));
+            }
+            if (chips.isEmpty) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: chips,
+              ),
+            );
+          }(),
+        ]),
+      ),
+      ),
+    );
+  }
+
+  Widget _featuredArtistBioChip(IconData icon, String text, {bool accent = false}) {
+    final bg = accent
+        ? AppColors.accent.withValues(alpha: 0.45)
+        : Colors.black.withValues(alpha: 0.22);
+    final border = accent
+        ? AppColors.accentLight.withValues(alpha: 0.6)
+        : AppColors.border;
+    final iconColor = accent ? Colors.white : AppColors.accentLight;
+    final textColor = accent ? Colors.white : AppColors.text;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: iconColor),
+        const SizedBox(width: 5),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: body(TextStyle(fontSize: 12, color: textColor, fontWeight: accent ? FontWeight.w700 : FontWeight.w500)),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  /// Render `yob`–`yod` as "1925 - 1985", "1925 - " (still alive
+  /// missing yod), or "1985†" (missing yob), filtering null/empty.
+  String _formatLifespan(String yob, String yod) {
+    if (yob.isEmpty && yod.isEmpty) return '';
+    if (yob.isEmpty) return '$yod †';
+    if (yod.isEmpty) return 'Sinh $yob';
+    return '$yob - $yod';
   }
 
   Widget _memberBody() {
@@ -2718,6 +3886,148 @@ class _GroupLabel extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Wraps a square thumbnail and reveals an inline "play" CTA in the
+/// bottom-right corner. On desktop the CTA only appears while the
+/// pointer is over the card — keeps the carousel uncluttered. On
+/// touch (no hover) the CTA stays visible since there's no other way
+/// to surface it without adding a long-press affordance.
+class _HoverRevealPlay extends StatefulWidget {
+  final double size;
+  final Widget child;
+  final VoidCallback onPlay;
+  const _HoverRevealPlay({required this.size, required this.child, required this.onPlay});
+
+  @override
+  State<_HoverRevealPlay> createState() => _HoverRevealPlayState();
+}
+
+class _HoverRevealPlayState extends State<_HoverRevealPlay> {
+  bool _hover = false;
+
+  bool get _supportsHover {
+    final p = Theme.of(context).platform;
+    return p == TargetPlatform.macOS || p == TargetPlatform.windows || p == TargetPlatform.linux;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = !_supportsHover || _hover;
+    final inner = Stack(children: [
+      widget.child,
+      Positioned(
+        bottom: 6, right: 6,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          opacity: visible ? 1.0 : 0.0,
+          child: IgnorePointer(
+            ignoring: !visible,
+            child: Material(
+              color: Colors.white,
+              shape: const CircleBorder(),
+              elevation: 3,
+              shadowColor: Colors.black.withValues(alpha: 0.4),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onPlay,
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: Icon(Icons.play_arrow, size: 18, color: AppColors.accent),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ]);
+    if (!_supportsHover) return inner;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: inner,
+    );
+  }
+}
+
+/// Renders the first frame of a video as a static thumbnail. Used for
+/// the home video carousel when a song lacks a manual thumbnail. The
+/// VideoPlayer is created paused at offset 0 — no audio, no playback,
+/// just the frame. Falls back to a tinted placeholder while loading
+/// or on error so the carousel never shows a flicker of black.
+class _VideoFrameThumbnail extends StatefulWidget {
+  final String url;
+  final double width;
+  final double height;
+  const _VideoFrameThumbnail({required this.url, required this.width, required this.height});
+
+  @override
+  State<_VideoFrameThumbnail> createState() => _VideoFrameThumbnailState();
+}
+
+class _VideoFrameThumbnailState extends State<_VideoFrameThumbnail> {
+  VideoPlayerController? _ctl;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    try {
+      final ctl = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await ctl.initialize();
+      await ctl.setVolume(0);
+      // Already at offset 0 after initialize(); keep paused so the
+      // first frame is what's painted.
+      if (!mounted) { ctl.dispose(); return; }
+      setState(() { _ctl = ctl; _ready = true; });
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctl?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed || (_ctl != null && !_ctl!.value.isInitialized)) {
+      return Container(
+        width: widget.width,
+        height: widget.height,
+        color: AppColors.surfaceLight,
+        child: Icon(Icons.movie, color: AppColors.textMuted),
+      );
+    }
+    if (!_ready || _ctl == null) {
+      return Container(
+        width: widget.width,
+        height: widget.height,
+        color: AppColors.surfaceLight,
+      );
+    }
+    return SizedBox(
+      width: widget.width,
+      height: widget.height,
+      child: FittedBox(
+        fit: BoxFit.cover,
+        clipBehavior: Clip.hardEdge,
+        child: SizedBox(
+          width: _ctl!.value.size.width,
+          height: _ctl!.value.size.height,
+          child: VideoPlayer(_ctl!),
+        ),
       ),
     );
   }

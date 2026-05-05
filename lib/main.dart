@@ -175,12 +175,24 @@ final _router = GoRouter(
       routes: [
         GoRoute(path: '/', builder: (c, s) => const HomeScreen()),
         GoRoute(path: '/binh-luan', builder: (c, s) => const CommentsScreen()),
-        GoRoute(path: '/search', builder: (c, s) => const SearchScreen()),
+        GoRoute(path: '/search', builder: (c, s) => SearchScreen(initialQuery: s.extra is String ? s.extra as String : null)),
         GoRoute(path: '/library', builder: (c, s) => const LibraryScreen()),
         GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         GoRoute(
           path: '/song/:id',
-          builder: (c, s) => SongDetailScreen(songId: s.pathParameters['id']!, initialSong: s.extra as Map<String, dynamic>?),
+          builder: (c, s) {
+            final extra = s.extra as Map<String, dynamic>?;
+            // `highlightCommentId` is opt-in: only deep-links from
+            // surfaces like Cảm nhận hay set it. Strip it before
+            // passing the rest to the screen as initialSong so we
+            // don't pollute the song map with UI hints.
+            final hi = extra?['highlightCommentId']?.toString();
+            return SongDetailScreen(
+              songId: s.pathParameters['id']!,
+              initialSong: extra,
+              highlightCommentId: hi,
+            );
+          },
         ),
         GoRoute(
           path: '/nghe-si/:slug',

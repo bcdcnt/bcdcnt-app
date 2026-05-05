@@ -5,7 +5,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/theme.dart';
 
 /// Full-bleed rotating hero card. Pass a list of song-like maps with
-/// `title`, `artists` (list w/ title), `thumbnail.url`, optional `weeklyListens`.
+/// `title`, `artists` (list w/ title), `thumbnail.url`, optional `views`
+/// (total listen count rendered next to the headphones icon).
 class HeroSpotlight extends StatefulWidget {
   final List<Map<String, dynamic>> items;
   final void Function(Map<String, dynamic> item)? onTap;
@@ -62,7 +63,20 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
   Widget build(BuildContext context) {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
-    return Listener(
+    return MouseRegion(
+      // Hover suspends auto-rotate so a desktop user has time to read
+      // the card. On mobile (no mouse) onEnter never fires, so the
+      // touch-based pause via Listener below is still the source of
+      // truth.
+      onEnter: (_) {
+        _userInteracting = true;
+        _timer?.cancel();
+      },
+      onExit: (_) {
+        _userInteracting = false;
+        _startTimer();
+      },
+      child: Listener(
       onPointerDown: (_) => _userInteracting = true,
       onPointerUp: (_) {
         _userInteracting = false;
@@ -70,41 +84,56 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
       },
       child: SizedBox(
         height: 230,
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _ctl,
-              itemCount: items.length,
-              onPageChanged: (i) => setState(() => _idx = i),
-              itemBuilder: (ctx, i) => _SpotlightCard(
-                item: items[i],
-                onTap: widget.onTap == null ? null : () => widget.onTap!(items[i]),
-                onPlay: widget.onPlay == null ? null : () => widget.onPlay!(items[i]),
-                fmt: _fmt,
+        child: Stack(children: [
+          PageView.builder(
+            controller: _ctl,
+            itemCount: items.length,
+            onPageChanged: (i) => setState(() => _idx = i),
+            itemBuilder: (ctx, i) => _SpotlightCard(
+              item: items[i],
+              onTap: widget.onTap == null ? null : () => widget.onTap!(items[i]),
+              onPlay: widget.onPlay == null ? null : () => widget.onPlay!(items[i]),
+              fmt: _fmt,
+            ),
+          ),
+          // Page dots — overlaid on the card. Pill background ensures
+          // the indicator stays readable against any thumbnail.
+          if (items.length > 1) Positioned(
+            left: 0, right: 0, bottom: 14,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(items.length, (i) {
+                    final active = i == _idx;
+                    return GestureDetector(
+                      onTap: () {
+                        _ctl.animateToPage(i, duration: const Duration(milliseconds: 320), curve: Curves.easeOut);
+                        _startTimer();
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 240),
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: active ? 22 : 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: active ? AppColors.accentLight : Colors.white.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
               ),
             ),
-            // Page dots
-            if (items.length > 1) Positioned(
-              left: 0, right: 0, bottom: 10,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(items.length, (i) {
-                  final active = i == _idx;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 280),
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    width: active ? 22 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: active ? Colors.white : Colors.white.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ]),
+      ),
       ),
     );
   }
@@ -138,7 +167,10 @@ class _SpotlightCardState extends State<_SpotlightCard> {
         ? artistsRaw
         : (artistsRaw is Map ? (artistsRaw['data'] ?? []) : []);
     final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => (s as String).isNotEmpty).join(', ');
-    final weekly = item['weeklyListens'];
+    // Total listen count, not weekly — gives a sense of long-term
+    // popularity rather than a 7-day spike. Falls back to weekly if
+    // total isn't on the row.
+    final total = item['views'] ?? item['weeklyListens'];
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
@@ -252,12 +284,12 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                                     ),
                                   ),
                                 ),
-                                if (weekly != null && weekly is num && weekly.toInt() > 0) ...[
+                                if (total != null && total is num && total.toInt() > 0) ...[
                                   const SizedBox(width: 8),
                                   Row(mainAxisSize: MainAxisSize.min, children: [
                                     const Icon(Icons.headphones, size: 11, color: Colors.white70),
                                     const SizedBox(width: 4),
-                                    Text(fmt(weekly.toInt()), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white70))),
+                                    Text(fmt(total.toInt()), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white70))),
                                   ]),
                                 ],
                               ],
