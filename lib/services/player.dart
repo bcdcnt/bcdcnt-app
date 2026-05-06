@@ -38,6 +38,11 @@ class PlayerProvider extends ChangeNotifier {
   Timer? _sleepTimer;
   DateTime? _sleepFiresAt;
   bool _sleepEndOfSong = false;
+  // Human-readable source label — e.g. "Gợi ý cho bạn", "Daily Mix",
+  // "Playlist: X". Surfaces in the FullPlayer header so the user
+  // remembers where the current queue came from. Caller passes it
+  // through `playSong(..., sourceLabel: ...)`.
+  String? _sourceLabel;
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
@@ -53,6 +58,7 @@ class PlayerProvider extends ChangeNotifier {
   double get playbackRate => _playbackRate;
   bool get hasSleepTimer => _sleepTimer != null || _sleepEndOfSong;
   bool get sleepEndOfSong => _sleepEndOfSong;
+  String? get sourceLabel => _sourceLabel;
   // Remaining time on the fixed-duration sleep timer (null when no timer or
   // when in end-of-song mode). UI uses this for the live countdown label.
   Duration? get sleepRemaining {
@@ -160,12 +166,16 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual']) async {
+  Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual', String? sourceLabel]) async {
     _currentSong = song;
     if (list != null) {
       _queue = list;
       _currentIndex = list.indexWhere((s) => s['id'].toString() == song['id'].toString());
       if (_currentIndex < 0) _currentIndex = 0;
+      // Refresh the label only when a fresh queue is supplied — calls
+      // that inherit the existing queue (next/prev advance, reorder)
+      // shouldn't blow away the previously-set context.
+      _sourceLabel = sourceLabel;
     }
     notifyListeners();
 

@@ -84,7 +84,22 @@ class TimedLyrics extends StatefulWidget {
   final String? raw;
   final Widget fallback;
   final bool large;
-  const TimedLyrics({super.key, required this.raw, required this.fallback, this.large = false});
+  /// Multiplier applied to all line font sizes — lets the parent
+  /// (full player toolbar) offer A- / A+ controls without owning the
+  /// active/inactive size logic. 1.0 = canonical sizing above.
+  final double fontScale;
+  /// When false the active-line tracker still updates colours but
+  /// the list doesn't auto-scroll — user can read at their own pace
+  /// without losing the highlight.
+  final bool autoScroll;
+  const TimedLyrics({
+    super.key,
+    required this.raw,
+    required this.fallback,
+    this.large = false,
+    this.fontScale = 1.0,
+    this.autoScroll = true,
+  });
 
   /// True when the input contains enough LRC tags to render the timed UI.
   /// Lets callers (FullPlayer) decide to auto-switch panels.
@@ -130,7 +145,7 @@ class _TimedLyricsState extends State<TimedLyrics> {
     }
     if (idx != _activeIndex) {
       setState(() => _activeIndex = idx);
-      _scrollToActive();
+      if (widget.autoScroll) _scrollToActive();
     }
   }
 
@@ -166,9 +181,9 @@ class _TimedLyricsState extends State<TimedLyrics> {
           // Scale up for the fullscreen "karaoke" variant — larger active
           // line + more breathing room between lines so the focal text
           // reads at viewing distance (Apple Music / Spotify pattern).
-          final fontSize = widget.large
+          final fontSize = (widget.large
               ? (active ? 38.0 : 24.0)
-              : (active ? 20.0 : 16.0);
+              : (active ? 20.0 : 16.0)) * widget.fontScale;
           final fontWeight = active ? FontWeight.w800 : FontWeight.w500;
           final entry = Padding(
             padding: EdgeInsets.symmetric(vertical: widget.large ? 12 : 6, horizontal: 16),

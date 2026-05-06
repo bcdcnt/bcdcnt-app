@@ -427,6 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(r'''query($id: ID!) {
           recommendedSongs(user_id: $id, limit: 30) {
             id title subtitle slug image audio_url video_url play_type file_type score reason
+            artists { id title slug }
           }
         }''', {'id': userId})),
       ]);
@@ -461,6 +462,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final recsRaw = ((results[2]['recommendedSongs'] ?? []) as List);
       final recs = recsRaw.map((e) {
         final m = Map<String, dynamic>.from(e as Map);
+        // Wrap the flat artists list in the same `data` envelope the
+        // rest of the home uses, so player/mini-player can extract
+        // performers without special-casing recommendation rows.
+        final artistList = ((m['artists'] as List?) ?? const [])
+            .map((a) => Map<String, dynamic>.from(a as Map))
+            .toList();
         return <String, dynamic>{
           'id': m['id'],
           'title': m['title'],
@@ -471,6 +478,7 @@ class _HomeScreenState extends State<HomeScreen> {
           'play_type': m['play_type'],
           'file_type': m['file_type'] ?? 'song',
           'reason': m['reason'],
+          'artists': {'data': artistList},
         };
       }).toList();
 
@@ -893,6 +901,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: 'Gợi ý cho bạn',
                 subtitle: 'Dựa trên nghệ sĩ, nhạc sĩ và chủ đề bạn nghe',
               ),
+              _shufflePlayBar(
+                label: 'Phát tất cả',
+                count: _recommendedSongs.length,
+                icon: Icons.play_arrow,
+                onPlay: () => _playAll(_recommendedSongs, sourceLabel: 'Gợi ý cho bạn'),
+              ),
+              const SizedBox(height: 12),
               _recommendedCarousel(_recommendedSongs),
               const SizedBox(height: 22),
             ],
@@ -919,7 +934,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _shufflePlayBar(
               label: 'Phát ngẫu nhiên',
               count: _recentLoves.length,
-              onPlay: () => _shufflePlay(_recentLoves),
+              onPlay: () => _shufflePlay(_recentLoves, sourceLabel: 'Yêu thích gần đây'),
             ),
             const SizedBox(height: 12),
             _songCarousel(_recentLoves),
@@ -1358,7 +1373,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final mosaicThumbs = mosaic.map((s) => s['thumbnail']?['url']?.toString()).toList();
 
     return InkWell(
-      onTap: () => _shufflePlay(pool),
+      onTap: () => _shufflePlay(pool, sourceLabel: 'Mix dành cho bạn'),
       borderRadius: BorderRadius.circular(18),
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -1890,7 +1905,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _shufflePlayBar({required String label, required int count, required VoidCallback onPlay}) {
+  Widget _shufflePlayBar({required String label, required int count, required VoidCallback onPlay, IconData icon = Icons.shuffle}) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1914,7 +1929,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   shape: BoxShape.circle,
                   gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                 ),
-                child: const Icon(Icons.shuffle, color: Colors.white, size: 16),
+                child: Icon(icon, color: Colors.white, size: 16),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1935,7 +1950,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _shufflePlay(List<dynamic> songs) {
+  void _shufflePlay(List<dynamic> songs, {String? sourceLabel}) {
     if (songs.isEmpty) return;
     final queue = <Map<String, dynamic>>[];
     for (final s in songs) {
@@ -1946,9 +1961,26 @@ class _HomeScreenState extends State<HomeScreen> {
     if (queue.isEmpty) return;
     queue.shuffle();
     final player = context.read<PlayerProvider>();
-    player.playSong(queue.first, queue);
+    player.playSong(queue.first, queue, 'manual', sourceLabel);
     player.setFetchMore(null);
     if (!player.shuffle) player.toggleShuffle();
+  }
+
+  /// Play the whole list in given order from the first song. Shuffle is
+  /// turned off so the user gets the curated/intended sequence.
+  void _playAll(List<dynamic> songs, {String? sourceLabel}) {
+    if (songs.isEmpty) return;
+    final queue = <Map<String, dynamic>>[];
+    for (final s in songs) {
+      final m = Map<String, dynamic>.from(s as Map);
+      m['audioUrl'] = m['file']?['audio_url'];
+      if (m['audioUrl'] != null) queue.add(m);
+    }
+    if (queue.isEmpty) return;
+    final player = context.read<PlayerProvider>();
+    player.playSong(queue.first, queue, 'manual', sourceLabel);
+    player.setFetchMore(null);
+    if (player.shuffle) player.toggleShuffle();
   }
 
   Widget _memorialCard(Map<String, dynamic> p) {
