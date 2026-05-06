@@ -729,16 +729,18 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
 
   Future<void> _handleDownload(Map<String, dynamic> song) async {
     if (_downloading) return;
-    final auth = context.read<AuthProvider>();
-    if (!auth.isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng đăng nhập để tải'), backgroundColor: AppColors.error));
-      return;
-    }
     setState(() => _downloading = true);
+    final auth = context.read<AuthProvider>();
+    // Always send the mutation — let the backend's "Vui lòng đăng
+    // nhập để tải" message bubble back through the GraphQL error
+    // path. Mirrors the web flow so the auth gate lives in one
+    // place (server-side).
     try {
-      final data = await auth.authedMutate(
+      final tok = auth.token;
+      final data = await ApiClient.mutate(
         r'''mutation($t: String!, $i: ID!) { download(object_type: $t, object_id: $i) { url } }''',
         {'t': _songType(song), 'i': song['id'].toString()},
+        tok,
       );
       final url = data['download']?['url'];
       if (url != null) {
@@ -747,7 +749,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bạn đã tải quá nhiều'), backgroundColor: AppColors.error));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải: $e'), backgroundColor: AppColors.error));
+      // Strip the "Exception: " prefix Dart prepends to thrown
+      // strings so the user sees the clean Vietnamese message from
+      // the GraphQL error.
+      final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _downloading = false);
   }

@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +6,12 @@ import '../constants/theme.dart';
 import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'full_player.dart';
+
+String _fmtTs(Duration d) {
+  final m = d.inMinutes;
+  final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+  return '$m:$s';
+}
 
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
@@ -98,7 +105,37 @@ class MiniPlayer extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        if (artistText.isNotEmpty) Text(artistText, style: TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        // Artist + timestamp share a single row — artist
+                        // ellipsizes when the row is tight so the
+                        // tabular timestamp on the right always reads
+                        // cleanly. Tabular figures keep digit width
+                        // stable so the slash doesn't jitter as the
+                        // position ticks.
+                        Row(children: [
+                          if (artistText.isNotEmpty)
+                            Flexible(
+                              child: Text(
+                                artistText,
+                                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          if (artistText.isNotEmpty && player.duration.inMilliseconds > 0)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                              child: Text('·', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                            ),
+                          if (player.duration.inMilliseconds > 0)
+                            Text(
+                              '${_fmtTs(player.position)} / ${_fmtTs(player.duration)}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textMuted,
+                                fontFeatures: const [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                        ]),
                       ],
                     ),
                   ),
