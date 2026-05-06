@@ -300,7 +300,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final segments = <List<Widget>>[
       seg('Sáng tác:', _composers, '/nhac-si/'),
       seg('Thơ:', _poets, '/nha-tho/'),
-      seg(isKaraoke ? 'Thành viên hát:' : 'Thể hiện:', artists, isKaraoke ? '/user/' : '/nghe-si/'),
+      seg(isKaraoke ? 'Thành viên hát:' : 'Trình bày:', artists, isKaraoke ? '/user/' : '/nghe-si/'),
     ].where((s) => s.isNotEmpty).toList();
     if (segments.isEmpty) return const SizedBox.shrink();
 
@@ -328,12 +328,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final muted = player.muted || player.volume <= 0.001;
     final value = muted ? 0.0 : player.volume;
     return Padding(
-      padding: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.only(right: 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
             tooltip: muted ? 'Bật âm thanh' : 'Tắt âm thanh',
+            iconSize: 18,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            visualDensity: VisualDensity.compact,
             icon: Icon(
               muted ? Icons.volume_off : (value < 0.4 ? Icons.volume_down : Icons.volume_up),
               color: muted ? AppColors.accentLight : AppColors.textSecondary,
@@ -341,16 +345,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             onPressed: player.toggleMute,
           ),
           SizedBox(
-            width: 100,
+            width: 80,
             child: SliderTheme(
               data: SliderThemeData(
                 activeTrackColor: AppColors.accent,
                 inactiveTrackColor: AppColors.border,
                 thumbColor: AppColors.accent,
                 overlayColor: AppColors.accent.withValues(alpha: 0.18),
-                trackHeight: 3,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
               ),
               child: Slider(
                 value: value,
@@ -998,7 +1002,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 _FadeChrome(
                   visible: _chromeVisible,
                   child: SizedBox(
-                    height: 48,
+                    height: 44,
                     child: Stack(
                       children: [
                         Center(
@@ -1027,28 +1031,43 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           ),
                         ),
                         Positioned(
-                          left: 8, top: 0, bottom: 0,
+                          left: 6, top: 0, bottom: 0,
                           child: Center(
                             child: IconButton(
-                              icon: Icon(Icons.keyboard_arrow_down, size: 28, color: AppColors.text),
+                              iconSize: 22,
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(Icons.keyboard_arrow_down, color: AppColors.text),
                               onPressed: () => Navigator.pop(context),
                             ),
                           ),
                         ),
                         Positioned(
-                          right: 8, top: 0, bottom: 0,
+                          right: 6, top: 0, bottom: 0,
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
                             if (_isDesktopOS) _buildVolumeControl(player),
                             if (_isDesktopOS)
                               IconButton(
                                 tooltip: _isFullScreen ? 'Thoát toàn màn hình  F' : 'Toàn màn hình  F',
+                                iconSize: 20,
+                                padding: const EdgeInsets.all(8),
+                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                visualDensity: VisualDensity.compact,
                                 icon: Icon(
                                   _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
                                   color: _isFullScreen ? AppColors.accentLight : AppColors.textSecondary,
                                 ),
                                 onPressed: _toggleFullScreen,
                               ),
-                            IconButton(icon: Icon(Icons.more_horiz, color: AppColors.textSecondary), onPressed: () => _showMoreSheet(context, song, player)),
+                            IconButton(
+                              iconSize: 20,
+                              padding: const EdgeInsets.all(8),
+                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(Icons.more_horiz, color: AppColors.textSecondary),
+                              onPressed: () => _showMoreSheet(context, song, player),
+                            ),
                           ]),
                         ),
                       ],

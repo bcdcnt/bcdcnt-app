@@ -240,7 +240,7 @@ class _RightPanelContainer extends StatelessWidget {
               ),
               _HeaderTabBtn(
                 tooltip: 'Hàng đợi  ⌘I',
-                icon: Icons.queue_music,
+                icon: Icons.format_list_bulleted,
                 active: activeTab == _RightPanelTab.queue,
                 onTap: () => onSelectTab(_RightPanelTab.queue),
               ),
