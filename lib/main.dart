@@ -98,6 +98,16 @@ class _AppRoot extends StatelessWidget {
       theme: appTheme(),
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
+      // Stack the collapsed-mini-player pill above every route. The
+      // pill is mounted once at the root so its drag offset survives
+      // navigation; it self-hides when no song is playing or the
+      // player isn't in collapsed mode.
+      builder: (context, child) => Stack(
+        children: [
+          child ?? const SizedBox.shrink(),
+          const MiniPlayerOverlay(),
+        ],
+      ),
     );
   }
 }

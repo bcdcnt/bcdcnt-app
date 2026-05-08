@@ -37,6 +37,12 @@ class MiniPlayer extends StatelessWidget {
         ? 'Tiếp: $nextTitle  ⇧ →'
         : 'Bài tiếp theo  ⇧ →';
 
+    // Collapsed pill is rendered by `MiniPlayerOverlay` at the root
+    // (MaterialApp.builder) so it can be dragged freely across the
+    // whole screen. Hide the per-screen mini bar in that mode to
+    // avoid double-rendering.
+    if (player.miniCollapsed) return const SizedBox.shrink();
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
@@ -79,15 +85,24 @@ class MiniPlayer extends StatelessWidget {
             // ShellRoute — otherwise the desktop sidebar + right-panel
             // toggle/collapse stay visible behind the player and the
             // player's "..." doesn't line up with anything.
-            onTap: () => rootNavigatorKey.currentState?.push(
-              PageRouteBuilder(
-                opaque: true,
-                pageBuilder: (_, anim, __) => SlideTransition(
-                  position: anim.drive(Tween(begin: const Offset(0, 1), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
-                  child: const FullPlayer(),
+            //
+            // Flip `fullPlayerOpen=true` BEFORE the push so the
+            // root-level draggable pill (sibling of the route stack)
+            // disappears in the same frame the FullPlayer slide
+            // begins — otherwise it would float on top of the
+            // animation for ~300ms and feel laggy.
+            onTap: () {
+              player.setFullPlayerOpen(true);
+              rootNavigatorKey.currentState?.push(
+                PageRouteBuilder(
+                  opaque: true,
+                  pageBuilder: (_, anim, __) => SlideTransition(
+                    position: anim.drive(Tween(begin: const Offset(0, 1), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
+                    child: const FullPlayer(),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               child: Row(
@@ -151,6 +166,17 @@ class MiniPlayer extends StatelessWidget {
                     ),
                   ),
                   IconButton(tooltip: nextTooltip, icon: Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  // Collapse button — shrinks the row to just a tiny
+                  // thumbnail+play pill in the bottom-right. Tap on
+                  // the pill restores. Useful for users who want the
+                  // bottom of the screen back temporarily.
+                  IconButton(
+                    tooltip: 'Thu gọn',
+                    icon: Icon(Icons.unfold_less, color: AppColors.textMuted, size: 18),
+                    onPressed: player.toggleMiniCollapsed,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  ),
                 ],
               ),
             ),
@@ -158,5 +184,146 @@ class MiniPlayer extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Tiny pill version of the mini player — thumbnail + play/pause +
+/// expand button. Mounted by the root-level overlay so it can drift
+/// freely across the entire screen via drag.
+class _CollapsedMiniPlayerPill extends StatelessWidget {
+  final Map<String, dynamic> song;
+  final String? thumb;
+  const _CollapsedMiniPlayerPill({required this.song, required this.thumb});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    // The pill lives in the root `MaterialApp.builder` Stack which
+    // sits outside the route's Navigator → no `Overlay`, no
+    // `Material`. Stick to plain `GestureDetector` + `Icon` to avoid
+    // ripple/tooltip widgets that walk the ancestor chain.
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: const Color(0x33711313)),
+        boxShadow: const [BoxShadow(color: Color(0x66000000), blurRadius: 12, offset: Offset(0, 2))],
+      ),
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        // Tap thumbnail → open FullPlayer (same affordance as the
+        // expanded card so the gesture stays consistent). Flip
+        // `fullPlayerOpen` synchronously so the pill disappears in
+        // the same frame the slide-up starts — otherwise it floats
+        // on top of the animation.
+        GestureDetector(
+          onTap: () {
+            player.setFullPlayerOpen(true);
+            rootNavigatorKey.currentState?.push(
+              PageRouteBuilder(
+                opaque: true,
+                pageBuilder: (_, anim, __) => SlideTransition(
+                  position: anim.drive(Tween(begin: const Offset(0, 1), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
+                  child: const FullPlayer(),
+                ),
+              ),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: thumb != null
+                ? CachedNetworkImage(imageUrl: thumb!, width: 36, height: 36, fit: BoxFit.cover)
+                : Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 14, color: AppColors.textMuted)),
+          ),
+        ),
+        const SizedBox(width: 6),
+        GestureDetector(
+          onTap: player.togglePlay,
+          child: Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+            child: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 18),
+          ),
+        ),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: player.toggleMiniCollapsed,
+          child: SizedBox(
+            width: 32, height: 32,
+            child: Icon(Icons.unfold_more, color: AppColors.textMuted, size: 18),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Floating, draggable layer that hosts the collapsed mini-player
+/// pill above every route. Mounted once at the root via
+/// `MaterialApp.builder` so its offset survives navigation. Drag
+/// updates `PlayerProvider.miniOffset`; the offset is clamped on
+/// pan-end so the pill never lands fully off-screen.
+class MiniPlayerOverlay extends StatefulWidget {
+  const MiniPlayerOverlay({super.key});
+
+  @override
+  State<MiniPlayerOverlay> createState() => _MiniPlayerOverlayState();
+}
+
+class _MiniPlayerOverlayState extends State<MiniPlayerOverlay> {
+  // Approximate pill dimensions used for default-anchor positioning
+  // and clamp logic. Real size is intrinsic; these are good-enough
+  // upper bounds for the math.
+  static const double _w = 150;
+  static const double _h = 56;
+  static const double _margin = 12;
+
+  // Local drag accumulator — flushed into the provider on pan-end.
+  // Updating provider on every onPanUpdate would trigger a rebuild
+  // for every pixel of motion across the entire app.
+  Offset? _draftOffset;
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    final song = player.currentSong;
+    if (song == null || !player.miniCollapsed || player.fullPlayerOpen) return const SizedBox.shrink();
+
+    final screen = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    // Default anchor: bottom-right with safe-area + 8px margin.
+    final defaultLeft = screen.width - _w - _margin;
+    final defaultTop = screen.height - padding.bottom - _h - _margin;
+    final base = _draftOffset ?? player.miniOffset ?? Offset(defaultLeft, defaultTop);
+
+    final thumb = song['thumbnail']?['url']?.toString();
+
+    return Stack(children: [
+      Positioned(
+        left: base.dx,
+        top: base.dy,
+        child: GestureDetector(
+          // Make the pill itself drag-handle so the embedded
+          // play/expand buttons keep working — Flutter's gesture
+          // arena picks taps over pans inside Material/IconButton.
+          onPanUpdate: (d) {
+            setState(() {
+              final next = (_draftOffset ?? base) + d.delta;
+              _draftOffset = next;
+            });
+          },
+          onPanEnd: (_) {
+            if (_draftOffset == null) return;
+            // Clamp to viewport so an over-zealous fling can't lose
+            // the pill behind a screen edge.
+            final clampedX = _draftOffset!.dx.clamp(_margin, screen.width - _w - _margin);
+            final clampedY = _draftOffset!.dy.clamp(padding.top + _margin, screen.height - padding.bottom - _h - _margin);
+            player.setMiniOffset(Offset(clampedX, clampedY));
+            setState(() => _draftOffset = null);
+          },
+          child: _CollapsedMiniPlayerPill(song: song, thumb: thumb),
+        ),
+      ),
+    ]);
   }
 }

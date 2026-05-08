@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'play_tracker.dart';
@@ -44,6 +45,20 @@ class PlayerProvider extends ChangeNotifier {
   // through `playSong(..., sourceLabel: ...)`.
   String? _sourceLabel;
 
+  // Collapse the floating mini-player into a thumbnail-only pill.
+  // Shared across screens so toggling on one route persists when
+  // the user navigates — local widget state would reset on each
+  // mount (mini-player is hosted per-screen).
+  bool _miniCollapsed = false;
+  // Where the user dragged the collapsed pill last. Null means
+  // "default anchor" (bottom-right). When non-null the value is the
+  // top-left offset in screen coordinates of the pill's container.
+  Offset? _miniOffset;
+  // FullPlayer mounts itself via initState and clears on dispose so
+  // the root-level pill can self-hide while the full-screen player is
+  // visible (otherwise the pill floats on top of it).
+  bool _fullPlayerOpen = false;
+
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
   int get currentIndex => _currentIndex;
@@ -59,6 +74,26 @@ class PlayerProvider extends ChangeNotifier {
   bool get hasSleepTimer => _sleepTimer != null || _sleepEndOfSong;
   bool get sleepEndOfSong => _sleepEndOfSong;
   String? get sourceLabel => _sourceLabel;
+  bool get miniCollapsed => _miniCollapsed;
+  Offset? get miniOffset => _miniOffset;
+  void toggleMiniCollapsed() {
+    _miniCollapsed = !_miniCollapsed;
+    // Reset position when re-expanding so toggling collapse twice in
+    // a row doesn't strand the pill where the user previously
+    // dragged it.
+    if (!_miniCollapsed) _miniOffset = null;
+    notifyListeners();
+  }
+  void setMiniOffset(Offset offset) {
+    _miniOffset = offset;
+    notifyListeners();
+  }
+  bool get fullPlayerOpen => _fullPlayerOpen;
+  void setFullPlayerOpen(bool open) {
+    if (_fullPlayerOpen == open) return;
+    _fullPlayerOpen = open;
+    notifyListeners();
+  }
   // Remaining time on the fixed-duration sleep timer (null when no timer or
   // when in end-of-song mode). UI uses this for the live countdown label.
   Duration? get sleepRemaining {

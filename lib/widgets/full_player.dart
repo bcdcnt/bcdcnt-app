@@ -108,6 +108,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   // matching Spotify's "now playing" vibe.
   Color? _artworkAccent;
   String? _artworkAccentForUrl;
+  // Cached so `dispose()` can clear `fullPlayerOpen` without going
+  // through `context.read` after the element has been detached.
+  PlayerProvider? _playerRef;
 
   static const List<double> _speedPresets = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
@@ -115,6 +118,15 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+    // Cache the provider for `dispose()` — and re-assert the
+    // open flag in case we were pushed by code that didn't flip
+    // it (deep links, keyboard shortcuts, etc.). The setter
+    // no-ops if the value is already `true`.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _playerRef = context.read<PlayerProvider>();
+      _playerRef!.setFullPlayerOpen(true);
+    });
     if (_isDesktopOS) {
       windowManager.addListener(this);
       windowManager.isFullScreen().then((v) {
@@ -135,6 +147,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     _rotation.dispose();
     _shortcutFocus.dispose();
     _idleTimer?.cancel();
+    // Restore the pill via the cached reference — `context.read`
+    // here is unreliable since the element is mid-teardown.
+    _playerRef?.setFullPlayerOpen(false);
     super.dispose();
   }
 

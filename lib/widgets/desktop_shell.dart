@@ -54,7 +54,6 @@ class _DesktopShellState extends State<DesktopShell> {
   // top-level routes rely on the shell to render the bottom player bar.
   static const _shellOwnedMiniPlayerPaths = {
     '/', '/binh-luan', '/search', '/library', '/profile',
-    '/cong-dong/hoat-dong-thanh-vien', '/bang-xep-hang',
   };
 
   @override
@@ -332,7 +331,7 @@ const _primaryNavGroups = <_NavGroup>[
     _NavItem('Trang chủ', '/', Icons.home_outlined),
     _NavItem('Tìm kiếm', '/search', Icons.search),
     _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
-    _NavItem('Bảng xếp hạng', '/bang-xep-hang', Icons.leaderboard_outlined),
+    _NavItem('Hoạt động', '/cong-dong/hoat-dong-thanh-vien', Icons.show_chart),
   ]),
   _NavGroup(label: 'THỂ LOẠI', items: [
     _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
