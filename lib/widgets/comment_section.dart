@@ -8,11 +8,14 @@ import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart' show Clipboard;
 import 'package:http/http.dart' as http;
+import 'package:pasteboard/pasteboard.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import 'comment_media.dart';
+import 'quill_comment_input.dart';
 
 class CommentSection extends StatefulWidget {
   final String type;
@@ -37,7 +40,15 @@ class _CommentSectionState extends State<CommentSection> {
   bool _loading = true;
   bool _loadingMore = false;
   bool _submitting = false;
-  final _controller = TextEditingController();
+  // Rich-text controller for the "new comment" input. HTML in/out
+  // so the wire format matches what the web already stores; inline
+  // images render in-place via Quill embed builder.
+  final _quillCtl = QuillCommentController();
+  // Inline edit state. Only one comment can be in edit mode at a
+  // time — entering edit on a second comment cancels the first.
+  String? _editingId;
+  QuillCommentController? _editQuillCtl;
+  bool _savingEdit = false;
   // GlobalKey per highlighted comment so we can ScrollPosition.ensure-
   // visible on it once it lands. Cleared when the highlight is done.
   GlobalKey? _highlightKey;
@@ -58,15 +69,19 @@ class _CommentSectionState extends State<CommentSection> {
   @override
   void initState() {
     super.initState();
-    _controller.addListener(_onCommentTextChanged);
+    // Mention typeahead listener — wired to a TextEditingController
+    // that the Quill prototype no longer uses. Keeping the no-op
+    // listener so the rest of the mention plumbing compiles; we'll
+    // port it onto Quill's document changes in a follow-up.
     _fetchComments(1);
   }
 
   @override
   void dispose() {
-    _controller.removeListener(_onCommentTextChanged);
+    // No-op: see initState note about mention listener.
     _mentionDebounce?.cancel();
-    _controller.dispose();
+    _quillCtl.dispose();
+    _editQuillCtl?.dispose();
     super.dispose();
   }
 
@@ -75,30 +90,11 @@ class _CommentSectionState extends State<CommentSection> {
   // (and `@` is at start-of-string OR preceded by whitespace) we've found
   // a mention. Otherwise clears mention state.
   void _onCommentTextChanged() {
-    final text = _controller.text;
-    final cursor = _controller.selection.baseOffset;
-    if (cursor < 0 || cursor > text.length) { _clearMention(); return; }
-    int i = cursor - 1;
-    while (i >= 0) {
-      final ch = text[i];
-      if (ch == ' ' || ch == '\n' || ch == '\t') { _clearMention(); return; }
-      if (ch == '@') {
-        // Must be at line start or preceded by whitespace — avoids
-        // catching emails / inline `@` tokens mid-word.
-        if (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\n') {
-          final query = text.substring(i + 1, cursor);
-          _mentionStart = i;
-          _mentionQuery = query;
-          _scheduleMentionFetch(query);
-          return;
-        } else {
-          _clearMention();
-          return;
-        }
-      }
-      i--;
-    }
-    _clearMention();
+    // Mention typeahead is currently disabled while the input uses
+    // Quill (rich-text). To re-enable, listen on the Quill document
+    // change stream and resolve cursor position to surrounding text
+    // via `Document.toPlainText()`. Left as a no-op so the rest of
+    // the picker UI compiles without forcing a bigger refactor here.
   }
 
   void _clearMention() {
@@ -143,16 +139,8 @@ class _CommentSectionState extends State<CommentSection> {
   }
 
   void _insertMention(String username) {
-    if (_mentionStart < 0) return;
-    final before = _controller.text.substring(0, _mentionStart);
-    final cursor = _controller.selection.baseOffset.clamp(0, _controller.text.length);
-    final after = _controller.text.substring(cursor);
-    final replacement = '@$username ';
-    final newText = '$before$replacement$after';
-    _controller.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: before.length + replacement.length),
-    );
+    // No-op: see `_onCommentTextChanged` — mention insertion will be
+    // re-implemented against the Quill document in a follow-up.
     _clearMention();
   }
 
@@ -260,20 +248,31 @@ class _CommentSectionState extends State<CommentSection> {
     final pick = await FilePicker.platform.pickFiles(type: FileType.image, withData: true);
     final file = pick?.files.firstOrNull;
     if (file == null || file.bytes == null) return;
+    await _uploadImageBytes(file.bytes!, file.name, file.extension);
+  }
+
+  /// Shared upload path used by both the picker and clipboard paste.
+  /// Surfaces errors through the same SnackBar the picker uses so
+  /// the user gets identical feedback regardless of how the bytes
+  /// landed in the input.
+  Future<void> _uploadImageBytes(List<int> bytes, String filename, String? ext) async {
+    if (_uploadingImage || _submitting) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
 
     setState(() => _uploadingImage = true);
     try {
       // 1. presign
       final presign = await auth.authedMutate(
         r'''mutation($filename: String!, $type: UploadType!, $context: String) { presignUpload(filename: $filename, type: $type, context: $context) { upload_url key } }''',
-        {'filename': file.name, 'type': 'img', 'context': 'comment'},
+        {'filename': filename, 'type': 'img', 'context': 'comment'},
       );
       final uploadUrl = presign['presignUpload']?['upload_url'] as String?;
       final key = presign['presignUpload']?['key'] as String?;
       if (uploadUrl == null || key == null) throw Exception('Presign failed');
 
       // 2. PUT to R2
-      final putRes = await http.put(Uri.parse(uploadUrl), body: file.bytes!, headers: {'Content-Type': _mimeFromExt(file.extension)});
+      final putRes = await http.put(Uri.parse(uploadUrl), body: bytes, headers: {'Content-Type': _mimeFromExt(ext)});
       if (putRes.statusCode >= 400) throw Exception('Upload failed (${putRes.statusCode})');
 
       // 3. Poll status until processed
@@ -293,11 +292,53 @@ class _CommentSectionState extends State<CommentSection> {
       if (finalUrl == null) throw Exception('Hết thời gian xử lý');
 
       if (!mounted) return;
-      setState(() => _attachedImages.add(finalUrl!));
+      // Insert at the active Quill editor's cursor. Edit mode →
+      // that comment's edit editor; otherwise → the main input.
+      final target = _editQuillCtl ?? _quillCtl;
+      target.insertImageUrl(finalUrl!);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải ảnh: $e'), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _uploadingImage = false);
+  }
+
+  /// Explicit-button entry point. Same flow as the keyboard
+  /// shortcut but surfaces a SnackBar when the clipboard has no
+  /// image so the user gets feedback instead of silence.
+  Future<void> _pasteImageFromClipboard() async {
+    try {
+      final bytes = await Pasteboard.image;
+      if (bytes == null || bytes.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: const Text('Clipboard không có ảnh'), backgroundColor: AppColors.surfaceLight),
+        );
+        return;
+      }
+      await _uploadImageBytes(bytes, 'pasted-${DateTime.now().millisecondsSinceEpoch}.png', 'png');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi dán ảnh: $e'), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  /// Handle Cmd/Ctrl+V on the comment input. The default TextField
+  /// paste flow on desktop runs through Shortcuts/Actions — so a
+  /// Focus.onKeyEvent listener never sees the keystroke. Binding the
+  /// shortcut via `CallbackShortcuts` consumes the event entirely;
+  /// we therefore re-implement the text-paste path manually here,
+  /// alongside the image upload.
+  Future<void> _handlePasteIntent() async {
+    // 1. Check clipboard for an image first. macOS screenshots,
+    //    in-browser image copies, etc. surface here.
+    try {
+      final bytes = await Pasteboard.image;
+      if (bytes != null && bytes.isNotEmpty && mounted) {
+        unawaited(_uploadImageBytes(bytes, 'pasted-${DateTime.now().millisecondsSinceEpoch}.png', 'png'));
+      }
+    } catch (_) {}
+    // Quill handles text paste through its own clipboard manager;
+    // no manual insert needed here.
   }
 
   String _mimeFromExt(String? ext) {
@@ -316,21 +357,26 @@ class _CommentSectionState extends State<CommentSection> {
 
   Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
-    final text = _controller.text.trim();
-    if ((text.isEmpty && _attachedImages.isEmpty) || !auth.isAuthenticated) return;
+    if (_quillCtl.isEmpty || !auth.isAuthenticated) return;
     setState(() => _submitting = true);
-    // Compose: text + each image as <p><img></p>
-    final imgsHtml = _attachedImages.map((u) => '<p><img src="$u" alt="" /></p>').join();
-    final content = text.isNotEmpty ? '<p>$text</p>$imgsHtml' : imgsHtml;
+    // Quill already produces the canonical HTML format the web
+    // writes (`<p>...</p>`, `<br>`, `<img src>`), so no extra
+    // paragraph splitting needed.
+    final content = _quillCtl.html;
     try {
       await auth.authedMutate(
-        r'''mutation($type: String!, $id: ID!, $content: String!) { addComment(commentable_type: $type, commentable_id: $id, content: $content) { id } }''',
-        {'type': widget.type, 'id': widget.id, 'content': content},
+        r'''mutation($type: String!, $id: Int!, $content: String!) { addComment(type: $type, object_id: $id, content: $content) { id } }''',
+        {'type': widget.type, 'id': int.parse(widget.id), 'content': content},
       );
-      _controller.clear();
-      _attachedImages.clear();
+      _quillCtl.clear();
       await _fetchComments(1);
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+        );
+      }
+    }
     if (mounted) setState(() => _submitting = false);
   }
 
@@ -366,48 +412,51 @@ class _CommentSectionState extends State<CommentSection> {
     } catch (_) {}
   }
 
-  Future<void> _editComment(Map<String, dynamic> c) async {
-    final controller = TextEditingController(text: _stripHtml(c['content'] ?? ''));
-    final newContent = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Sửa bình luận', style: display(TextStyle(color: AppColors.text))),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-          autofocus: true,
-          style: body(TextStyle(color: AppColors.text)),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: AppColors.surfaceLight,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
-          TextButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: Text('Lưu', style: TextStyle(color: AppColors.accentLight))),
-        ],
-      ),
-    );
-    if (newContent == null || newContent.isEmpty) return;
+  void _startEdit(Map<String, dynamic> c) {
+    final html = (c['content'] ?? '').toString();
+    // Tear down any prior edit session — switching from one comment
+    // straight to another shouldn't leak the old Quill document.
+    _editQuillCtl?.dispose();
+    setState(() {
+      _editingId = c['id']?.toString();
+      _editQuillCtl = QuillCommentController(initialHtml: html);
+    });
+  }
+
+  void _cancelEdit() {
+    _editQuillCtl?.dispose();
+    setState(() {
+      _editingId = null;
+      _editQuillCtl = null;
+    });
+  }
+
+  Future<void> _saveEdit(Map<String, dynamic> c) async {
+    final ctl = _editQuillCtl;
+    if (_savingEdit || ctl == null || ctl.isEmpty) return;
+    setState(() => _savingEdit = true);
+    final html = ctl.html;
     try {
       final auth = context.read<AuthProvider>();
       final data = await auth.authedMutate(
         r'mutation($id: ID!, $content: String!) { updateComment(id: $id, content: $content) { id content } }',
-        {'id': c['id'].toString(), 'content': newContent},
+        {'id': c['id'].toString(), 'content': html},
       );
       if (!mounted) return;
       final updated = data['updateComment'];
-      if (updated != null) {
-        setState(() {
+      _editQuillCtl?.dispose();
+      setState(() {
+        if (updated != null) {
           final idx = _comments.indexWhere((x) => x['id'].toString() == c['id'].toString());
           if (idx >= 0) _comments[idx] = {..._comments[idx], 'content': updated['content']};
-        });
-      }
+        }
+        _editingId = null;
+        _editQuillCtl = null;
+      });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi sửa: $e'), backgroundColor: AppColors.error));
     }
+    if (mounted) setState(() => _savingEdit = false);
   }
 
   Future<void> _confirmDelete(Map<String, dynamic> c) async {
@@ -440,7 +489,18 @@ class _CommentSectionState extends State<CommentSection> {
     }
   }
 
-  String _stripHtml(String html) => html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
+  /// HTML → plain text that round-trips with `_submit` / `_saveEdit`:
+  /// each `<p>` becomes its own paragraph, `<br>` becomes a single
+  /// newline. So a comment saved as `<p>a<br>b</p><p>c</p>` reloads
+  /// as "a\nb\n\nc" — exactly what the user originally typed.
+  String _htmlToPlainText(String html) {
+    var s = html;
+    s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
+    s = s.replaceAll(RegExp(r'</p>\s*<p[^>]*>', caseSensitive: false), '\n\n');
+    s = s.replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '');
+    s = s.replaceAll(RegExp(r'<[^>]+>'), '');
+    return s.trim();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -514,42 +574,50 @@ class _CommentSectionState extends State<CommentSection> {
                     ),
                   ),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      radius: 16,
-                      backgroundColor: AppColors.surfaceLight,
-                      backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(auth.user!['avatar']) : null,
-                      child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 14, color: AppColors.textMuted) : null,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: AppColors.surfaceLight,
+                        backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(auth.user!['avatar']) : null,
+                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 14, color: AppColors.textMuted) : null,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        style: body(TextStyle(color: AppColors.text, fontSize: 14)),
-                        maxLines: null,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: InputDecoration(
-                          hintText: 'Viết bình luận...',
-                          hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 14)),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          isCollapsed: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                        ),
+                      child: QuillCommentInput(
+                        controller: _quillCtl,
+                        hintText: 'Viết bình luận...',
                       ),
                     ),
-                    // Image attach button
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 42),
+                  child: Row(children: [
                     IconButton(
                       icon: _uploadingImage
                           ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
-                          : Icon(Icons.image_outlined, size: 20, color: AppColors.textSecondary),
+                          : Icon(Icons.image_outlined, size: 18, color: AppColors.textSecondary),
                       onPressed: _uploadingImage ? null : _pickAndUploadImage,
                       tooltip: 'Đính kèm ảnh',
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                     ),
+                    IconButton(
+                      icon: Icon(Icons.content_paste_go_outlined, size: 16, color: AppColors.textSecondary),
+                      onPressed: _uploadingImage ? null : _pasteImageFromClipboard,
+                      tooltip: 'Dán ảnh từ clipboard',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
+                    if (_uploadingImage && _editingId == null) ...[
+                      const SizedBox(width: 4),
+                      Text('Đang tải ảnh...', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                    ],
+                    const Spacer(),
                     Container(
                       width: 36, height: 36,
                       decoration: BoxDecoration(color: _submitting ? AppColors.surfaceLight : AppColors.accent, shape: BoxShape.circle),
@@ -559,36 +627,7 @@ class _CommentSectionState extends State<CommentSection> {
                         padding: EdgeInsets.zero,
                       ),
                     ),
-                  ],
-                ),
-                if (_attachedImages.isNotEmpty) Padding(
-                  padding: const EdgeInsets.only(top: 8, left: 42),
-                  child: Wrap(
-                    spacing: 6, runSpacing: 6,
-                    children: _attachedImages.asMap().entries.map((e) {
-                      final i = e.key; final url = e.value;
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: CachedNetworkImage(imageUrl: url, width: 60, height: 60, fit: BoxFit.cover),
-                          ),
-                          Positioned(
-                            top: -6, right: -6,
-                            child: GestureDetector(
-                              onTap: () => setState(() => _attachedImages.removeAt(i)),
-                              child: Container(
-                                width: 20, height: 20,
-                                decoration: BoxDecoration(color: AppColors.bg, shape: BoxShape.circle, border: Border.all(color: AppColors.border)),
-                                child: const Icon(Icons.close, size: 12, color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
-                  ),
+                  ]),
                 ),
               ],
             ),
@@ -667,9 +706,85 @@ class _CommentSectionState extends State<CommentSection> {
                           Text(timeago(c['created_at']), style: AppText.caption),
                         ]),
                         const SizedBox(height: 4),
-                        CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString()),
+                        if (_editingId == c['id']?.toString()) ...[
+                          // Inline edit mode — replaces the comment
+                          // body with a text field + save/cancel
+                          // affordances. Mirrors the "Add comment"
+                          // input style so it feels at home.
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.surfaceLight,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            child: _editQuillCtl == null
+                                ? const SizedBox.shrink()
+                                : QuillCommentInput(
+                                    controller: _editQuillCtl!,
+                                    hintText: 'Sửa bình luận...',
+                                    autofocus: true,
+                                  ),
+                          ),
+                          if (_uploadingImage && _editingId == c['id']?.toString()) Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Row(children: [
+                              SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight)),
+                              const SizedBox(width: 8),
+                              Text('Đang tải ảnh lên...', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                            ]),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(children: [
+                            TextButton(
+                              onPressed: _savingEdit ? null : () => _saveEdit(c),
+                              style: TextButton.styleFrom(
+                                backgroundColor: AppColors.accent,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                                minimumSize: const Size(0, 30),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text(_savingEdit ? 'Đang lưu…' : 'Lưu', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              onPressed: _savingEdit ? null : _cancelEdit,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                minimumSize: const Size(0, 30),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              child: Text('Huỷ', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                            ),
+                            const Spacer(),
+                            // Paste image into THIS edit input — the
+                            // upload routes into `_editAttachedImages`
+                            // because `_editingId` is set.
+                            IconButton(
+                              icon: Icon(Icons.content_paste_go_outlined, size: 16, color: AppColors.textSecondary),
+                              onPressed: _uploadingImage ? null : _pasteImageFromClipboard,
+                              tooltip: 'Dán ảnh từ clipboard',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.image_outlined, size: 16, color: AppColors.textSecondary),
+                              onPressed: _uploadingImage ? null : _pickAndUploadImage,
+                              tooltip: 'Đính kèm ảnh',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                            ),
+                          ]),
+                        ] else
+                          CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString()),
                         const SizedBox(height: 4),
-                        Row(children: [
+                        // Hide the like/edit/delete action row while
+                        // this very comment is being edited — the
+                        // inline form above already exposes Lưu/Huỷ,
+                        // and the like target wouldn't be the
+                        // current text anyway.
+                        if (_editingId != c['id']?.toString()) Row(children: [
                           InkWell(
                             onTap: () => _love(c['id'].toString(), isLoved),
                             child: Row(
@@ -686,7 +801,7 @@ class _CommentSectionState extends State<CommentSection> {
                           if (isOwn) ...[
                             SizedBox(width: 14),
                             InkWell(
-                              onTap: () => _editComment(c),
+                              onTap: () => _startEdit(c),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.edit_outlined, size: 13, color: AppColors.textMuted),
                                 SizedBox(width: 3),

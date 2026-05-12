@@ -102,10 +102,22 @@ class _CommentMediaState extends State<CommentMedia> {
   @override
   Widget build(BuildContext context) {
     if (_blocks.isEmpty) return const SizedBox.shrink();
+    // Threads-style layout: text/audio/video render in document
+    // order at the top; every image — no matter where it was in the
+    // original HTML — collapses into one horizontal strip at the
+    // bottom. Old web comments with images interleaved between
+    // paragraphs end up looking the same as new app comments where
+    // the user typed text then attached images at the end.
+    final nonImageBlocks = _blocks.where((b) => b.kind != _BlockKind.image).toList();
+    final imageUrls = _blocks
+        .where((b) => b.kind == _BlockKind.image)
+        .map((b) => b.value)
+        .toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: _blocks.map((b) {
-        switch (b.kind) {
+      children: [
+        ...nonImageBlocks.map((b) {
+          switch (b.kind) {
           case _BlockKind.text:
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 1),
@@ -129,28 +141,8 @@ class _CommentMediaState extends State<CommentMedia> {
               ),
             );
           case _BlockKind.image:
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: InkWell(
-                  onTap: () => _showImageZoom(context, b.value),
-                  borderRadius: BorderRadius.circular(10),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 240, maxHeight: 200),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10),
-                      child: CachedNetworkImage(
-                        imageUrl: b.value,
-                        fit: BoxFit.cover,
-                        placeholder: (_, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight),
-                        errorWidget: (_, _, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight, alignment: Alignment.center, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            );
+            // Unreachable — handled by the group branch above.
+            return const SizedBox.shrink();
           case _BlockKind.audio:
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -196,62 +188,158 @@ class _CommentMediaState extends State<CommentMedia> {
               ),
             );
         }
-      }).toList(),
+      }),
+      if (imageUrls.isNotEmpty) _buildImageStrip(context, imageUrls),
+      ],
     );
   }
 
-  void _showImageZoom(BuildContext context, String url) {
+  // Threads-style horizontal image strip. Single image fits inline
+  // at a slightly larger size; multiple images become a horizontally
+  // scrollable row with uniform height and a tap opens the lightbox
+  // already positioned on the tapped image.
+  Widget _buildImageStrip(BuildContext context, List<String> urls) {
+    const double height = 200;
+    if (urls.length == 1) {
+      final url = urls.first;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: InkWell(
+            onTap: () => _showImageZoom(context, urls, 0),
+            borderRadius: BorderRadius.circular(10),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 240, maxHeight: height),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight),
+                  errorWidget: (_, _, _) => Container(width: 200, height: 140, color: AppColors.surfaceLight, alignment: Alignment.center, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: SizedBox(
+        height: height,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: urls.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            final url = urls[i];
+            return InkWell(
+              onTap: () => _showImageZoom(context, urls, i),
+              borderRadius: BorderRadius.circular(10),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  height: height,
+                  fit: BoxFit.cover,
+                  placeholder: (_, _) => Container(width: 140, height: height, color: AppColors.surfaceLight),
+                  errorWidget: (_, _, _) => Container(width: 140, height: height, color: AppColors.surfaceLight, alignment: Alignment.center, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showImageZoom(BuildContext context, List<String> urls, int initialIndex) {
+    final controller = PageController(initialPage: initialIndex);
+    final indexNotifier = ValueNotifier<int>(initialIndex);
     showDialog(
       context: context,
       barrierColor: Colors.black87,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.all(20),
-        child: GestureDetector(
-          onTap: () => Navigator.pop(ctx),
-          child: Stack(
-            children: [
-              Center(
+        child: Stack(
+          children: [
+            // Swipeable gallery — each page wraps an InteractiveViewer
+            // so pinch-zoom still works, while horizontal swipe between
+            // images advances PageView (the InteractiveViewer's pan
+            // takes priority while zoomed in).
+            PageView.builder(
+              controller: controller,
+              itemCount: urls.length,
+              onPageChanged: (i) => indexNotifier.value = i,
+              itemBuilder: (_, i) => GestureDetector(
+                onTap: () => Navigator.pop(ctx),
                 child: InteractiveViewer(
                   minScale: 1, maxScale: 4,
-                  child: CachedNetworkImage(
-                    imageUrl: url,
-                    fit: BoxFit.contain,
-                    placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
-                    errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0, right: 0,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ),
-              if (widget.authorName != null && widget.authorName!.isNotEmpty)
-                Positioned(
-                  left: 0, right: 0, bottom: 24,
                   child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white12),
-                      ),
-                      child: Text(
-                        'Ảnh: ${widget.authorName}',
-                        style: body(const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
-                      ),
+                    child: CachedNetworkImage(
+                      imageUrl: urls[i],
+                      fit: BoxFit.contain,
+                      placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
+                      errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+            Positioned(
+              top: 0, right: 0,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            // Page counter "2 / 5" pill — only useful when more than
+            // one image is in the gallery.
+            if (urls.length > 1)
+              Positioned(
+                top: 12, left: 0, right: 0,
+                child: Center(
+                  child: ValueListenableBuilder<int>(
+                    valueListenable: indexNotifier,
+                    builder: (_, idx, _) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text('${idx + 1} / ${urls.length}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.authorName != null && widget.authorName!.isNotEmpty)
+              Positioned(
+                left: 0, right: 0, bottom: 24,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(
+                      'Ảnh: ${widget.authorName}',
+                      style: body(const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      controller.dispose();
+      indexNotifier.dispose();
+    });
   }
 }
 
