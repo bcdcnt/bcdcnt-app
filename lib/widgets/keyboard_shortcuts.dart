@@ -8,6 +8,8 @@ import '../main.dart' show rootNavigatorKey;
 import 'command_palette.dart';
 import 'desktop_shell.dart' show desktopPanelOpen;
 
+typedef AncestorMatcher = bool Function(Widget widget);
+
 /// Top-level keyboard shortcuts for the desktop app, modelled after
 /// Spotify / Apple Music:
 ///   Space            → play/pause
@@ -58,7 +60,26 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
     if (primary == null) return false;
     final ctx = primary.context;
     if (ctx == null) return false;
-    return ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+    if (ctx.findAncestorWidgetOfExactType<EditableText>() != null) return true;
+    // Quill renders its own editor (`QuillRawEditor`) instead of
+    // Flutter's `EditableText`, so the ancestor check above misses
+    // it — typing space inside a comment would otherwise pause
+    // the player. Match by runtime widget type name to avoid
+    // pulling flutter_quill into this file.
+    AncestorMatcher matcher = (w) {
+      final n = w.runtimeType.toString();
+      return n == 'QuillRawEditor' || n == 'QuillEditor';
+    };
+    return _hasAncestorMatching(ctx, matcher);
+  }
+
+  bool _hasAncestorMatching(BuildContext ctx, AncestorMatcher matcher) {
+    bool found = false;
+    ctx.visitAncestorElements((el) {
+      if (matcher(el.widget)) { found = true; return false; }
+      return true;
+    });
+    return found;
   }
 
   bool _handler(KeyEvent event) {

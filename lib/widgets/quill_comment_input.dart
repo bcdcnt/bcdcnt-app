@@ -22,7 +22,7 @@ class QuillCommentInput extends StatelessWidget {
     required this.controller,
     this.hintText = 'Viết bình luận...',
     this.autofocus = false,
-    this.minHeight = 44,
+    this.minHeight = 32,
     this.maxHeight = 320,
   });
 
@@ -38,7 +38,7 @@ class QuillCommentInput extends StatelessWidget {
           placeholder: hintText,
           autoFocus: autofocus,
           expands: false,
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 6),
           embedBuilders: [_InlineImageEmbedBuilder()],
           scrollable: true,
           customStyles: q.DefaultStyles(
@@ -129,6 +129,25 @@ class QuillCommentController {
   }
 
   void requestFocus() => _focus.requestFocus();
+
+  /// Stream of document change events — every keystroke / paste /
+  /// replaceText surfaces here. Used by the mention typeahead.
+  Stream<dynamic> get documentChanges => _quill.document.changes;
+
+  /// Plain text + cursor offset that match what the user typed,
+  /// for mention detection (`@token` substring matching).
+  String get plainText => _quill.document.toPlainText();
+  int get cursorOffset => _quill.selection.baseOffset;
+
+  /// Replace a range with `text`, then place the caret right after
+  /// the inserted text. Used to swap an `@partial` query for the
+  /// resolved `@username ` once the user picks an option.
+  void replaceTextAt(int start, int length, String text) {
+    _quill.replaceText(
+      start, length, text,
+      TextSelection.collapsed(offset: start + text.length),
+    );
+  }
 
   void dispose() {
     _quill.dispose();

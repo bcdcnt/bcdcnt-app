@@ -49,6 +49,22 @@ class _CommentSectionState extends State<CommentSection> {
   String? _editingId;
   QuillCommentController? _editQuillCtl;
   bool _savingEdit = false;
+  // Audio / video attachments. Quill only handles images inline;
+  // audio + video upload as separate attachments and append to
+  // the comment HTML as `<audio>` / `<video>` blocks at submit time
+  // (same shape the web stores).
+  final List<String> _attachedAudios = [];
+  final List<String> _attachedVideos = [];
+  bool _uploadingAudio = false;
+  bool _uploadingVideo = false;
+  // Same for the inline-edit composer.
+  final List<String> _editAttachedAudios = [];
+  final List<String> _editAttachedVideos = [];
+  // Subscription on the Quill document — drives the `@` mention
+  // typeahead. Re-attached when the edit-mode controller is
+  // created so mentions also work mid-edit.
+  StreamSubscription? _quillDocSub;
+  StreamSubscription? _editQuillDocSub;
   // GlobalKey per highlighted comment so we can ScrollPosition.ensure-
   // visible on it once it lands. Cleared when the highlight is done.
   GlobalKey? _highlightKey;
@@ -69,16 +85,19 @@ class _CommentSectionState extends State<CommentSection> {
   @override
   void initState() {
     super.initState();
-    // Mention typeahead listener — wired to a TextEditingController
-    // that the Quill prototype no longer uses. Keeping the no-op
-    // listener so the rest of the mention plumbing compiles; we'll
-    // port it onto Quill's document changes in a follow-up.
+    // Drive @mention detection off the Quill document. Every edit
+    // fires here; we re-evaluate the text around the caret and
+    // surface the picker if it matches `@token`.
+    _quillDocSub = _quillCtl.documentChanges.listen((_) {
+      _onActiveCommentTextChanged(_quillCtl);
+    });
     _fetchComments(1);
   }
 
   @override
   void dispose() {
-    // No-op: see initState note about mention listener.
+    _quillDocSub?.cancel();
+    _editQuillDocSub?.cancel();
     _mentionDebounce?.cancel();
     _quillCtl.dispose();
     _editQuillCtl?.dispose();
@@ -89,12 +108,39 @@ class _CommentSectionState extends State<CommentSection> {
   // from the cursor stopping at whitespace; if the run starts with `@`
   // (and `@` is at start-of-string OR preceded by whitespace) we've found
   // a mention. Otherwise clears mention state.
-  void _onCommentTextChanged() {
-    // Mention typeahead is currently disabled while the input uses
-    // Quill (rich-text). To re-enable, listen on the Quill document
-    // change stream and resolve cursor position to surrounding text
-    // via `Document.toPlainText()`. Left as a no-op so the rest of
-    // the picker UI compiles without forcing a bigger refactor here.
+  // Tracks which controller's `@token` we're currently completing,
+  // so `_insertMention` knows whether to write into the main
+  // composer or the inline-edit composer.
+  QuillCommentController? _mentionTarget;
+
+  /// Walks backwards from the cursor in the active Quill editor and
+  /// flips the mention picker on when it finds an `@token` run.
+  void _onActiveCommentTextChanged(QuillCommentController ctl) {
+    final text = ctl.plainText;
+    final cursor = ctl.cursorOffset;
+    if (cursor < 0 || cursor > text.length) { _clearMention(); return; }
+    int i = cursor - 1;
+    while (i >= 0) {
+      final ch = text[i];
+      if (ch == ' ' || ch == '\n' || ch == '\t') { _clearMention(); return; }
+      if (ch == '@') {
+        if (i == 0 || text[i - 1] == ' ' || text[i - 1] == '\n') {
+          final query = text.substring(i + 1, cursor);
+          setState(() {
+            _mentionStart = i;
+            _mentionQuery = query;
+            _mentionTarget = ctl;
+          });
+          _scheduleMentionFetch(query);
+          return;
+        } else {
+          _clearMention();
+          return;
+        }
+      }
+      i--;
+    }
+    _clearMention();
   }
 
   void _clearMention() {
@@ -139,8 +185,11 @@ class _CommentSectionState extends State<CommentSection> {
   }
 
   void _insertMention(String username) {
-    // No-op: see `_onCommentTextChanged` — mention insertion will be
-    // re-implemented against the Quill document in a follow-up.
+    final ctl = _mentionTarget;
+    if (ctl == null || _mentionStart < 0) { _clearMention(); return; }
+    final cursor = ctl.cursorOffset;
+    final length = (cursor - _mentionStart).clamp(0, ctl.plainText.length);
+    ctl.replaceTextAt(_mentionStart, length, '@$username ');
     _clearMention();
   }
 
@@ -238,7 +287,6 @@ class _CommentSectionState extends State<CommentSection> {
   }
 
   // Pending image attachments (final URLs after upload)
-  final List<String> _attachedImages = [];
   bool _uploadingImage = false;
 
   Future<void> _pickAndUploadImage() async {
@@ -347,28 +395,217 @@ class _CommentSectionState extends State<CommentSection> {
       case 'png': return 'image/png';
       case 'gif': return 'image/gif';
       case 'webp': return 'image/webp';
+      case 'mp3': return 'audio/mpeg';
+      case 'm4a': return 'audio/mp4';
+      case 'wav': return 'audio/wav';
+      case 'ogg': return 'audio/ogg';
+      case 'flac': return 'audio/flac';
+      case 'mp4': return 'video/mp4';
+      case 'mov': return 'video/quicktime';
+      case 'webm': return 'video/webm';
+      case 'mkv': return 'video/x-matroska';
       default: return 'image/jpeg';
     }
+  }
+
+  Future<void> _pickAndUploadAudio() async {
+    if (_uploadingAudio) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
+    final pick = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['mp3','m4a','wav','ogg','flac','aac'],
+      withData: true,
+    );
+    final file = pick?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    await _uploadMediaBytes(file.bytes!, file.name, file.extension, isAudio: true);
+  }
+
+  Future<void> _pickAndUploadVideo() async {
+    if (_uploadingVideo) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
+    final pick = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['mp4','mov','webm','mkv'],
+      withData: true,
+    );
+    final file = pick?.files.firstOrNull;
+    if (file == null || file.bytes == null) return;
+    await _uploadMediaBytes(file.bytes!, file.name, file.extension, isAudio: false);
+  }
+
+  /// Upload audio or video. The API treats both as `UploadType.mp3`
+  /// (server-side transcoder handles audio→mp3 / video→mp4) — same
+  /// contract the web's MediaLibrary uses.
+  Future<void> _uploadMediaBytes(List<int> bytes, String filename, String? ext, {required bool isAudio}) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) return;
+    setState(() {
+      if (isAudio) { _uploadingAudio = true; } else { _uploadingVideo = true; }
+    });
+    try {
+      final presign = await auth.authedMutate(
+        r'''mutation($filename: String!, $type: UploadType!, $context: String) { presignUpload(filename: $filename, type: $type, context: $context) { upload_url key } }''',
+        {'filename': filename, 'type': 'mp3', 'context': 'comment'},
+      );
+      final uploadUrl = presign['presignUpload']?['upload_url'] as String?;
+      final key = presign['presignUpload']?['key'] as String?;
+      if (uploadUrl == null || key == null) throw Exception('Presign failed');
+      final putRes = await http.put(Uri.parse(uploadUrl), body: bytes, headers: {'Content-Type': _mimeFromExt(ext)});
+      if (putRes.statusCode >= 400) throw Exception('Upload failed (${putRes.statusCode})');
+      // Audio/video transcoding takes longer than image processing
+      // — poll with a wider window before giving up.
+      String? finalUrl;
+      for (int i = 0; i < 180; i++) {
+        await Future.delayed(const Duration(seconds: 1));
+        final status = await ApiClient.authedQuery(
+          r'''query($key: String!) { uploadStatus(key: $key) { status data } }''',
+          {'key': key},
+          auth.token!,
+        );
+        final st = status['uploadStatus']?['status'];
+        if (st == 'completed') {
+          final raw = status['uploadStatus']?['data'];
+          final data = raw is String ? (await _tryParseJson(raw)) : raw;
+          finalUrl = data?['url'] as String?;
+          break;
+        }
+        if (st == 'failed' || st == 'error') throw Exception('Xử lý ${isAudio ? "audio" : "video"} lỗi');
+      }
+      if (finalUrl == null) throw Exception('Hết thời gian xử lý');
+      if (!mounted) return;
+      final inEdit = _editingId != null;
+      setState(() {
+        if (isAudio) {
+          (inEdit ? _editAttachedAudios : _attachedAudios).add(finalUrl!);
+        } else {
+          (inEdit ? _editAttachedVideos : _attachedVideos).add(finalUrl!);
+        }
+      });
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải ${isAudio ? "audio" : "video"}: $e'), backgroundColor: AppColors.error));
+    }
+    if (mounted) setState(() {
+      if (isAudio) { _uploadingAudio = false; } else { _uploadingVideo = false; }
+    });
   }
 
   Future<dynamic> _tryParseJson(String s) async {
     try { return jsonDecode(s); } catch (_) { return null; }
   }
 
+  /// Single "attach" entry point — paperclip icon that opens a
+  /// menu with Ảnh / Dán ảnh / Audio / Video. Shows a spinner
+  /// whenever any upload is in progress so the user knows
+  /// background work is happening even though the toolbar is
+  /// collapsed.
+  Widget _attachMenuButton() {
+    final busy = _uploadingImage || _uploadingAudio || _uploadingVideo;
+    return PopupMenuButton<String>(
+      tooltip: 'Đính kèm',
+      position: PopupMenuPosition.over,
+      enabled: !busy,
+      onSelected: (v) {
+        switch (v) {
+          case 'image': _pickAndUploadImage(); break;
+          case 'paste': _pasteImageFromClipboard(); break;
+          case 'audio': _pickAndUploadAudio(); break;
+          case 'video': _pickAndUploadVideo(); break;
+        }
+      },
+      itemBuilder: (_) => [
+        _attachItem('image', Icons.image_outlined, 'Ảnh'),
+        _attachItem('paste', Icons.content_paste_go_outlined, 'Dán ảnh từ clipboard'),
+        _attachItem('audio', Icons.audiotrack_outlined, 'Audio'),
+        _attachItem('video', Icons.videocam_outlined, 'Video'),
+      ],
+      icon: busy
+          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
+          : Icon(Icons.attach_file, size: 18, color: AppColors.textSecondary),
+      padding: EdgeInsets.zero,
+      iconSize: 18,
+      splashRadius: 18,
+      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+    );
+  }
+
+  PopupMenuItem<String> _attachItem(String value, IconData icon, String label) {
+    return PopupMenuItem<String>(
+      value: value,
+      height: 36,
+      child: Row(children: [
+        Icon(icon, size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 10),
+        Text(label, style: TextStyle(fontSize: 13, color: AppColors.text)),
+      ]),
+    );
+  }
+
+  /// Render attached audio + video as chips below the input. Audio
+  /// shows a music-note icon; video shows a film-strip icon. Each
+  /// has a close button to remove before submit.
+  Widget _buildMediaChipsStrip({
+    required List<String> audios,
+    required List<String> videos,
+    required void Function(int) onRemoveAudio,
+    required void Function(int) onRemoveVideo,
+  }) {
+    final chips = <Widget>[];
+    for (var i = 0; i < audios.length; i++) {
+      chips.add(_mediaChip(label: 'Audio ${i + 1}', icon: Icons.audiotrack, onRemove: () => onRemoveAudio(i)));
+    }
+    for (var i = 0; i < videos.length; i++) {
+      chips.add(_mediaChip(label: 'Video ${i + 1}', icon: Icons.videocam, onRemove: () => onRemoveVideo(i)));
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, left: 36),
+      child: Wrap(spacing: 6, runSpacing: 6, children: chips),
+    );
+  }
+
+  Widget _mediaChip({required String label, required IconData icon, required VoidCallback onRemove}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: AppColors.textSecondary),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11, color: AppColors.text)),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: onRemove,
+          child: Icon(Icons.close, size: 14, color: AppColors.textMuted),
+        ),
+      ]),
+    );
+  }
+
   Future<void> _submit() async {
     final auth = context.read<AuthProvider>();
-    if (_quillCtl.isEmpty || !auth.isAuthenticated) return;
+    final hasMedia = _attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty;
+    if ((_quillCtl.isEmpty && !hasMedia) || !auth.isAuthenticated) return;
     setState(() => _submitting = true);
-    // Quill already produces the canonical HTML format the web
-    // writes (`<p>...</p>`, `<br>`, `<img src>`), so no extra
-    // paragraph splitting needed.
-    final content = _quillCtl.html;
+    // Quill emits the rich-text body (images inline, paragraphs).
+    // Audio/video aren't Quill embeds — append them as raw <audio>/
+    // <video> blocks at the end, matching the web's storage shape.
+    final body = _quillCtl.isEmpty ? '' : _quillCtl.html;
+    final audioHtml = _attachedAudios.map((u) => '<p><audio controls src="$u"></audio></p>').join();
+    final videoHtml = _attachedVideos.map((u) => '<p><video controls src="$u"></video></p>').join();
+    final content = '$body$audioHtml$videoHtml';
     try {
       await auth.authedMutate(
         r'''mutation($type: String!, $id: Int!, $content: String!) { addComment(type: $type, object_id: $id, content: $content) { id } }''',
         {'type': widget.type, 'id': int.parse(widget.id), 'content': content},
       );
       _quillCtl.clear();
+      _attachedAudios.clear();
+      _attachedVideos.clear();
       await _fetchComments(1);
     } catch (e) {
       if (mounted) {
@@ -416,26 +653,51 @@ class _CommentSectionState extends State<CommentSection> {
     final html = (c['content'] ?? '').toString();
     // Tear down any prior edit session — switching from one comment
     // straight to another shouldn't leak the old Quill document.
+    _editQuillDocSub?.cancel();
     _editQuillCtl?.dispose();
+    final ctl = QuillCommentController(initialHtml: html);
+    _editQuillDocSub = ctl.documentChanges.listen((_) {
+      _onActiveCommentTextChanged(ctl);
+    });
+    // Seed audio/video chips from the existing comment so the user
+    // can drop or keep them; new uploads land in the same lists.
+    final audios = <String>[];
+    final videos = <String>[];
+    for (final m in RegExp(r'<audio[^>]*src="([^"]+)"', caseSensitive: false).allMatches(html)) {
+      final u = m.group(1); if (u != null) audios.add(u);
+    }
+    for (final m in RegExp(r'<video[^>]*src="([^"]+)"', caseSensitive: false).allMatches(html)) {
+      final u = m.group(1); if (u != null) videos.add(u);
+    }
     setState(() {
       _editingId = c['id']?.toString();
-      _editQuillCtl = QuillCommentController(initialHtml: html);
+      _editQuillCtl = ctl;
+      _editAttachedAudios..clear()..addAll(audios);
+      _editAttachedVideos..clear()..addAll(videos);
     });
   }
 
   void _cancelEdit() {
+    _editQuillDocSub?.cancel();
     _editQuillCtl?.dispose();
     setState(() {
       _editingId = null;
       _editQuillCtl = null;
+      _editQuillDocSub = null;
+      _editAttachedAudios.clear();
+      _editAttachedVideos.clear();
     });
   }
 
   Future<void> _saveEdit(Map<String, dynamic> c) async {
     final ctl = _editQuillCtl;
-    if (_savingEdit || ctl == null || ctl.isEmpty) return;
+    final hasMedia = _editAttachedAudios.isNotEmpty || _editAttachedVideos.isNotEmpty;
+    if (_savingEdit || ctl == null || (ctl.isEmpty && !hasMedia)) return;
     setState(() => _savingEdit = true);
-    final html = ctl.html;
+    final body = ctl.isEmpty ? '' : ctl.html;
+    final audioHtml = _editAttachedAudios.map((u) => '<p><audio controls src="$u"></audio></p>').join();
+    final videoHtml = _editAttachedVideos.map((u) => '<p><video controls src="$u"></video></p>').join();
+    final html = '$body$audioHtml$videoHtml';
     try {
       final auth = context.read<AuthProvider>();
       final data = await auth.authedMutate(
@@ -444,6 +706,7 @@ class _CommentSectionState extends State<CommentSection> {
       );
       if (!mounted) return;
       final updated = data['updateComment'];
+      _editQuillDocSub?.cancel();
       _editQuillCtl?.dispose();
       setState(() {
         if (updated != null) {
@@ -452,6 +715,9 @@ class _CommentSectionState extends State<CommentSection> {
         }
         _editingId = null;
         _editQuillCtl = null;
+        _editQuillDocSub = null;
+        _editAttachedAudios.clear();
+        _editAttachedVideos.clear();
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi sửa: $e'), backgroundColor: AppColors.error));
@@ -573,58 +839,64 @@ class _CommentSectionState extends State<CommentSection> {
                                 }).toList()),
                     ),
                   ),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: AppColors.surfaceLight,
+                // Compose card — input + media toolbar live inside a
+                // single rounded panel so the surface feels like a
+                // standalone "post box" (Threads/Twitter style),
+                // and the send button sits in the bottom-right
+                // corner of that same panel.
+                Container(
+                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    // Discord/Telegram-style row: avatar + input grow
+                    // horizontally and the send pill rides at the
+                    // bottom of the row so it always sits beside
+                    // the last line of text. Bottom-aligning means
+                    // the button stays put when the input is empty
+                    // and follows the input as it grows multi-line.
+                    Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                      CircleAvatar(
+                        radius: 14,
+                        backgroundColor: AppColors.surface,
                         backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(auth.user!['avatar']) : null,
-                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 14, color: AppColors.textMuted) : null,
+                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: QuillCommentInput(
-                        controller: _quillCtl,
-                        hintText: 'Viết bình luận...',
-                      ),
-                    ),
-                  ],
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, left: 42),
-                  child: Row(children: [
-                    IconButton(
-                      icon: _uploadingImage
-                          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
-                          : Icon(Icons.image_outlined, size: 18, color: AppColors.textSecondary),
-                      onPressed: _uploadingImage ? null : _pickAndUploadImage,
-                      tooltip: 'Đính kèm ảnh',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.content_paste_go_outlined, size: 16, color: AppColors.textSecondary),
-                      onPressed: _uploadingImage ? null : _pasteImageFromClipboard,
-                      tooltip: 'Dán ảnh từ clipboard',
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    ),
-                    if (_uploadingImage && _editingId == null) ...[
                       const SizedBox(width: 4),
-                      Text('Đang tải ảnh...', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
-                    ],
-                    const Spacer(),
-                    Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(color: _submitting ? AppColors.surfaceLight : AppColors.accent, shape: BoxShape.circle),
-                      child: IconButton(
-                        icon: const Icon(Icons.send, size: 16, color: Colors.white),
+                      _attachMenuButton(),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: QuillCommentInput(
+                          controller: _quillCtl,
+                          hintText: 'Viết bình luận...',
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      ElevatedButton.icon(
                         onPressed: _submitting ? null : _submit,
-                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.send, size: 14),
+                        label: Text(_submitting ? 'Đang đăng…' : 'Đăng', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: AppColors.surface,
+                          disabledForegroundColor: AppColors.textMuted,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          minimumSize: const Size(0, 32),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                      ),
+                    ]),
+                    // Attached audio / video chips below the input.
+                    if (_attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty)
+                      _buildMediaChipsStrip(audios: _attachedAudios, videos: _attachedVideos, onRemoveAudio: (i) => setState(() => _attachedAudios.removeAt(i)), onRemoveVideo: (i) => setState(() => _attachedVideos.removeAt(i))),
+                    // Inline upload status line for audio/video,
+                    // which take longer than images.
+                    if ((_uploadingAudio || _uploadingVideo) && _editingId == null) Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 36),
+                      child: Text(
+                        _uploadingAudio ? 'Đang chuyển audio...' : 'Đang chuyển video...',
+                        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                       ),
                     ),
                   ]),
@@ -726,12 +998,22 @@ class _CommentSectionState extends State<CommentSection> {
                                     autofocus: true,
                                   ),
                           ),
-                          if (_uploadingImage && _editingId == c['id']?.toString()) Padding(
+                          if (_editAttachedAudios.isNotEmpty || _editAttachedVideos.isNotEmpty)
+                            _buildMediaChipsStrip(
+                              audios: _editAttachedAudios,
+                              videos: _editAttachedVideos,
+                              onRemoveAudio: (i) => setState(() => _editAttachedAudios.removeAt(i)),
+                              onRemoveVideo: (i) => setState(() => _editAttachedVideos.removeAt(i)),
+                            ),
+                          if ((_uploadingImage || _uploadingAudio || _uploadingVideo) && _editingId == c['id']?.toString()) Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Row(children: [
                               SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight)),
                               const SizedBox(width: 8),
-                              Text('Đang tải ảnh lên...', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                              Text(
+                                _uploadingAudio ? 'Đang chuyển audio...' : _uploadingVideo ? 'Đang chuyển video...' : 'Đang tải ảnh lên...',
+                                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                              ),
                             ]),
                           ),
                           const SizedBox(height: 6),
@@ -758,23 +1040,7 @@ class _CommentSectionState extends State<CommentSection> {
                               child: Text('Huỷ', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                             ),
                             const Spacer(),
-                            // Paste image into THIS edit input — the
-                            // upload routes into `_editAttachedImages`
-                            // because `_editingId` is set.
-                            IconButton(
-                              icon: Icon(Icons.content_paste_go_outlined, size: 16, color: AppColors.textSecondary),
-                              onPressed: _uploadingImage ? null : _pasteImageFromClipboard,
-                              tooltip: 'Dán ảnh từ clipboard',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.image_outlined, size: 16, color: AppColors.textSecondary),
-                              onPressed: _uploadingImage ? null : _pickAndUploadImage,
-                              tooltip: 'Đính kèm ảnh',
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                            ),
+                            _attachMenuButton(),
                           ]),
                         ] else
                           CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString()),
