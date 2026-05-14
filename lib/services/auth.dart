@@ -8,6 +8,7 @@ const meQuery = '''query { me {
   id username email
   avatar { url } background { url }
   unread
+  permissions
   player_shuffle player_repeat
   show_comment_sidebar
 }}''';
@@ -76,6 +77,14 @@ class AuthProvider extends ChangeNotifier {
   String? get token => _token;
   bool get loading => _loading;
   bool get isAuthenticated => _user != null && _token != null;
+
+  /// True if the current user has [name] in their `permissions` list.
+  /// Returns false when not logged in or when the list is missing.
+  bool hasPermission(String name) {
+    final perms = _user?['permissions'];
+    if (perms is! List) return false;
+    return perms.contains(name);
+  }
 
   AuthProvider() {
     _restore();
@@ -160,6 +169,9 @@ class AuthProvider extends ChangeNotifier {
           'id': me['id'], 'username': me['username'], 'email': me['email'],
           'avatar': me['avatar']?['url'], 'background': me['background']?['url'],
           'unread': me['unread'] ?? 0,
+          'permissions': (me['permissions'] is List)
+              ? List<String>.from((me['permissions'] as List).whereType<String>())
+              : <String>[],
           'player_shuffle': me['player_shuffle'],
           'player_repeat': me['player_repeat'],
           'show_comment_sidebar': me['show_comment_sidebar'] ?? false,

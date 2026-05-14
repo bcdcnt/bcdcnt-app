@@ -47,9 +47,13 @@ class ProfileScreen extends StatelessWidget {
         // Menu
         if (auth.isAuthenticated) ...[
           _menuItem(context, Icons.notifications_outlined, 'Thông báo', '/thong-bao', badge: auth.user?['unread'] ?? 0),
-          _menuItem(context, Icons.upload_outlined, 'Gửi bài', null, onTap: () {
-            _toast(context, 'Tính năng gửi bài đang được phát triển');
-          }),
+          // "Gửi bài" — hide for users without the upload permission. The
+          // backend rejects them anyway; the menu item only invites a dead
+          // click otherwise.
+          if (auth.hasPermission('upload'))
+            _menuItem(context, Icons.upload_outlined, 'Gửi bài', null, onTap: () {
+              _toast(context, 'Tính năng gửi bài đang được phát triển');
+            }),
           _menuItem(context, Icons.description_outlined, 'Bài tôi gửi', '/bai-gui-cua-toi'),
           _menuItem(context, Icons.access_time, 'Nghe gần đây', '/nghe-gan-day'),
           _menuItem(context, Icons.favorite_outline, 'Yêu thích', '/yeu-thich'),
