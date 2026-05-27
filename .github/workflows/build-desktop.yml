@@ -99,3 +99,38 @@ jobs:
           name: bcdcnt-linux
           path: build/linux/x64/release/bundle/
           if-no-files-found: error
+
+      # When this workflow runs from a tag push, also package each
+      # platform's bundle into a single .zip and attach it to a
+      # GitHub Release. The Flutter app's in-app update checker hits
+      # the Releases API for `tag_name` + asset URLs, so this is what
+      # actually surfaces a new version to running clients.
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -e
+          case "${{ matrix.target }}" in
+            windows) src="build/windows/x64/runner/Release" ;;
+            macos)   src="build/macos/Build/Products/Release/bcdcnt.app" ;;
+            linux)   src="build/linux/x64/release/bundle" ;;
+          esac
+          mkdir -p release-zip
+          if [ "${{ matrix.target }}" = "macos" ]; then
+            # Keep .app as the top-level dir inside the zip so users get
+            # the familiar drag-to-Applications bundle on extract.
+            (cd "$(dirname "$src")" && zip -qry "${GITHUB_WORKSPACE}/release-zip/bcdcnt-${{ matrix.target }}.zip" "$(basename "$src")")
+          else
+            (cd "$src" && zip -qry "${GITHUB_WORKSPACE}/release-zip/bcdcnt-${{ matrix.target }}.zip" .)
+          fi
+          ls -lh release-zip
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-zip/bcdcnt-${{ matrix.target }}.zip
+          # generate_release_notes asks GitHub to summarise commits since
+          # the previous tag — saves us writing release notes by hand
+          # while still giving the in-app banner something to surface.
+          generate_release_notes: true

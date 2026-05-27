@@ -30,6 +30,7 @@ dependencies:
   flutter_quill: ^11.5.0
   flutter_quill_extensions: ^11.0.0
   vsc_quill_delta_to_html: ^1.0.5
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:

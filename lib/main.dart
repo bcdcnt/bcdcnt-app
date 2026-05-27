@@ -49,6 +49,7 @@ import 'screens/upload_detail_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/desktop_shell.dart';
 import 'widgets/keyboard_shortcuts.dart';
+import 'widgets/update_banner.dart';
 
 void main() async {
   // window_manager is desktop-only (used for the FullPlayer fullscreen
@@ -102,11 +103,17 @@ class _AppRoot extends StatelessWidget {
       // pill is mounted once at the root so its drag offset survives
       // navigation; it self-hides when no song is playing or the
       // player isn't in collapsed mode.
-      builder: (context, child) => Stack(
-        children: [
-          child ?? const SizedBox.shrink(),
-          const MiniPlayerOverlay(),
-        ],
+      //
+      // UpdateBanner wraps the route so the "new version available"
+      // bar pins above every screen instead of being tied to a
+      // specific page that the user might not visit.
+      builder: (context, child) => UpdateBanner(
+        child: Stack(
+          children: [
+            child ?? const SizedBox.shrink(),
+            const MiniPlayerOverlay(),
+          ],
+        ),
       ),
     );
   }
