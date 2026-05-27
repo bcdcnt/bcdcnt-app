@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'play_tracker.dart';
+import 'analytics.dart';
 
 enum PlayerRepeatMode { off, all, one }
 
@@ -226,6 +227,16 @@ class PlayerProvider extends ChangeNotifier {
     final dur = (song['file']?['duration'] is num) ? (song['file']['duration'] as num).toDouble() : null;
     if (id != null) {
       _tracker?.startSession(songId: id, objectType: type, songDuration: dur, source: source);
+      // Fire-and-forget GA4 event so dashboards can see which sources
+      // (manual click vs auto-queue) actually convert into plays.
+      // Title is included so reports stay readable without joining
+      // the song catalogue back in.
+      Analytics.logEvent('song_play', {
+        'song_id': id,
+        'song_type': type,
+        'source': source,
+        if (song['title'] != null) 'song_title': song['title'].toString(),
+      });
     }
 
     try {

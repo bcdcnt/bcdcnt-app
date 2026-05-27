@@ -117,16 +117,20 @@ jobs:
       # crash reports remain decodable if we wire up Sentry later.
       # Android target needs `flutter build apk` not `flutter build android`;
       # everything else is the desktop target name unchanged.
+      # GA4_API_SECRET is injected via --dart-define so analytics.dart's
+      # String.fromEnvironment picks it up at compile time. Without the
+      # secret (e.g. local dev), Analytics.logEvent silently no-ops.
       - name: Build
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          DART_DEFS="--dart-define=GA4_API_SECRET=${{ secrets.GA4_API_SECRET }}"
           if [ "${{ matrix.target }}" = "android" ]; then
-            flutter build apk --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols
+            flutter build apk --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols $DART_DEFS
           else
-            flutter build ${{ matrix.target }} --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols
+            flutter build ${{ matrix.target }} --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols $DART_DEFS
           fi
         shell: bash
 

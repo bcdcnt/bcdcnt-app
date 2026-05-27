@@ -55,6 +55,7 @@ import 'widgets/update_banner.dart';
 // gate lives in main() below so this import is harmless on all
 // platforms.
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'services/analytics.dart';
 
 void main() async {
   // window_manager is desktop-only (used for the FullPlayer fullscreen
@@ -72,6 +73,11 @@ void main() async {
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
     JustAudioMediaKit.ensureInitialized();
   }
+  // Kick off the analytics persistent client_id load before runApp so
+  // the first screen_view fired by the GoRouter listener has it ready.
+  // No await — Analytics.logEvent waits on the same future internally.
+  Analytics.init();
+  Analytics.logEvent("app_open");
   runApp(const BcdcntApp());
 }
 
@@ -197,8 +203,35 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
 /// `rootNavigatorKey.currentState!.push(...)` instead of a fragile context.
 final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 
+// Fire a GA4 screen_view whenever GoRouter pushes a new route. Using
+// onException would miss successful navigations; the listener on the
+// router's routerDelegate gets called on every change.
+class _AnalyticsObserver extends NavigatorObserver {
+  void _report(Route<dynamic>? route) {
+    final name = route?.settings.name;
+    if (name == null || name.isEmpty) return;
+    Analytics.logScreenView(name);
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _report(route);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    _report(newRoute);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _report(previousRoute);
+  }
+}
+
 final _router = GoRouter(
   navigatorKey: rootNavigatorKey,
+  observers: [_AnalyticsObserver()],
   routes: [
     ShellRoute(
       builder: (context, state, child) => MainShell(child: child),
