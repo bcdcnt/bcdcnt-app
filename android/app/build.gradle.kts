@@ -30,11 +30,33 @@ android {
         versionName = flutter.versionName
     }
 
+    // Release signing reads from ANDROID_* env vars supplied by GitHub
+    // Actions secrets (decoded keystore lives at ANDROID_KEYSTORE_PATH).
+    // Local `flutter run --release` without those env vars falls back to
+    // the debug keystore so developers don't need the release jks to
+    // smoke-test release builds.
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (keystorePath != null) {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Use the release signing config when CI supplies a keystore;
+            // otherwise fall back to debug so contributors can still build
+            // locally without secrets.
+            signingConfig = if (System.getenv("ANDROID_KEYSTORE_PATH") != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

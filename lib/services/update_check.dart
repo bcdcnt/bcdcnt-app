@@ -38,22 +38,27 @@ class UpdateCheck {
   // dismissed so we don't re-prompt for the same release every launch.
   static const _dismissedKey = "bcdcnt_update_dismissed_version";
 
-  /// Only desktop binaries get distributed via GitHub Releases. Mobile is
-  /// store-managed and web is server-rendered, so checking on those
-  /// platforms would only produce false positives.
+  /// Desktop + sideloaded Android get distributed via GitHub Releases.
+  /// iOS is store-managed (TestFlight / App Store handle updates) and
+  /// web is server-rendered, so checking those would only produce false
+  /// positives.
   static bool get isSupported {
     if (kIsWeb) return false;
-    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    return Platform.isWindows ||
+        Platform.isMacOS ||
+        Platform.isLinux ||
+        Platform.isAndroid;
   }
 
   /// Map platform to the artifact filename that CI uploads as a release
   /// asset. CI publishes `bcdcnt-windows.zip` / `bcdcnt-macos.zip` /
-  /// `bcdcnt-linux.zip`.
+  /// `bcdcnt-linux.zip` / `bcdcnt-android.apk`.
   static String? _assetNameForPlatform() {
     if (kIsWeb) return null;
     if (Platform.isWindows) return "bcdcnt-windows";
     if (Platform.isMacOS) return "bcdcnt-macos";
     if (Platform.isLinux) return "bcdcnt-linux";
+    if (Platform.isAndroid) return "bcdcnt-android";
     return null;
   }
 
