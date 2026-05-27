@@ -417,12 +417,18 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: AppColors.border),
             ),
+            // Match the label and title to the same fontSize (12) so
+            // crossAxisAlignment.center (Row's default) lines them up
+            // on the same visual midline. Previously the 11pt
+            // "Tiếp theo:" sat noticeably higher than the 12pt title.
+            // Weight (800 vs 600) and colour still separate the two
+            // visually without needing a size delta.
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.skip_next, size: 14, color: AppColors.accentLight),
               const SizedBox(width: 6),
               Text(
                 'Tiếp theo:',
-                style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted)),
+                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 6),
               ConstrainedBox(

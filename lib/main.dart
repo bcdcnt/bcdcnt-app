@@ -50,6 +50,11 @@ import 'widgets/mini_player.dart';
 import 'widgets/desktop_shell.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
+// Conditional import — just_audio_media_kit pulls in libmpv via
+// media_kit_libs_audio, which we only want on Windows/Linux. The actual
+// gate lives in main() below so this import is harmless on all
+// platforms.
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 void main() async {
   // window_manager is desktop-only (used for the FullPlayer fullscreen
@@ -58,6 +63,14 @@ void main() async {
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
     WidgetsFlutterBinding.ensureInitialized();
     await windowManager.ensureInitialized();
+  }
+  // just_audio has native backends for iOS/Android/macOS/Web only; on
+  // Windows + Linux the player would load tracks but report duration 0
+  // and never emit audio. Route those two platforms through
+  // just_audio_media_kit (libmpv-backed) so playback actually works.
+  // macOS keeps the native AVPlayer backend.
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+    JustAudioMediaKit.ensureInitialized();
   }
   runApp(const BcdcntApp());
 }

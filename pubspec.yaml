@@ -1,7 +1,7 @@
 name: bcdcnt
 description: BCĐCNT - Bài Ca Đi Cùng Năm Tháng
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: ^3.11.5
@@ -16,6 +16,13 @@ dependencies:
   shared_preferences: ^2.3.0
   cached_network_image: ^3.4.0
   just_audio: ^0.9.40
+  # just_audio only ships native backends for iOS/Android/macOS/Web.
+  # Windows & Linux desktop need a libmpv-backed implementation or
+  # audio playback silently fails (duration stays at 0:00). Pulled
+  # behind a `Platform.is*` guard in main.dart so mobile builds skip
+  # the libmpv bindings entirely.
+  just_audio_media_kit: ^2.0.6
+  media_kit_libs_audio: ^1.0.5
   url_launcher: ^6.3.0
   flutter_html: ^3.0.0-beta.2
   google_fonts: ^6.2.1
