@@ -15,13 +15,10 @@ jobs:
         include:
           - os: windows-latest
             target: windows
-            artifact_path: build/windows/x64/runner/Release/
           - os: macos-latest
             target: macos
-            artifact_path: build/macos/Build/Products/Release/
           - os: ubuntu-latest
             target: linux
-            artifact_path: build/linux/x64/release/bundle/
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -53,12 +50,52 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
+      # --tree-shake-icons strips unused glyphs from icon fonts (Material/
+      # Cupertino) — saves a few MB on top of the default release build.
+      # --obfuscate + --split-debug-info renames Dart symbols to short
+      # opaque names and writes the original mapping to a separate folder
+      # that we don't ship; shaves additional MBs and lightly protects
+      # the source. Mapping symbols are kept as a build artifact so prod
+      # crash reports remain decodable if we wire up Sentry later.
       - name: Build
-        run: flutter build ${{ matrix.target }} --release
+        run: flutter build ${{ matrix.target }} --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols
 
-      - name: Upload artifact
+      # macOS still produces bcdcnt_flutter.app because macos/Runner.xcodeproj
+      # was generated before pubspec was renamed and we kept the existing
+      # folder intact. Rename post-build so the artifact users see matches
+      # Windows/Linux. Editing the Xcode project file directly is risky.
+      - name: Rename macOS .app
+        if: matrix.target == 'macos'
+        run: |
+          cd build/macos/Build/Products/Release
+          if [ -d bcdcnt_flutter.app ]; then
+            mv bcdcnt_flutter.app bcdcnt.app
+          fi
+
+      # Upload only the runnable artifact, not the full Build/Products/
+      # folder. macOS in particular dragged 200+ MB of .dSYM debug
+      # symbols up to the artifact previously — the user only needs the
+      # .app bundle to test.
+      - name: Upload Windows artifact
+        if: matrix.target == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: bcdcnt-${{ matrix.target }}
-          path: ${{ matrix.artifact_path }}
+          name: bcdcnt-windows
+          path: build/windows/x64/runner/Release/
+          if-no-files-found: error
+
+      - name: Upload macOS artifact
+        if: matrix.target == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bcdcnt-macos
+          path: build/macos/Build/Products/Release/bcdcnt.app
+          if-no-files-found: error
+
+      - name: Upload Linux artifact
+        if: matrix.target == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bcdcnt-linux
+          path: build/linux/x64/release/bundle/
           if-no-files-found: error
