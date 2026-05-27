@@ -44,9 +44,17 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Pin to a Flutter version that matches local development. The
+      # `stable` channel drifts across runners (ubuntu hit 3.44.0 while
+      # macOS was still on 3.41.7), and flutter_quill 11.5.0 has a
+      # breaking API mismatch against 3.44+ (missing
+      # TextInputClient.onFocusReceived implementation) that fails the
+      # Android Gradle build mid-compile. Pin both runners to the same
+      # version we develop against locally so all four targets compile
+      # against an identical SDK.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: "3.41.7"
           cache: true
 
       # Linux toolchain — GitHub's ubuntu image doesn't ship GTK headers by
