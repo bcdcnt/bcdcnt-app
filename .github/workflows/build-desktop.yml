@@ -6,6 +6,14 @@ on:
     tags:
       - "v*"
 
+# GitHub is forcing Node.js 24 for JavaScript actions starting June 2nd
+# 2026; opting in early so the runner doesn't fall back to the
+# soon-to-be-removed Node 20. Action versions below are pinned to
+# releases that natively bundle Node 24, so this env is also a belt-
+# and-braces guard against any transitive action still on Node 20.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     name: ${{ matrix.target }}
@@ -22,7 +30,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: subosito/flutter-action@v2
         with:
@@ -78,7 +86,7 @@ jobs:
       # .app bundle to test.
       - name: Upload Windows artifact
         if: matrix.target == 'windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bcdcnt-windows
           path: build/windows/x64/runner/Release/
@@ -86,7 +94,7 @@ jobs:
 
       - name: Upload macOS artifact
         if: matrix.target == 'macos'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bcdcnt-macos
           path: build/macos/Build/Products/Release/bcdcnt.app
@@ -94,7 +102,7 @@ jobs:
 
       - name: Upload Linux artifact
         if: matrix.target == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bcdcnt-linux
           path: build/linux/x64/release/bundle/
@@ -105,13 +113,17 @@ jobs:
       # GitHub Release. The Flutter app's in-app update checker hits
       # the Releases API for `tag_name` + asset URLs, so this is what
       # actually surfaces a new version to running clients.
-      - name: Package release zip
-        if: startsWith(github.ref, 'refs/tags/v')
+      #
+      # Two steps because Windows runners don't ship the `zip` CLI in
+      # Git Bash (line 13 of the prior single step failed with "zip:
+      # command not found"); use PowerShell's Compress-Archive on
+      # Windows and bash zip everywhere else.
+      - name: Package release zip (Linux / macOS)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.target != 'windows'
         shell: bash
         run: |
           set -e
           case "${{ matrix.target }}" in
-            windows) src="build/windows/x64/runner/Release" ;;
             macos)   src="build/macos/Build/Products/Release/bcdcnt.app" ;;
             linux)   src="build/linux/x64/release/bundle" ;;
           esac
@@ -124,6 +136,17 @@ jobs:
             (cd "$src" && zip -qry "${GITHUB_WORKSPACE}/release-zip/bcdcnt-${{ matrix.target }}.zip" .)
           fi
           ls -lh release-zip
+
+      - name: Package release zip (Windows)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-zip | Out-Null
+          Compress-Archive `
+            -Path build/windows/x64/runner/Release/* `
+            -DestinationPath release-zip/bcdcnt-windows.zip `
+            -Force
+          Get-ChildItem release-zip
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
