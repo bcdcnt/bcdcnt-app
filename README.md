@@ -1,6 +1,6 @@
-# BCĐCNT — Bài Ca Đi Cùng Năm Tháng
+# BCĐCNT — Bài ca đi cùng năm tháng
 
-Ứng dụng nghe nhạc cách mạng & trữ tình Việt Nam, viết bằng **Flutter** (iOS · Android · macOS · Windows · Web). Thư viện đồ sộ: hàng nghìn bài hát, nghệ sĩ, nhạc sĩ, nhà thơ — kèm lời, bản nhạc, karaoke, ngâm thơ và cộng đồng bình luận realtime.
+Ứng dụng nghe nhạc **chính thức** của **[bcdcnt.net](https://bcdcnt.net)** — viết bằng **Flutter** (iOS · Android · macOS · Windows · Web).
 
 ## 📸 Giao diện
 
@@ -27,7 +27,7 @@
   </tr>
   <tr>
     <td><img src="docs/screenshots/16-search-results.png" alt="Kết quả tìm kiếm"/><br/><sub><b>🔎 Tìm kiếm — kết quả</b> — 28 kết quả «Tình ca», lọc theo loại</sub></td>
-    <td></td>
+    <td><img src="docs/screenshots/17-composers.png" alt="Nhạc sĩ"/><br/><sub><b>🎼 Nhạc sĩ</b> — danh bạ nhạc sĩ, lọc A–Z</sub></td>
   </tr>
 </table>
 
@@ -44,20 +44,46 @@
   </tr>
   <tr>
     <td><img src="docs/screenshots/14-settings.png" alt="Cài đặt"/><br/><sub><b>⚙️ Cài đặt</b> — hồ sơ, ảnh đại diện, tuỳ chọn</sub></td>
-    <td></td>
+    <td><img src="docs/screenshots/18-recent.png" alt="Nghe gần đây"/><br/><sub><b>🕘 Nghe gần đây</b> — lịch sử nghe</sub></td>
   </tr>
 </table>
 
-## Getting Started
+## ✨ Tính năng
 
-This project is a starting point for a Flutter application.
+- 🎵 Nghe nhạc cách mạng & trữ tình — hàng nghìn bài hát, kèm **lời** và **bản nhạc**
+- 🔎 Tìm kiếm toàn diện: bài hát, nghệ sĩ, nhạc sĩ, nhà thơ, tư liệu…
+- 🎤 Danh bạ nghệ sĩ / nhạc sĩ / nhà thơ + trang chi tiết (tiểu sử, tác phẩm, thống kê)
+- 🎙️ Karaoke & ngâm thơ (tiếng thơ)
+- ❤️ Cá nhân hoá: yêu thích, playlist, nghe gần đây, bài gửi, thống kê nghe
+- 💬 Bình luận & dòng hoạt động cộng đồng (realtime)
+- 📱 Một mã nguồn — chạy trên iOS · Android · macOS · Windows · Web
 
-A few resources to get you started if this is your first Flutter project:
+## 🛠 Công nghệ
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+| Thành phần | Dùng |
+|---|---|
+| UI đa nền tảng | **Flutter / Dart** |
+| Giao tiếp backend | **GraphQL** (đăng nhập, dữ liệu nhạc, bình luận) |
+| Xác thực | **JWT** (access / refresh token) |
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🚀 Chạy dự án
+
+```bash
+flutter pub get               # cài dependency
+
+flutter run -d macos          # desktop macOS
+flutter run -d chrome         # web
+flutter run -d <device-id>    # iOS / Android  (liệt kê: flutter devices)
+```
+
+Build bản phát hành: `flutter build apk` · `ios` · `macos` · `web`.
+
+## 📁 Cấu trúc
+
+```text
+lib/
+├── screens/     # màn hình (home, song_detail, profile, …)
+├── widgets/     # thành phần tái dùng (full_player, comment_section, …)
+├── services/    # api.dart (GraphQL), auth.dart, player.dart
+└── constants/   # theme.dart (màu, font, apiBase, siteUrl)
+```
