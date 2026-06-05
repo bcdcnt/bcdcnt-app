@@ -22,7 +22,7 @@ const _updateMeRepeatMutation = '''mutation(\$v: String) {
 }''';
 
 const loginMutation = '''mutation(\$identity: String!, \$password: String!) {
-  login(identity: \$identity, password: \$password) { access_token refresh_token }
+  login(identity: \$identity, password: \$password) { access_token refresh_token message code }
 }''';
 
 const signupMutation = '''mutation(\$username: String!, \$email: String!, \$password: String!) {
@@ -86,7 +86,20 @@ class AuthProvider extends ChangeNotifier {
     return perms.contains(name);
   }
 
+  /// Set once when AuthProvider exists so the UI layer can react when
+  /// the AppAccessGuard middleware revokes us mid-session. Banner / dialog
+  /// code (lib/main.dart's ChangeNotifier listener) toggles this flag
+  /// and clears it after showing the notice.
+  bool appAccessRevoked = false;
+
   AuthProvider() {
+    // Wire ApiClient's global app-access-denied callback so a 403 from
+    // the AppAccessGuard middleware force-logs us out + raises a flag
+    // the UI can read to display "BQT đã thu hồi quyền dùng app".
+    ApiClient.onAppAccessDenied = () {
+      appAccessRevoked = true;
+      logout();
+    };
     _restore();
   }
 
@@ -196,6 +209,12 @@ class AuthProvider extends ChangeNotifier {
         await _fetchMe();
         return null;
       }
+      // Backend returns { message, code } on every business-rule
+      // rejection (wrong password, not active, banned, app access
+      // denied). Surface that text instead of a generic "thất bại"
+      // so the login screen can actually tell the user what to do.
+      final msg = result?['message'];
+      if (msg is String && msg.isNotEmpty) return msg;
       return 'Đăng nhập thất bại';
     } catch (e) { return e.toString(); }
   }

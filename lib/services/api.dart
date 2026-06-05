@@ -34,6 +34,34 @@ class ApiClient {
     };
   }
 
+  /// AuthProvider registers a callback here so that when the
+  /// AppAccessGuard middleware on the backend rejects a request
+  /// (admin revoked access_app for this user), the app can react
+  /// globally — typically by force-logging out and showing a notice.
+  /// Without this, the user would just see opaque GraphQL errors on
+  /// every action until they manually signed out.
+  static void Function()? onAppAccessDenied;
+
+  static const _appAccessDeniedCode = "user_app_access_denied";
+
+  /// Scans the GraphQL errors array for the app-access-denied code and
+  /// fires the global callback exactly once per response. The first
+  /// error's message is then thrown so existing call sites still get
+  /// a readable exception.
+  static Never _throwErrors(List errors) {
+    for (final e in errors) {
+      final ext = e is Map ? e["extensions"] : null;
+      final code = (ext is Map ? ext["code"] : null)?.toString();
+      if (code == _appAccessDeniedCode) {
+        onAppAccessDenied?.call();
+        break;
+      }
+    }
+    final first = errors.isNotEmpty ? errors[0] : null;
+    final msg = (first is Map ? first["message"] : null)?.toString();
+    throw Exception(msg ?? "GraphQL error");
+  }
+
   static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
     // POST with body — long queries blow URL length limits on some
     // proxies/CDNs and the response was coming back empty silently.
@@ -46,7 +74,7 @@ class ApiClient {
     if (json['errors'] != null) {
       // Surface the first GraphQL error so failures don't silently render
       // empty pages. Catch sites can decide to swallow this if they want.
-      throw Exception(json['errors'][0]['message']);
+      _throwErrors(json['errors'] as List);
     }
     return json['data'] ?? {};
   }
@@ -59,7 +87,7 @@ class ApiClient {
     );
     final json = jsonDecode(res.body);
     if (json['errors'] != null) {
-      throw Exception(json['errors'][0]['message']);
+      _throwErrors(json['errors'] as List);
     }
     return json['data'] ?? {};
   }
@@ -75,7 +103,7 @@ class ApiClient {
     );
     final json = jsonDecode(res.body);
     if (json['errors'] != null) {
-      throw Exception(json['errors'][0]['message']);
+      _throwErrors(json['errors'] as List);
     }
     return json['data'] ?? {};
   }

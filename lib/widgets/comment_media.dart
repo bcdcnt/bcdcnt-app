@@ -62,7 +62,13 @@ class _CommentMediaState extends State<CommentMedia> {
       else if (m.group(2) != null) {
         final inner = m.group(2)!;
         final src = RegExp(r'src="([^"]+)"', caseSensitive: false).firstMatch(inner)?.group(1);
-        if (src != null) blocks.add(_Block.audio(src));
+        if (src != null) {
+          // Web inserts <audio> for mp4 too because Lambda mis-tags video
+          // files as `type=audio` (everything shares the `uploads/mp3/`
+          // prefix). Treat the tag as video when the URL extension says
+          // so, so the comment renders a real video player.
+          blocks.add(_isVideoUrl(src) ? _Block.video(src) : _Block.audio(src));
+        }
       }
       // Video
       else if (m.group(3) != null) {
@@ -73,7 +79,9 @@ class _CommentMediaState extends State<CommentMedia> {
       // Standalone <source>
       else if (m.group(4) != null) {
         final url = m.group(4)!;
-        if (url.toLowerCase().contains('.mp3') || url.toLowerCase().contains('audio')) {
+        if (_isVideoUrl(url)) {
+          blocks.add(_Block.video(url));
+        } else if (url.toLowerCase().contains('.mp3') || url.toLowerCase().contains('audio')) {
           blocks.add(_Block.audio(url));
         } else {
           blocks.add(_Block.video(url));
@@ -341,6 +349,14 @@ class _CommentMediaState extends State<CommentMedia> {
       indexNotifier.dispose();
     });
   }
+}
+
+/// True when the URL's file extension is a known video format. Used to
+/// recover the right player when web inserts `<audio>` for an mp4
+/// (Lambda mis-tag — see CommentMedia comments above).
+bool _isVideoUrl(String url) {
+  final m = RegExp(r'\.(mp4|mov|mkv|webm|avi|wmv|flv|mpg|mpeg|3gp)(\?|#|$)', caseSensitive: false).firstMatch(url);
+  return m != null;
 }
 
 enum _BlockKind { text, image, audio, video }
