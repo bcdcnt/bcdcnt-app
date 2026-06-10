@@ -13,9 +13,9 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>Bài ca đi cùng năm tháng</string>
 	<key>CFBundleDisplayName</key>
-	<string>BCĐCNT</string>
+	<string>Bài ca đi cùng năm tháng</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
