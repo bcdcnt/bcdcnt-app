@@ -1,8 +1,10 @@
-# BCĐCNT — Bài ca đi cùng năm tháng
+# BCĐCNT app — Ứng dụng nghe nhạc đa nền tảng
 
 Ứng dụng nghe nhạc **chính thức** của **[bcdcnt.net](https://bcdcnt.net)** — viết bằng **Flutter** (iOS · Android · macOS · Windows · Web).
 
 ## 📸 Giao diện
+
+> **12 chủ đề màu**, gồm cả **tối** lẫn **sáng**. Ảnh ngay dưới là chủ đề **tối**; xem chủ đề **sáng** ở [mục bên dưới](#-giao-diện-sáng).
 
 <table>
   <tr>
@@ -48,15 +50,34 @@
   </tr>
 </table>
 
+### 🌞 Giao diện sáng
+
+Cùng các màn hình trên ở chủ đề **sáng** — bật trong **Phối màu** (Cài đặt) hoặc nút **Giao diện** ở thanh bên.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/light/01-home.png" alt="Trang chủ — sáng"/><br/><sub><b>🏠 Trang chủ</b></sub></td>
+    <td width="50%"><img src="docs/screenshots/light/04-song-detail.png" alt="Chi tiết bài hát — sáng"/><br/><sub><b>🎵 Chi tiết bài hát</b></sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/light/10-player.png" alt="Trình phát — sáng"/><br/><sub><b>▶️ Trình phát</b></sub></td>
+    <td><img src="docs/screenshots/light/09-library.png" alt="Thư viện — sáng"/><br/><sub><b>📚 Thư viện</b></sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/light/16-search-results.png" alt="Kết quả tìm kiếm — sáng"/><br/><sub><b>🔎 Tìm kiếm — kết quả</b></sub></td>
+    <td><img src="docs/screenshots/light/14-settings.png" alt="Cài đặt — sáng"/><br/><sub><b>⚙️ Cài đặt</b></sub></td>
+  </tr>
+</table>
+
 ## ✨ Tính năng
 
-- 🎵 Nghe nhạc cách mạng & trữ tình — hàng nghìn bài hát, kèm **lời** và **bản nhạc**
-- 🔎 Tìm kiếm toàn diện: bài hát, nghệ sĩ, nhạc sĩ, nhà thơ, tư liệu…
-- 🎤 Danh bạ nghệ sĩ / nhạc sĩ / nhà thơ + trang chi tiết (tiểu sử, tác phẩm, thống kê)
-- 🎙️ Karaoke & ngâm thơ (tiếng thơ)
-- ❤️ Cá nhân hoá: yêu thích, playlist, nghe gần đây, bài gửi, thống kê nghe
-- 💬 Bình luận & dòng hoạt động cộng đồng (realtime)
-- 📱 Một mã nguồn — chạy trên iOS · Android · macOS · Windows · Web
+- 🎵 **Nghe nhạc** cách mạng & trữ tình — hàng nghìn bài hát, kèm **lời** và **bản nhạc**
+- 🔎 **Tìm kiếm & duyệt** theo nghệ sĩ · nhạc sĩ · nhà thơ · soạn giả, thể loại, thập niên, tư liệu
+- 👤 **Trang chi tiết** nghệ sĩ / bài hát: tiểu sử, tác phẩm, lời, bản nhạc, gợi ý, thống kê
+- ❤️ **Cá nhân hoá**: yêu thích, playlist, nghe gần đây, bài gửi, thống kê nghe
+- 💬 **Cộng đồng**: bình luận, thảo luận, dòng hoạt động & thông báo **realtime**
+- ⬇️ **Tải về** bài hát, tư liệu
+- 📱 **Đa nền tảng** — một mã nguồn chạy trên iOS · Android · macOS · Windows · Web
 
 ## 🛠 Công nghệ
 
@@ -65,6 +86,51 @@
 | UI đa nền tảng | **Flutter / Dart** |
 | Giao tiếp backend | **GraphQL** (đăng nhập, dữ liệu nhạc, bình luận) |
 | Xác thực | **JWT** (access / refresh token) |
+
+## 📥 Tải & cài đặt
+
+Tải bản mới nhất cho nền tảng của bạn tại **[trang Releases](https://github.com/bcdcnt/bcdcnt-app/releases/latest)**, rồi làm theo hướng dẫn bên dưới.
+
+### 🍎 macOS
+1. Tải `bcdcnt-macos.dmg` (hoặc `.zip`).
+2. Mở file, kéo **Bài ca đi cùng năm tháng** vào thư mục **Applications**.
+3. Lần đầu mở: app chưa ký Apple nên macOS sẽ chặn → **chuột phải vào app → Open → Open**. (Hoặc chạy `xattr -dr com.apple.quarantine "/Applications/Bài ca đi cùng năm tháng.app"` rồi mở lại.)
+
+> Yêu cầu: macOS 11 (Big Sur) trở lên.
+
+### 🪟 Windows
+1. Tải `bcdcnt-windows.zip`.
+2. Giải nén vào một thư mục bất kỳ (vd `C:\Program Files\BCDCNT`).
+3. Chạy **`bcdcnt.exe`**. Nếu SmartScreen cảnh báo → **More info → Run anyway**.
+
+> Yêu cầu: Windows 10 trở lên (64-bit).
+
+### 🐧 Linux
+1. Tải `bcdcnt-linux.tar.gz`.
+2. Giải nén và cấp quyền chạy:
+   ```bash
+   tar -xzf bcdcnt-linux.tar.gz && cd bcdcnt
+   chmod +x bcdcnt && ./bcdcnt
+   ```
+3. Cần **libmpv** cho phát nhạc (backend âm thanh trên Linux):
+   ```bash
+   sudo apt install libmpv2     # Debian/Ubuntu  (hoặc: libmpv-dev / mpv)
+   ```
+
+### 🤖 Android
+1. Tải file **`bcdcnt.apk`**.
+2. Mở file → nếu được hỏi, bật **"Cài ứng dụng không rõ nguồn gốc"** cho trình duyệt/trình quản lý file.
+3. Nhấn **Cài đặt**.
+
+> Yêu cầu: Android 6.0 trở lên.
+
+### 🍏 iOS
+- **TestFlight** (khuyến nghị): mở link mời TestFlight, cài **TestFlight** từ App Store rồi nhấn **Install**.
+- Hoặc cài file `.ipa` qua công cụ sideload (AltStore / Sideloadly) nếu không dùng TestFlight.
+
+> Yêu cầu: iOS 13 trở lên.
+
+---
 
 ## 🚀 Chạy dự án
 
