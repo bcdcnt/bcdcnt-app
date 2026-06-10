@@ -6,6 +6,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/hover_effects.dart';
 import 'person_detail_screen.dart' show PersonType;
 
 class PersonListScreen extends StatefulWidget {
@@ -25,10 +26,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
-  // Filters: starting letter (uppercase Vietnamese) and birth year. Null
-  // means "all". Selecting either resets pagination.
+  // Filter: starting letter (uppercase Vietnamese). Null means "all".
+  // Selecting it resets pagination.
   String? _letter;
-  int? _year;
   // Base Vietnamese alphabet only — the backend uses MySQL LIKE with a
   // utf8_general_ci collation, so 'O%' already matches Ô/Ơ etc. Showing the
   // diacritic vowels gave duplicate results with the base letter (E vs Ê,
@@ -107,15 +107,10 @@ class _PersonListScreenState extends State<PersonListScreen> {
 
   Future<void> _fetch(int page) async {
     setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
-    // Build a where clause with optional letter (title LIKE 'X%') and
-    // birth year (yob = N). When the user picks a Vietnamese diacritic
-    // (Ô/Ơ/Ê/Đ etc.) we send both the bare and accented forms via OR.
+    // Build a where clause with an optional letter (title LIKE 'X%').
     final wheres = <String>[];
     if (_letter != null) {
       wheres.add('{column: "title", operator: LIKE, value: "${_letter!}%"}');
-    }
-    if (_year != null) {
-      wheres.add('{column: "yob", operator: EQ, value: $_year}');
     }
     final whereStr = wheres.isEmpty ? '' : ', where: {AND: [${wheres.join(',')}]}';
     final q = '''query(\$page: Int) {
@@ -152,72 +147,22 @@ class _PersonListScreenState extends State<PersonListScreen> {
     _fetch(1);
   }
 
-  void _setYear(int? y) {
-    if (_year == y) return;
-    setState(() {
-      _year = y;
-      _items = []; _page = 1; _lastPage = 1; _total = 0;
-    });
-    _fetch(1);
-  }
-
   Widget _buildFilters() {
-    final currentYear = DateTime.now().year;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // A-Z index — underline tab style (matches search/category/BXH/tag
-        // sort tabs across the app for visual consistency).
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-            child: SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _letterBtn(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
-                  for (final c in _alphabet)
-                    _letterBtn(label: c, active: _letter == c, onTap: () => _setLetter(c)),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        // Year — replaced the 125-chip scroll with a popup picker. Far less
-        // visual noise; shows current selection inline.
-        PopupMenuButton<int?>(
-          tooltip: 'Năm sinh',
-          position: PopupMenuPosition.under,
-          color: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.border)),
-          onSelected: _setYear,
-          itemBuilder: (ctx) => [
-            PopupMenuItem<int?>(value: null, child: Text('Mọi năm', style: TextStyle(fontSize: 13, color: AppColors.text))),
-            for (var y = currentYear; y >= 1900; y--)
-              PopupMenuItem<int?>(value: y, child: Text('$y', style: TextStyle(fontSize: 13, color: AppColors.text))),
+    // A-Z index — underline tab style (matches search/category/BXH/tag
+    // sort tabs across the app for visual consistency).
+    return Container(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: SizedBox(
+        height: 36,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            _letterBtn(label: 'Tất cả', active: _letter == null, onTap: () => _setLetter(null)),
+            for (final c in _alphabet)
+              _letterBtn(label: c, active: _letter == c, onTap: () => _setLetter(c)),
           ],
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: _year != null ? AppColors.accentSoft : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _year != null ? AppColors.accent : AppColors.border),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.calendar_today_outlined, size: 13, color: _year != null ? AppColors.accentLight : AppColors.textMuted),
-              const SizedBox(width: 6),
-              Text(
-                _year != null ? '$_year' : 'Năm sinh',
-                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _year != null ? AppColors.accentLight : AppColors.textSecondary)),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.expand_more, size: 14, color: _year != null ? AppColors.accentLight : AppColors.textMuted),
-            ]),
-          ),
         ),
-      ],
+      ),
     );
   }
 
@@ -277,7 +222,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       gradient: LinearGradient(colors: [_heroColor, Color.lerp(_heroColor, Colors.black, 0.35)!], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      boxShadow: [BoxShadow(color: _heroColor.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: _heroColor.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
                       children: [
@@ -301,8 +246,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Filter row: A-Z + birth year. Both reset to "all" when
-                  // tapped twice.
+                  // Filter row: A-Z index. Resets to "all" when tapped twice.
                   _buildFilters(),
                   const SizedBox(height: 12),
                 ])),
@@ -337,11 +281,20 @@ class _PersonListScreenState extends State<PersonListScreen> {
                         // square treatment was reverted per user feedback. Section
                         // header icon already differentiates the lists; making
                         // avatar shapes vary just looked inconsistent.
-                        final radius = BorderRadius.circular(40);
-                        return InkWell(
+                        // Hover bg fills the (near-square) cell with a gentle
+                        // 16px radius. Earlier the InkWell used radius 40 on a
+                        // 166×152 cell, which warped into a lopsided pill
+                        // ("méo"); a moderate radius reads as a clean tile card.
+                        final radius = BorderRadius.circular(16);
+                        return HoverHighlight(
+                          borderRadius: radius,
+                          child: InkWell(
                           onTap: () => context.push('$_routePrefix${p['slug']}'),
                           borderRadius: radius,
+                          hoverColor: Colors.transparent,
+                          highlightColor: Colors.transparent,
                           child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Container(
                                 width: 80, height: 80,
@@ -363,6 +316,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                               ),
                             ],
                           ),
+                        ),
                         );
                       },
                       childCount: _items.length,

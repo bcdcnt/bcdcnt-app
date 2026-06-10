@@ -56,16 +56,23 @@ class SongRow extends StatelessWidget {
     final metric = _resolveMetric();
 
     return HoverHighlight(
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(10),
       child: GestureDetector(
         onSecondaryTapDown: (d) => _showContextMenu(context, d.globalPosition),
         child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        // HoverHighlight already paints the hover fill; suppress the Material
+        // ink overlay so the two don't stack into a too-dark band (worst in
+        // the light theme, where it also made adjacent rows flash during the
+        // hover cross-fade).
+        hoverColor: Colors.transparent,
+        highlightColor: Colors.transparent,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
-          ),
+          // No bottom divider: it drew full-width (square) and cut across the
+          // rounded hover highlight at the bottom corners. The rounded hover
+          // fill is the separator now (Spotify/Apple-style divider-less list).
         child: Row(
           children: [
             if (showIndex) ...[

@@ -21,6 +21,24 @@ class AppColors {
   static Color textMuted = const Color(0xFF6B5858);
   static Color border = const Color(0x14FFFFFF);
   static Color borderSubtle = const Color(0x0AFFFFFF);
+
+  /// True when the light/white theme is active. The decorative coloured
+  /// "glow" shadows that read as a soft halo on dark backgrounds look harsh
+  /// and exposed on white, so callers scale their shadow alpha by [shadowMul].
+  static bool isLight = false;
+  static double get shadowMul => isLight ? 0.32 : 1.0;
+
+  /// Theme-aware decorative glow. Use instead of inline `BoxShadow(...)` for
+  /// card/header halos so they soften automatically on the light theme.
+  static List<BoxShadow> glow(
+    Color color, {
+    double alpha = 0.3,
+    double blur = 16,
+    Offset offset = const Offset(0, 6),
+    double spread = 0,
+  }) =>
+      [BoxShadow(color: color.withValues(alpha: alpha * shadowMul), blurRadius: blur, offset: offset, spreadRadius: spread)];
+
   // Static accents that don't change per theme.
   static const gold = Color(0xFFC9A96E);
   static const error = Color(0xFFE57373);

@@ -187,19 +187,32 @@ class _SpotlightCardState extends State<_SpotlightCard> {
           child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.25), blurRadius: 28, spreadRadius: -8, offset: const Offset(0, 14))],
+            // Subtle dark shadow, NOT a bright accent glow offset downward —
+            // the accent glow showed as a lighter square "vệt" in the corner
+            // gaps (worst at the dark bottom-right corner). Black blends into
+            // the dark page so no patch appears past the rounded corners.
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.32 * AppColors.shadowMul), blurRadius: 18, offset: const Offset(0, 8))],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Blurred BG image
-                if (thumbUrl != null) CachedNetworkImage(imageUrl: thumbUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent)),
-                if (thumbUrl != null) BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: Container(color: Colors.black.withValues(alpha: 0.38)),
+                // Blurred BG: blur the IMAGE itself (ImageFiltered, a normal
+                // child the ClipRRect rounds cleanly) instead of BackdropFilter
+                // — BackdropFilter samples the un-clipped backdrop and leaks a
+                // square edge past the rounded corners ("vệt cũ" at the corners,
+                // worst at the bottom). Scale up slightly so the blur's faded
+                // edges fall outside the clip.
+                if (thumbUrl != null) ImageFiltered(
+                  // tileMode.clamp: the blur extends edge pixels instead of
+                  // fading to transparent. Without it the blurred image shrinks
+                  // to a rounded blob and the dark gradient shows through in the
+                  // corner gap as a "vệt" (worst at the dark bottom-right).
+                  imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24, tileMode: TileMode.clamp),
+                  child: CachedNetworkImage(imageUrl: thumbUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent)),
                 ),
+                if (thumbUrl != null) Container(color: Colors.black.withValues(alpha: 0.38)),
                 // Overlay gradient
                 Container(
                   decoration: BoxDecoration(
@@ -207,7 +220,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
                       colors: [
                         AppColors.accent.withValues(alpha: 0.5),
-                        Colors.black.withValues(alpha: 0.55),
+                        Colors.black.withValues(alpha: 0.32),
                       ],
                     ),
                   ),
@@ -222,7 +235,13 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                         width: 130, height: 130,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 22, offset: const Offset(0, 10))],
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 22, offset: const Offset(0, 10))],
+                        ),
+                        // Border painted OVER the clipped image (foreground) so
+                        // the square image corners can't poke past the rounded
+                        // edge — the earlier bleed/"lẹm" at the 4 corners.
+                        foregroundDecoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                         ),
                         child: ClipRRect(

@@ -108,7 +108,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     gradient: const LinearGradient(colors: [Color(0xFF388E3C), Color(0xFF81C784)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    boxShadow: [BoxShadow(color: const Color(0xFF388E3C).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                    boxShadow: [BoxShadow(color: const Color(0xFF388E3C).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Row(
                     children: [

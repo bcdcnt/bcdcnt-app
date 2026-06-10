@@ -24,17 +24,33 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   int _page = 1, _lastPage = 1;
   bool _loading = true, _loadingMore = false;
 
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
+
   @override
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
+    // Wait for auth to finish restoring before the first fetch — a fresh
+    // launch here would otherwise race the async token load → empty list.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetch(1);
-      _resetUnread();
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
     });
   }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    _didInitialFetch = true;
+    _fetch(1);
+    _resetUnread();
+  }
+
   @override
-  void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
+  void dispose() { _authRef?.removeListener(_initialFetch); _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
   void _onScroll() {
     if (_loadingMore || _loading || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);

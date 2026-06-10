@@ -1,7 +1,19 @@
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
+import '../constants/google_oauth.dart';
 import '../services/auth.dart';
+import '../services/google_signin_desktop.dart';
+
+// Desktop = where the loopback Google OAuth flow runs. The button is hidden
+// elsewhere (mobile uses google_sign_in instead — not wired yet).
+bool get _googleAvailable =>
+    GoogleOAuth.isConfigured &&
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.macOS ||
+        defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Login
@@ -26,6 +38,18 @@ class _LoginDialogState extends State<LoginDialog> {
     if (_loading) return;
     setState(() { _loading = true; _error = null; });
     final err = await context.read<AuthProvider>().login(_identity.text.trim(), _password.text);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() { _error = err; _loading = false; });
+    }
+  }
+
+  Future<void> _google() async {
+    if (_loading) return;
+    setState(() { _loading = true; _error = null; });
+    final err = await _runGoogleSignIn(context);
     if (!mounted) return;
     if (err == null) {
       Navigator.pop(context);
@@ -76,6 +100,12 @@ class _LoginDialogState extends State<LoginDialog> {
         if (_error != null) _AuthError(_error!),
         const SizedBox(height: 12),
         _AuthPrimaryButton(label: 'Đăng nhập', loading: _loading, onTap: _submit),
+        if (_googleAvailable) ...[
+          const SizedBox(height: 14),
+          const _OrDivider(),
+          const SizedBox(height: 14),
+          _GoogleButton(loading: _loading, onTap: _google),
+        ],
         const SizedBox(height: 10),
         _AuthSwitch(
           prompt: 'Chưa có tài khoản?',
@@ -87,6 +117,20 @@ class _LoginDialogState extends State<LoginDialog> {
         ),
       ],
     );
+  }
+}
+
+/// Shared desktop Google sign-in: runs the OAuth flow then exchanges the ID
+/// token for our session. Returns null on success or a message to display.
+Future<String?> _runGoogleSignIn(BuildContext context) async {
+  try {
+    final idToken = await GoogleSignInDesktop.signIn();
+    if (!context.mounted) return 'Đã huỷ';
+    return await context.read<AuthProvider>().loginByGoogle(idToken);
+  } on GoogleSignInException catch (e) {
+    return e.message;
+  } catch (_) {
+    return 'Đăng nhập Google thất bại';
   }
 }
 
@@ -197,6 +241,12 @@ class _RegisterDialogState extends State<RegisterDialog> {
         if (_error != null) _AuthError(_error!),
         const SizedBox(height: 12),
         _AuthPrimaryButton(label: 'Đăng ký', loading: _loading, onTap: _submit),
+        if (_googleAvailable) ...[
+          const SizedBox(height: 14),
+          const _OrDivider(),
+          const SizedBox(height: 14),
+          _GoogleButton(label: 'Đăng ký bằng Google', loading: _loading, onTap: _google),
+        ],
         const SizedBox(height: 10),
         _AuthSwitch(
           prompt: 'Đã có tài khoản?',
@@ -208,6 +258,18 @@ class _RegisterDialogState extends State<RegisterDialog> {
         ),
       ],
     );
+  }
+
+  Future<void> _google() async {
+    if (_loading) return;
+    setState(() { _loading = true; _error = null; });
+    final err = await _runGoogleSignIn(context);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() { _error = err; _loading = false; });
+    }
   }
 }
 
@@ -420,7 +482,7 @@ class _AuthShell extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                      boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -2)],
+                      boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2)],
                     ),
                     child: Icon(icon, color: Colors.white, size: 20),
                   ),
@@ -528,6 +590,56 @@ class _AuthPrimaryButton extends StatelessWidget {
       child: loading
           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
           : Text(label, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700))),
+    );
+  }
+}
+
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      Expanded(child: Divider(color: AppColors.border, height: 1)),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Text('hoặc', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+      ),
+      Expanded(child: Divider(color: AppColors.border, height: 1)),
+    ]);
+  }
+}
+
+class _GoogleButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback? onTap;
+  const _GoogleButton({this.label = 'Đăng nhập bằng Google', this.loading = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: loading ? null : onTap,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: AppColors.surfaceLight,
+        side: BorderSide(color: AppColors.border),
+        padding: const EdgeInsets.symmetric(vertical: 11),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // White badge + blue "G" — recognizable without bundling an asset.
+          Container(
+            width: 18, height: 18,
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(3)),
+            alignment: Alignment.center,
+            child: const Text('G', style: TextStyle(fontSize: 13, height: 1, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+          ),
+          const SizedBox(width: 10),
+          Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+        ],
+      ),
     );
   }
 }

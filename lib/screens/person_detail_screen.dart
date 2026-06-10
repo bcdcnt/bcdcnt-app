@@ -652,7 +652,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 36, spreadRadius: -4)],
+                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 36, spreadRadius: -4)],
                 border: Border.all(color: AppColors.border, width: 3),
               ),
               child: ClipOval(
@@ -730,7 +730,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 30, spreadRadius: -5)],
+                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 30, spreadRadius: -5)],
                   border: Border.all(color: AppColors.border, width: 3),
                 ),
                 child: ClipOval(

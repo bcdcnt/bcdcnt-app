@@ -35,14 +35,34 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
   IconData get _icon => widget.kind == UserListKind.favorites ? Icons.favorite : Icons.access_time;
 
   @override
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
+
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetch(1));
+    // Auth restores its token asynchronously from storage. If we fetched
+    // once in initState we'd race it (token not ready → empty list, no
+    // retry) — visible when deep-linking straight onto this screen. So we
+    // wait until auth is no longer `loading` (re-triggered by its notify).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
+    });
+  }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;            // still restoring — wait for next notify
+    _didInitialFetch = true;
+    _fetch(1);
   }
 
   @override
   void dispose() {
+    _authRef?.removeListener(_initialFetch);
     _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
     super.dispose();
@@ -180,7 +200,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
                       children: [

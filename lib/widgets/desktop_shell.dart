@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'hover_effects.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
+import '../services/theme_provider.dart';
 import 'mini_player.dart';
 import 'desktop_comment_sidebar.dart';
 import 'desktop_queue_panel.dart';
@@ -50,6 +52,14 @@ class _DesktopShellState extends State<DesktopShell> {
   static const _minPanelWidth = 240.0;
   static const _maxPanelWidth = 480.0;
 
+  // Left navigation sidebar — collapsible + resizable, persisted like the right panel.
+  double _leftWidth = 220;
+  static const _minLeftWidth = 180.0;
+  static const _maxLeftWidth = 320.0;
+  bool _leftCollapsed = false;
+  static const _prefsLeftWidthKey = 'desktop_left_width';
+  static const _prefsLeftCollapsedKey = 'desktop_left_collapsed';
+
   // Sub-screens already overlay their own MiniPlayer in a Stack. Only the
   // top-level routes rely on the shell to render the bottom player bar.
   static const _shellOwnedMiniPlayerPaths = {
@@ -66,8 +76,12 @@ class _DesktopShellState extends State<DesktopShell> {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     final w = prefs.getDouble(_prefsWidthKey);
+    final lw = prefs.getDouble(_prefsLeftWidthKey);
+    final lc = prefs.getBool(_prefsLeftCollapsedKey);
     if (!mounted) return;
     setState(() {
+      if (lw != null) _leftWidth = lw.clamp(_minLeftWidth, _maxLeftWidth);
+      if (lc != null) _leftCollapsed = lc;
       if (raw == 'queue') {
         _panelTab = _RightPanelTab.queue;
       } else if (raw == 'activity') {
@@ -84,6 +98,16 @@ class _DesktopShellState extends State<DesktopShell> {
   Future<void> _saveWidth(double w) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble(_prefsWidthKey, w);
+  }
+
+  Future<void> _saveLeftWidth(double w) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_prefsLeftWidthKey, w);
+  }
+
+  void _toggleLeft() {
+    setState(() => _leftCollapsed = !_leftCollapsed);
+    SharedPreferences.getInstance().then((p) => p.setBool(_prefsLeftCollapsedKey, _leftCollapsed));
   }
 
   Future<void> _saveTab(_RightPanelTab tab) async {
@@ -119,7 +143,30 @@ class _DesktopShellState extends State<DesktopShell> {
               builder: (ctx, isOpen, _) => Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _Sidebar(),
+                  if (!_leftCollapsed) ...[
+                    SizedBox(
+                      width: _leftWidth,
+                      child: _Sidebar(onCollapse: _toggleLeft),
+                    ),
+                    // Drag splitter on the left sidebar's right edge — drag to
+                    // resize, double-click to reset to 220.
+                    MouseRegion(
+                      cursor: SystemMouseCursors.resizeColumn,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onDoubleTap: () { setState(() => _leftWidth = 220); _saveLeftWidth(220); },
+                        onHorizontalDragUpdate: (d) {
+                          setState(() => _leftWidth = (_leftWidth + d.delta.dx).clamp(_minLeftWidth, _maxLeftWidth));
+                        },
+                        onHorizontalDragEnd: (_) => _saveLeftWidth(_leftWidth),
+                        child: Container(
+                          width: 6,
+                          color: Colors.transparent,
+                          child: VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                        ),
+                      ),
+                    ),
+                  ],
                   Expanded(
                     // Soft cap so song lists / forms don't span 2000+px on
                     // ultrawide displays. Matches Apple Music's behaviour where
@@ -147,6 +194,17 @@ class _DesktopShellState extends State<DesktopShell> {
                               icon: Icons.view_sidebar_outlined,
                               active: false,
                               onTap: () { desktopPanelOpen.value = true; },
+                            ),
+                          ),
+                        // Expand the left nav sidebar after it's been collapsed.
+                        if (_leftCollapsed)
+                          Positioned(
+                            top: 8, left: 12,
+                            child: _HeaderTabBtn(
+                              tooltip: 'Mở thanh điều hướng',
+                              icon: Icons.view_sidebar_outlined,
+                              active: false,
+                              onTap: _toggleLeft,
                             ),
                           ),
                       ],
@@ -225,6 +283,19 @@ class _RightPanelContainer extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
             child: Row(children: [
+              // Collapse button on the LEFT (inner edge), mirroring the left
+              // sidebar's « on its right edge. » points toward the right screen
+              // edge the panel folds away to. Same widget/size/colour as the
+              // left « (IconButton, 18px, textMuted) so they read as a pair.
+              IconButton(
+                tooltip: 'Thu gọn bảng phụ',
+                icon: Icon(Icons.keyboard_double_arrow_right, size: 18, color: AppColors.textMuted),
+                onPressed: () { desktopPanelOpen.value = false; },
+                hoverColor: AppColors.surfaceHover,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+              ),
+              const Spacer(),
               _HeaderTabBtn(
                 tooltip: 'Bình luận',
                 icon: Icons.chat_bubble_outline,
@@ -242,13 +313,6 @@ class _RightPanelContainer extends StatelessWidget {
                 icon: Icons.format_list_bulleted,
                 active: activeTab == _RightPanelTab.queue,
                 onTap: () => onSelectTab(_RightPanelTab.queue),
-              ),
-              const Spacer(),
-              _HeaderTabBtn(
-                tooltip: 'Đóng bảng phụ',
-                icon: Icons.close,
-                active: false,
-                onTap: () { desktopPanelOpen.value = false; },
               ),
             ]),
           ),
@@ -287,6 +351,7 @@ class _HeaderTabBtn extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
+          hoverColor: AppColors.surfaceHover,
           onTap: onTap,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -333,7 +398,9 @@ const _primaryNavGroups = <_NavGroup>[
     _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
     _NavItem('Hoạt động', '/cong-dong/hoat-dong-thanh-vien', Icons.show_chart),
   ]),
-  _NavGroup(label: 'THỂ LOẠI', items: [
+  _NavGroup(label: 'KHÁM PHÁ', items: [
+    // Library hub leads the Explore group (was a standalone anchor before).
+    _NavItem('Thư viện', '/library', Icons.library_music_outlined),
     _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
     _NavItem('Nhạc sĩ', '/nhac-si', Icons.piano_outlined),
     _NavItem('Nhà thơ', '/nha-tho', Icons.menu_book_outlined),
@@ -346,11 +413,6 @@ const _primaryNavGroups = <_NavGroup>[
   ]),
 ];
 
-/// Always-visible bottom anchor — `Thư viện` hub link must be reachable
-/// whether or not the user is logged in (shortcuts below it are
-/// auth-gated).
-const _libraryAnchor = _NavItem('Thư viện', '/library', Icons.library_music_outlined);
-
 // Library shortcuts — only shown when authenticated
 const _libraryShortcuts = <_NavItem>[
   _NavItem('Yêu thích', '/yeu-thich', Icons.favorite_outline),
@@ -360,7 +422,8 @@ const _libraryShortcuts = <_NavItem>[
 ];
 
 class _Sidebar extends StatelessWidget {
-  const _Sidebar();
+  final VoidCallback? onCollapse;
+  const _Sidebar({this.onCollapse});
 
   bool _isActive(String currentPath, String navPath) {
     if (navPath == '/') return currentPath == '/';
@@ -374,7 +437,6 @@ class _Sidebar extends StatelessWidget {
     final isAuth = auth.isAuthenticated;
 
     return Container(
-      width: 220,
       decoration: BoxDecoration(
         color: AppColors.surface,
         border: Border(right: BorderSide(color: AppColors.border)),
@@ -384,7 +446,7 @@ class _Sidebar extends StatelessWidget {
         children: [
           // Logo
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            padding: const EdgeInsets.fromLTRB(20, 18, 4, 14),
             child: Row(
               children: [
                 Text(
@@ -397,6 +459,15 @@ class _Sidebar extends StatelessWidget {
                 const Spacer(),
                 if (isAuth)
                   _NotifBell(unread: (auth.user?['unread'] ?? 0) as int),
+                if (onCollapse != null)
+                  IconButton(
+                    tooltip: 'Thu gọn thanh bên',
+                    icon: Icon(Icons.keyboard_double_arrow_left, size: 18, color: AppColors.textMuted),
+                    onPressed: onCollapse,
+                    hoverColor: AppColors.surfaceHover,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  ),
               ],
             ),
           ),
@@ -422,9 +493,8 @@ class _Sidebar extends StatelessWidget {
                   for (final item in _primaryNavGroups[g].items)
                     _SidebarLink(item: item, active: _isActive(path, item.path)),
                 ],
-                const SizedBox(height: 14),
-                _SidebarLink(item: _libraryAnchor, active: _isActive(path, _libraryAnchor.path)),
                 if (isAuth) ...[
+                  const SizedBox(height: 14),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                     child: Text(
@@ -442,6 +512,8 @@ class _Sidebar extends StatelessWidget {
               ],
             ),
           ),
+          // Quick theme switch — always visible (guests too), tap to apply.
+          const _SidebarThemeSwitch(),
           // Account / login footer
           Container(
             decoration: BoxDecoration(
@@ -473,6 +545,9 @@ class _SidebarLink extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
+          // Explicit themed hover — the Material default (white 4%) is
+          // invisible on the light theme.
+          hoverColor: AppColors.surfaceHover,
           onTap: () => context.go(item.path),
           child: Container(
             decoration: BoxDecoration(
@@ -527,12 +602,65 @@ class _NotifBell extends StatelessWidget {
           ),
           if (unread > 0)
             Positioned(
-              top: 4, right: 4,
+              top: -2, right: -2,
               child: Container(
-                width: 8, height: 8,
-                decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                constraints: const BoxConstraints(minWidth: 16),
+                height: 16,
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(8)),
+                alignment: Alignment.center,
+                child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Always-visible quick theme switch in the left sidebar — a horizontal strip
+/// of palette swatches (tap to apply instantly). Local-only, so it works for
+/// guests too; complements the copy inside the logged-in account menu.
+class _SidebarThemeSwitch extends StatelessWidget {
+  const _SidebarThemeSwitch();
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<ThemeProvider>();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.palette_outlined, size: 15, color: AppColors.textSecondary),
+            const SizedBox(width: 8),
+            Text('Giao diện', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+          ]),
+          const SizedBox(height: 9),
+          SizedBox(
+            height: 24,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(right: 8),
+              itemCount: kAppPalettes.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 9),
+              itemBuilder: (_, i) {
+                final p = kAppPalettes[i];
+                return Tooltip(
+                  message: p.label,
+                  child: HoverScale(
+                    scale: 1.2,
+                    child: GestureDetector(
+                      onTap: () => context.read<ThemeProvider>().setTheme(p.name),
+                      child: themeSwatch(p, size: 20, active: prov.name == p.name),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -566,14 +694,16 @@ class _AccountFooter extends StatelessWidget {
           case 'logout': auth.logout(); break;
         }
       },
+      // Zero item padding so the per-row HoverHighlight fills the full width.
       itemBuilder: (_) => [
-        PopupMenuItem(value: 'profile', child: _menuRow(Icons.person_outline, 'Hồ sơ')),
-        PopupMenuItem(value: 'comments', child: _menuRow(Icons.chat_bubble_outline, 'Bình luận của tôi')),
-        PopupMenuItem(value: 'discussions', child: _menuRow(Icons.forum_outlined, 'Thảo luận của tôi')),
-        PopupMenuItem(value: 'stats', child: _menuRow(Icons.bar_chart, 'Thống kê')),
-        PopupMenuItem(value: 'settings', child: _menuRow(Icons.settings_outlined, 'Cài đặt')),
+        PopupMenuItem(value: 'profile', padding: EdgeInsets.zero, child: _menuRow(Icons.person_outline, 'Hồ sơ')),
+        PopupMenuItem(value: 'comments', padding: EdgeInsets.zero, child: _menuRow(Icons.chat_bubble_outline, 'Bình luận của tôi')),
+        PopupMenuItem(value: 'discussions', padding: EdgeInsets.zero, child: _menuRow(Icons.forum_outlined, 'Thảo luận của tôi')),
+        PopupMenuItem(value: 'stats', padding: EdgeInsets.zero, child: _menuRow(Icons.bar_chart, 'Thống kê')),
+        PopupMenuItem(value: 'settings', padding: EdgeInsets.zero, child: _menuRow(Icons.settings_outlined, 'Cài đặt')),
         const PopupMenuDivider(),
-        PopupMenuItem(value: 'logout', child: _menuRow(Icons.logout, 'Đăng xuất', danger: true)),
+        // Theme switch lives in the sidebar footer now (_SidebarThemeSwitch).
+        PopupMenuItem(value: 'logout', padding: EdgeInsets.zero, child: _menuRow(Icons.logout, 'Đăng xuất', danger: true)),
       ],
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -614,14 +744,23 @@ class _AccountFooter extends StatelessWidget {
 
   Widget _menuRow(IconData icon, String label, {bool danger = false}) {
     final color = danger ? AppColors.accent : AppColors.text;
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 10),
-        Text(label, style: body(TextStyle(color: color, fontSize: 13))),
-      ],
+    // HoverHighlight gives a visible hover fill (the PopupMenuItem's own ink
+    // hover is invisible on the light theme).
+    return HoverHighlight(
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: color),
+            const SizedBox(width: 10),
+            Text(label, style: body(TextStyle(color: color, fontSize: 13))),
+          ],
+        ),
+      ),
     );
   }
+
 }
 
 class _LoginFooter extends StatelessWidget {

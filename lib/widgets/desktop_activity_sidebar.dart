@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import 'hover_effects.dart';
 import '../services/api.dart';
 import '../services/realtime.dart';
 
@@ -208,8 +209,12 @@ class _ActivityTile extends StatelessWidget {
     // <song>); Upload pulls the title before the "của <user>" suffix.
     final usesIn = action == 'comment' || action == 'love_comment' || isComment;
 
-    return InkWell(
+    return HoverHighlight(
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
       onTap: onTap,
+      hoverColor: Colors.transparent,
+      highlightColor: Colors.transparent,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -250,6 +255,7 @@ class _ActivityTile extends StatelessWidget {
           ),
         ]),
       ),
+    ),
     );
   }
 

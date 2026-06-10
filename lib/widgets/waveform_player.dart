@@ -135,7 +135,7 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 3))],
+              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
             ),
             child: _loaded
                 ? Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 22)

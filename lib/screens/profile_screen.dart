@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
+import '../services/theme_provider.dart';
+import '../widgets/hover_effects.dart';
 import '../widgets/login_dialog.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -65,6 +68,15 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 14),
           _logoutItem(context, auth),
         ] else ...[
+          // Quick theme switch — local-only, so guests can personalize the
+          // look without an account.
+          _quickThemeRow(context),
+          const SizedBox(height: 18),
+          _menuItem(context, Icons.palette_outlined, 'Phối màu', null,
+              onTap: () => context.push('/cai-dat', extra: 'theme')),
+          _menuItem(context, Icons.keyboard_outlined, 'Phím tắt', null,
+              onTap: () => context.push('/cai-dat', extra: 'shortcuts')),
+          const SizedBox(height: 14),
           _menuItem(context, Icons.notifications_outlined, 'Thông báo', '/thong-bao', requireAuth: true),
           _menuItem(context, Icons.favorite_outline, 'Yêu thích', '/yeu-thich', requireAuth: true),
           _menuItem(context, Icons.access_time, 'Nghe gần đây', '/nghe-gan-day', requireAuth: true),
@@ -157,7 +169,11 @@ class ProfileScreen extends StatelessWidget {
         Container(
           width: 70, height: 70,
           decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.18)),
-          child: const Icon(Icons.music_note, color: Colors.white, size: 36),
+          padding: const EdgeInsets.all(15),
+          child: SvgPicture.asset(
+            'assets/logo-on-dark.svg',
+            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          ),
         ),
         const SizedBox(height: 14),
         Text('BCĐCNT', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white))),
@@ -176,6 +192,47 @@ class ProfileScreen extends StatelessWidget {
             child: Text('Đăng nhập', style: body(const TextStyle(fontWeight: FontWeight.w700))),
           ),
       ]),
+    );
+  }
+
+  Widget _quickThemeRow(BuildContext context) {
+    final themeProv = context.watch<ThemeProvider>();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Row(children: [
+            Icon(Icons.palette_outlined, size: 16, color: AppColors.accentLight),
+            const SizedBox(width: 8),
+            Text('Chọn nhanh giao diện', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+          ]),
+        ),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            itemCount: kAppPalettes.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
+            itemBuilder: (_, i) {
+              final p = kAppPalettes[i];
+              final active = themeProv.name == p.name;
+              return Tooltip(
+                message: p.label,
+                child: HoverScale(
+                  scale: 1.12,
+                  child: InkWell(
+                    onTap: () => context.read<ThemeProvider>().setTheme(p.name),
+                    borderRadius: BorderRadius.circular(20),
+                    child: themeSwatch(p, size: 36, active: active),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 

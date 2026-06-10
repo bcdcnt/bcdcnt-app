@@ -725,7 +725,7 @@ class _TopResultCard extends StatelessWidget {
                 color: AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.12), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6))],
+                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.12 * AppColors.shadowMul), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6))],
               ),
               child: Row(
                 children: [
@@ -735,7 +735,7 @@ class _TopResultCard extends StatelessWidget {
                       shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
                       borderRadius: isPerson ? null : BorderRadius.circular(12),
                       color: AppColors.surface,
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))],
                     ),
                     clipBehavior: Clip.hardEdge,
                     child: image != null
@@ -758,6 +758,19 @@ class _TopResultCard extends StatelessWidget {
                         if (subtitle != null && subtitle.isNotEmpty) Padding(
                           padding: EdgeInsets.only(top: isDesktop ? 6 : 4),
                           child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: subSize, color: AppColors.textSecondary))),
+                        ),
+                        // Listen count for song-like top hits (headphones +
+                        // formatViews — same convention as the result rows).
+                        if (isSongLike(t) && (hit['views'] is num) && (hit['views'] as num) > 0) Padding(
+                          padding: EdgeInsets.only(top: isDesktop ? 8 : 5),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.headphones, size: isDesktop ? 14 : 12, color: AppColors.textMuted),
+                              const SizedBox(width: 4),
+                              Text('${formatViews((hit['views'] as num).toInt())} lượt nghe', style: body(TextStyle(fontSize: subSize - 1, color: AppColors.textMuted))),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -919,7 +932,23 @@ class _HitRow extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+            // Song-like hits show their listen count (matches SongRow's
+            // headphones + formatViews convention); everything else keeps
+            // the affordance chevron.
+            if (isSongLike(t) && (hit['views'] is num) && (hit['views'] as num) > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.headphones, size: 12, color: AppColors.textMuted),
+                    const SizedBox(width: 3),
+                    Text(formatViews((hit['views'] as num).toInt()), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  ],
+                ),
+              )
+            else
+              Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
           ],
         ),
       ),

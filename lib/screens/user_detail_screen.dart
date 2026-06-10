@@ -44,7 +44,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
   List<Map<String, dynamic>> _previewComments = [];
   List<Map<String, dynamic>> _previewPoints = [];
 
-  int _karaokeTotal = 0, _commentTotal = 0;
+  int _karaokeTotal = 0, _commentTotal = 0, _contribTotal = 0;
 
   @override
   void initState() {
@@ -118,6 +118,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         _karaokePage = pi?['currentPage'] ?? 1;
         _karaokeLastPage = pi?['lastPage'] ?? 1;
         _commentTotal = user['allComments']?['paginatorInfo']?['total'] ?? 0;
+        _contribTotal = user['allPoints']?['paginatorInfo']?['total'] ?? 0;
         _previewComments = ((user['recentComments']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _previewPoints = ((user['recentPoints']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
@@ -413,7 +414,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
                   const Tab(text: 'Tổng quan'),
                   Tab(text: 'Bản thu${_karaokeTotal > 0 ? ' (${_formatInt(_karaokeTotal)})' : ''}'),
                   Tab(text: 'Bình luận${_commentTotal > 0 ? ' (${_formatInt(_commentTotal)})' : ''}'),
-                  const Tab(text: 'Cống hiến'),
+                  Tab(text: 'Cống hiến${_contribTotal > 0 ? ' (${_formatInt(_contribTotal)})' : ''}'),
                 ],
               )),
             ),

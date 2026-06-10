@@ -1267,8 +1267,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               icon: Icons.album_outlined,
               title: _resolvedType == 'karaoke' ? 'Thành viên hát bài này' : 'Bản thu khác',
               count: '(${filtered.length})',
-              actionText: 'Phát tất cả',
-              onAction: () => _playList(filtered),
+              onPlayAll: () => _playList(filtered),
             ),
             ...shown.map((s) {
               final sg = Map<String, dynamic>.from(s);
@@ -1295,8 +1294,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               icon: Icons.mic_outlined,
               title: 'Thành viên hát bài này',
               count: '(${karaokes.length})',
-              actionText: 'Phát tất cả',
-              onAction: () => _playList(karaokes),
+              onPlayAll: () => _playList(karaokes),
             ),
             ...shown.map((s) {
               final sg = Map<String, dynamic>.from(s);
@@ -1319,11 +1317,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SectionHeader(
-            icon: Icons.music_note_outlined,
+            icon: Icons.auto_awesome_outlined,
             title: 'Có thể bạn muốn nghe',
-            count: '(${_suggestions.length})',
-            actionText: 'Phát tất cả',
-            onAction: () => _playList(_suggestions),
+            onPlayAll: () => _playList(_suggestions),
           ),
           ..._suggestions.map((s) {
             final sg = Map<String, dynamic>.from(s);
@@ -1346,10 +1342,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           _ArtistBanner(
             name: title,
             avatar: avatar,
-            label: 'Trình bày',
             onTap: slug != null ? () => context.push('/nghe-si/$slug') : null,
             onPlayAll: () => _playList(songs),
-            count: songs.length,
           ),
           ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
@@ -1366,7 +1360,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final slug = composer['slug']?.toString();
       final avatar = composer['avatar']?['url']?.toString();
       final routePrefix = _resolvedType == 'folk' ? '/soan-gia' : _resolvedType == 'poem' ? '/nha-tho' : '/nhac-si';
-      final label = _resolvedType == 'folk' ? 'Soạn giả' : _resolvedType == 'poem' ? 'Tác giả' : 'Sáng tác';
       final songs = (cg['songs'] as List);
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
@@ -1374,10 +1367,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           _ArtistBanner(
             name: title,
             avatar: avatar,
-            label: label,
             onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
             onPlayAll: () => _playList(songs),
-            count: songs.length,
           ),
           ...songs.map((s) {
             final sg = Map<String, dynamic>.from(s);
@@ -1464,7 +1455,7 @@ class _PrimaryPlayButton extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
               borderRadius: BorderRadius.circular(28),
-              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 14, offset: const Offset(0, 4))],
+              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 14, offset: const Offset(0, 4))],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1513,15 +1504,11 @@ class _MetaLine extends StatelessWidget {
 class _ArtistBanner extends StatelessWidget {
   final String name;
   final String? avatar;
-  final String label;
-  final int count;
   final VoidCallback? onTap;
   final VoidCallback onPlayAll;
 
   const _ArtistBanner({
     required this.name,
-    required this.label,
-    required this.count,
     this.avatar,
     this.onTap,
     required this.onPlayAll,
@@ -1552,19 +1539,7 @@ class _ArtistBanner extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(label.toUpperCase(), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
-                    const SizedBox(height: 2),
-                    Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-                      Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2)))),
-                      const SizedBox(width: 6),
-                      Text('($count)', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
-                    ]),
-                  ],
-                ),
+                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
               ),
               const SizedBox(width: 8),
               InkWell(
@@ -1796,7 +1771,7 @@ class _DesktopHero extends StatelessWidget {
                 width: 300, height: 300,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 24, offset: const Offset(0, 10))],
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
@@ -2037,7 +2012,7 @@ class _PrimaryActionPill extends StatelessWidget {
             color: bgColor,
             borderRadius: BorderRadius.circular(24),
             border: primary || activeAccent ? null : Border.all(color: AppColors.border),
-            boxShadow: primary ? [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 12, offset: const Offset(0, 4))] : null,
+            boxShadow: primary ? [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))] : null,
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon, size: 16, color: fg),

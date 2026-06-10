@@ -93,8 +93,8 @@ const _rankingQuery = '''query {
 }''';
 
 const _playlistsQuery = '''query(\$where: WhereConditions) {
-  playlists(first: 30, orderBy: [{column: "is_sticky", order: DESC}, {column: "id", order: DESC}], where: \$where) {
-    data { id slug title thumbnail { url } user { id username } items(first: 1) { paginatorInfo { total } } }
+  playlists(first: 30, orderBy: [{column: "event_date", order: DESC}], where: \$where) {
+    data { id slug title event_start event_date thumbnail { url } user { id username } }
   }
 }''';
 
@@ -241,6 +241,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _rankTab = 0;
   final Map<String, List<Map<String, dynamic>>> _memberRanks = {};
   final Map<String, bool> _memberLoading = {};
+  // Which member from the loaded ranking list gets the hero spotlight — picked
+  // at random per load so it isn't always the same #1 (which felt stale).
+  final Map<String, int> _heroPick = {};
   // Detail card (yob, points, uploads count, comments count) for the
   // user shown in `_topMemberHero` — fetched on demand once we know
   // the current top user's id, then cached so tab switching doesn't
@@ -281,13 +284,25 @@ class _HomeScreenState extends State<HomeScreen> {
   int _featuredCommentIndex = 0;
   Timer? _featuredCommentsTimer;
 
+  // Shared rotation cadence for the auto-cycling discovery surfaces
+  // (Featured artist/composer hero + Top member hero) so they feel in sync.
+  static const Duration _kHeroRotate = Duration(seconds: 5);
+
   // Featured Person hero auto-rotate timer — re-picks `_featuredArtistIndex`
   // every few seconds so the discovery card feels alive without an
   // explicit slider.
   Timer? _featuredArtistTimer;
 
+  // Top member hero auto-rotate timer — re-rolls `_heroPick` for the active
+  // ranking tab on the same cadence as the artist hero.
+  Timer? _memberHeroTimer;
+
   // Khám phá thể loại — top tags with sample thumbnails for the mosaic.
   List<Map<String, dynamic>> _popularTags = [];
+
+  // Total song count per category (keyed by `_Cat.query`) for the "Thể loại"
+  // banners — shows the size instead of a generic "Khám phá X" line.
+  Map<String, int> _categoryCounts = {};
 
   // Tracks whether we've successfully fetched personalized data for the
   // currently logged-in user. Reset on logout so a re-login re-fetches.
@@ -304,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final auth = context.read<AuthProvider>();
     auth.addListener(_onAuthChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged());
+    _restartMemberHeroTimer();
   }
 
   @override
@@ -312,6 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _featuredCommentsTimer?.cancel();
     _featuredCommentsCtrl.dispose();
     _featuredArtistTimer?.cancel();
+    _memberHeroTimer?.cancel();
     super.dispose();
   }
 
@@ -323,7 +340,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _featuredArtistTimer?.cancel();
     final poolSize = _artists.length + _composers.length;
     if (poolSize < 2) return;
-    _featuredArtistTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+    _featuredArtistTimer = Timer.periodic(_kHeroRotate, (_) {
       if (!mounted) return;
       final pool = _artists.length + _composers.length;
       if (pool < 2) return;
@@ -336,6 +353,30 @@ class _HomeScreenState extends State<HomeScreen> {
           next = math.Random().nextInt(pool);
         }
         _featuredArtistIndex = next;
+      });
+    });
+  }
+
+  /// Re-roll the Top-member hero on the same cadence as the artist hero, for
+  /// whichever ranking tab is currently active. Reads the live `_rankTab` each
+  /// tick so it follows tab switches without needing a restart.
+  void _restartMemberHeroTimer() {
+    _memberHeroTimer?.cancel();
+    _memberHeroTimer = Timer.periodic(_kHeroRotate, (_) {
+      if (!mounted) return;
+      final kind = switch (_rankTab) {
+        0 => 'contributors', 1 => 'uploaders', 2 => 'commentLoves', 3 => 'listeners',
+        _ => 'contributors',
+      };
+      final items = _memberRanks[kind];
+      if (items == null || items.length < 2) return;
+      setState(() {
+        final cur = _heroPick[kind] ?? 0;
+        var next = cur;
+        for (var i = 0; i < 5 && next == cur; i++) {
+          next = math.Random().nextInt(items.length);
+        }
+        _heroPick[kind] = next;
       });
     });
   }
@@ -516,7 +557,7 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(_artistsQuery, _artistsWhere)),
         safe(ApiClient.query(_composersQuery, _composersWhere)),
         safe(ApiClient.query(_videoQuery)),
-        safe(ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'is_system', 'value': '1'}, {'column': 'is_public', 'value': '1'}]}})),
+        safe(ApiClient.query(_playlistsQuery, {'where': {'AND': [{'column': 'event_date', 'operator': 'IS_NOT_NULL'}, {'column': 'is_public', 'value': '1'}]}})),
         // Trending search keywords for the chip strip — small response,
         // batches with the existing above-fold queries to avoid an extra
         // round-trip on first paint.
@@ -527,6 +568,8 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(r'query { featuredComments(limit: 10) { id snippet likes created_at username user_avatar song_id song_title song_subtitle song_slug song_image audio_url video_url play_type file_type } }')),
         // Khám phá thể loại — top tags + sample thumbs for the mosaic.
         safe(ApiClient.query(r'query { popularTags(limit: 8) { id name slug song_count sample_images } }')),
+        // Per-category totals for the "Thể loại" banners — first:1 keeps it tiny.
+        safe(ApiClient.query(r'query { songs(first: 1) { paginatorInfo { total } } folks(first: 1) { paginatorInfo { total } } instrumentals(first: 1) { paginatorInfo { total } } poems(first: 1) { paginatorInfo { total } } }')),
       ]);
       if (!mounted) return;
 
@@ -554,16 +597,15 @@ class _HomeScreenState extends State<HomeScreen> {
         _composers = queries[3]['composers']?['data'] ?? [];
         _restartFeaturedArtistTimer();
         _videos = List.of(queries[4]['songs']?['data'] ?? [])..shuffle();
-        // Drop playlists without a thumbnail — placeholder grey tiles
-        // make the carousel look broken. Shuffle the rest so each visit
-        // surfaces a different ordering.
-        _playlists = (List.of(queries[5]['playlists']?['data'] ?? [])
-            ..removeWhere((p) {
-              final t = (p as Map?)?['thumbnail'];
-              final url = t is Map ? t['url']?.toString() : null;
-              return url == null || url.isEmpty;
-            }))
-          ..shuffle();
+        // Event playlists — drop ones without a thumbnail (placeholder grey
+        // tiles look broken). Keep the event_date DESC order (most recent
+        // events first); no shuffle so the chronology reads.
+        _playlists = List.of(queries[5]['playlists']?['data'] ?? [])
+          ..removeWhere((p) {
+            final t = (p as Map?)?['thumbnail'];
+            final url = t is Map ? t['url']?.toString() : null;
+            return url == null || url.isEmpty;
+          });
         _trendingKeywords = ((queries[6]['trendingKeywords'] ?? []) as List)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
@@ -575,6 +617,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _popularTags = ((queries[8]['popularTags'] ?? []) as List)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
+        int catTotal(String k) => ((queries[9][k]?['paginatorInfo']?['total']) as num?)?.toInt() ?? 0;
+        _categoryCounts = {
+          'songs': catTotal('songs'),
+          'folks': catTotal('folks'),
+          'instrumentals': catTotal('instrumentals'),
+          'poems': catTotal('poems'),
+        };
         _loading = false;
       });
       _fetchLatest(_categories[_latestTab], 1);
@@ -727,6 +776,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() {
         _memberRanks[kind] = items;
+        _heroPick[kind] = items.length <= 1 ? 0 : math.Random().nextInt(items.length);
         _memberLoading[kind] = false;
       });
     } catch (_) {
@@ -854,8 +904,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   final auth = ctx.watch<AuthProvider>();
                   final name = auth.user?['username']?.toString();
                   final label = name != null
-                      ? '${_greeting()}, $name · NỔI BẬT HÔM NAY'
-                      : '${_greeting()} · NỔI BẬT HÔM NAY';
+                      ? '${_greeting()}, $name'
+                      : _greeting();
                   return Text(
                     label.toUpperCase(),
                     style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1.2)),
@@ -884,33 +934,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
 
           // ─── DÀNH CHO BẠN (personalized — only when logged in) ───
-          if (_recentListens.isNotEmpty || _recentLoves.isNotEmpty || _recommendedSongs.isNotEmpty) ...[
+          // Personalised recommendations — collaborative-filtering style
+          // (artist + composer + tag overlap). The old "Mix dành cho bạn"
+          // card was removed: it only reshuffled loves+listens (no
+          // discovery) and duplicated the "Nghe gần đây" / "Yêu thích"
+          // carousels shown right below.
+          if (_recommendedSongs.isNotEmpty) ...[
             const _GroupLabel('DÀNH CHO BẠN'),
-            // Daily Mix — top of cluster as the dominant "phát ngay"
-            // CTA. Full width, dense content (mosaic + text + play
-            // button) so it earns the space.
-            _StaggerFadeIn(index: 4, child: _dailyMixCard()),
+            SectionHeader(
+              icon: Icons.auto_awesome,
+              title: 'Gợi ý cho bạn',
+              subtitle: 'Dựa trên nghệ sĩ, nhạc sĩ và chủ đề bạn nghe',
+              count: '${_recommendedSongs.length} bài',
+              onPlayAll: () => _shufflePlay(_recommendedSongs, sourceLabel: 'Gợi ý cho bạn'),
+              playAllIcon: Icons.shuffle,
+              playAllLabel: 'Ngẫu nhiên',
+            ),
+            _recommendedCarousel(_recommendedSongs),
             const SizedBox(height: 22),
-            // Personalised recommendations — collaborative-filtering style
-            // (artist + composer + tag overlap). Sits below Daily Mix
-            // so the user has the play-now option first, then the
-            // browse-the-picks experience.
-            if (_recommendedSongs.isNotEmpty) ...[
-              SectionHeader(
-                icon: Icons.auto_awesome,
-                title: 'Gợi ý cho bạn',
-                subtitle: 'Dựa trên nghệ sĩ, nhạc sĩ và chủ đề bạn nghe',
-              ),
-              _shufflePlayBar(
-                label: 'Phát tất cả',
-                count: _recommendedSongs.length,
-                icon: Icons.play_arrow,
-                onPlay: () => _playAll(_recommendedSongs, sourceLabel: 'Gợi ý cho bạn'),
-              ),
-              const SizedBox(height: 12),
-              _recommendedCarousel(_recommendedSongs),
-              const SizedBox(height: 22),
-            ],
           ],
 
           if (_recentListens.isNotEmpty) ...[
@@ -928,15 +969,12 @@ class _HomeScreenState extends State<HomeScreen> {
             SectionHeader(
               icon: Icons.favorite,
               title: 'Yêu thích gần đây',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/yeu-thich'),
+              // No "Xem tất cả" — there's a dedicated "Yêu thích" entry in
+              // the left sidebar already.
+              onPlayAll: () => _shufflePlay(_recentLoves, sourceLabel: 'Yêu thích gần đây'),
+              playAllIcon: Icons.shuffle,
+              playAllLabel: 'Ngẫu nhiên',
             ),
-            _shufflePlayBar(
-              label: 'Phát ngẫu nhiên',
-              count: _recentLoves.length,
-              onPlay: () => _shufflePlay(_recentLoves, sourceLabel: 'Yêu thích gần đây'),
-            ),
-            const SizedBox(height: 12),
             _songCarousel(_recentLoves),
             const SizedBox(height: 22),
           ],
@@ -992,6 +1030,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SectionHeader(
             icon: Icons.access_time,
             title: 'Bài hát mới cập nhật',
+            onRefresh: () => _fetchLatest(_categories[_latestTab], 1),
             actionText: 'Xem tất cả',
             onAction: () => context.push('/the-loai/${_categories[_latestTab].slug}'),
           ),
@@ -1011,20 +1050,10 @@ class _HomeScreenState extends State<HomeScreen> {
           // header. Order is shuffled in `_fetch` so the home feels
           // fresh on each visit even when the underlying data is
           // unchanged.
-          if (_videos.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.movie_outlined,
-              title: 'Video nổi bật',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/video'),
-            ),
-            _videoCarousel(_videos),
-            const SizedBox(height: 32),
-          ],
           if (_playlists.isNotEmpty) ...[
             SectionHeader(
-              icon: Icons.queue_music,
-              title: 'Playlist nổi bật',
+              icon: Icons.event_outlined,
+              title: 'Playlist sự kiện',
               actionText: 'Xem tất cả',
               onAction: () => context.push('/playlist'),
             ),
@@ -1245,7 +1274,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         border: Border.all(color: AppColors.border),
         boxShadow: [
-          BoxShadow(color: AppColors.accent.withValues(alpha: 0.06), blurRadius: 24, spreadRadius: -6, offset: const Offset(0, 4)),
+          BoxShadow(color: AppColors.accent.withValues(alpha: 0.06 * AppColors.shadowMul), blurRadius: 24, spreadRadius: -6, offset: const Offset(0, 4)),
         ],
       ),
       child: Row(
@@ -1261,7 +1290,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 16, spreadRadius: -2)],
+                    boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 16, spreadRadius: -2)],
                   ),
                   child: ClipOval(
                     child: loggedIn && avatar != null
@@ -1331,7 +1360,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 12, spreadRadius: -2, offset: const Offset(0, 3))],
+                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2, offset: const Offset(0, 3))],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.login, color: Colors.white, size: 14),
@@ -1346,132 +1375,71 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Spotify Daily Mix-style banner — 4-thumb mosaic on the left, title +
-  // CTA on the right. Tap → shuffle-play a blend of the user's recent
-  // loves and listens. Built fresh each frame from current state so the
-  // mosaic refreshes whenever new data lands.
-  Widget _dailyMixCard() {
-    // Blend pool: alternate loves + listens to avoid one source dominating
-    // when the user has e.g. 50 listens but only 2 loves. Dedupe by id.
-    final pool = <Map<String, dynamic>>[];
-    final seen = <String>{};
-    final maxLen = math.max(_recentLoves.length, _recentListens.length);
-    for (var i = 0; i < maxLen; i++) {
-      if (i < _recentLoves.length) {
-        final s = Map<String, dynamic>.from(_recentLoves[i]);
-        final id = s['id']?.toString();
-        if (id != null && seen.add(id)) pool.add(s);
-      }
-      if (i < _recentListens.length) {
-        final s = Map<String, dynamic>.from(_recentListens[i]);
-        final id = s['id']?.toString();
-        if (id != null && seen.add(id)) pool.add(s);
-      }
-    }
-    if (pool.isEmpty) return const SizedBox.shrink();
-    final mosaic = pool.take(4).toList();
-    final mosaicThumbs = mosaic.map((s) => s['thumbnail']?['url']?.toString()).toList();
-
-    return InkWell(
-      onTap: () => _shufflePlay(pool, sourceLabel: 'Mix dành cho bạn'),
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          gradient: LinearGradient(
-            colors: [AppColors.accent.withValues(alpha: 0.85), AppColors.accentLight.withValues(alpha: 0.55)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.35), blurRadius: 22, spreadRadius: -6, offset: const Offset(0, 8))],
-        ),
-        child: Row(children: [
-          // 2×2 thumb mosaic. Falls back to gradient tile when a slot
-          // doesn't have an image.
-          SizedBox(
-            width: 88, height: 88,
-            child: GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 2,
-              crossAxisSpacing: 2,
-              children: List.generate(4, (i) {
-                final url = i < mosaicThumbs.length ? mosaicThumbs[i] : null;
-                return ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: url != null
-                      ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: Colors.white.withValues(alpha: 0.18)))
-                      : Container(color: Colors.white.withValues(alpha: 0.12)),
-                );
-              }),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text('MIX HÔM NAY', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: Colors.white70))),
-              const SizedBox(height: 4),
-              Text('Mix dành cho bạn', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3))),
-              const SizedBox(height: 2),
-              Text('${pool.length} bài • blend yêu thích & nghe gần đây', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: Colors.white70))),
-            ]),
-          ),
-          // CTA — circular play button. Tappable area is the whole card,
-          // this is just the visual affordance.
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
-            ),
-            child: Icon(Icons.play_arrow, color: AppColors.accent, size: 26),
-          ),
-        ]),
-      ),
-    );
-  }
-
   // Carousel of personalised recommendations — same visual rhythm as
   // _songCarousel, plus a small "reason" chip below the title (Vì bạn
   // nghe X / Cùng nhạc sĩ Y / Cùng chủ đề #Z) so the rec feels
   // intentional, not random.
+  /// Soft-fade the right edge of a horizontal carousel so a partially scrolled
+  /// "peek" card — and its hover play button revealed near the edge — melts
+  /// into the background instead of showing as a hard-clipped, broken-looking
+  /// sliver. Left edge stays crisp so the first card aligns with the header.
+  Widget _fadeRightEdge(double height, Widget listView) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) {
+        final stop = (1 - 34 / rect.width).clamp(0.0, 1.0);
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [Colors.white, Colors.white, Colors.transparent],
+          stops: [0.0, stop, 1.0],
+        ).createShader(rect);
+      },
+      child: SizedBox(height: height, child: listView),
+    );
+  }
+
   Widget _recommendedCarousel(List<Map<String, dynamic>> songs) {
-    return SizedBox(
-      height: 220,
-      child: ListView.separated(
+    return _fadeRightEdge(
+      232,
+      ListView.separated(
         scrollDirection: Axis.horizontal,
+        // Hover zoom happens INSIDE each card's fixed frame (artwork only), so
+        // cards never overflow → clip at the content edge with minimal padding.
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
         itemCount: songs.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        separatorBuilder: (_, _) => const SizedBox(width: 2),
         itemBuilder: (_, i) {
           final s = songs[i];
           final thumb = s['thumbnail']?['url']?.toString();
           final reason = s['reason']?.toString() ?? '';
-          return InkWell(
-            onTap: () => _openSong(s),
-            borderRadius: BorderRadius.circular(10),
-            child: SizedBox(
-              width: 140,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _HoverRevealPlay(
-                  size: 140,
-                  onPlay: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s)),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: thumb != null
-                        ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight))
-                        : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
+          return HoverCard(
+            child: InkWell(
+              onTap: () => _openSong(s),
+              borderRadius: BorderRadius.circular(12),
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              child: SizedBox(
+                width: 140,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  HoverRevealPlay(
+                    size: 140,
+                    onPlay: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s)),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: thumb != null
+                          ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight))
+                          : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w500, height: 1.25))),
-                ],
-              ]),
+                  const SizedBox(height: 8),
+                  Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  if (reason.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w500, height: 1.25))),
+                  ],
+                ]),
+              ),
             ),
           );
         },
@@ -1579,7 +1547,7 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: BoxDecoration(
             border: Border.all(color: AppColors.accentLight.withValues(alpha: 0.35), width: 1.2),
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22), blurRadius: 22, spreadRadius: -6, offset: const Offset(0, 6))],
+            boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22 * AppColors.shadowMul), blurRadius: 22, spreadRadius: -6, offset: const Offset(0, 6))],
           ),
         child: Stack(fit: StackFit.expand, children: [
           // Song thumbnail full-bleed background — gives each comment
@@ -1745,7 +1713,7 @@ class _HomeScreenState extends State<HomeScreen> {
         scrollDirection: Axis.horizontal,
         itemCount: tags.length,
         separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (_, i) => SizedBox(width: 130, child: _popularTagTile(tags[i])),
+        itemBuilder: (_, i) => HoverGlow(child: SizedBox(width: 130, child: _popularTagTile(tags[i]))),
       ),
     );
   }
@@ -1834,25 +1802,28 @@ class _HomeScreenState extends State<HomeScreen> {
           final kw = _trendingKeywords[i];
           final name = kw['name']?.toString() ?? '';
           if (name.isEmpty) return const SizedBox.shrink();
-          return InkWell(
-            // Pass the keyword as `extra` so the search screen can
-            // pre-fill its input + auto-run the search on first build.
-            onTap: () => context.push('/search', extra: name),
-            borderRadius: BorderRadius.circular(18),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: AppColors.border),
+          return HoverGlow(
+            radius: 18,
+            child: InkWell(
+              // Pass the keyword as `extra` so the search screen can
+              // pre-fill its input + auto-run the search on first build.
+              onTap: () => context.push('/search', extra: name),
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (i == 0) ...[
+                    Icon(Icons.local_fire_department, size: 13, color: AppColors.accentLight),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(name, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+                ]),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                if (i == 0) ...[
-                  Icon(Icons.local_fire_department, size: 13, color: AppColors.accentLight),
-                  const SizedBox(width: 5),
-                ],
-                Text(name, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
-              ]),
             ),
           );
         },
@@ -1905,51 +1876,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _shufflePlayBar({required String label, required int count, required VoidCallback onPlay, IconData icon = Icons.shuffle}) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPlay,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              colors: [AppColors.accentSoft, AppColors.accentSoft.withValues(alpha: 0.3)],
-              begin: Alignment.centerLeft, end: Alignment.centerRight,
-            ),
-            border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 32, height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                ),
-                child: Icon(icon, color: Colors.white, size: 16),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                    Text('$count bài • bật ngẫu nhiên', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
-                  ],
-                ),
-              ),
-              Icon(Icons.play_arrow, color: AppColors.accentLight, size: 22),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _shufflePlay(List<dynamic> songs, {String? sourceLabel}) {
     if (songs.isEmpty) return;
     final queue = <Map<String, dynamic>>[];
@@ -1991,7 +1917,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15 * AppColors.shadowMul), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2176,7 +2102,7 @@ class _HomeScreenState extends State<HomeScreen> {
             colors: [Color(0xFF8A1717), AppColors.accent, Color(0xFFC67068)],
             begin: Alignment.topLeft, end: Alignment.bottomRight,
           ),
-          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 24, spreadRadius: -4, offset: const Offset(0, 10))],
+          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 24, spreadRadius: -4, offset: const Offset(0, 10))],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(18),
@@ -2205,7 +2131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 72, height: 72,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))],
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
@@ -2216,7 +2142,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         Container(
                           width: 32, height: 32,
-                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 8)]),
+                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.95), shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 8)]),
                           child: Icon(Icons.play_arrow, size: 20, color: AppColors.accent),
                         ),
                       ],
@@ -2370,7 +2296,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _categoryBanner(_Cat c) {
-    return InkWell(
+    return HoverScale(
+      child: InkWell(
       onTap: () => context.push('/the-loai/${c.slug}'),
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -2383,7 +2310,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
-            BoxShadow(color: c.bg.withValues(alpha: 0.35), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6)),
+            BoxShadow(color: c.bg.withValues(alpha: 0.35 * AppColors.shadowMul), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6)),
           ],
         ),
         child: Row(children: [
@@ -2407,7 +2334,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Khám phá ${c.name.toLowerCase()}',
+                  '${_formatInt(_categoryCounts[c.query] ?? 0)} bài',
                   style: body(const TextStyle(fontSize: 11, color: Colors.white70)),
                 ),
               ],
@@ -2415,6 +2342,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Icon(Icons.arrow_forward, color: Colors.white70, size: 18),
         ]),
+      ),
       ),
     );
   }
@@ -2442,7 +2370,8 @@ class _HomeScreenState extends State<HomeScreen> {
             0.45,
             0.32,
           ).toColor();
-          return InkWell(
+          return HoverGlow(
+            child: InkWell(
             onTap: () => context.push('/bai-hat/thap-nien/$d'),
             borderRadius: BorderRadius.circular(14),
             child: Container(
@@ -2454,7 +2383,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   begin: Alignment.topLeft, end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(14),
-                boxShadow: [BoxShadow(color: tint.withValues(alpha: 0.35), blurRadius: 14, spreadRadius: -4, offset: const Offset(0, 4))],
+                boxShadow: [BoxShadow(color: tint.withValues(alpha: 0.35 * AppColors.shadowMul), blurRadius: 14, spreadRadius: -4, offset: const Offset(0, 4))],
               ),
               child: Stack(clipBehavior: Clip.hardEdge, children: [
                 // Decorative 2-digit year stamp — clipped by the
@@ -2500,6 +2429,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ]),
             ),
+          ),
           );
         },
       ),
@@ -2511,31 +2441,37 @@ class _HomeScreenState extends State<HomeScreen> {
     // desktop scales up so cards don't look lonely on a 1400px window.
     final w = MediaQuery.of(context).size.width;
     final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 140.0);
-    return SizedBox(
-      height: card + 60,
-      child: ListView.separated(
+    return _fadeRightEdge(
+      card + 76,
+      ListView.separated(
         scrollDirection: Axis.horizontal,
+        // Hover zoom is clipped inside each card's frame → no overflow; minimal pad.
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
         itemCount: songs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        separatorBuilder: (_, __) => const SizedBox(width: 2),
         itemBuilder: (context, i) {
           final song = Map<String, dynamic>.from(songs[i]);
           final artists = (song['artists']?['data'] ?? song['artists'] ?? []) as List;
           final thumb = song['thumbnail']?['url'];
-          return HoverScale(
+          return HoverCard(
             child: InkWell(
               onTap: () => _openSong(song),
+              borderRadius: BorderRadius.circular(12),
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
               child: SizedBox(
                 width: card,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _HoverRevealPlay(
+                    HoverRevealPlay(
                       size: card,
                       onPlay: () => context.read<PlayerProvider>().playSong(song),
                       child: Stack(
                         children: [
                           ClipRRect(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(12),
                             child: thumb != null
                                 ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
                                 : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
@@ -2628,67 +2564,32 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _videoCarousel(List<dynamic> videos) {
-    return SizedBox(
-      height: 200,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: videos.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (ctx, i) {
-          final song = Map<String, dynamic>.from(videos[i]);
-          final artists = (song['artists']?['data'] ?? []) as List;
-          final thumb = song['thumbnail']?['url'];
-          final videoUrl = song['file']?['video_url']?.toString();
-          return InkWell(
-            onTap: () => _openSong(song),
-            child: SizedBox(
-              width: 200,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Stack(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, width: 200, height: 112, fit: BoxFit.cover)
-                            : (videoUrl != null && videoUrl.isNotEmpty
-                                ? _VideoFrameThumbnail(url: videoUrl, width: 200, height: 112)
-                                : Container(width: 200, height: 112, color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
-                      ),
-                      Positioned(
-                        bottom: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(4)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            const Icon(Icons.movie, size: 11, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text('Video', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white))),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), style: TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
+  /// Format an event date for the playlist badge. `event_start` is a recurring
+  /// day in "MM-DD" form (no year) → shown as "DD/MM"; `event_date` is a full
+  /// "yyyy-MM-dd" → shown as "DD/MM/yyyy". Returns '' when null/unparseable so
+  /// the badge stays hidden.
+  String _fmtEventDate(String? s) {
+    if (s == null) return '';
+    s = s.trim();
+    if (s.isEmpty) return '';
+    final mmdd = RegExp(r'^(\d{1,2})-(\d{1,2})$').firstMatch(s);
+    if (mmdd != null) {
+      final mm = mmdd.group(1)!.padLeft(2, '0');
+      final dd = mmdd.group(2)!.padLeft(2, '0');
+      return '$dd/$mm';
+    }
+    final d = DateTime.tryParse(s);
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
   Widget _playlistCarousel(List<dynamic> playlists) {
     final w = MediaQuery.of(context).size.width;
     final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 140.0);
     return SizedBox(
-      height: card + 60,
+      // +76 (not +60): HoverCard's 6px padding + the 2-line title need the
+      // extra room, same as the song carousels.
+      height: card + 76,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: playlists.length,
@@ -2696,38 +2597,49 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (ctx, i) {
           final pl = playlists[i];
           final thumb = pl['thumbnail']?['url'];
-          final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
-          return HoverScale(
+          final eventDate = _fmtEventDate((pl['event_date'] ?? pl['event_start'])?.toString());
+          return HoverCard(
             child: InkWell(
               onTap: () => context.push('/playlist/${pl['id']}'),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
+              hoverColor: Colors.transparent,
+              highlightColor: Colors.transparent,
               child: SizedBox(
                 width: card,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Stack(
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: thumb != null
-                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
-                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
+                        // Same hover as song cards: artwork zooms in its frame
+                        // + a reveal play button, inside the HoverCard fill.
+                        HoverRevealPlay(
+                          size: card,
+                          onPlay: () => context.push('/playlist/${pl['id']}'),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: thumb != null
+                                ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
+                                : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
+                          ),
                         ),
-                      Positioned(
-                        bottom: 6, right: 6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(6)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            const Icon(Icons.queue_music, size: 10, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text('$total', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
-                          ]),
+                        // Event start date badge (top-left, clear of the
+                        // bottom-right reveal play button).
+                        if (eventDate.isNotEmpty) Positioned(
+                          top: 6, left: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(6)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.event, size: 10, color: Colors.white),
+                              const SizedBox(width: 4),
+                              Text(eventDate, style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
+                            ]),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                     const SizedBox(height: 8),
                     Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
                   ],
@@ -2845,13 +2757,18 @@ class _HomeScreenState extends State<HomeScreen> {
     };
     final items = _memberRanks[kind] ?? [];
     if (items.isEmpty) return const SizedBox.shrink();
-    final top = Map<String, dynamic>.from(items.first as Map);
+    final heroIdx = (_heroPick[kind] ?? 0).clamp(0, items.length - 1);
+    final top = Map<String, dynamic>.from(items[heroIdx] as Map);
     final username = top['username']?.toString() ?? '?';
     final value = top['value'] is num ? (top['value'] as num).toInt() : 0;
     final avatar = top['avatar']?.toString();
     final userId = top['id']?.toString();
     final activeLabel = labels[_rankTab] ?? labels[0]!;
     const gold = Color(0xFFFFD700);
+    // Bright gold glows nicely on dark, but as text/border on near-white it's
+    // almost illegible. Use a deep goldenrod for ink on the light theme.
+    final isLight = AppColors.bg.computeLuminance() > 0.5;
+    final goldInk = isLight ? const Color(0xFFA9791C) : gold;
 
     // Lazy-fetch the bio + counter detail block for this user.
     if (userId != null) {
@@ -2875,12 +2792,14 @@ class _HomeScreenState extends State<HomeScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             gradient: LinearGradient(
-              colors: [gold.withValues(alpha: 0.22), AppColors.surfaceLight.withValues(alpha: 0.6)],
+              colors: isLight
+                  ? [gold.withValues(alpha: 0.42), gold.withValues(alpha: 0.14)]
+                  : [gold.withValues(alpha: 0.22), AppColors.surfaceLight.withValues(alpha: 0.6)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            border: Border.all(color: gold.withValues(alpha: 0.45), width: 1.2),
-            boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.18), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
+            border: Border.all(color: goldInk.withValues(alpha: isLight ? 0.55 : 0.45), width: 1.2),
+            boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.18 * AppColors.shadowMul), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -2902,7 +2821,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   top: -10, right: -6,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)]),
+                    decoration: BoxDecoration(color: gold, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 8)]),
                     child: const Icon(Icons.workspace_premium, size: 16, color: Colors.black87),
                   ),
                 ),
@@ -2912,12 +2831,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                   Text(
                     'TOP ${activeLabel.$1.toUpperCase()}',
-                    style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: gold)),
+                    style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: goldInk)),
                   ),
                   const SizedBox(height: 4),
                   Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text))),
                   const SizedBox(height: 3),
-                  Text('${_formatCompact(value)} ${activeLabel.$2}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+                  Text('${_formatInt(value)} ${activeLabel.$2}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
                 ]),
               ),
               const SizedBox(width: 10),
@@ -2926,12 +2845,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: gold.withValues(alpha: 0.65)),
+                    border: Border.all(color: goldInk.withValues(alpha: 0.65)),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.person_outline, size: 13, color: gold),
+                    Icon(Icons.person_outline, size: 13, color: goldInk),
                     const SizedBox(width: 5),
-                    Text('Hồ sơ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: gold))),
+                    Text('Hồ sơ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: goldInk))),
                   ]),
                 ),
             ]),
@@ -2941,9 +2860,9 @@ class _HomeScreenState extends State<HomeScreen> {
             () {
               final chips = <Widget>[];
               if (age != null) chips.add(_topMemberStatChip(Icons.cake_outlined, '$age tuổi'));
-              if (point != null && point > 0) chips.add(_topMemberStatChip(Icons.workspace_premium_outlined, '${_formatCompact(point)} điểm'));
-              if (uploadCount != null && uploadCount > 0) chips.add(_topMemberStatChip(Icons.upload_outlined, '${_formatCompact(uploadCount)} bản thu'));
-              if (cmtCount != null && cmtCount > 0) chips.add(_topMemberStatChip(Icons.chat_bubble_outline, '${_formatCompact(cmtCount)} bình luận'));
+              if (point != null && point > 0) chips.add(_topMemberStatChip(Icons.workspace_premium_outlined, '${_formatInt(point)} điểm'));
+              if (uploadCount != null && uploadCount > 0) chips.add(_topMemberStatChip(Icons.upload_outlined, '${_formatInt(uploadCount)} bản thu'));
+              if (cmtCount != null && cmtCount > 0) chips.add(_topMemberStatChip(Icons.chat_bubble_outline, '${_formatInt(cmtCount)} bình luận'));
               if (chips.isEmpty) return const SizedBox.shrink();
               return Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -2957,16 +2876,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _topMemberStatChip(IconData icon, String text) {
-    const gold = Color(0xFFFFD700);
+    // Dark scrim chip on dark themes; on the light theme a translucent-white
+    // chip keeps the dark label readable on the pale card.
+    final isLight = AppColors.bg.computeLuminance() > 0.5;
+    final goldInk = isLight ? const Color(0xFFA9791C) : const Color(0xFFFFD700);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.22),
+        color: isLight ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.22),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: gold),
+        Icon(icon, size: 12, color: goldInk),
         const SizedBox(width: 5),
         Text(
           text,
@@ -3029,6 +2951,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final bornAt = top['born_address']?.toString().trim() ?? '';
     final route = isComposer ? '/nhac-si/' : '/nghe-si/';
     final label = isComposer ? 'KHÁM PHÁ NHẠC SĨ' : 'KHÁM PHÁ NGHỆ SĨ';
+    // Light theme: a low-alpha dark-red accent over near-white desaturates into
+    // a washed-out pink. Use a stronger, warmer accent tint so the card keeps
+    // its identity colour.
+    final isLight = AppColors.bg.computeLuminance() > 0.5;
     return MouseRegion(
       onEnter: (_) => _featuredArtistTimer?.cancel(),
       onExit: (_) => _restartFeaturedArtistTimer(),
@@ -3040,12 +2966,14 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
           gradient: LinearGradient(
-            colors: [AppColors.accent.withValues(alpha: 0.32), AppColors.surfaceLight.withValues(alpha: 0.6)],
+            colors: isLight
+                ? [AppColors.accentLight.withValues(alpha: 0.46), AppColors.accentLight.withValues(alpha: 0.18)]
+                : [AppColors.accent.withValues(alpha: 0.32), AppColors.surfaceLight.withValues(alpha: 0.6)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          border: Border.all(color: AppColors.accentLight.withValues(alpha: 0.45), width: 1.2),
-          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
+          border: Border.all(color: AppColors.accent.withValues(alpha: isLight ? 0.40 : 0.45), width: 1.2),
+          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.22 * AppColors.shadowMul), blurRadius: 18, spreadRadius: -4, offset: const Offset(0, 6))],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -3075,7 +3003,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (listens > 0) ...[
                   const SizedBox(height: 2),
                   Text(
-                    '${_formatCompact(listens)} lượt nghe',
+                    '${_formatInt(listens)} lượt nghe',
                     style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                   ),
                 ],
@@ -3131,9 +3059,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _featuredArtistBioChip(IconData icon, String text, {bool accent = false}) {
+    final isLight = AppColors.bg.computeLuminance() > 0.5;
     final bg = accent
         ? AppColors.accent.withValues(alpha: 0.45)
-        : Colors.black.withValues(alpha: 0.22);
+        : (isLight ? Colors.white.withValues(alpha: 0.55) : Colors.black.withValues(alpha: 0.22));
     final border = accent
         ? AppColors.accentLight.withValues(alpha: 0.6)
         : AppColors.border;
@@ -3208,14 +3137,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final isTop3 = i < 3;
     final value = u['value'] is num ? (u['value'] as num).toInt() : 0;
     return HoverHighlight(
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
         onTap: u['id'] != null ? () => context.push('/user/${u['id']}') : null,
+        hoverColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.borderSubtle, width: 1)),
-          ),
+          // No bottom divider — it cut across the rounded hover highlight.
           child: Row(
             children: [
               SizedBox(
@@ -3251,7 +3181,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Text('${_formatCompact(value)} $valueLabel', style: AppText.caption),
+              Text('${_formatInt(value)} $valueLabel', style: AppText.caption),
             ],
           ),
         ),
@@ -3326,11 +3256,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Compact integer formatter — 1234 → "1.2K", 1234567 → "1.2M". Returns
   /// `_formatInt(n)` (full grouping) for values < 1K so small numbers stay
   /// exact.
-  String _formatCompact(int n) {
-    if (n.abs() < 1000) return _formatInt(n);
-    if (n.abs() < 1000000) return '${(n / 1000).toStringAsFixed(n.abs() < 10000 ? 1 : 0)}K';
-    return '${(n / 1000000).toStringAsFixed(n.abs() < 10000000 ? 1 : 0)}M';
-  }
 
   Widget _songCardGrid(List<dynamic> songs) {
     return GridView.builder(
@@ -3928,64 +3853,6 @@ class _GroupLabel extends StatelessWidget {
 /// pointer is over the card — keeps the carousel uncluttered. On
 /// touch (no hover) the CTA stays visible since there's no other way
 /// to surface it without adding a long-press affordance.
-class _HoverRevealPlay extends StatefulWidget {
-  final double size;
-  final Widget child;
-  final VoidCallback onPlay;
-  const _HoverRevealPlay({required this.size, required this.child, required this.onPlay});
-
-  @override
-  State<_HoverRevealPlay> createState() => _HoverRevealPlayState();
-}
-
-class _HoverRevealPlayState extends State<_HoverRevealPlay> {
-  bool _hover = false;
-
-  bool get _supportsHover {
-    final p = Theme.of(context).platform;
-    return p == TargetPlatform.macOS || p == TargetPlatform.windows || p == TargetPlatform.linux;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final visible = !_supportsHover || _hover;
-    final inner = Stack(children: [
-      widget.child,
-      Positioned(
-        bottom: 6, right: 6,
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOut,
-          opacity: visible ? 1.0 : 0.0,
-          child: IgnorePointer(
-            ignoring: !visible,
-            child: Material(
-              color: Colors.white,
-              shape: const CircleBorder(),
-              elevation: 3,
-              shadowColor: Colors.black.withValues(alpha: 0.4),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: widget.onPlay,
-                child: Padding(
-                  padding: const EdgeInsets.all(7),
-                  child: Icon(Icons.play_arrow, size: 18, color: AppColors.accent),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ]);
-    if (!_supportsHover) return inner;
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: inner,
-    );
-  }
-}
-
 /// Renders the first frame of a video as a static thumbnail. Used for
 /// the home video carousel when a song lacks a manual thumbnail. The
 /// VideoPlayer is created paused at offset 0 — no audio, no playback,

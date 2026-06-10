@@ -191,7 +191,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
                       gradient: LinearGradient(colors: [_cf.tint, Color.lerp(_cf.tint, Colors.black, 0.35)!], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      boxShadow: [BoxShadow(color: _cf.tint.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: _cf.tint.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
                       children: [

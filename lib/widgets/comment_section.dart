@@ -872,16 +872,19 @@ class _CommentSectionState extends State<CommentSection> {
                       const SizedBox(width: 6),
                       ElevatedButton.icon(
                         onPressed: _submitting ? null : _submit,
-                        icon: const Icon(Icons.send, size: 14),
-                        label: Text(_submitting ? 'Đang đăng…' : 'Đăng', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        icon: _submitting
+                            ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.send, size: 14),
+                        // Nhãn cố định "Đăng" để nút không phình khi đang gửi.
+                        label: const Text('Đăng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.accent,
                           foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppColors.surface,
-                          disabledForegroundColor: AppColors.textMuted,
+                          disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
+                          disabledForegroundColor: Colors.white,
                           elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          minimumSize: const Size(0, 32),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          minimumSize: const Size(0, 34),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                         ),

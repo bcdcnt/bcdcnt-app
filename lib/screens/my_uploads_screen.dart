@@ -26,15 +26,34 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
   bool _loading = true;
   bool _loadingMore = false;
 
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
+
   @override
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetch(1));
+    // Wait for auth to finish restoring its token before the first fetch —
+    // otherwise a deep-link straight here races the async load and shows an
+    // empty list with no retry.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
+    });
+  }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    _didInitialFetch = true;
+    _fetch(1);
   }
 
   @override
   void dispose() {
+    _authRef?.removeListener(_initialFetch);
     _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
     super.dispose();
@@ -145,7 +164,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
                     gradient: const LinearGradient(colors: [Color(0xFFF57C00), Color(0xFFFFB74D)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    boxShadow: [BoxShadow(color: const Color(0xFFF57C00).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                    boxShadow: [BoxShadow(color: const Color(0xFFF57C00).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Row(children: [
                     Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.upload_outlined, color: Colors.white, size: 28)),

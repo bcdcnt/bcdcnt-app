@@ -36,8 +36,34 @@ class _StatsScreenState extends State<StatsScreen> {
   List<_TopRow> _topComposers = [];
   int _streakDays = 0;
 
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
+
   @override
-  void initState() { super.initState(); WidgetsBinding.instance.addPostFrameCallback((_) => _fetch()); }
+  void initState() {
+    super.initState();
+    // Auth restores its user/token asynchronously; fetching in initState
+    // races it (uid null → all stats render as 0). Wait until auth settles.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
+    });
+  }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    _didInitialFetch = true;
+    _fetch();
+  }
+
+  @override
+  void dispose() {
+    _authRef?.removeListener(_initialFetch);
+    super.dispose();
+  }
 
   Future<void> _fetch() async {
     final auth = context.read<AuthProvider>();
@@ -290,7 +316,7 @@ class _StatsScreenState extends State<StatsScreen> {
           end: Alignment.bottomRight,
         ),
         border: Border.all(color: tint.withValues(alpha: 0.35)),
-        boxShadow: [BoxShadow(color: tint.withValues(alpha: 0.18), blurRadius: 14, spreadRadius: -4, offset: const Offset(0, 4))],
+        boxShadow: [BoxShadow(color: tint.withValues(alpha: 0.18 * AppColors.shadowMul), blurRadius: 14, spreadRadius: -4, offset: const Offset(0, 4))],
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         // Icon chip — tinted square with the stat's color so each card

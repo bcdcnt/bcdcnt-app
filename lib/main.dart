@@ -47,6 +47,8 @@ import 'screens/folk_index_screen.dart';
 import 'screens/folk_category_screen.dart';
 import 'screens/upload_detail_screen.dart';
 import 'widgets/mini_player.dart';
+import 'widgets/full_player.dart';
+import 'widgets/auth_dialogs.dart';
 import 'widgets/desktop_shell.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
@@ -64,6 +66,32 @@ void main() async {
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
     WidgetsFlutterBinding.ensureInitialized();
     await windowManager.ensureInitialized();
+    // Screenshot/automation hook: BCDCNT_SHOT_SIZE="1280x820" pins the window
+    // to an exact size + centers it so the capture script gets identical,
+    // reproducible frames every run. No-op in normal use.
+    final shotSize = Platform.environment['BCDCNT_SHOT_SIZE'];
+    if (shotSize == 'max') {
+      // Fill the screen's visible frame — the largest window this display
+      // supports (a true 1920x1080 can't fit a 1728x1080-logical panel).
+      await windowManager.waitUntilReadyToShow(const WindowOptions(), () async {
+        await windowManager.maximize();
+        await windowManager.show();
+      });
+    } else if (shotSize != null && shotSize.contains('x')) {
+      final parts = shotSize.split('x');
+      final w = double.tryParse(parts[0]);
+      final h = double.tryParse(parts[1]);
+      if (w != null && h != null) {
+        await windowManager.waitUntilReadyToShow(
+          WindowOptions(size: Size(w, h), center: true),
+          () async {
+            await windowManager.setSize(Size(w, h));
+            await windowManager.center();
+            await windowManager.show();
+          },
+        );
+      }
+    }
   }
   // just_audio has native backends for iOS/Android/macOS/Web only; on
   // Windows + Linux the player would load tracks but report duration 0
@@ -79,6 +107,57 @@ void main() async {
   Analytics.init();
   Analytics.logEvent("app_open");
   runApp(const BcdcntApp());
+  _maybeAutoOpenFullPlayer();
+  _maybeOpenAuthDialog();
+}
+
+// Screenshot/automation hook: BCDCNT_OPEN_AUTH=login|register (desktop only)
+// pops the corresponding auth dialog once the navigator is ready. Pair with a
+// logged-out app + BCDCNT_INITIAL_ROUTE=/profile to capture the login/register
+// forms. No-op in normal use.
+void _maybeOpenAuthDialog() {
+  if (kIsWeb || !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+  final which = Platform.environment['BCDCNT_OPEN_AUTH'];
+  if (which != 'login' && which != 'register') return;
+  var tries = 0;
+  void attempt() {
+    tries++;
+    final ctx = rootNavigatorKey.currentContext;
+    if (ctx != null) {
+      showDialog(
+        context: ctx,
+        builder: (_) => which == 'register' ? const RegisterDialog() : const LoginDialog(),
+      );
+      return;
+    }
+    if (tries < 40) Future.delayed(const Duration(milliseconds: 300), attempt);
+  }
+  Future.delayed(const Duration(milliseconds: 800), attempt);
+}
+
+// Screenshot/automation hook: when BCDCNT_OPEN_FULLPLAYER=1 (desktop only),
+// poll until a track is playing then push the FullPlayer onto the root
+// navigator — same affordance as tapping the mini player. Lets the capture
+// script grab the "Trình phát" screen after deep-linking to a playing song
+// (e.g. BCDCNT_INITIAL_ROUTE=/song/446). No-op in normal use.
+void _maybeAutoOpenFullPlayer() {
+  if (kIsWeb || !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+  if (Platform.environment['BCDCNT_OPEN_FULLPLAYER'] != '1') return;
+  var tries = 0;
+  void attempt() {
+    tries++;
+    final ctx = rootNavigatorKey.currentContext;
+    final player = ctx != null ? Provider.of<PlayerProvider>(ctx, listen: false) : null;
+    if (player != null && player.currentSong != null) {
+      player.setFullPlayerOpen(true);
+      rootNavigatorKey.currentState?.push(
+        PageRouteBuilder(opaque: true, pageBuilder: (_, __, ___) => const FullPlayer()),
+      );
+      return;
+    }
+    if (tries < 40) Future.delayed(const Duration(milliseconds: 300), attempt);
+  }
+  Future.delayed(const Duration(milliseconds: 600), attempt);
 }
 
 class BcdcntApp extends StatelessWidget {
@@ -190,7 +269,14 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
   Widget build(BuildContext context) {
     // Re-apply whenever the authed user changes (login, /me refresh, logout).
     final user = context.watch<AuthProvider>().user;
-    context.read<PlayerProvider>().applyUserSettings(user);
+    // applyUserSettings can call notifyListeners(); firing that synchronously
+    // here would markNeedsBuild on every PlayerProvider consumer *during the
+    // build phase* — illegal, and it crashed the whole tree whenever auth
+    // settled mid-route-build (the "setState during build" → cascading
+    // "No Overlay"/overflow errors). Defer to after the frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<PlayerProvider>().applyUserSettings(user);
+    });
     // Re-bootstrap private notification subscription whenever auth flips
     // — login pushes us into the private channel; logout drops us out.
     realtimeService?.onAuthChanged();
@@ -229,8 +315,22 @@ class _AnalyticsObserver extends NavigatorObserver {
   }
 }
 
+// Screenshot/automation hook: when the BCDCNT_INITIAL_ROUTE env var is set
+// (desktop only), the app boots straight onto that route instead of '/'.
+// Lets the capture script deep-link to any screen — e.g.
+// BCDCNT_INITIAL_ROUTE=/nghe-si/thanh-huyen — without synthetic clicks.
+// No-op on web (Platform.environment is unavailable there) and in normal use.
+String _initialLocation() {
+  if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
+    final r = Platform.environment['BCDCNT_INITIAL_ROUTE'];
+    if (r != null && r.isNotEmpty) return r;
+  }
+  return '/';
+}
+
 final _router = GoRouter(
   navigatorKey: rootNavigatorKey,
+  initialLocation: _initialLocation(),
   observers: [_AnalyticsObserver()],
   routes: [
     ShellRoute(
@@ -238,7 +338,7 @@ final _router = GoRouter(
       routes: [
         GoRoute(path: '/', builder: (c, s) => const HomeScreen()),
         GoRoute(path: '/binh-luan', builder: (c, s) => const CommentsScreen()),
-        GoRoute(path: '/search', builder: (c, s) => SearchScreen(initialQuery: s.extra is String ? s.extra as String : null)),
+        GoRoute(path: '/search', builder: (c, s) => SearchScreen(initialQuery: s.extra is String ? s.extra as String : s.uri.queryParameters['q'])),
         GoRoute(path: '/library', builder: (c, s) => const LibraryScreen()),
         GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         GoRoute(
@@ -314,7 +414,7 @@ final _router = GoRouter(
         GoRoute(path: '/gop-y', builder: (c, s) => const StaticPageScreen(slug: 'gop-y')),
         GoRoute(path: '/p/:slug', builder: (c, s) => StaticPageScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/thong-bao', builder: (c, s) => const NotificationsScreen()),
-        GoRoute(path: '/cai-dat', builder: (c, s) => const SettingsScreen()),
+        GoRoute(path: '/cai-dat', builder: (c, s) => SettingsScreen(initialSection: s.extra is String ? s.extra as String : null)),
         GoRoute(path: '/binh-luan-cua-toi', builder: (c, s) => const MyCommentsScreen()),
         GoRoute(path: '/thao-luan-cua-toi', builder: (c, s) => const MyTopicsScreen()),
         GoRoute(path: '/thong-ke', builder: (c, s) => const StatsScreen()),

@@ -25,6 +25,10 @@ const loginMutation = '''mutation(\$identity: String!, \$password: String!) {
   login(identity: \$identity, password: \$password) { access_token refresh_token message code }
 }''';
 
+const loginByGoogleMutation = '''mutation(\$token: String!) {
+  loginByGoogle(token: \$token) { access_token refresh_token message code }
+}''';
+
 const signupMutation = '''mutation(\$username: String!, \$email: String!, \$password: String!) {
   signup(username: \$username, email: \$email, password: \$password) { id }
 }''';
@@ -216,6 +220,28 @@ class AuthProvider extends ChangeNotifier {
       final msg = result?['message'];
       if (msg is String && msg.isNotEmpty) return msg;
       return 'Đăng nhập thất bại';
+    } catch (e) { return e.toString(); }
+  }
+
+  /// Exchange a Google ID token (from the desktop OAuth flow) for our session.
+  /// Returns null on success, or an error/business-rule message to show.
+  Future<String?> loginByGoogle(String idToken) async {
+    try {
+      final data = await ApiClient.mutate(loginByGoogleMutation, {'token': idToken});
+      final result = data['loginByGoogle'];
+      if (result?['access_token'] != null) {
+        _token = result['access_token'];
+        _refreshToken = result['refresh_token'];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('access_token', _token!);
+        if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
+        await _fetchMe();
+        return null;
+      }
+      // App-access gate returns { message, code } (e.g. not enough points).
+      final msg = result?['message'];
+      if (msg is String && msg.isNotEmpty) return msg;
+      return 'Đăng nhập Google thất bại';
     } catch (e) { return e.toString(); }
   }
 

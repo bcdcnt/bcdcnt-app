@@ -80,7 +80,7 @@ class _SheetListScreenState extends State<SheetListScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
                   gradient: const LinearGradient(colors: [Color(0xFF4A0D0D), Color(0xFF711313)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  boxShadow: [BoxShadow(color: const Color(0xFF4A0D0D).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                  boxShadow: [BoxShadow(color: const Color(0xFF4A0D0D).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                 ),
                 child: Row(children: [
                   Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.music_note_outlined, color: Colors.white, size: 28)),

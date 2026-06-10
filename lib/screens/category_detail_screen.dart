@@ -165,7 +165,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(18),
                         gradient: LinearGradient(colors: [cfg.bg, cfg.bg.withValues(alpha: 0.8)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                        boxShadow: [BoxShadow(color: cfg.bg.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                        boxShadow: [BoxShadow(color: cfg.bg.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                       ),
                       child: Row(
                         children: [

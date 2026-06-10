@@ -207,7 +207,7 @@ class _CommentsScreenState extends State<CommentsScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -2)],
+                        boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2)],
                       ),
                       child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
                     ),

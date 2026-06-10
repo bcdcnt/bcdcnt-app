@@ -201,7 +201,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       width: thumbSize, height: thumbSize,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 8))],
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 18, offset: const Offset(0, 8))],
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),

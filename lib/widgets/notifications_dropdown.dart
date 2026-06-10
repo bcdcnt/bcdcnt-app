@@ -103,6 +103,16 @@ class _NotifPanelState extends State<_NotifPanel> {
   void initState() {
     super.initState();
     _fetch(1);
+    // Match the web header: opening the bell clears the unread badge via the
+    // `resetUnread` mutation (zeroes the counter — distinct from marking each
+    // notification read). Fire-and-forget; the local badge clears instantly.
+    final auth = context.read<AuthProvider>();
+    final unread = auth.user?['unread'];
+    if (unread is int && unread > 0) {
+      auth.clearUnread();
+      auth.authedMutate(r'mutation { resetUnread }', null)
+          .catchError((_) => <String, dynamic>{});
+    }
     // Live refresh — RealtimeService bumps notificationTick whenever the
     // backend pushes a new notification. Re-fetch the list so the popup
     // reflects it without manual refresh.
@@ -217,7 +227,7 @@ class _NotifPanelState extends State<_NotifPanel> {
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45), blurRadius: 24, offset: const Offset(0, 10))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 24, offset: const Offset(0, 10))],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

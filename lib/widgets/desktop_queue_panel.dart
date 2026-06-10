@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
+import 'hover_effects.dart';
 import '../services/player.dart';
 
 /// Right-docked queue panel — Spotify desktop equivalent of the Now Playing
@@ -171,8 +172,14 @@ class _QueueRow extends StatelessWidget {
     final thumb = song['thumbnail']?['url'];
     final artists = song['artists'] is List ? song['artists'] : (song['artists']?['data'] ?? []);
     final artistText = (artists as List).map((a) => a['title'] ?? '').join(', ');
-    return InkWell(
+    return HoverHighlight(
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
       onTap: onTap,
+      // HoverHighlight paints the hover fill — drop the Material ink overlay
+      // so they don't stack into a too-dark band in the light theme.
+      hoverColor: Colors.transparent,
+      highlightColor: Colors.transparent,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
@@ -232,6 +239,7 @@ class _QueueRow extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

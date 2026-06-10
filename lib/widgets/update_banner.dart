@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
@@ -33,6 +35,13 @@ class _UpdateBannerState extends State<UpdateBanner> {
   }
 
   Future<void> _runCheck() async {
+    // Screenshot/automation mode: skip the banner so captures stay clean
+    // (BCDCNT_SHOT_SIZE is set by docs/capture_screenshots.py).
+    if (!kIsWeb &&
+        (Platform.isMacOS || Platform.isWindows || Platform.isLinux) &&
+        Platform.environment['BCDCNT_SHOT_SIZE'] != null) {
+      return;
+    }
     final info = await UpdateCheck.check();
     if (!mounted || info == null) return;
     setState(() => _info = info);
@@ -97,7 +106,9 @@ class _UpdateBannerState extends State<UpdateBanner> {
                     ),
                     const SizedBox(width: 4),
                     IconButton(
-                      tooltip: "Đóng",
+                      // No `tooltip:` — this banner is mounted ABOVE the
+                      // Navigator (via MaterialApp.builder), so there's no
+                      // Overlay ancestor and a Tooltip would crash on build.
                       icon: const Icon(Icons.close, size: 18, color: Colors.white),
                       onPressed: _onDismiss,
                       padding: EdgeInsets.zero,

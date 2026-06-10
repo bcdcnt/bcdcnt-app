@@ -25,11 +25,34 @@ class _LibraryScreenState extends State<LibraryScreen> {
   List<Map<String, dynamic>> _recent = [];
   bool _loading = true;
 
+  AuthProvider? _authRef;
+  bool _didFetchRecent = false;
+
   @override
   void initState() {
     super.initState();
     _fetch();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchRecent());
+    // Recent listens need auth; wait for the token to finish restoring so a
+    // fresh launch doesn't skip the rail (auth not ready → empty, no retry).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_maybeFetchRecent);
+      _maybeFetchRecent();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authRef?.removeListener(_maybeFetchRecent);
+    super.dispose();
+  }
+
+  void _maybeFetchRecent() {
+    if (_didFetchRecent || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;
+    _didFetchRecent = true;
+    _fetchRecent();
   }
 
   Future<void> _fetchRecent() async {
@@ -138,6 +161,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
             const SizedBox(height: 28),
           ],
 
+          // Mới cập nhật — sits just below the personalized rails (Nghe gần
+          // đây + Của bạn) so both content carousels stay near the top,
+          // ahead of the category-navigation tile grids.
+          if (_latest.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.fiber_new,
+              title: 'Mới cập nhật',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/the-loai/tan-nhac'),
+            ),
+            _latestCarousel(),
+            const SizedBox(height: 28),
+          ] else if (_loading) ...[
+            Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
+          ],
+
           // Thể loại
           const SectionHeader(icon: Icons.category_outlined, title: 'Thể loại'),
           _grid([
@@ -180,20 +219,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ]),
           const SizedBox(height: 28),
 
-          // Mới cập nhật
-          if (_latest.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.fiber_new,
-              title: 'Mới cập nhật',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/the-loai/tan-nhac'),
-            ),
-            _latestCarousel(),
-            const SizedBox(height: 28),
-          ] else if (_loading) ...[
-            Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
-          ],
-
           // Khám phá
           const SectionHeader(icon: Icons.explore_outlined, title: 'Khám phá'),
           _grid([
@@ -230,17 +255,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
             spacing: 8,
             runSpacing: 8,
             children: [1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020].map((d) {
-              return InkWell(
-                onTap: () => context.push('/bai-hat/thap-nien/$d'),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border),
+              return HoverGlow(
+                radius: 20,
+                child: InkWell(
+                  onTap: () => context.push('/bai-hat/thap-nien/$d'),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Text('${d}s', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                   ),
-                  child: Text('${d}s', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ),
               );
             }).toList(),
@@ -281,35 +309,61 @@ class _LibraryScreenState extends State<LibraryScreen> {
     );
   }
 
+  // Soft fade on the right edge — same treatment as the homepage carousels so
+  // the row visibly hints at more content scrolling off-screen.
+  Widget _fadeRightEdge(double height, Widget listView) {
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) {
+        final stop = (1 - 34 / rect.width).clamp(0.0, 1.0);
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [Colors.white, Colors.white, Colors.transparent],
+          stops: [0.0, stop, 1.0],
+        ).createShader(rect);
+      },
+      child: SizedBox(height: height, child: listView),
+    );
+  }
+
   Widget _latestCarousel() {
-    return SizedBox(
-      height: 200,
-      child: ListView.separated(
+    final queue = _latest.map((e) => Map<String, dynamic>.from(e)).toList();
+    // Mirrors the homepage song carousel: HoverCard padding + HoverRevealPlay
+    // (artwork zoom + reveal play button) so the card behaves identically.
+    return _fadeRightEdge(
+      216,
+      ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _latest.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+        itemCount: queue.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 2),
         itemBuilder: (ctx, i) {
-          final song = Map<String, dynamic>.from(_latest[i]);
+          final song = queue[i];
           final artists = (song['artists']?['data'] ?? []) as List;
-          final thumb = song['thumbnail']?['url'];
-          return InkWell(
-            onTap: () => context.push('/song/${song['id']}', extra: song),
-            child: SizedBox(
-              width: 140,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: thumb != null
-                        ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover)
-                        : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+          final thumb = song['thumbnail']?['url']?.toString();
+          return HoverCard(
+            child: InkWell(
+              onTap: () => context.push('/song/${song['id']}', extra: song),
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 140,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  HoverRevealPlay(
+                    size: 140,
+                    onPlay: () => context.read<PlayerProvider>().playSong(song, queue),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: thumb != null
+                          ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
+                          : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
                   if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                ],
+                    Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                ]),
               ),
             ),
           );
@@ -341,7 +395,7 @@ class _Tile extends StatelessWidget {
               begin: Alignment.topLeft, end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
           ),
           child: Row(
             children: [
@@ -374,44 +428,64 @@ class _RecentCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 130.0);
-    return SizedBox(
-      height: card + 56,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: items.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 12),
-        itemBuilder: (ctx, i) {
-          final s = items[i];
-          final thumb = s['thumbnail']?['url']?.toString();
-          final artists = (s['artists']?['data'] ?? []) as List;
-          final artistText = artists.map((a) => a['title'] ?? '').join(', ');
-          return HoverScale(
-            child: InkWell(
-              onTap: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: card,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
-                          : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                    if (artistText.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+    // Same card behaviour as the homepage carousels: HoverCard padding +
+    // HoverRevealPlay (artwork zoom + reveal play button) + right-edge fade.
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (rect) {
+        final stop = (1 - 34 / rect.width).clamp(0.0, 1.0);
+        return LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: const [Colors.white, Colors.white, Colors.transparent],
+          stops: [0.0, stop, 1.0],
+        ).createShader(rect);
+      },
+      child: SizedBox(
+        height: card + 76,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+          itemCount: items.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 2),
+          itemBuilder: (ctx, i) {
+            final s = items[i];
+            final thumb = s['thumbnail']?['url']?.toString();
+            final artists = (s['artists']?['data'] ?? []) as List;
+            final artistText = artists.map((a) => a['title'] ?? '').join(', ');
+            return HoverCard(
+              child: InkWell(
+                onTap: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: card,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      HoverRevealPlay(
+                        size: card,
+                        onPlay: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: thumb != null
+                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
+                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+                      if (artistText.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

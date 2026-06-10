@@ -120,6 +120,9 @@ jobs:
       # GA4_API_SECRET is injected via --dart-define so analytics.dart's
       # String.fromEnvironment picks it up at compile time. Without the
       # secret (e.g. local dev), Analytics.logEvent silently no-ops.
+      # GOOGLE_DESKTOP_CLIENT_ID/SECRET feed constants/google_oauth.dart the
+      # same way (gitignored google_oauth.json mirrors this for local builds);
+      # without them the "Sign in with Google" button just hides.
       - name: Build
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -127,6 +130,8 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           DART_DEFS="--dart-define=GA4_API_SECRET=${{ secrets.GA4_API_SECRET }}"
+          DART_DEFS="$DART_DEFS --dart-define=GOOGLE_DESKTOP_CLIENT_ID=${{ secrets.GOOGLE_DESKTOP_CLIENT_ID }}"
+          DART_DEFS="$DART_DEFS --dart-define=GOOGLE_DESKTOP_CLIENT_SECRET=${{ secrets.GOOGLE_DESKTOP_CLIENT_SECRET }}"
           if [ "${{ matrix.target }}" = "android" ]; then
             flutter build apk --release --tree-shake-icons --obfuscate --split-debug-info=build/symbols $DART_DEFS
           else

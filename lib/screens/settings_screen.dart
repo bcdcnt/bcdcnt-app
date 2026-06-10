@@ -11,10 +11,14 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/theme_provider.dart';
+import '../widgets/hover_effects.dart';
 import '../widgets/mini_player.dart';
 
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key});
+  /// Optional section to open first (e.g. 'theme' / 'shortcuts'), used when
+  /// deep-linking from the guest profile's "Phối màu" / "Phím tắt" entries.
+  final String? initialSection;
+  const SettingsScreen({super.key, this.initialSection});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -45,14 +49,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _usernameReasonCtl = TextEditingController();
   List<Map<String, dynamic>> _usernameReqs = [];
 
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetch());
+    // Auth restores its token asynchronously; fetching in initState races it
+    // (token null → me query skipped → real avatar/background never load,
+    // only the defaults show). Wait until auth settles, then fetch.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
+    });
+  }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    final auth = context.read<AuthProvider>();
+    if (auth.loading) return;            // still restoring — wait for next notify
+    _didInitialFetch = true;
+    _fetch();
   }
 
   @override
   void dispose() {
+    _authRef?.removeListener(_initialFetch);
     _fullnameCtl.dispose(); _phoneCtl.dispose(); _addressCtl.dispose();
     _dobCtl.dispose(); _mobCtl.dispose(); _yobCtl.dispose();
     _passwordCtl.dispose(); _passwordConfirmCtl.dispose();
@@ -248,13 +271,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     final auth = context.watch<AuthProvider>();
-    if (!auth.isAuthenticated) {
-      return Scaffold(
-        backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
-        body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
-      );
-    }
+    // Theme (Phối màu) + shortcuts (Phím tắt) are local-only, so guests can
+    // use them too — only the account sections need a login.
+    const localOnlyIds = {'theme', 'shortcuts'};
+    final sections = auth.isAuthenticated
+        ? _sectionDefs()
+        : _sectionDefs().where((s) => localOnlyIds.contains(s.id)).toList();
+    // Only the account sections need a network fetch; guests skip the spinner.
+    final showLoading = auth.isAuthenticated && _loading;
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -266,13 +290,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             centerTitle: true,
             leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
           ),
-          if (_loading)
+          if (showLoading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else
             SliverFillRemaining(
               hasScrollBody: true,
               child: _SettingsBody(
-                sections: _sectionDefs(),
+                sections: sections,
+                initialSectionId: widget.initialSection,
                 bottomPadding: player.currentSong != null ? 90 : 20,
               ),
             ),
@@ -613,7 +638,8 @@ class _SettingsSectionDef {
 class _SettingsBody extends StatefulWidget {
   final List<_SettingsSectionDef> sections;
   final double bottomPadding;
-  const _SettingsBody({required this.sections, required this.bottomPadding});
+  final String? initialSectionId;
+  const _SettingsBody({required this.sections, required this.bottomPadding, this.initialSectionId});
 
   @override
   State<_SettingsBody> createState() => _SettingsBodyState();
@@ -625,7 +651,10 @@ class _SettingsBodyState extends State<_SettingsBody> {
   @override
   void initState() {
     super.initState();
-    _activeId = widget.sections.isNotEmpty ? widget.sections.first.id : null;
+    final ids = widget.sections.map((s) => s.id).toSet();
+    _activeId = (widget.initialSectionId != null && ids.contains(widget.initialSectionId))
+        ? widget.initialSectionId
+        : (widget.sections.isNotEmpty ? widget.sections.first.id : null);
   }
 
   Widget _sectionCard(_SettingsSectionDef s) {
@@ -745,7 +774,9 @@ class _ThemePicker extends StatelessWidget {
           spacing: 12, runSpacing: 12,
           children: kAppPalettes.map((p) {
             final active = themeProv.name == p.name;
-            return InkWell(
+            return HoverScale(
+              scale: 1.04,
+              child: InkWell(
               onTap: () => themeProv.setTheme(p.name),
               borderRadius: BorderRadius.circular(12),
               child: Container(
@@ -755,17 +786,11 @@ class _ThemePicker extends StatelessWidget {
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: active ? p.accent : AppColors.border, width: active ? 2 : 1),
-                  boxShadow: active ? [BoxShadow(color: p.accent.withValues(alpha: 0.4), blurRadius: 18, offset: const Offset(0, 6))] : null,
+                  boxShadow: active ? AppColors.glow(p.accent, alpha: 0.35, blur: 14, offset: const Offset(0, 4)) : null,
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 28, height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [p.accent, p.accentLight]),
-                      ),
-                    ),
+                    themeSwatch(p),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -777,6 +802,7 @@ class _ThemePicker extends StatelessWidget {
                     if (active) Icon(Icons.check_circle, size: 16, color: p.accentLight),
                   ],
                 ),
+              ),
               ),
             );
           }).toList(),

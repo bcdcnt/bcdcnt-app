@@ -6,6 +6,11 @@ import '../constants/theme.dart';
 import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'full_player.dart';
+import 'hover_effects.dart';
+
+/// Tạm ẩn nút "Thu gọn" trên mini-player. Tính năng (toggleMiniCollapsed) vẫn
+/// giữ nguyên — đổi thành `true` để bật lại nút.
+const bool _kShowMiniCollapse = false;
 
 String _fmtTs(Duration d) {
   final m = d.inMinutes;
@@ -126,7 +131,7 @@ class MiniPlayer extends StatelessWidget {
                         // cleanly. Tabular figures keep digit width
                         // stable so the slash doesn't jitter as the
                         // position ticks.
-                        Row(children: [
+                        Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
                           if (artistText.isNotEmpty)
                             Flexible(
                               child: Text(
@@ -154,29 +159,34 @@ class MiniPlayer extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, color: AppColors.text), onPressed: player.playPrev, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                    child: IconButton(
-                      tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
-                      icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 20),
-                      onPressed: player.togglePlay,
-                      padding: EdgeInsets.zero,
+                  IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, color: AppColors.text), onPressed: player.playPrev, hoverColor: AppColors.surfaceHover, padding: const EdgeInsets.all(4), constraints: const BoxConstraints()),
+                  HoverScale(
+                    scale: 1.12,
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                      child: IconButton(
+                        tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
+                        icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 20),
+                        onPressed: player.togglePlay,
+                        padding: EdgeInsets.zero,
+                      ),
                     ),
                   ),
-                  IconButton(tooltip: nextTooltip, icon: Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+                  IconButton(tooltip: nextTooltip, icon: Icon(Icons.skip_next, color: AppColors.text), onPressed: player.playNext, hoverColor: AppColors.surfaceHover, padding: const EdgeInsets.all(4), constraints: const BoxConstraints()),
                   // Collapse button — shrinks the row to just a tiny
                   // thumbnail+play pill in the bottom-right. Tap on
                   // the pill restores. Useful for users who want the
                   // bottom of the screen back temporarily.
-                  IconButton(
-                    tooltip: 'Thu gọn',
-                    icon: Icon(Icons.unfold_less, color: AppColors.textMuted, size: 18),
-                    onPressed: player.toggleMiniCollapsed,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                  ),
+                  // Tạm ẩn (giữ tính năng) — xem _kShowMiniCollapse.
+                  if (_kShowMiniCollapse)
+                    IconButton(
+                      tooltip: 'Thu gọn',
+                      icon: Icon(Icons.unfold_less, color: AppColors.textMuted, size: 18),
+                      onPressed: player.toggleMiniCollapsed,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    ),
                 ],
               ),
             ),

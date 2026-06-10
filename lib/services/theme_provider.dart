@@ -70,6 +70,23 @@ const List<AppPalette> kAppPalettes = [
     border: Color(0x14FFFFFF),
     borderSubtle: Color(0x0AFFFFFF),
   ),
+  // Light/white theme — placed 2nd so users can flip dark↔light fast. Borders +
+  // accentLight tuned dark enough to stay legible on a near-white background.
+  AppPalette(
+    name: 'light', label: 'Sáng',
+    bg: Color(0xFFF4F1EF),
+    surface: Color(0xFFFFFFFF),
+    surfaceLight: Color(0xFFEEE9E6),
+    surfaceHover: Color(0xFFE4DDD9),
+    accent: Color(0xFF8B1A1A),
+    accentLight: Color(0xFFA83232),
+    accentSoft: Color(0x1A8B1A1A),
+    text: Color(0xFF1A1414),
+    textSecondary: Color(0xFF5C5252),
+    textMuted: Color(0xFF8A8080),
+    border: Color(0x14000000),
+    borderSubtle: Color(0x0A000000),
+  ),
   AppPalette(
     name: 'red', label: 'Đỏ rực',
     bg: Color(0xFF3D0C0C),
@@ -205,6 +222,21 @@ const List<AppPalette> kAppPalettes = [
     border: Color(0x1AFFFFFF),
     borderSubtle: Color(0x0DFFFFFF),
   ),
+  AppPalette(
+    name: 'indigo', label: 'Chàm',
+    bg: Color(0xFF0C0E1F),
+    surface: Color(0xFF14182E),
+    surfaceLight: Color(0xFF1C2240),
+    surfaceHover: Color(0xFF242C50),
+    accent: Color(0xFF4F5BD5),
+    accentLight: Color(0xFFA0A8E8),
+    accentSoft: Color(0x334F5BD5),
+    text: Color(0xFFE8EAF5),
+    textSecondary: Color(0xB3E8EAF5),
+    textMuted: Color(0x66E8EAF5),
+    border: Color(0x1AFFFFFF),
+    borderSubtle: Color(0x0DFFFFFF),
+  ),
 ];
 
 /// App-wide theme switcher. Listens for the user's pick (persisted to
@@ -259,5 +291,31 @@ class ThemeProvider extends ChangeNotifier {
     AppColors.textMuted = _palette.textMuted;
     AppColors.border = _palette.border;
     AppColors.borderSubtle = _palette.borderSubtle;
+    AppColors.isLight = _palette.name == 'light';
   }
+}
+
+/// Visual swatch for a palette — white for the light theme (its bg, logical),
+/// the accent gradient for the dark ones. Shared by the settings picker and
+/// the quick-theme switcher.
+Widget themeSwatch(AppPalette p, {double size = 28, bool active = false}) {
+  final isLight = p.name == 'light';
+  // Active swatch gets a contrasting ring + a check mark so the current theme
+  // is unmistakable (the accent-coloured ring alone blended into the swatch).
+  final ring = active
+      ? (isLight ? Colors.black54 : Colors.white)
+      : (isLight ? const Color(0x33000000) : Colors.transparent);
+  return Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: isLight ? Colors.white : null,
+      gradient: isLight ? null : LinearGradient(colors: [p.accent, p.accentLight]),
+      border: Border.all(color: ring, width: active ? 2 : 1),
+    ),
+    child: active
+        ? Center(child: Icon(Icons.check, size: size * 0.58, color: isLight ? Colors.black87 : Colors.white))
+        : null,
+  );
 }

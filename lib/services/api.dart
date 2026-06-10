@@ -63,9 +63,23 @@ class ApiClient {
   }
 
   static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
-    // POST with body — long queries blow URL length limits on some
-    // proxies/CDNs and the response was coming back empty silently.
-    final res = await http.post(
+    // Prefer GET so Cloudflare can serve read queries from the edge cache
+    // (cf-cache-status: HIT). POST is never edge-cached (always DYNAMIC) — that
+    // was making the app noticeably slower than the web, which uses GET for the
+    // same public reads. Fall back to POST only when GET itself fails (network
+    // error or a proxy rejecting a very long query URL), preserving old behavior.
+    final uri = Uri.parse(apiBase).replace(queryParameters: {
+      'query': q,
+      if (variables != null) 'variables': jsonEncode(variables),
+    });
+    http.Response? res;
+    try {
+      res = await http.get(uri, headers: _baseHeaders());
+      if (res.statusCode != 200) res = null;
+    } catch (_) {
+      res = null;
+    }
+    res ??= await http.post(
       Uri.parse(apiBase),
       headers: _baseHeaders(jsonContent: true),
       body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),

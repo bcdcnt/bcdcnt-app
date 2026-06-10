@@ -16,6 +16,7 @@ import 'timed_lyrics.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
+import 'hover_effects.dart';
 import '../services/api.dart';
 import '../services/theme_provider.dart';
 
@@ -353,6 +354,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             visualDensity: VisualDensity.compact,
+            hoverColor: AppColors.surfaceHover,
             icon: Icon(
               muted ? Icons.volume_off : (value < 0.4 ? Icons.volume_down : Icons.volume_up),
               color: muted ? AppColors.accentLight : AppColors.textSecondary,
@@ -1065,6 +1067,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               padding: const EdgeInsets.all(8),
                               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               visualDensity: VisualDensity.compact,
+                              hoverColor: AppColors.surfaceHover,
                               icon: Icon(Icons.keyboard_arrow_down, color: AppColors.text),
                               onPressed: () => Navigator.pop(context),
                             ),
@@ -1081,6 +1084,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 padding: const EdgeInsets.all(8),
                                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                 visualDensity: VisualDensity.compact,
+                                hoverColor: AppColors.surfaceHover,
                                 icon: Icon(
                                   _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
                                   color: _isFullScreen ? AppColors.accentLight : AppColors.textSecondary,
@@ -1092,6 +1096,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               padding: const EdgeInsets.all(8),
                               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               visualDensity: VisualDensity.compact,
+                              hoverColor: AppColors.surfaceHover,
                               icon: Icon(Icons.more_horiz, color: AppColors.textSecondary),
                               onPressed: () => _showMoreSheet(context, song, player),
                             ),
@@ -1224,21 +1229,24 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev),
-                            Container(
-                              width: 68, height: 68,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5), blurRadius: 20, offset: const Offset(0, 8))],
-                              ),
-                              child: IconButton(
-                                tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
-                                icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
-                                onPressed: player.togglePlay,
+                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev, hoverColor: AppColors.surfaceHover),
+                            HoverScale(
+                              scale: 1.08,
+                              child: Container(
+                                width: 68, height: 68,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 20, offset: const Offset(0, 8))],
+                                ),
+                                child: IconButton(
+                                  tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
+                                  icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
+                                  onPressed: player.togglePlay,
+                                ),
                               ),
                             ),
-                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext),
+                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext, hoverColor: AppColors.surfaceHover),
                             _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
                           ],
                         ),
@@ -1269,44 +1277,55 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   Widget _buildVinyl(String? thumb, double vinylSize) {
-    return RotationTransition(
-      turns: _rotation,
-      child: Container(
-        width: vinylSize,
-        height: vinylSize,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: LinearGradient(
-            colors: [AppColors.accent, AppColors.accentLight],
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 40, offset: const Offset(0, 24)),
-            BoxShadow(color: AppColors.accent.withValues(alpha: 0.4), blurRadius: 60, spreadRadius: -10),
-          ],
-          border: Border.all(color: AppColors.border, width: 4),
-        ),
-        child: ClipOval(
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              if (thumb != null)
-                Positioned.fill(
-                  child: CachedNetworkImage(
-                    imageUrl: thumb,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 80, color: Colors.white38)),
-                  ),
-                ),
-              for (int i = 0; i < 8; i++)
-                Container(
-                  width: vinylSize - (i * 30),
-                  height: vinylSize - (i * 30),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.black.withValues(alpha: 0.08), width: 0.5),
-                  ),
-                ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // `vinylSize` is derived from the whole screen, but the panel area
+        // (an Expanded) is shorter once the header / switcher / transport
+        // claim their space. Center would then force the fixed square into
+        // the shorter max-height → an ellipse ("méo"). Clamp to the real
+        // box so the disc always stays a circle.
+        var size = vinylSize;
+        if (constraints.maxWidth.isFinite) size = math.min(size, constraints.maxWidth);
+        if (constraints.maxHeight.isFinite) size = math.min(size, constraints.maxHeight);
+        return RotationTransition(
+          turns: _rotation,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                colors: [AppColors.accent, AppColors.accentLight],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 40, offset: const Offset(0, 24)),
+                BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 60, spreadRadius: -10),
+              ],
+              border: Border.all(color: AppColors.border, width: 4),
+            ),
+            child: ClipOval(
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  if (thumb != null)
+                    Positioned.fill(
+                      child: CachedNetworkImage(
+                        imageUrl: thumb,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 80, color: Colors.white38)),
+                      ),
+                    ),
+                  for (int i = 0; i < 8; i++)
+                    if (size - (i * 30) > 0)
+                      Container(
+                        width: size - (i * 30),
+                        height: size - (i * 30),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.black.withValues(alpha: 0.08), width: 0.5),
+                        ),
+                      ),
               // Center logo label
               Container(
                 width: 62, height: 62,
@@ -1317,16 +1336,26 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 ),
                 alignment: Alignment.center,
                 padding: const EdgeInsets.all(10),
-                child: SvgPicture.asset('assets/logo-on-dark.svg', width: 36, height: 36),
+                // The white logo sinks into the near-white centre hub on the
+                // light theme — tint it accent there so it stays visible.
+                child: SvgPicture.asset(
+                  'assets/logo-on-dark.svg',
+                  width: 36, height: 36,
+                  colorFilter: AppColors.bg.computeLuminance() > 0.5
+                      ? ColorFilter.mode(AppColors.accent, BlendMode.srcIn)
+                      : null,
+                ),
               ),
-              Container(
-                width: 8, height: 8,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+                  Container(
+                    width: 8, height: 8,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1541,6 +1570,7 @@ class _ShuffleButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
+        hoverColor: AppColors.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Stack(
@@ -1578,6 +1608,7 @@ class _RepeatButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
+        hoverColor: AppColors.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Stack(

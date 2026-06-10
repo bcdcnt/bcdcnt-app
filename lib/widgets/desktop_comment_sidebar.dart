@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import 'hover_effects.dart';
 import '../services/api.dart';
 import '../services/realtime.dart';
 
@@ -298,8 +299,12 @@ class _CommentTile extends StatelessWidget {
     final content = stripHtml(comment['content']?.toString());
     final t = timeAgo(comment['created_at']?.toString());
 
-    return InkWell(
+    return HoverHighlight(
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
       onTap: onTap,
+      hoverColor: Colors.transparent,
+      highlightColor: Colors.transparent,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
         child: Row(
@@ -355,6 +360,7 @@ class _CommentTile extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 

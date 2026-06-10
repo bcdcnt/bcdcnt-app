@@ -309,7 +309,7 @@ class _CommandPaletteState extends State<CommandPalette> {
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: AppColors.border),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 32, offset: const Offset(0, 12))],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 32, offset: const Offset(0, 12))],
         ),
         child: Focus(
           onKeyEvent: _handleKey,

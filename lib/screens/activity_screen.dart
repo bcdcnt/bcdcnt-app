@@ -56,7 +56,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     ('create_song', 'Tân nhạc'),
     ('create_folk', 'Dân ca'),
     ('create_instrumental', 'Khí nhạc'),
-    ('create_karaoke', 'Karaoke'),
+    ('create_karaoke', 'Thành viên hát'),
     ('create_poem', 'Tiếng thơ'),
     ('create_document', 'Tư liệu'),
     ('create_discussion', 'Thảo luận'),

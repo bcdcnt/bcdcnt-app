@@ -99,7 +99,7 @@ class _RankingScreenState extends State<RankingScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
                   gradient: const LinearGradient(colors: [Color(0xFF711313), Color(0xFFA01818)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  boxShadow: [BoxShadow(color: const Color(0xFF711313).withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                  boxShadow: [BoxShadow(color: const Color(0xFF711313).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                 ),
                 child: Row(children: [
                   Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.leaderboard_outlined, color: Colors.white, size: 28)),
@@ -229,7 +229,7 @@ class _RankingScreenState extends State<RankingScreen> {
           decoration: BoxDecoration(
             gradient: LinearGradient(colors: [color, Color.lerp(color, Colors.black, 0.3)!], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
           ),
           child: Row(children: [
             Container(
@@ -610,7 +610,7 @@ class _RankingPodium extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 3))],
+                      boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
                     ),
                     child: Text('$rank', style: display(TextStyle(fontSize: tall ? 16 : 14, fontWeight: FontWeight.w900, color: Colors.white))),
                   ),
