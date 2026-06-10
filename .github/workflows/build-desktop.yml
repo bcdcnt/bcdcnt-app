@@ -139,16 +139,18 @@ jobs:
           fi
         shell: bash
 
-      # macOS still produces bcdcnt_flutter.app because macos/Runner.xcodeproj
-      # was generated before pubspec was renamed and we kept the existing
-      # folder intact. Rename post-build so the artifact users see matches
-      # Windows/Linux. Editing the Xcode project file directly is risky.
+      # PRODUCT_NAME is "Bài ca đi cùng năm tháng", so the built bundle is
+      # "Bài ca đi cùng năm tháng.app" (and was bcdcnt_flutter.app before that).
+      # Glob whatever .app got produced and normalise it to bcdcnt.app so the
+      # upload/zip/asset names stay stable regardless of the display name.
       - name: Rename macOS .app
         if: matrix.target == 'macos'
         run: |
           cd build/macos/Build/Products/Release
-          if [ -d bcdcnt_flutter.app ]; then
-            mv bcdcnt_flutter.app bcdcnt.app
+          app=$(ls -d *.app 2>/dev/null | head -1)
+          echo "built bundle: $app"
+          if [ -n "$app" ] && [ "$app" != "bcdcnt.app" ]; then
+            mv "$app" bcdcnt.app
           fi
 
       # Upload only the runnable artifact, not the full Build/Products/
