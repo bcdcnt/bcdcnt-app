@@ -118,7 +118,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                 if ((d['views'] ?? 0) > 0) Row(children: [
                   Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
                   const SizedBox(width: 3),
-                  Text('${d['views']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text(formatInt((d['views'] as num?)?.toInt() ?? 0), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                 ]),
               ]),
               const SizedBox(height: 16),

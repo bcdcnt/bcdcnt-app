@@ -40,19 +40,21 @@ const _latestQuery = '''query(\$page: Int, \$cat: String!) {
 // can render bio chips (honour, real name, lifespan, hometown)
 // underneath the title — gives the card editorial substance instead
 // of leaving the lower half empty.
+// Khám phá nghệ sĩ/nhạc sĩ — khớp query web: random, ngưỡng lượt nghe 10k,
+// và lấy thêm `likes` để hiện badge lượt yêu thích trên card.
 const _artistsQuery = '''query(\$where: WhereConditions) {
-  artists(first: 20, orderBy: [{column: "total_listens", order: DESC}], where: \$where) {
+  artists(first: 60, random: true, where: \$where) {
     data {
-      id slug title avatar { url } total_listens
+      id slug title avatar { url } total_listens likes
       rank real_name yob yod born_address
     }
   }
 }''';
 
 const _composersQuery = '''query(\$where: WhereConditions) {
-  composers(first: 20, orderBy: [{column: "total_listens", order: DESC}], where: \$where) {
+  composers(first: 60, random: true, where: \$where) {
     data {
-      id slug title avatar { url } total_listens
+      id slug title avatar { url } total_listens likes
       rank real_name yob yod born_address
     }
   }
@@ -62,14 +64,14 @@ const _artistsWhere = {
   'where': {'AND': [
     {'column': 'type', 'value': 'domestic'},
     {'column': 'is_group', 'value': '0'},
-    {'column': 'total_listens', 'operator': 'GT', 'value': '100000'},
+    {'column': 'total_listens', 'operator': 'GT', 'value': '10000'},
     {'column': 'image_id', 'operator': 'GT', 'value': '0'},
   ]}
 };
 const _composersWhere = {
   'where': {'AND': [
     {'column': 'type', 'value': 'domestic'},
-    {'column': 'total_listens', 'operator': 'GT', 'value': '100000'},
+    {'column': 'total_listens', 'operator': 'GT', 'value': '10000'},
     {'column': 'image_id', 'operator': 'GT', 'value': '0'},
   ]}
 };
@@ -95,6 +97,24 @@ const _rankingQuery = '''query {
 const _playlistsQuery = '''query(\$where: WhereConditions) {
   playlists(first: 30, orderBy: [{column: "event_date", order: DESC}], where: \$where) {
     data { id slug title event_start event_date thumbnail { url } user { id username } }
+  }
+}''';
+
+// Nhạc nhẹ nhàng — bài trong tag "Nhạc nhẹ", thứ tự ngẫu nhiên (BE random),
+// giống section cùng tên trên web.
+const _easyQuery = '''query {
+  songsByTag(tag: "Nhạc nhẹ", random: true, first: 18) {
+    data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
+  }
+}''';
+
+// Đánh giá bài gửi — bài mới nhất ở forum 28 (status=1) có file + poll, khớp
+// section cùng tên trên web.
+const _reviewQuery = '''query(\$forumId: ID!) {
+  forum(id: \$forumId) {
+    discussions(first: 30, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
+      data { id title slug file { id audio_url waveform } polls(first: 1) { data { id title status options(orderBy: [{column: "position", order: ASC}]) { id name total_answer percent position } } } }
+    }
   }
 }''';
 
@@ -253,6 +273,11 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _audioDocs = [];
   List<dynamic> _videoDocs = [];
   List<dynamic> _newsDocs = [];
+  // Nhạc nhẹ nhàng — bài trong tag "Nhạc nhẹ" (ngẫu nhiên), khớp section
+  // cùng tên trên web. Fetch cùng nhóm above-fold vì payload nhỏ.
+  List<dynamic> _easySongs = [];
+  // Đánh giá bài gửi — bài forum 28 có file + poll (fetch below-fold).
+  List<dynamic> _reviewUploads = [];
   List<Map<String, dynamic>> _memorial = [];
   List<dynamic> _events = [];
 
@@ -297,6 +322,13 @@ class _HomeScreenState extends State<HomeScreen> {
   // ranking tab on the same cadence as the artist hero.
   Timer? _memberHeroTimer;
 
+  // Auto-scroll ngang cho "Nghe nhiều trong tuần" + "Khám phá nghệ sĩ" (khớp
+  // web): mỗi ~4s trượt sang ~1 card, quay về đầu khi hết. Tạm dừng khi đang
+  // có thao tác cuộn (auto lẫn tay) để không giật.
+  final ScrollController _spotlightCtrl = ScrollController();
+  final ScrollController _discoverCtrl = ScrollController();
+  Timer? _autoScrollTimer;
+
   // Khám phá thể loại — top tags with sample thumbnails for the mosaic.
   List<Map<String, dynamic>> _popularTags = [];
 
@@ -320,6 +352,28 @@ class _HomeScreenState extends State<HomeScreen> {
     auth.addListener(_onAuthChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onAuthChanged());
     _restartMemberHeroTimer();
+    _startAutoScroll();
+  }
+
+  void _startAutoScroll() {
+    _autoScrollTimer?.cancel();
+    _autoScrollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      _advanceScroll(_spotlightCtrl);
+      _advanceScroll(_discoverCtrl);
+    });
+  }
+
+  void _advanceScroll(ScrollController c) {
+    if (!c.hasClients) return;
+    final pos = c.position;
+    // Bỏ qua nếu đang cuộn (tay hoặc animate trước chưa xong) để tránh giật.
+    if (pos.isScrollingNotifier.value) return;
+    final max = pos.maxScrollExtent;
+    if (max <= 8) return;
+    final step = pos.viewportDimension / 3; // ~1 card ở spotlight
+    final target = c.offset + step >= max - 8 ? 0.0 : (c.offset + step).clamp(0.0, max);
+    c.animateTo(target, duration: const Duration(milliseconds: 650), curve: Curves.easeInOut);
   }
 
   @override
@@ -329,6 +383,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _featuredCommentsCtrl.dispose();
     _featuredArtistTimer?.cancel();
     _memberHeroTimer?.cancel();
+    _autoScrollTimer?.cancel();
+    _spotlightCtrl.dispose();
+    _discoverCtrl.dispose();
     super.dispose();
   }
 
@@ -569,7 +626,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // Khám phá thể loại — top tags + sample thumbs for the mosaic.
         safe(ApiClient.query(r'query { popularTags(limit: 8) { id name slug song_count sample_images } }')),
         // Per-category totals for the "Thể loại" banners — first:1 keeps it tiny.
-        safe(ApiClient.query(r'query { songs(first: 1) { paginatorInfo { total } } folks(first: 1) { paginatorInfo { total } } instrumentals(first: 1) { paginatorInfo { total } } poems(first: 1) { paginatorInfo { total } } }')),
+        safe(ApiClient.query(r'query { songs(first: 1) { paginatorInfo { total } } folks(first: 1) { paginatorInfo { total } } instrumentals(first: 1) { paginatorInfo { total } } poems(first: 1) { paginatorInfo { total } } karaokes(first: 1) { paginatorInfo { total } } }')),
+        // Nhạc nhẹ nhàng — bài tag "Nhạc nhẹ" ngẫu nhiên (queries[10]).
+        safe(ApiClient.query(_easyQuery)),
       ]);
       if (!mounted) return;
 
@@ -623,7 +682,9 @@ class _HomeScreenState extends State<HomeScreen> {
           'folks': catTotal('folks'),
           'instrumentals': catTotal('instrumentals'),
           'poems': catTotal('poems'),
+          'karaokes': catTotal('karaokes'),
         };
+        _easySongs = (queries[10]['songsByTag']?['data'] ?? []) as List;
         _loading = false;
       });
       _fetchLatest(_categories[_latestTab], 1);
@@ -652,6 +713,7 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(_memorialComposers, _stickyWhere)),
         safe(ApiClient.query(_memorialPoets, _stickyWhere)),
         safe(ApiClient.query(_memorialRecomposers, _stickyWhere)),
+        safe(ApiClient.query(_reviewQuery, {'forumId': 28})),
       ]);
       final events = await _fetchEvents();
       if (!mounted) return;
@@ -676,6 +738,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _audioDocs = results[2]['documents']?['data'] ?? [];
         _videoDocs = results[3]['documents']?['data'] ?? [];
         _newsDocs = results[4]['documents']?['data'] ?? [];
+        _reviewUploads = ((results[9]['forum']?['discussions']?['data'] ?? []) as List)
+            .where((d) => (d['file']?['audio_url']?.toString().isNotEmpty ?? false) && ((d['polls']?['data'] as List?)?.isNotEmpty ?? false))
+            .take(10)
+            .toList();
         _memorial = mem;
         _events = events;
       });
@@ -873,74 +939,27 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _feedItems() {
     final isDesktop = MediaQuery.of(context).size.width >= 900;
     return [
-          // Greeting hero — mobile only. Desktop sidebar already covers
-          // the functions (avatar in account footer, notif bell, search
-          // nav, login). On desktop the greeting collapses into a tiny
-          // overline above the spotlight (handled below).
-          if (!isDesktop) ...[
-            _StaggerFadeIn(index: 0, child: _hero()),
-            const SizedBox(height: 14),
-          ],
-
-          // Quick action chips (Yêu thích / Nghe gần đây / Playlist của
-          // tôi) — mobile only. Desktop sidebar has these as library
-          // shortcuts so duplicating the row would just add clutter.
+          // Quick action chips (Yêu thích / Nghe gần đây / Playlist của tôi)
+          // — mobile only (desktop có sidebar). Bỏ lời chào để trang phẳng,
+          // liền mạch giống web.
           if (!isDesktop && context.watch<AuthProvider>().isAuthenticated) ...[
-            _StaggerFadeIn(index: 1, child: _quickChips()),
-            const SizedBox(height: 22),
-          ] else if (!isDesktop)
-            const SizedBox(height: 6)
-          else
-            const SizedBox(height: 8),
+            _quickChips(),
+            const SizedBox(height: 18),
+          ] else
+            const SizedBox(height: 4),
 
-          // Desktop greeting overline — single muted line above spotlight,
-          // preserves the personalisation warmth without the full card.
-          if (isDesktop) ...[
-            _StaggerFadeIn(
-              index: 0,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 10),
-                child: Builder(builder: (ctx) {
-                  final auth = ctx.watch<AuthProvider>();
-                  final name = auth.user?['username']?.toString();
-                  final label = name != null
-                      ? '${_greeting()}, $name'
-                      : _greeting();
-                  return Text(
-                    label.toUpperCase(),
-                    style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.textMuted, letterSpacing: 1.2)),
-                  );
-                }),
-              ),
-            ),
-          ],
-
-          // ─── HERO SPOTLIGHT (rotating featured) ───
-          if (_spotlightItems().isNotEmpty) ...[
-            _StaggerFadeIn(index: 2, child: HeroSpotlight(items: _spotlightItems(), onTap: _openSong, onPlay: _playSpotlight)),
-            const SizedBox(height: 28),
-          ],
-
-          // ─── ONBOARDING — non-authed user lands on a page that's
-          // mostly editorial; surface a soft login CTA so they know
-          // personalisation exists. Logged-in users skip this entirely.
+          // Onboarding login CTA cho khách chưa đăng nhập.
           if (!context.watch<AuthProvider>().isAuthenticated) ...[
-            _StaggerFadeIn(index: 3, child: _WelcomeBanner(
+            _WelcomeBanner(
               onLogin: () => showDialog(context: context, builder: (_) => const LoginDialog()).then((_) {
                 if (context.read<AuthProvider>().isAuthenticated) _fetchPersonalized();
               }),
-            )),
-            const SizedBox(height: 28),
+            ),
+            const SizedBox(height: 18),
           ],
 
-          // ─── DÀNH CHO BẠN (personalized — only when logged in) ───
-          // Personalised recommendations — collaborative-filtering style
-          // (artist + composer + tag overlap). The old "Mix dành cho bạn"
-          // card was removed: it only reshuffled loves+listens (no
-          // discovery) and duplicated the "Nghe gần đây" / "Yêu thích"
-          // carousels shown right below.
+          // Gợi ý cho bạn (chỉ khi đăng nhập) — section phẳng, bỏ nhãn nhóm.
           if (_recommendedSongs.isNotEmpty) ...[
-            const _GroupLabel('DÀNH CHO BẠN'),
             SectionHeader(
               icon: Icons.auto_awesome,
               title: 'Gợi ý cho bạn',
@@ -951,9 +970,10 @@ class _HomeScreenState extends State<HomeScreen> {
               playAllLabel: 'Ngẫu nhiên',
             ),
             _recommendedCarousel(_recommendedSongs),
-            const SizedBox(height: 22),
+            const SizedBox(height: 14),
           ],
 
+          // Nghe gần đây (web đăng nhập có) — card cuộn ngang lịch sử nghe.
           if (_recentListens.isNotEmpty) ...[
             SectionHeader(
               icon: Icons.history,
@@ -961,72 +981,36 @@ class _HomeScreenState extends State<HomeScreen> {
               actionText: 'Xem tất cả',
               onAction: () => context.push('/nghe-gan-day'),
             ),
-            _songCarousel(_recentListens),
-            const SizedBox(height: 32),
+            _recommendedCarousel(_recentListens),
+            const SizedBox(height: 14),
           ],
 
+          // Yêu thích gần đây (web đăng nhập có).
           if (_recentLoves.isNotEmpty) ...[
             SectionHeader(
               icon: Icons.favorite,
               title: 'Yêu thích gần đây',
-              // No "Xem tất cả" — there's a dedicated "Yêu thích" entry in
-              // the left sidebar already.
-              onPlayAll: () => _shufflePlay(_recentLoves, sourceLabel: 'Yêu thích gần đây'),
-              playAllIcon: Icons.shuffle,
-              playAllLabel: 'Ngẫu nhiên',
-            ),
-            _songCarousel(_recentLoves),
-            const SizedBox(height: 22),
-          ],
-
-          // Discovery hero — random featured artist / composer rotating
-          // through the combined pool. Closes out the personal cluster
-          // as a "you might also know..." surface — refreshes per
-          // session via _featuredArtistIndex; shuffle button re-rolls.
-          if (_artists.isNotEmpty || _composers.isNotEmpty) ...[
-            _featuredArtistHero(),
-            const SizedBox(height: 32),
-          ],
-
-          // ─── KHÁM PHÁ ───
-          const _GroupLabel('KHÁM PHÁ'),
-
-          // Cảm nhận hay — slider opens the editorial cluster with a
-          // rotating set of community voices (top-loved comments).
-          // Auto-advances every 6s with dot indicator.
-          if (_featuredComments.isNotEmpty) ...[
-            _featuredCommentsSlider(_featuredComments),
-            const SizedBox(height: 22),
-          ],
-
-          // Trending search keywords — quick-nav chips with a small
-          // header so users get the "what's hot to search" framing
-          // (without it the strip read as orphan navigation).
-          if (_trendingKeywords.isNotEmpty) ...[
-            const SectionHeader(
-              icon: Icons.trending_up,
-              title: 'Đang được tìm kiếm',
-              subtitle: 'Từ khoá thịnh hành tuần qua',
-            ),
-            _trendingChipsStrip(),
-            const SizedBox(height: 24),
-          ],
-
-          // Khám phá chủ đề — compact horizontal scroll strip of top
-          // tags. Slider+dots was tried but tag thumbnails are not
-          // editorial (no story to dwell on per page) so a flat
-          // scroll feels right.
-          if (_popularTags.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.tag,
-              title: 'Khám phá chủ đề',
               actionText: 'Xem tất cả',
-              onAction: () => context.push('/tag'),
+              onAction: () => context.push('/yeu-thich'),
             ),
-            _popularTagsStrip(_popularTags),
-            const SizedBox(height: 32),
+            _recommendedCarousel(_recentLoves),
+            const SizedBox(height: 14),
           ],
 
+          // Nghe nhiều trong tuần — dải banner nhiều màu. Web đặt SAU cụm
+          // cá nhân hoá (Gợi ý/Nghe gần đây/Yêu thích), nên để ở đây.
+          if (_spotlightItems().isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.headphones,
+              title: 'Nghe nhiều trong tuần',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/bang-xep-hang'),
+            ),
+            _spotlightBanners(_spotlightItems()),
+            const SizedBox(height: 18),
+          ],
+
+          // Bài hát mới cập nhật — bám thứ tự web.
           SectionHeader(
             icon: Icons.access_time,
             title: 'Bài hát mới cập nhật',
@@ -1037,19 +1021,54 @@ class _HomeScreenState extends State<HomeScreen> {
           _latestTabsBar(),
           const SizedBox(height: 12),
           _latestList(),
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
 
-          // "Có thể bạn muốn nghe" (hot songs) removed — overlaps the
-          // "Top nghe nhiều" chart which now sits prominently below
-          // KHÁM PHÁ. Keep the data fetched in case a future personalized
-          // mix uses it, but don't render a separate carousel here.
+          // Khám phá nghệ sĩ/nhạc sĩ — dải card cuộn ngang (khớp web).
+          if (_artists.isNotEmpty || _composers.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.auto_awesome,
+              title: 'Khám phá nghệ sĩ',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/nghe-si'),
+            ),
+            _discoverPersonStrip(),
+            const SizedBox(height: 20),
+          ],
 
-          // Video / Playlist / Thể loại as 3 separate sections rather
-          // than tabs. Tabs were too easy to overlook (user wouldn't
-          // bother clicking through), so each surface gets its own
-          // header. Order is shuffled in `_fetch` so the home feels
-          // fresh on each visit even when the underlying data is
-          // unchanged.
+          // Cảm nhận hay — dải card bình luận nổi bật (có tiêu đề như web).
+          if (_featuredComments.isNotEmpty) ...[
+            const SectionHeader(
+              icon: Icons.chat_bubble_outline,
+              title: 'Cảm nhận hay',
+            ),
+            _featuredCommentsSlider(_featuredComments),
+            const SizedBox(height: 14),
+          ],
+
+          // Trending search keywords.
+          if (_trendingKeywords.isNotEmpty) ...[
+            const SectionHeader(
+              icon: Icons.trending_up,
+              title: 'Đang được tìm kiếm',
+              subtitle: 'Từ khoá thịnh hành tuần qua',
+            ),
+            _trendingChipsStrip(),
+            const SizedBox(height: 24),
+          ],
+
+          // Khám phá chủ đề — top tags strip.
+          if (_popularTags.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.tag,
+              title: 'Khám phá chủ đề',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/tag'),
+            ),
+            _popularTagsStrip(_popularTags),
+            const SizedBox(height: 20),
+          ],
+
+          // Playlist sự kiện.
           if (_playlists.isNotEmpty) ...[
             SectionHeader(
               icon: Icons.event_outlined,
@@ -1058,8 +1077,23 @@ class _HomeScreenState extends State<HomeScreen> {
               onAction: () => context.push('/playlist'),
             ),
             _playlistCarousel(_playlists),
-            const SizedBox(height: 32),
+            const SizedBox(height: 20),
           ],
+
+          // Nhạc nhẹ nhàng — lưới thẻ bài trong tag "Nhạc nhẹ" (ngẫu nhiên),
+          // khớp section cùng tên trên web.
+          if (_easySongs.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.spa_outlined,
+              title: 'Nhạc nhẹ nhàng',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/tag/nhac-nhe'),
+            ),
+            _easySongGrid(_easySongs.take(18).toList()),
+            const SizedBox(height: 20),
+          ],
+
+          // Thể loại.
           SectionHeader(
             icon: Icons.album_outlined,
             title: 'Thể loại',
@@ -1067,53 +1101,44 @@ class _HomeScreenState extends State<HomeScreen> {
             onAction: () => context.push('/the-loai'),
           ),
           _categoryTiles(),
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
 
-          // Nghe nhạc theo thập niên — quick-link chips into the
-          // existing /bai-hat/thap-nien/{decade} screen. Sits right
-          // after Thể loại as a sibling "browse-by-axis" surface.
+          // Nghe nhạc theo thập niên.
           const SectionHeader(
             icon: Icons.history_edu_outlined,
             title: 'Nghe theo thập niên',
             subtitle: 'Bài hát theo năm sáng tác',
           ),
           _decadeStrip(),
-          const SizedBox(height: 32),
+          const SizedBox(height: 20),
 
-          // ─── BẢNG XẾP HẠNG — gộp song ranking + member ranking dưới
-          // 1 group label. Cả 2 đều là rankings; tách thành 2 cluster
-          // riêng tạo thêm 1 group divider không cần thiết.
-          const _GroupLabel('BẢNG XẾP HẠNG'),
-          SectionHeader(
-            icon: Icons.headphones,
-            title: 'Top nghe nhiều',
-            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
-            actionText: 'Xem tất cả',
-            onAction: () => context.push('/bang-xep-hang'),
-          ),
-          _rankingTabs(),
-          const SizedBox(height: 10),
-          _rankingList(_chartSongs),
-          const SizedBox(height: 32),
+          // Đánh giá bài gửi — bài mới cần cộng đồng nghe & bình chọn (khớp web).
+          if (_reviewUploads.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.star_border,
+              title: 'Đánh giá bài gửi',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/thao-luan'),
+            ),
+            _reviewUploadsStrip(),
+            const SizedBox(height: 20),
+          ],
 
-          SectionHeader(
-            icon: Icons.workspace_premium_outlined,
-            title: 'Top thành viên',
-            subtitle: 'Thành viên đóng góp nhiều nhất cho cộng đồng',
-            actionText: 'Xem tất cả',
-            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
-          ),
-          _topMemberHero(),
-          _memberTabsBar(),
-          const SizedBox(height: 10),
-          _memberBody(),
-          const SizedBox(height: 32),
+          // Tư liệu mới — bài viết/tư liệu mới nhất, khớp "Tư liệu mới" web.
+          if (_newsDocs.isNotEmpty) ...[
+            SectionHeader(
+              icon: Icons.article_outlined,
+              title: 'Tư liệu mới',
+              actionText: 'Xem tất cả',
+              onAction: () => context.push('/tu-lieu/bai-viet'),
+            ),
+            _articleStrip(),
+            const SizedBox(height: 20),
+          ],
 
-          // ─── ĐẶC BIỆT — Tưởng niệm + Sự kiện gộp 1 section với outer
-          // tabs. Trước đây 2 section riêng, mỗi cái 1 header; giờ chia
-          // sẻ chung 1 header + tabs nhỏ phía dưới.
+          // Tưởng niệm + Sự kiện gộp 1 section với outer tabs (section phẳng,
+          // bỏ nhãn nhóm to cho giống web).
           if (_memorial.isNotEmpty || _events.isNotEmpty) ...[
-            const _GroupLabel('ĐẶC BIỆT'),
             SectionHeader(
               icon: _specialTab == 0 ? Icons.local_florist_outlined : Icons.event_outlined,
               title: _specialTab == 0 ? 'Tưởng niệm' : 'Theo dòng sự kiện',
@@ -1134,10 +1159,32 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 24),
           ],
 
-          // THƯ VIỆN (Tư liệu) section dropped from the home feed — old
-          // photos rarely change and were dragging down the page's
-          // freshness. Still reachable via the /tu-lieu route from the
-          // sidebar / library page.
+          // Top nghe nhiều + Top thành viên đặt CUỐI trang theo yêu cầu
+          // (section phẳng, bỏ nhãn nhóm).
+          SectionHeader(
+            icon: Icons.headphones,
+            title: 'Top nghe nhiều',
+            subtitle: 'Bài hát nhiều lượt nghe cập nhật theo giờ',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang'),
+          ),
+          _rankingTabs(),
+          const SizedBox(height: 10),
+          _rankingList(_chartSongs),
+          const SizedBox(height: 20),
+
+          SectionHeader(
+            icon: Icons.workspace_premium_outlined,
+            title: 'Top thành viên',
+            subtitle: 'Thành viên đóng góp nhiều nhất cho cộng đồng',
+            actionText: 'Xem tất cả',
+            onAction: () => context.push('/bang-xep-hang/${_memberSlugForTab(_rankTab)}'),
+          ),
+          _topMemberHero(),
+          _memberTabsBar(),
+          const SizedBox(height: 10),
+          _memberBody(),
+          const SizedBox(height: 20),
 
           // Footer signature — slogan at the very bottom of the page.
           Padding(
@@ -1166,6 +1213,90 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Up to 5 hand-picked items for the rotating hero spotlight.
   /// Trending song first (with weeklyListens), then top sticky songs.
+  // Bảng màu gradient xoay vòng cho banner "Nghe nhiều trong tuần" (khớp web).
+  static const List<List<Color>> _spotlightPalette = [
+    [Color(0xFF8A1C1C), Color(0xFFC0392B)],
+    [Color(0xFF1558B0), Color(0xFF2E86DE)],
+    [Color(0xFF1F7A4D), Color(0xFF2ECC71)],
+    [Color(0xFF6A3DA8), Color(0xFF9B59B6)],
+    [Color(0xFFB9770E), Color(0xFFF0932B)],
+    [Color(0xFF0E7C86), Color(0xFF16C2A3)],
+  ];
+
+  // Nghe nhiều trong tuần — dải banner ngang nhiều màu (khớp web
+  // HomeSpotlight), thay HeroSpotlight xoay. Mỗi banner: gradient + thumbnail
+  // + tên + nghệ sĩ/lượt nghe + nút "Nghe ngay". Bấm banner = phát ngay.
+  Widget _spotlightBanners(List<Map<String, dynamic>> items) {
+    if (items.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(builder: (ctx, c) {
+      final wide = c.maxWidth >= 720;
+      final cardW = wide ? (c.maxWidth - 28) / 3 : (c.maxWidth * 0.84).clamp(240.0, 400.0);
+      return SizedBox(
+        height: 124,
+        child: ListView.separated(
+          controller: _spotlightCtrl,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          itemCount: items.length > 9 ? 9 : items.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 14),
+          itemBuilder: (_, i) {
+            final s = items[i];
+            final pal = _spotlightPalette[i % _spotlightPalette.length];
+            final thumb = s['thumbnail']?['url']?.toString();
+            final artists = (s['artists']?['data'] ?? s['artists'] ?? []) as List;
+            final artistNames = artists.map((a) => a['title'] ?? '').where((x) => '$x'.isNotEmpty).join(', ');
+            final listens = s['weeklyListens'] ?? s['views'];
+            final listensN = listens is num ? listens.toInt() : null;
+            final meta = [
+              if (artistNames.isNotEmpty) artistNames,
+              if (listensN != null) '${formatViews(listensN)} lượt nghe',
+            ].join(' · ');
+            return InkWell(
+              onTap: () => _playSpotlight(s),
+              borderRadius: BorderRadius.circular(18),
+              child: Container(
+                width: cardW,
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: pal, begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: thumb != null && thumb.isNotEmpty
+                        ? CachedNetworkImage(imageUrl: thumb, width: 72, height: 72, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 72, height: 72, color: Colors.white24, child: const Icon(Icons.music_note, color: Colors.white70)))
+                        : Container(width: 72, height: 72, color: Colors.white24, child: const Icon(Icons.music_note, color: Colors.white70)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                      if (meta.isNotEmpty) Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.75)))),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.play_arrow, color: Colors.white, size: 16),
+                          const SizedBox(width: 5),
+                          Text('Nghe ngay', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
+                        ]),
+                      ),
+                    ]),
+                  ),
+                ]),
+              ),
+            );
+          },
+        ),
+      );
+    });
+  }
+
   List<Map<String, dynamic>> _spotlightItems() {
     final out = <Map<String, dynamic>>[];
     final seen = <String>{};
@@ -1447,63 +1578,298 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Cảm nhận hay — auto-advancing slider of top-loved comments.
-  // PageView holds the cards; a dot indicator under the slider shows
-  // progress and lets the user tap to jump. Auto-advance is wired in
-  // `_restartFeaturedCommentsTimer` and cancelled on dispose. Hover
-  // (desktop) suspends rotation so the user has time to read.
+  // Cảm nhận hay — dải card cuộn ngang (khớp trang chủ web): mỗi card 1
+  // bình luận nổi bật gồm avatar + tên + lượt thích, trích 3 dòng, và tên
+  // bài hát ở chân. Bấm mở bài hát (deep-link tới bình luận).
   Widget _featuredCommentsSlider(List<Map<String, dynamic>> data) {
     if (data.isEmpty) return const SizedBox.shrink();
-    return MouseRegion(
-      onEnter: (_) => _featuredCommentsTimer?.cancel(),
-      onExit: (_) => _restartFeaturedCommentsTimer(),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.center, children: [
-      // Fixed height so auto-advance between cards of different snippet
-      // length doesn't reflow the whole feed. 380 + 14px text + 12
-      // maxLines lets ~720 chars of comment surface — matches the
-      // backend's 700-char snippet cap so the user rarely hits a
-      // mid-sentence truncation.
-      SizedBox(
-        height: 380,
-        child: PageView.builder(
-          controller: _featuredCommentsCtrl,
-          itemCount: data.length,
-          onPageChanged: (i) {
-            if (mounted) setState(() => _featuredCommentIndex = i);
-          },
-          itemBuilder: (_, i) => _featuredCommentCard(data[i]),
-        ),
+    return _fadeRightEdge(
+      160,
+      ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+        itemCount: data.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) => _featuredCommentStripCard(data[i]),
       ),
-      const SizedBox(height: 10),
-      // Dot indicator. Tappable so a user who doesn't want to wait can
-      // jump straight to a particular card.
-      Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(data.length, (i) {
-          final active = i == _featuredCommentIndex;
-          return GestureDetector(
-            onTap: () {
-              _featuredCommentsCtrl.animateToPage(
-                i,
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOut,
-              );
-              _restartFeaturedCommentsTimer();
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 240),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: active ? 18 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: active ? AppColors.accentLight : AppColors.border,
-                borderRadius: BorderRadius.circular(3),
-              ),
+    );
+  }
+
+  Widget _featuredCommentStripCard(Map<String, dynamic> data) {
+    final snippet = (data['snippet'] ?? '').toString();
+    final username = (data['username'] ?? '').toString();
+    final userAvatar = data['user_avatar']?.toString();
+    final songTitle = (data['song_title'] ?? '').toString();
+    final likes = data['likes'] is int ? data['likes'] as int : int.tryParse('${data['likes']}') ?? 0;
+    final song = <String, dynamic>{
+      'id': data['song_id'],
+      'title': data['song_title'],
+      'subtitle': data['song_subtitle'],
+      'slug': data['song_slug'],
+      'thumbnail': {'url': data['song_image']},
+      'file': {'audio_url': data['audio_url'], 'video_url': data['video_url']},
+      'play_type': data['play_type'],
+      'file_type': data['file_type'] ?? 'song',
+      'highlightCommentId': data['id']?.toString(),
+    };
+    return InkWell(
+      onTap: () => _openSong(song),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 270,
+        height: 148,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            ClipOval(
+              child: userAvatar != null && userAvatar.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: userAvatar, width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(28))
+                  : _avatarFallback(28),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)))),
+            if (likes > 0) ...[
+              Icon(Icons.favorite, size: 12, color: AppColors.accent),
+              const SizedBox(width: 3),
+              Text('$likes', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.accent))),
+            ],
+          ]),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Text(snippet, maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12.5, height: 1.5, color: AppColors.textSecondary))),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Icon(Icons.music_note, size: 13, color: AppColors.accentLight),
+            const SizedBox(width: 5),
+            Expanded(child: Text(songTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
+          ]),
+        ]),
+      ),
+    );
+  }
+
+  Widget _avatarFallback(double size) => Container(
+        width: size,
+        height: size,
+        color: AppColors.surfaceLight,
+        child: Icon(Icons.person, size: size * 0.6, color: AppColors.textMuted),
+      );
+
+  // Khám phá nghệ sĩ/nhạc sĩ — dải card cuộn ngang (khớp web): avatar tròn
+  // lớn + badge lượt thích + nhãn loại + tên + lượt nghe. Trộn xen kẽ nghệ
+  // sĩ & nhạc sĩ, tối đa 18 người.
+  Widget _discoverPersonStrip() {
+    final mixed = <Map<String, dynamic>>[];
+    final maxLen = math.max(_artists.length, _composers.length);
+    for (var i = 0; i < maxLen; i++) {
+      if (i < _artists.length) mixed.add({...(_artists[i] as Map).cast<String, dynamic>(), '_kind': 'artist'});
+      if (i < _composers.length) mixed.add({...(_composers[i] as Map).cast<String, dynamic>(), '_kind': 'composer'});
+    }
+    final list = mixed.take(18).toList();
+    if (list.isEmpty) return const SizedBox.shrink();
+    return _fadeRightEdge(
+      184,
+      ListView.separated(
+        controller: _discoverCtrl,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+        itemCount: list.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 14),
+        itemBuilder: (_, i) {
+          final p = list[i];
+          final kind = p['_kind'] as String;
+          final label = kind == 'artist' ? 'NGHỆ SĨ' : 'NHẠC SĨ';
+          final route = kind == 'artist' ? '/nghe-si/' : '/nhac-si/';
+          final avatar = p['avatar']?['url']?.toString();
+          final listens = p['total_listens'] is num ? (p['total_listens'] as num).toInt() : null;
+          final likes = p['likes'] is int ? p['likes'] as int : int.tryParse('${p['likes']}') ?? 0;
+          return InkWell(
+            onTap: () => context.push('$route${p['slug']}'),
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: 120,
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Stack(clipBehavior: Clip.none, children: [
+                  ClipOval(
+                    child: avatar != null && avatar.isNotEmpty
+                        ? CachedNetworkImage(imageUrl: avatar, width: 96, height: 96, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(96))
+                        : _avatarFallback(96),
+                  ),
+                  if (likes > 0) Positioned(
+                    top: 0, right: 0,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(999)),
+                      child: Text('♥ ${formatViews(likes)}', style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white))),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 8),
+                Text(label, style: body(TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                const SizedBox(height: 2),
+                Text(p['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                if (listens != null) ...[
+                  const SizedBox(height: 2),
+                  Text('${formatViews(listens)} lượt nghe', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 10.5, color: AppColors.textSecondary))),
+                ],
+              ]),
             ),
           );
-        }),
+        },
       ),
-    ]),
+    );
+  }
+
+  // Đánh giá bài gửi — dải card cuộn ngang (khớp web): tiêu đề + waveform
+  // nghe thử + poll bình chọn gọn (thanh phần trăm).
+  Widget _reviewUploadsStrip() {
+    final items = _reviewUploads.take(10).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: 170,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 14),
+        itemBuilder: (_, i) => _reviewCard(items[i]),
+      ),
+    );
+  }
+
+  Widget _reviewCard(dynamic d) {
+    final title = d['title']?.toString() ?? '';
+    final id = d['id'];
+    final audioUrl = d['file']?['audio_url']?.toString();
+    final waveform = d['file']?['waveform']?.toString();
+    final pollList = (d['polls']?['data'] as List?) ?? const [];
+    final options = pollList.isNotEmpty ? ((pollList[0]['options'] as List?) ?? const []) : const [];
+    final seed = int.tryParse('${d['id']}') ?? 0;
+    // Poll 2 lựa chọn: option[0] = tán thành (👍), option[1] = phản đối (👎).
+    int cnt(dynamic o) => (o is Map && o['total_answer'] is num) ? (o['total_answer'] as num).toInt() : 0;
+    final upCount = options.isNotEmpty ? cnt(options[0]) : 0;
+    final downCount = options.length > 1 ? cnt(options[1]) : 0;
+    final total = upCount + downCount;
+    final upPct = total > 0 ? (upCount / total * 100).round() : 50;
+    const green = Color(0xFF4CAF50);
+    const red = Color(0xFFF44336);
+    return Container(
+      width: 300,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        InkWell(
+          onTap: () => context.push('/thao-luan/$id'),
+          child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+        ),
+        const SizedBox(height: 12),
+        // Chừa thêm lề phải để sóng nhạc không chạm viền card.
+        if (audioUrl != null && audioUrl.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: WaveformPlayer(audioUrl: audioUrl, seed: seed, waveform: waveform, height: 56, showTimestamp: false),
+          ),
+        if (options.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          // Poll gọn giống web: 👍 số | thanh xanh(up%)+đỏ | up% | 👎 số.
+          Row(children: [
+            Icon(Icons.thumb_up_outlined, size: 15, color: AppColors.textSecondary),
+            const SizedBox(width: 4),
+            Text('$upCount', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  height: 6,
+                  child: total > 0
+                      ? Stack(children: [
+                          Positioned.fill(child: Container(color: red)),
+                          FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: (upPct / 100).clamp(0.0, 1.0),
+                            child: Container(color: green),
+                          ),
+                        ])
+                      : Container(color: AppColors.surfaceLight),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (total > 0) ...[
+              Text('$upPct%', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: green))),
+              const SizedBox(width: 8),
+            ],
+            Icon(Icons.thumb_down_outlined, size: 15, color: AppColors.textSecondary),
+            const SizedBox(width: 4),
+            Text('$downCount', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  // Tư liệu mới — dải card cuộn ngang (khớp web): ảnh 16:9 trên, tiêu đề
+  // 2 dòng + người đăng phía dưới.
+  Widget _articleStrip() {
+    final items = _newsDocs.take(12).toList();
+    if (items.isEmpty) return const SizedBox.shrink();
+    return _fadeRightEdge(
+      234,
+      ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+        itemCount: items.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) => _articleCard(items[i]),
+      ),
+    );
+  }
+
+  Widget _articleCard(dynamic d) {
+    final thumb = d['thumbnail']?['url']?.toString();
+    final uploader = d['uploader']?['username']?.toString();
+    return InkWell(
+      onTap: () => context.push('/tu-lieu/chi-tiet/${d['id']}'),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: thumb != null && thumb.isNotEmpty
+                ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.article, color: AppColors.textMuted)))
+                : Container(color: AppColors.surfaceLight, child: Center(child: Icon(Icons.article, size: 32, color: AppColors.textMuted))),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(d['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.35))),
+              if (uploader != null) ...[
+                const SizedBox(height: 8),
+                Text(uploader, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              ],
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -1791,43 +2157,40 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Đang được tìm kiếm — pill tự xuống dòng (Wrap) khớp web, thay cho dải
+  // cuộn ngang 1 hàng trước đây.
   Widget _trendingChipsStrip() {
-    return SizedBox(
-      height: 32,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _trendingKeywords.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (_, i) {
-          final kw = _trendingKeywords[i];
-          final name = kw['name']?.toString() ?? '';
-          if (name.isEmpty) return const SizedBox.shrink();
-          return HoverGlow(
-            radius: 18,
-            child: InkWell(
-              // Pass the keyword as `extra` so the search screen can
-              // pre-fill its input + auto-run the search on first build.
-              onTap: () => context.push('/search', extra: name),
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (i == 0) ...[
-                    Icon(Icons.local_fire_department, size: 13, color: AppColors.accentLight),
-                    const SizedBox(width: 5),
-                  ],
-                  Text(name, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
-                ]),
+    final kws = _trendingKeywords.where((k) => (k['name']?.toString() ?? '').isNotEmpty).toList();
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: List.generate(kws.length, (i) {
+        final name = kws[i]['name'].toString();
+        return HoverGlow(
+          radius: 18,
+          child: InkWell(
+            // Pass the keyword as `extra` so the search screen can
+            // pre-fill its input + auto-run the search on first build.
+            onTap: () => context.push('/search', extra: name),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceLight,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: AppColors.border),
               ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                if (i == 0) ...[
+                  Icon(Icons.local_fire_department, size: 13, color: AppColors.accentLight),
+                  const SizedBox(width: 5),
+                ],
+                Text(name, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+              ]),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      }),
     );
   }
 
@@ -2213,7 +2576,7 @@ class _HomeScreenState extends State<HomeScreen> {
       height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _categories.length - 1, // skip karaoke (thanh-vien-hat) in tabs
+        itemCount: _categories.length, // gồm cả Thành viên hát (khớp web)
         separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (ctx, i) {
           final active = i == _latestTab;
@@ -2275,22 +2638,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _categoryTiles() {
-    // 2×2 grid of the 4 main categories. Drop "Thành viên hát" — it's
-    // a community surface that already has its own home moment via
-    // CỘNG ĐỒNG NỔI BẬT, and 5 tiles broke the grid symmetry. Use
-    // LayoutBuilder to size against the actual content width (not the
-    // window width) so the desktop sidebar doesn't push tiles into
-    // single-column wraps.
-    final cats = _categories.where((c) => c.slug != 'thanh-vien-hat').toList();
+    // Lưới 2 cột gồm cả 5 danh mục (kể cả "Thành viên hát") để khớp web.
+    // Item lẻ cuối cùng chiếm trọn 1 hàng. LayoutBuilder đo theo bề rộng nội
+    // dung thực (không phải bề rộng cửa sổ) để sidebar desktop không ép wrap.
+    final cats = _categories;
     return LayoutBuilder(builder: (ctx, c) {
       final tileW = (c.maxWidth - 12) / 2;
       return Wrap(
         spacing: 12,
         runSpacing: 12,
-        children: cats.map((cat) => SizedBox(
-          width: tileW,
-          child: _categoryBanner(cat),
-        )).toList(),
+        children: List.generate(cats.length, (i) {
+          final cat = cats[i];
+          // Danh mục cuối (lẻ) chiếm trọn hàng cho cân đối.
+          final fullRow = i == cats.length - 1 && cats.length.isOdd;
+          return SizedBox(
+            width: fullRow ? c.maxWidth : tileW,
+            child: _categoryBanner(cat),
+          );
+        }),
       );
     });
   }
@@ -2430,72 +2795,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ]),
             ),
           ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _songCarousel(List<dynamic> songs, {bool showRank = false}) {
-    // Adaptive card size — mobile stays at 140 (matching the prior look),
-    // desktop scales up so cards don't look lonely on a 1400px window.
-    final w = MediaQuery.of(context).size.width;
-    final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 140.0);
-    return _fadeRightEdge(
-      card + 76,
-      ListView.separated(
-        scrollDirection: Axis.horizontal,
-        // Hover zoom is clipped inside each card's frame → no overflow; minimal pad.
-        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-        itemCount: songs.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 2),
-        itemBuilder: (context, i) {
-          final song = Map<String, dynamic>.from(songs[i]);
-          final artists = (song['artists']?['data'] ?? song['artists'] ?? []) as List;
-          final thumb = song['thumbnail']?['url'];
-          return HoverCard(
-            child: InkWell(
-              onTap: () => _openSong(song),
-              borderRadius: BorderRadius.circular(12),
-              hoverColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              child: SizedBox(
-                width: card,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    HoverRevealPlay(
-                      size: card,
-                      onPlay: () => context.read<PlayerProvider>().playSong(song),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: thumb != null
-                                ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
-                                : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
-                          ),
-                          if (showRank) Positioned(
-                            bottom: 6, left: 6,
-                            child: Container(
-                              width: 22, height: 22,
-                              decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                              alignment: Alignment.center,
-                              child: Text('${i + 1}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(song['title'] ?? '', style: AppText.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    if (artists.isNotEmpty)
-                      Text(artists.map((a) => a['title'] ?? '').join(', '), style: TextStyle(fontSize: 11, color: AppColors.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-            ),
           );
         },
       ),
@@ -3256,6 +3555,61 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Compact integer formatter — 1234 → "1.2K", 1234567 → "1.2M". Returns
   /// `_formatInt(n)` (full grouping) for values < 1K so small numbers stay
   /// exact.
+
+  // Nhạc nhẹ nhàng — lưới thẻ cover VUÔNG (khớp web): 3 cột (mobile) / 6
+  // cột (desktop), ảnh 1:1 + nút phát góc dưới-phải, tên 2 dòng + nghệ sĩ.
+  Widget _easySongGrid(List<dynamic> songs) {
+    return LayoutBuilder(builder: (ctx, c) {
+      final cols = c.maxWidth >= 900 ? 6 : 3;
+      const gap = 10.0;
+      final tileW = (c.maxWidth - gap * (cols - 1)) / cols;
+      return Wrap(
+        spacing: gap,
+        runSpacing: 14,
+        children: songs.map((raw) {
+          final s = Map<String, dynamic>.from(raw as Map);
+          final thumb = s['thumbnail']?['url']?.toString();
+          final artists = (s['artists']?['data'] ?? s['artists'] ?? []) as List;
+          final artistNames = artists.map((a) => a['title'] ?? '').where((x) => '$x'.isNotEmpty).join(', ');
+          return SizedBox(
+            width: tileW,
+            child: InkWell(
+              onTap: () => _openSong(s),
+              borderRadius: BorderRadius.circular(12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Stack(children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: thumb != null && thumb.isNotEmpty
+                        ? CachedNetworkImage(imageUrl: thumb, width: tileW, height: tileW, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: tileW, height: tileW, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted)))
+                        : Container(width: tileW, height: tileW, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted)),
+                  ),
+                  Positioned(
+                    right: 6, bottom: 6,
+                    child: GestureDetector(
+                      onTap: () => context.read<PlayerProvider>().playSong(s),
+                      child: Container(
+                        width: 34, height: 34,
+                        decoration: BoxDecoration(
+                          color: AppColors.accent, shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
+                        ),
+                        child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                Text(s['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+                if (artistNames.isNotEmpty)
+                  Padding(padding: const EdgeInsets.only(top: 1), child: Text(artistNames, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+              ]),
+            ),
+          );
+        }).toList(),
+      );
+    });
+  }
 
   Widget _songCardGrid(List<dynamic> songs) {
     return GridView.builder(

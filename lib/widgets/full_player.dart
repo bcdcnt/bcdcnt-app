@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:go_router/go_router.dart';
@@ -119,6 +120,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   void initState() {
     super.initState();
     _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+    // Khôi phục cỡ chữ lời đã lưu (đồng bộ trải nghiệm với web).
+    SharedPreferences.getInstance().then((p) {
+      final v = p.getDouble('lyrics_scale');
+      if (v != null && mounted) setState(() => _lyricsScale = v.clamp(0.7, 1.6));
+    });
     // Cache the provider for `dispose()` — and re-assert the
     // open flag in case we were pushed by code that didn't flip
     // it (deep links, keyboard shortcuts, etc.). The setter
@@ -320,6 +326,26 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     ].where((s) => s.isNotEmpty).toList();
     if (segments.isEmpty) return const SizedBox.shrink();
 
+    // Mobile/cửa sổ hẹp: chỉ hiện tên người trình bày cho gọn (bỏ "Sáng tác" +
+    // bỏ luôn nhãn "Trình bày:") — vd "Thanh Hoa, Kiều Hưng". Giống bản web.
+    if (MediaQuery.sizeOf(context).width < 600) {
+      final performers = artists
+          .where((a) => a is Map && (a['title'] ?? a['username'] ?? '').toString().isNotEmpty)
+          .map((a) => (a['title'] ?? a['username']).toString())
+          .join(', ');
+      if (performers.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          performers,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)),
+        ),
+      );
+    }
+
     final children = <Widget>[];
     for (var i = 0; i < segments.length; i++) {
       if (i > 0) {
@@ -407,7 +433,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         .where((s) => (s as String).isNotEmpty)
         .join(', ');
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      // Top 14: tách chip khỏi hàng timestamp ngay trên (trước bị sát) — giống web.
+      padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
       child: Center(
         child: InkWell(
           onTap: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
@@ -433,8 +460,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
+              // Flexible (không ConstrainedBox cứng 320) để title co lại vừa
+              // bề ngang còn trống → ellipsis, không tràn 6px trên cửa sổ hẹp.
+              Flexible(
                 child: Text(
                   artistText.isNotEmpty ? '$title — $artistText' : title,
                   maxLines: 1,
@@ -456,6 +484,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// have data (no lyrics tab on instrumentals; no queue tab when
   /// the queue is empty).
   Widget _buildPanelSwitcher(PlayerProvider player, bool isInstrumental, bool hasQueue) {
+    final narrow = MediaQuery.sizeOf(context).width < 600; // mobile → chỉ icon
     final tabs = <(_PanelMode, IconData, String, String?)>[
       (_PanelMode.vinyl, Icons.album_outlined, 'Đĩa than', null),
       // Square-ish icons for the other two so the trio reads as a
@@ -490,33 +519,44 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(t.$2, size: 14, color: active ? Colors.white : AppColors.textSecondary),
-                    const SizedBox(width: 6),
-                    Text(
-                      t.$3,
-                      style: body(TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: active ? Colors.white : AppColors.textSecondary,
-                      )),
-                    ),
-                    if (t.$4 != null) ...[
+                    // Tab lời: dùng chữ "A" thay icon để gợi nhớ "text/lời"
+                    t.$1 == _PanelMode.lyrics
+                        ? SizedBox(
+                            width: 14, height: 14,
+                            child: Center(
+                              child: Text('A', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, height: 1, color: active ? Colors.white : AppColors.textSecondary))),
+                            ),
+                          )
+                        : Icon(t.$2, size: 14, color: active ? Colors.white : AppColors.textSecondary),
+                    // Trên mobile/cửa sổ hẹp: chỉ hiện icon, bỏ chữ + badge cho gọn
+                    if (!narrow) ...[
                       const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: active ? Colors.white.withValues(alpha: 0.25) : AppColors.surfaceHover,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          t.$4!,
-                          style: body(TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: active ? Colors.white : AppColors.textMuted,
-                          )),
-                        ),
+                      Text(
+                        t.$3,
+                        style: body(TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: active ? Colors.white : AppColors.textSecondary,
+                        )),
                       ),
+                      if (t.$4 != null) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: active ? Colors.white.withValues(alpha: 0.25) : AppColors.surfaceHover,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            t.$4!,
+                            style: body(TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: active ? Colors.white : AppColors.textMuted,
+                            )),
+                          ),
+                        ),
+                      ],
                     ],
                   ]),
                 ),
@@ -967,10 +1007,18 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final thumb = song['thumbnail']?['url'];
     final isInstrumental = song['file_type'] == 'instrumental';
     final screen = MediaQuery.of(context).size;
+    final narrow = screen.width < 600; // mobile/cửa sổ hẹp → rút gọn 1 dòng
     // Use the shortest viewport dimension so the vinyl stays a circle on
     // wide-screen desktop (where width × 0.72 would overflow the height,
     // clipping the disc into an ellipse-looking slice).
-    final vinylSize = math.min(math.min(screen.width, screen.height) * 0.6, 480.0);
+    // Hẹp (mobile): to gần bằng web (~0.82×bề ngang, chặn 0.46×chiều cao để vẫn tròn).
+    // Rộng (desktop): giữ 0.6×cạnh ngắn nhất.
+    final vinylSize = math.min(
+      narrow
+          ? math.min(screen.width * 0.82, screen.height * 0.46)
+          : math.min(screen.width, screen.height) * 0.6,
+      480.0,
+    );
     final queue = player.queue;
 
     return Scaffold(
@@ -1076,8 +1124,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         Positioned(
                           right: 6, top: 0, bottom: 0,
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            if (_isDesktopOS) _buildVolumeControl(player),
-                            if (_isDesktopOS)
+                            // Chỉ hiện volume + fullscreen khi desktop VÀ cửa sổ đủ rộng
+                            // (giống web ẩn <768px) → cửa sổ hẹp không che "ĐANG PHÁT".
+                            if (_isDesktopOS && !narrow) _buildVolumeControl(player),
+                            if (_isDesktopOS && !narrow)
                               IconButton(
                                 tooltip: _isFullScreen ? 'Thoát toàn màn hình  F' : 'Toàn màn hình  F',
                                 iconSize: 20,
@@ -1139,17 +1189,18 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                       // at the bottom.
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
-                        child: Column(
+                        // Heart nằm trong Row bao cả cụm (title + phụ đề + credits)
+                        // và crossAxisAlignment.center → tim căn giữa theo chiều
+                        // dọc cả cụm, cân đối hơn (giống web).
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                // Symmetric spacer so the title stays
-                                // optically centred with the heart on
-                                // the opposite side.
-                                const SizedBox(width: 38),
-                                Expanded(
-                                  child: InkWell(
+                            // Spacer cân với trái tim để title vẫn căn giữa.
+                            const SizedBox(width: 38),
+                            Expanded(
+                              child: Column(
+                                children: [
+                                  InkWell(
                                     onTap: () => _openSongDetail(song),
                                     borderRadius: BorderRadius.circular(8),
                                     child: Padding(
@@ -1159,7 +1210,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                           Text(
                                             song['title'] ?? '',
                                             textAlign: TextAlign.center,
-                                            maxLines: 2,
+                                            maxLines: narrow ? 1 : 2,
                                             overflow: TextOverflow.ellipsis,
                                             style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
                                           ),
@@ -1171,19 +1222,19 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                       ),
                                     ),
                                   ),
-                                ),
-                                _buildInlineHeart(song),
-                              ],
+                                  const SizedBox(height: 6),
+                                  _buildCreditsBlock(artists),
+                                ],
+                              ),
                             ),
-                            const SizedBox(height: 6),
-                            _buildCreditsBlock(artists),
+                            _buildInlineHeart(song),
                           ],
                         ),
                       ),
 
-                      // Progress bar
+                      // Progress bar — hẹp thì nới rộng gần full width như web
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
+                        padding: EdgeInsets.symmetric(horizontal: narrow ? 14 : 32),
                         child: Column(
                           children: [
                             SliderTheme(
@@ -1363,6 +1414,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     // In fullscreen we drop the framed surface + use the karaoke variant
     // so the lyrics fill the screen edge-to-edge for a Now Playing feel.
     final useLarge = _isFullScreen;
+    // Base chữ lời responsive (giống web): ~15px mobile → ~20px desktop, ở 100%.
+    // Áp cho fallback Html (lyrics thường); TimedLyrics đã 16-20px sẵn nên giữ nguyên.
+    final lyricsBase = (MediaQuery.sizeOf(context).width * 0.012 + 11).clamp(15.0, 20.0);
     final hasLyrics = _songLyrics != null && _songLyrics!.isNotEmpty;
     final lyricsBody = !hasLyrics
         ? Center(child: Text('Chưa có lời bài hát', style: body(TextStyle(color: AppColors.textMuted, fontSize: 14))))
@@ -1378,7 +1432,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   'body': Style(
                     margin: Margins.zero,
                     padding: HtmlPaddings.zero,
-                    fontSize: FontSize(14 * _lyricsScale),
+                    fontSize: FontSize(lyricsBase * _lyricsScale),
                     lineHeight: const LineHeight(2.0),
                     color: AppColors.textSecondary,
                     textAlign: TextAlign.center,
@@ -1404,6 +1458,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
+  void _setLyricsScale(double v) {
+    setState(() => _lyricsScale = v);
+    SharedPreferences.getInstance().then((p) => p.setDouble('lyrics_scale', v));
+  }
+
   Widget _buildLyricsToolbar() {
     final scaleLabel = '${(_lyricsScale * 100).round()}%';
     return Padding(
@@ -1417,7 +1476,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.text_decrease, color: AppColors.textSecondary),
             onPressed: _lyricsScale > 0.7
-                ? () => setState(() => _lyricsScale = (_lyricsScale - 0.1).clamp(0.7, 1.6))
+                ? () => _setLyricsScale((_lyricsScale - 0.1).clamp(0.7, 1.6))
                 : null,
           ),
           Text(scaleLabel, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
@@ -1427,7 +1486,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.text_increase, color: AppColors.textSecondary),
             onPressed: _lyricsScale < 1.6
-                ? () => setState(() => _lyricsScale = (_lyricsScale + 0.1).clamp(0.7, 1.6))
+                ? () => _setLyricsScale((_lyricsScale + 0.1).clamp(0.7, 1.6))
                 : null,
           ),
           const SizedBox(width: 6),

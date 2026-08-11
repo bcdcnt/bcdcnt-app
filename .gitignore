@@ -46,3 +46,6 @@ app.*.map.json
 
 # Google OAuth desktop credentials (injected via --dart-define-from-file)
 google_oauth.json
+
+# Cloudflare Wrangler local cache
+.wrangler/

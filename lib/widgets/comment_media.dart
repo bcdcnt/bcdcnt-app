@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:chewie/chewie.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:flutter_html_table/flutter_html_table.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../constants/theme.dart';
 import 'waveform_player.dart';
 
@@ -42,7 +45,7 @@ class _CommentMediaState extends State<CommentMedia> {
     final blocks = <_Block>[];
     // Match image / audio / video / iframe in order
     final pattern = RegExp(
-      r'<img[^>]+src="([^"]+)"[^>]*>|<audio[^>]*>(.*?)</audio>|<video[^>]*>(.*?)</video>|<source[^>]+src="([^"]+)"[^>]*>|<iframe[^>]+src="([^"]+)"[^>]*></iframe>',
+      r'<img[^>]+src="([^"]+)"[^>]*>|<audio[^>]*>(.*?)</audio>|<video[^>]*>(.*?)</video>|<source[^>]+src="([^"]+)"[^>]*>|<iframe[^>]+src="([^"]+)"[^>]*></iframe>|<oembed[^>]+url="([^"]+)"[^>]*></oembed>',
       caseSensitive: false, dotAll: true,
     );
     int cursor = 0;
@@ -91,6 +94,24 @@ class _CommentMediaState extends State<CommentMedia> {
       else if (m.group(5) != null) {
         blocks.add(_Block.video(m.group(5)!));
       }
+      // oembed — CKEditor bọc nhiều loại media vào <figure class="media">
+      // <oembed url="..."> mà <oembed> không tự render. Phân loại: YouTube →
+      // card; audio (.mp3 / #audio) → WaveformPlayer; video (.mp4 / #video) →
+      // player inline; còn lại → mở ngoài. (Bỏ qua được #audio/#video ở src.)
+      else if (m.group(6) != null) {
+        final raw = m.group(6)!.replaceAll('&amp;', '&');
+        final src = raw.replaceAll(RegExp(r'#(audio|video)$', caseSensitive: false), '');
+        final lower = raw.toLowerCase();
+        if (_youtubeId(raw) != null) {
+          blocks.add(_Block.youtube(raw));
+        } else if (_isVideoUrl(raw) || lower.endsWith('#video')) {
+          blocks.add(_Block.video(src));
+        } else if (_isAudioUrl(raw) || lower.endsWith('#audio')) {
+          blocks.add(_Block.audio(src));
+        } else {
+          blocks.add(_Block.video(src));
+        }
+      }
       cursor = m.end;
     }
     if (cursor < html.length) {
@@ -131,6 +152,8 @@ class _CommentMediaState extends State<CommentMedia> {
               padding: const EdgeInsets.symmetric(vertical: 1),
               child: Html(
                 data: b.value,
+                // flutter_html 3.x bỏ render <table> mặc định → cần extension.
+                extensions: const [TableHtmlExtension()],
                 style: {
                   'body': Style(
                     margin: Margins.zero,
@@ -142,6 +165,9 @@ class _CommentMediaState extends State<CommentMedia> {
                   ),
                   'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
                   'p': Style(margin: Margins.only(bottom: 4)),
+                  'table': Style(border: Border.all(color: AppColors.border)),
+                  'th': Style(padding: HtmlPaddings.all(6), backgroundColor: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
+                  'td': Style(padding: HtmlPaddings.all(6), border: Border.all(color: AppColors.border)),
                 },
                 onLinkTap: (url, _, __) {
                   if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
@@ -172,29 +198,10 @@ class _CommentMediaState extends State<CommentMedia> {
           case _BlockKind.video:
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
-              child: InkWell(
-                onTap: () => launchUrl(Uri.parse(b.value), mode: LaunchMode.externalApplication),
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
-                      child: const Icon(Icons.play_arrow, color: Colors.white, size: 20),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('Mở video', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)))),
-                    Icon(Icons.open_in_new, size: 14, color: AppColors.textMuted),
-                  ]),
-                ),
-              ),
+              child: _VideoCard(url: b.value),
             );
+          case _BlockKind.youtube:
+            return _YoutubeCard(url: b.value, videoId: _youtubeId(b.value));
         }
       }),
       if (imageUrls.isNotEmpty) _buildImageStrip(context, imageUrls),
@@ -359,7 +366,34 @@ bool _isVideoUrl(String url) {
   return m != null;
 }
 
-enum _BlockKind { text, image, audio, video }
+/// True khi URL là file audio (dùng để nhận diện audio gói trong <oembed>).
+bool _isAudioUrl(String url) {
+  return RegExp(r'\.(mp3|wav|ogg|flac|aac|m4a)(\?|#|$)', caseSensitive: false).hasMatch(url);
+}
+
+/// Trích id video YouTube từ link (youtu.be / watch?v= / embed / shorts).
+/// Trả null nếu không phải YouTube.
+String? _youtubeId(String url) {
+  try {
+    final u = Uri.parse(url.replaceAll('&amp;', '&'));
+    final host = u.host.replaceFirst(RegExp(r'^www\.'), '');
+    String? id;
+    if (host == 'youtu.be') {
+      id = u.pathSegments.isNotEmpty ? u.pathSegments.first : null;
+    } else if (host == 'youtube.com' || host == 'm.youtube.com' || host == 'music.youtube.com') {
+      if (u.path == '/watch') {
+        id = u.queryParameters['v'];
+      } else if ((u.path.startsWith('/embed/') || u.path.startsWith('/shorts/')) && u.pathSegments.length > 1) {
+        id = u.pathSegments[1];
+      }
+    }
+    return (id != null && RegExp(r'^[\w-]{11}$').hasMatch(id)) ? id : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+enum _BlockKind { text, image, audio, video, youtube }
 
 class _Block {
   final _BlockKind kind;
@@ -369,4 +403,163 @@ class _Block {
   factory _Block.image(String v) => _Block._(_BlockKind.image, v);
   factory _Block.audio(String v) => _Block._(_BlockKind.audio, v);
   factory _Block.video(String v) => _Block._(_BlockKind.video, v);
+  factory _Block.youtube(String v) => _Block._(_BlockKind.youtube, v);
+}
+
+/// Card YouTube: thumbnail + nút play → mở YouTube ngoài app.
+/// (YouTube chặn nhúng embed trong webview bằng anti-bot "sign in to confirm"
+/// nên không phát inline được tin cậy; mở ngoài là cách luôn chạy.)
+class _YoutubeCard extends StatelessWidget {
+  final String url;
+  final String? videoId;
+  const _YoutubeCard({required this.url, required this.videoId});
+
+  @override
+  Widget build(BuildContext context) {
+    final id = videoId;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: InkWell(
+            onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+            borderRadius: BorderRadius.circular(10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (id != null)
+                      CachedNetworkImage(
+                        imageUrl: 'https://img.youtube.com/vi/$id/hqdefault.jpg',
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: AppColors.surfaceLight),
+                        errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight),
+                      )
+                    else
+                      Container(color: AppColors.surfaceLight),
+                    Container(color: Colors.black.withValues(alpha: 0.18)),
+                    Center(
+                      child: Container(
+                        width: 54,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0000),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
+                      ),
+                    ),
+                    const Positioned(
+                      right: 6, bottom: 6,
+                      child: Icon(Icons.open_in_new, color: Colors.white70, size: 16),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Card video internal (bcdcnt mp4): bấm → phát INLINE bằng Chewie (controls
+/// đầy đủ). Chỉ khởi tạo controller khi bấm. Nếu init lỗi (URL không phải video
+/// trực tiếp) → fallback mở ngoài.
+class _VideoCard extends StatefulWidget {
+  final String url;
+  const _VideoCard({required this.url});
+
+  @override
+  State<_VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends State<_VideoCard> {
+  VideoPlayerController? _videoCtl;
+  ChewieController? _chewieCtl;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _start(); // auto-init: hiện khung player ngay (frame đầu + controls)
+  }
+
+  @override
+  void dispose() {
+    _chewieCtl?.dispose();
+    _videoCtl?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    try {
+      final v = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await v.initialize();
+      if (!mounted) { v.dispose(); return; }
+      setState(() {
+        _videoCtl = v;
+        _chewieCtl = ChewieController(
+          videoPlayerController: v,
+          autoPlay: false,
+          looping: false,
+          aspectRatio: v.value.aspectRatio == 0 ? 16 / 9 : v.value.aspectRatio,
+        );
+      });
+    } catch (_) {
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget inner;
+    if (_chewieCtl != null) {
+      inner = Chewie(controller: _chewieCtl!);
+    } else if (_failed) {
+      // Init lỗi (URL không phải video trực tiếp) → mở ngoài.
+      inner = InkWell(
+        onTap: () => launchUrl(Uri.parse(widget.url), mode: LaunchMode.externalApplication),
+        child: Container(
+          color: AppColors.surfaceLight,
+          alignment: Alignment.center,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.open_in_new, size: 16, color: Colors.white70),
+            const SizedBox(width: 8),
+            Text('Mở video', style: body(const TextStyle(fontSize: 12, color: Colors.white70))),
+          ]),
+        ),
+      );
+    } else {
+      // Đang tải → khung tối + nút play mờ (trông như player sắp hiện).
+      inner = Container(
+        color: Colors.black,
+        alignment: Alignment.center,
+        child: Container(
+          width: 54, height: 38,
+          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
+          child: const Icon(Icons.play_arrow, color: Colors.white70, size: 28),
+        ),
+      );
+    }
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: AspectRatio(
+            aspectRatio: (_videoCtl?.value.aspectRatio ?? 0) == 0 ? 16 / 9 : _videoCtl!.value.aspectRatio,
+            child: inner,
+          ),
+        ),
+      ),
+    );
+  }
 }

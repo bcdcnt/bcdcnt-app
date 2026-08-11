@@ -130,6 +130,20 @@ String formatViews(int? n) {
   return n.toString();
 }
 
+/// Định dạng số nguyên kiểu ngăn nghìn bằng dấu chấm (vi-VN): 10247 -> "10.247".
+/// Khớp với `toLocaleString("vi-VN")` mà web dùng.
+String formatInt(int? n) {
+  if (n == null) return '0';
+  final s = n.abs().toString();
+  final buf = StringBuffer();
+  if (n < 0) buf.write('-');
+  for (int i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+    buf.write(s[i]);
+  }
+  return buf.toString();
+}
+
 String formatTime(double? sec) {
   if (sec == null || sec.isNaN) return '0:00';
   final m = (sec ~/ 60).toString();

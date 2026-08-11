@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Bắt buộc cho bản release: debug/profile manifest được Flutter tự thêm
+         INTERNET, nhưng bản release build từ manifest này nên phải khai tay,
+         nếu thiếu thì apk lỗi "Failed host lookup ... errno = 7" trên mọi máy. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="bcdcnt_flutter"
         android:name="${applicationName}"

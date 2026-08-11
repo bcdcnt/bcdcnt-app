@@ -1,0 +1,46 @@
+name: Deploy web-player (Cloudflare Pages → nghe.bcdcnt.net)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Cùng phiên bản Flutter với build-desktop.yml để tránh lệch SDK.
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+          cache: true
+
+      - name: Pub get
+        run: flutter pub get
+
+      # Build web release. base-href "/" vì serve ở root của nghe.bcdcnt.net.
+      # GA4_API_SECRET inject qua dart-define giống các target khác.
+      - name: Build web
+        run: |
+          flutter build web --release --base-href "/" --tree-shake-icons \
+            --dart-define=GA4_API_SECRET=${{ secrets.GA4_API_SECRET }}
+
+      # Flutter KHÔNG copy _redirects vào build/web → copy thủ công để CF Pages
+      # làm SPA fallback (mọi route → index.html).
+      - name: Add SPA _redirects
+        run: cp web/_redirects build/web/_redirects
+
+      # Deploy lên Cloudflare Pages. Project phải được tạo trước 1 lần
+      # (dashboard hoặc `wrangler pages project create bcdcnt-nghe`).
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy build/web --project-name=bcdcnt-nghe --branch=main
