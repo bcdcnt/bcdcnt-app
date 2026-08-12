@@ -873,6 +873,63 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ),
     ];
 
+    // Credits kiểu web cho desktop hero: từng dòng "Nhãn: giá trị" đặt GIỮA
+    // tiêu đề và stats. Style khớp web: nhãn 13px xám mờ (w500), giá trị 16px
+    // đậm màu chữ (w700), KHÔNG gạch chân — dùng _webCreditLine/_creditLinkRow.
+    final yearSpan = year != null
+        ? TextSpan(text: ' ($year)', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500)))
+        : null;
+    final desktopCredits = <Widget>[];
+    if (composers.isNotEmpty) {
+      desktopCredits.add(_webCreditLine('Sáng tác', [
+        ..._creditLinkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
+        if (yearSpan != null) yearSpan,
+      ]));
+    }
+    {
+      final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
+      if (rec.isNotEmpty) desktopCredits.add(_webCreditLine('Soạn giả', _creditLinkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}'))));
+      final fcr = song['sheet']?['fcats'] ?? song['fcats'];
+      final fc = (fcr is Map ? (fcr['data'] ?? []) : (fcr ?? [])) as List;
+      if (fc.isNotEmpty) desktopCredits.add(_webCreditLine('Thể loại', _creditLinkRow(fc, 'title', (f) => context.push('/dan-ca/${f['slug']}'))));
+      final mr = song['sheet']?['melodies'] ?? song['melodies'];
+      final mel = (mr is Map ? (mr['data'] ?? []) : (mr ?? [])) as List;
+      if (mel.isNotEmpty) desktopCredits.add(_webCreditLine('Làn điệu', _creditLinkRow(mel, 'title', (m) => context.push('/lan-dieu/${m['slug']}'))));
+    }
+    if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem')) {
+      final poetLabel = (lyricType != null && (lyricType as String).trim().isNotEmpty) ? (lyricType as String).trim().replaceAll(RegExp(r':\s*$'), '') : 'Thơ';
+      desktopCredits.add(_webCreditLine(poetLabel, _creditLinkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}'))));
+    }
+    if (artists.isNotEmpty) {
+      desktopCredits.add(_webCreditLine(
+        _resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày',
+        [
+          ..._creditLinkRow(artists, 'title', (a) {
+            if (_resolvedType == 'karaoke') { final id = a['id']; if (id != null) context.push('/user/$id'); }
+            else if (a['slug'] != null) context.push('/nghe-si/${a['slug']}');
+          }),
+          // Record year ghép inline sau ca sĩ, dạng "(1991)" giống web.
+          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
+        ],
+      ));
+    }
+    if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null) {
+      desktopCredits.add(_webCreditLine('Bài gốc', [
+        WidgetSpan(alignment: PlaceholderAlignment.baseline, baseline: TextBaseline.alphabetic, child: GestureDetector(
+          onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
+          child: Text(song['song']['title'] ?? '', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+        )),
+      ]));
+    }
+    final uploadDate = song['created_at'] != null ? _formatDate(song['created_at']) : null;
+    final tagsWidget = tags.isEmpty ? null : Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(spacing: 14, runSpacing: 4, children: tags.map<Widget>((t) => InkWell(
+        onTap: () => context.push('/tag/${t['slug']}'),
+        child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+      )).toList()),
+    );
+
     final mainScroll = CustomScrollView(
             controller: _scrollCtl,
             slivers: [
@@ -924,6 +981,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         resolvedType: _resolvedType,
                         isLoved: _isLoved,
                         loveCount: loves.length,
+                        loves: loves,
                         hasUploads: uploads.isNotEmpty,
                         isCurrent: isCurrent,
                         isPlaying: player.isPlaying,
@@ -949,7 +1007,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           }
                         },
                         onArtworkTap: _openArtworkLightbox,
-                        metaContent: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: metaItems),
+                        credits: desktopCredits.isEmpty ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: desktopCredits),
+                        uploadDate: uploadDate,
+                        metaContent: tagsWidget,
                       )
                     else
                       _MobileHero(
@@ -1252,6 +1312,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   /// Sections shown either inline below the main content (mobile) or in a
   /// fixed right column (desktop). Order mirrors the bcdcnt-web source.
+  // Danh sách SongRow kèm đường kẻ mảnh giữa các dòng (khớp web).
+  List<Widget> _relatedRows(List songs) {
+    final out = <Widget>[];
+    for (int i = 0; i < songs.length; i++) {
+      final sg = Map<String, dynamic>.from(songs[i]);
+      out.add(SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg)));
+      if (i < songs.length - 1) out.add(Divider(height: 1, color: AppColors.borderSubtle, indent: 60));
+    }
+    return out;
+  }
+
   List<Widget> _buildRelatedSections(List artists, List composers) {
     final widgets = <Widget>[];
 
@@ -1269,10 +1340,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               count: '(${filtered.length})',
               onPlayAll: () => _playList(filtered),
             ),
-            ...shown.map((s) {
-              final sg = Map<String, dynamic>.from(s);
-              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-            }),
+            ..._relatedRows(shown),
             if (filtered.length > 5)
               _ShowMoreButton(
                 expanded: _sameSheetExpanded,
@@ -1296,10 +1364,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               count: '(${karaokes.length})',
               onPlayAll: () => _playList(karaokes),
             ),
-            ...shown.map((s) {
-              final sg = Map<String, dynamic>.from(s);
-              return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-            }),
+            ..._relatedRows(shown),
             if (karaokes.length > 5)
               _ShowMoreButton(
                 expanded: _karaokeExpanded,
@@ -1321,10 +1386,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             title: 'Có thể bạn muốn nghe',
             onPlayAll: () => _playList(_suggestions),
           ),
-          ..._suggestions.map((s) {
-            final sg = Map<String, dynamic>.from(s);
-            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-          }),
+          ..._relatedRows(_suggestions),
         ]),
       ));
     }
@@ -1334,21 +1396,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final artist = artists.firstWhere((a) => a['id'].toString() == ag['artistId'].toString(), orElse: () => {'title': ''});
       final title = (artist['title'] ?? '').toString();
       final slug = artist['slug']?.toString();
-      final avatar = artist['avatar']?['url']?.toString();
       final songs = (ag['songs'] as List);
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _ArtistBanner(
             name: title,
-            avatar: avatar,
+            role: 'trình bày',
+            icon: Icons.mic_none_outlined,
             onTap: slug != null ? () => context.push('/nghe-si/$slug') : null,
-            onPlayAll: () => _playList(songs),
           ),
-          ...songs.map((s) {
-            final sg = Map<String, dynamic>.from(s);
-            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-          }),
+          ..._relatedRows(songs),
         ]),
       ));
     }
@@ -1358,27 +1416,60 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final composer = composers.firstWhere((c) => c['id'].toString() == cg['composerId'].toString(), orElse: () => {'title': ''});
       final title = (composer['title'] ?? '').toString();
       final slug = composer['slug']?.toString();
-      final avatar = composer['avatar']?['url']?.toString();
       final routePrefix = _resolvedType == 'folk' ? '/soan-gia' : _resolvedType == 'poem' ? '/nha-tho' : '/nhac-si';
       final songs = (cg['songs'] as List);
+      // "sáng tác" cho nhạc sĩ; folk = soạn giả, poem = nhà thơ.
+      final role = _resolvedType == 'folk' ? 'soạn' : _resolvedType == 'poem' ? 'sáng tác' : 'sáng tác';
       widgets.add(Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _ArtistBanner(
             name: title,
-            avatar: avatar,
+            role: role,
+            icon: Icons.music_note_outlined,
             onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
-            onPlayAll: () => _playList(songs),
           ),
-          ...songs.map((s) {
-            final sg = Map<String, dynamic>.from(s);
-            return SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg));
-          }),
+          ..._relatedRows(songs),
         ]),
       ));
     }
 
     return widgets;
+  }
+
+  // Dòng credit kiểu web: nhãn 13px xám mờ (w500) + giá trị 16px đậm màu chữ.
+  Widget _webCreditLine(String label, List<InlineSpan> valueSpans) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: RichText(
+        text: TextSpan(children: [
+          TextSpan(text: '$label: ', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
+          ...valueSpans,
+        ]),
+      ),
+    );
+  }
+
+  // Link tên (nhạc sĩ/ca sĩ…) kiểu web: 16px đậm màu chữ, KHÔNG gạch chân,
+  // con trỏ tay khi rê. Khác _linkRow (đỏ + gạch chân dùng cho chỗ khác).
+  List<InlineSpan> _creditLinkRow(List items, String key, void Function(Map) onTap) {
+    final result = <InlineSpan>[];
+    for (int i = 0; i < items.length; i++) {
+      if (i > 0) result.add(TextSpan(text: ', ', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))));
+      final item = items[i];
+      result.add(WidgetSpan(
+        alignment: PlaceholderAlignment.baseline,
+        baseline: TextBaseline.alphabetic,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            onTap: () => onTap(Map<String, dynamic>.from(item)),
+            child: Text(item[key] ?? '', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+          ),
+        ),
+      ));
+    }
+    return result;
   }
 
   List<InlineSpan> _linkRow(List items, String key, void Function(Map) onTap) {
@@ -1501,67 +1592,47 @@ class _MetaLine extends StatelessWidget {
 /// person's avatar + name (clickable) + role label, plus a play-all CTA
 /// and the song count. Replaces the plain icon+text section header so
 /// users see who X is at a glance.
+/// Header nhóm bài theo nghệ sĩ/nhạc sĩ — kiểu web: icon + "Do [tên] trình
+/// bày / sáng tác" + nút tròn "→" mở trang người đó, kèm đường kẻ mảnh.
 class _ArtistBanner extends StatelessWidget {
   final String name;
-  final String? avatar;
+  final String role; // "trình bày" (ca sĩ) | "sáng tác" (nhạc sĩ)
+  final IconData icon;
   final VoidCallback? onTap;
-  final VoidCallback onPlayAll;
 
   const _ArtistBanner({
     required this.name,
-    this.avatar,
+    required this.role,
+    required this.icon,
     this.onTap,
-    required this.onPlayAll,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            children: [
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                ),
-                child: ClipOval(
-                  child: avatar != null && avatar!.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: avatar!, fit: BoxFit.cover, errorWidget: (_, _, _) => Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))))
-                      : Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: display(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)))),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
-              ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: onPlayAll,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.play_arrow, size: 14, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text('Phát', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white))),
-                  ]),
-                ),
-              ),
-            ],
+      padding: const EdgeInsets.only(bottom: 4, top: 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, size: 18, color: AppColors.text),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Do $name $role', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
           ),
-        ),
-      ),
+          const SizedBox(width: 8),
+          if (onTap != null)
+            InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
+                child: Icon(Icons.arrow_forward, size: 15, color: AppColors.text),
+              ),
+            ),
+        ]),
+        const SizedBox(height: 6),
+        Divider(height: 1, color: AppColors.border),
+      ]),
     );
   }
 }
@@ -1714,6 +1785,7 @@ class _DesktopHero extends StatelessWidget {
   final String resolvedType;
   final bool isLoved;
   final int loveCount;
+  final List loves;
   final bool hasUploads;
   final bool isCurrent;
   final bool isPlaying;
@@ -1727,6 +1799,10 @@ class _DesktopHero extends StatelessWidget {
   final void Function(Map artist) onArtistTap;
   final VoidCallback? onArtworkTap;
   final Widget? metaContent;
+  // Credits kiểu web (Sáng tác/Thơ/Trình bày…) đặt giữa tiêu đề & stats.
+  final Widget? credits;
+  // Ngày đăng — hiện trong dòng stats (khớp web).
+  final String? uploadDate;
 
   const _DesktopHero({
     required this.song,
@@ -1734,6 +1810,7 @@ class _DesktopHero extends StatelessWidget {
     required this.resolvedType,
     required this.isLoved,
     required this.loveCount,
+    this.loves = const [],
     required this.hasUploads,
     required this.isCurrent,
     required this.isPlaying,
@@ -1747,6 +1824,8 @@ class _DesktopHero extends StatelessWidget {
     required this.onArtistTap,
     this.onArtworkTap,
     this.metaContent,
+    this.credits,
+    this.uploadDate,
   });
 
   @override
@@ -1816,26 +1895,13 @@ class _DesktopHero extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (artists.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  Wrap(
-                    spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      for (final a in artists) ...[
-                        InkWell(
-                          onTap: () => onArtistTap(a as Map),
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                            child: Text(a['title'] ?? a['username'] ?? '', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
-                          ),
-                        ),
-                        if (a != artists.last) Text('·', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
-                      ],
-                    ],
-                  ),
+                // Credits kiểu web (Sáng tác / Thơ / Trình bày…) — giữa tiêu đề
+                // và stats, thay cho dòng nghệ sĩ đơn lẻ trước đây.
+                if (credits != null) ...[
+                  const SizedBox(height: 16),
+                  credits!,
                 ],
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 // Stat strip — Wrap so the 3 metric chunks reflow onto a
                 // second line when the info column gets squeezed (narrow
                 // desktop window). Row would just print "RenderFlex
@@ -1853,21 +1919,14 @@ class _DesktopHero extends StatelessWidget {
                       Row(mainAxisSize: MainAxisSize.min, children: [
                         Icon(Icons.download, size: 13, color: AppColors.textMuted),
                         const SizedBox(width: 4),
-                        Text('${_formatIntStatic(downloads)} lượt tải', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                        Text('${_formatIntStatic(downloads)} tải về', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
                       ]),
-                    if (loveCount > 0)
-                      InkWell(
-                        onTap: onShowLovers,
-                        borderRadius: BorderRadius.circular(4),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.favorite, size: 13, color: AppColors.textMuted),
-                            const SizedBox(width: 4),
-                            Text('${_formatIntStatic(loveCount)} yêu thích', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: AppColors.textMuted))),
-                          ]),
-                        ),
-                      ),
+                    if (uploadDate != null)
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
+                        const SizedBox(width: 5),
+                        Text('đăng $uploadDate', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                      ]),
                   ],
                 ),
                 const SizedBox(height: 22),
@@ -1881,19 +1940,47 @@ class _DesktopHero extends StatelessWidget {
                   ),
                   _PrimaryActionPill(
                     icon: isLoved ? Icons.favorite : Icons.favorite_border,
-                    label: 'Yêu thích',
+                    label: loveCount > 0 ? '$loveCount Yêu thích' : 'Yêu thích',
                     onTap: onLove,
                     activeAccent: isLoved,
                   ),
-                  _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải xuống', onTap: onDownload),
-                  _PrimaryActionPill(icon: Icons.playlist_add, label: 'Playlist', onTap: onAddToPlaylist),
-                  // Overflow — secondary actions (Chia sẻ, Lịch sử) live in
-                  // a "..." menu so the visible cluster stays at 4 pills,
-                  // matching Apple Music / Spotify density.
-                  _OverflowActionPill(onShare: onShare, onHistory: onHistory),
+                  _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải về', onTap: onDownload),
+                  // Overflow — Playlist + Chia sẻ + Lịch sử vào menu "..." để
+                  // hàng nút gọn 4 nút giống web.
+                  _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist),
                 ]),
+                // Hàng "đã thích" — avatar chồng của những người đã thích + chữ
+                // "đã thích" (bấm mở danh sách), khớp web.
+                if (loves.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  InkWell(
+                    onTap: onShowLovers,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      SizedBox(
+                        height: 28,
+                        width: 28 + (loves.length.clamp(1, 4) - 1) * 20.0,
+                        child: Stack(
+                          children: [
+                            for (int i = 0; i < loves.length.clamp(0, 4); i++)
+                              Positioned(
+                                left: i * 20.0,
+                                child: Container(
+                                  width: 28, height: 28,
+                                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2), color: AppColors.surfaceLight),
+                                  child: ClipOval(child: _LoverAvatar(love: loves[i])),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text('đã thích', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: AppColors.textMuted))),
+                    ]),
+                  ),
+                ],
                 if (metaContent != null) ...[
-                  const SizedBox(height: 26),
+                  const SizedBox(height: 22),
                   metaContent!,
                 ],
               ],
@@ -1981,6 +2068,28 @@ class _MobileHero extends StatelessWidget {
 /// Labelled action pill for the desktop hero. Primary variant has the
 /// accent gradient + white text (used for Phát); the rest are surface-tone
 /// with optional accent state for Love.
+/// Avatar tròn nhỏ cho hàng "đã thích" — ảnh người dùng hoặc chữ cái đầu.
+class _LoverAvatar extends StatelessWidget {
+  final dynamic love;
+  const _LoverAvatar({required this.love});
+  @override
+  Widget build(BuildContext context) {
+    final user = love is Map ? love['user'] as Map? : null;
+    final url = user?['avatar']?['url']?.toString();
+    final name = user?['username']?.toString() ?? '?';
+    if (url != null && url.isNotEmpty) {
+      return CachedNetworkImage(imageUrl: url, width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _initial(name));
+    }
+    return _initial(name);
+  }
+
+  Widget _initial(String name) => Container(
+        color: AppColors.accent,
+        alignment: Alignment.center,
+        child: Text(name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+      );
+}
+
 class _PrimaryActionPill extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2030,8 +2139,9 @@ class _PrimaryActionPill extends StatelessWidget {
 class _OverflowActionPill extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback? onHistory;
+  final VoidCallback? onAddToPlaylist;
 
-  const _OverflowActionPill({required this.onShare, this.onHistory});
+  const _OverflowActionPill({required this.onShare, this.onHistory, this.onAddToPlaylist});
 
   @override
   Widget build(BuildContext context) {
@@ -2041,10 +2151,20 @@ class _OverflowActionPill extends StatelessWidget {
       color: AppColors.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.border)),
       onSelected: (v) {
+        if (v == 'playlist' && onAddToPlaylist != null) onAddToPlaylist!();
         if (v == 'share') onShare();
         if (v == 'history' && onHistory != null) onHistory!();
       },
       itemBuilder: (ctx) => [
+        if (onAddToPlaylist != null)
+          PopupMenuItem(
+            value: 'playlist',
+            child: Row(children: [
+              Icon(Icons.playlist_add, size: 16, color: AppColors.text),
+              const SizedBox(width: 10),
+              Text('Thêm vào playlist', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
+            ]),
+          ),
         PopupMenuItem(
           value: 'share',
           child: Row(children: [

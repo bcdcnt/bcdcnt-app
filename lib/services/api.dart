@@ -124,9 +124,10 @@ class ApiClient {
 }
 
 String formatViews(int? n) {
+  // Việt hoá khớp web: Tr = triệu, N = nghìn (nghìn làm tròn số nguyên).
   if (n == null || n == 0) return '0';
-  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1).replaceAll('.0', '')}M';
-  if (n >= 1000) return '${(n / 1000).toStringAsFixed(1).replaceAll('.0', '')}K';
+  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1).replaceAll('.0', '').replaceAll('.', ',')}Tr';
+  if (n >= 1000) return '${(n / 1000).round()}N';
   return n.toString();
 }
 

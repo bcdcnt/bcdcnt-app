@@ -28,6 +28,21 @@ class RealtimeService {
   static const _wsPort = 443;
   static const _cluster = 'mt1';
 
+  // Lighthouse subscription queries (khớp web packages/web/lib/echo.js).
+  static const _newCommentQuery =
+      'subscription { newComment { id content commentable_type commentable_id '
+      'user { id username avatar { url } } '
+      'object { __typename '
+      '... on Song { id title slug } ... on Folk { id title slug } '
+      '... on Instrumental { id title slug } ... on Poem { id title slug } '
+      '... on Karaoke { id title slug } ... on Artist { id title slug } '
+      '... on Composer { id title slug } ... on Poet { id title slug } '
+      '... on Recomposer { id title slug } ... on Sheet { id title slug } '
+      '... on Document { id title slug } ... on Discussion { id title slug } '
+      '... on Playlist { id title slug } } } }';
+  static const _notifQuery =
+      r'subscription($userId: ID!) { notificationReceived(userId: $userId) { id content action sender { id username avatar { url } } } }';
+
   final String apiBase;
   final AuthProvider auth;
 
@@ -53,6 +68,10 @@ class RealtimeService {
   // Lighthouse channel name for the active user's notification sub —
   // returned from the GraphQL `notificationReceived` registration.
   String? _notifChannel;
+  // Lighthouse channel for the public `newComment` subscription (khớp web —
+  // KHÔNG phải channel công khai "new-comments" như trước, cái đó server
+  // không broadcast tới nên comment mới không bao giờ về).
+  String? _newCommentChannel;
 
   RealtimeService({required this.apiBase, required this.auth});
 
@@ -79,6 +98,11 @@ class RealtimeService {
     _sub?.cancel();
     _sub = null;
     _channel = null;
+    // Reset channel đã đăng ký để re-subscribe sau khi reconnect (socket_id
+    // mới → subscription cũ vô hiệu). Không reset thì tick không tăng nữa.
+    _subscribedChannels.clear();
+    _notifChannel = null;
+    _newCommentChannel = null;
     _reconnectTimer?.cancel();
     // Exponential-ish backoff: 3s, single retry. Real apps would do
     // more, but Pusher reconnect storms have caused subscriber bloat
@@ -94,6 +118,7 @@ class RealtimeService {
     _connected = false;
     _subscribedChannels.clear();
     _notifChannel = null;
+    _newCommentChannel = null;
   }
 
   void _onMessage(dynamic raw) {
@@ -127,16 +152,18 @@ class RealtimeService {
         return;
       }
 
-      // Application events.
-      if (channel == 'new-comments' && (event == 'new-comment' || event == '.new-comment')) {
+      // Application events — Lighthouse gói kết quả subscription trong event
+      // `.lighthouse-subscription` trên channel động do server cấp.
+      final isLighthouse = event == '.lighthouse-subscription' || event == 'lighthouse-subscription';
+      // New comment (public Lighthouse subscription `newComment`).
+      if (isLighthouse && channel != null && _newCommentChannel != null && channel == _newCommentChannel) {
         newCommentTick.value++;
-        if (payload != null) lastEvent.value = {'kind': 'comment', 'data': payload};
+        final c = payload?['result']?['data']?['newComment'];
+        if (c is Map) lastEvent.value = {'kind': 'comment', 'data': Map<String, dynamic>.from(c)};
         return;
       }
-      // Notification events arrive on the private Lighthouse channel
-      // wrapped in `lighthouse-subscription` envelope.
-      if (channel != null && _notifChannel != null && channel == _notifChannel
-          && (event == '.lighthouse-subscription' || event == 'lighthouse-subscription')) {
+      // Notification (private Lighthouse subscription `notificationReceived`).
+      if (isLighthouse && channel != null && _notifChannel != null && channel == _notifChannel) {
         notificationTick.value++;
         final notif = payload?['result']?['data']?['notificationReceived'];
         if (notif is Map) lastEvent.value = {'kind': 'notification', 'data': Map<String, dynamic>.from(notif)};
@@ -148,42 +175,41 @@ class RealtimeService {
   }
 
   Future<void> _bootstrapSubscriptions() async {
-    // Public — no auth.
-    _send({'event': 'pusher:subscribe', 'data': {'channel': 'new-comments'}});
-
-    // Private notifications — only when authenticated.
-    if (auth.isAuthenticated && _socketId != null) {
-      await _registerNotificationSubscription();
+    if (_socketId == null) return;
+    // New comments — Lighthouse subscription công khai (khớp web). Đăng ký lấy
+    // channel động rồi auth + subscribe; nhận qua event .lighthouse-subscription.
+    if (_newCommentChannel == null) {
+      _newCommentChannel = await _registerLighthouseSub(_newCommentQuery, const {});
+    }
+    // Notifications — private, chỉ khi đăng nhập.
+    if (auth.isAuthenticated && _notifChannel == null) {
+      final userId = auth.user?['id']?.toString();
+      if (userId != null) {
+        _notifChannel = await _registerLighthouseSub(_notifQuery, {'userId': userId});
+      }
     }
   }
 
-  /// Register a Lighthouse subscription on the GraphQL endpoint to get
-  /// a Pusher channel name back, then auth + subscribe.
-  Future<void> _registerNotificationSubscription() async {
-    final userId = auth.user?['id']?.toString();
-    if (userId == null) return;
+  /// Đăng ký 1 Lighthouse subscription: POST query lấy channel động, làm Pusher
+  /// auth handshake, rồi subscribe. Trả về tên channel (private-…) đã subscribe
+  /// để [_onMessage] so khớp với `channel` của event nhận về.
+  Future<String?> _registerLighthouseSub(String query, Map<String, dynamic> variables) async {
     try {
-      final body = jsonEncode({
-        'query': r'subscription($userId: ID!) { notificationReceived(userId: $userId) { id content action sender { id username avatar { url } } } }',
-        'variables': {'userId': userId},
-      });
       final res = await http.post(
         Uri.parse(apiBase),
         headers: {
           'Content-Type': 'application/json',
           if (auth.token != null) 'Authorization': 'Bearer ${auth.token}',
         },
-        body: body,
+        body: jsonEncode({'query': query, 'variables': variables}),
       );
-      if (res.statusCode != 200) return;
+      if (res.statusCode != 200) return null;
       final json = jsonDecode(res.body) as Map<String, dynamic>;
       final channel = json['extensions']?['lighthouse_subscriptions']?['channel']?.toString();
-      if (channel == null) return;
-      _notifChannel = channel;
+      if (channel == null) return null;
 
-      // Pusher auth handshake — POST socket_id + channel_name to the
-      // app's auth endpoint. Server returns the auth signature we send
-      // along with the subscribe event.
+      // Pusher auth handshake — POST socket_id + channel_name tới auth endpoint,
+      // server trả chữ ký auth để gửi kèm sự kiện subscribe.
       final stripped = channel.replaceFirst(RegExp(r'^private-'), '');
       final privateChannel = 'private-$stripped';
       final authResp = await http.post(
@@ -194,20 +220,15 @@ class RealtimeService {
         },
         body: jsonEncode({'socket_id': _socketId, 'channel_name': privateChannel}),
       );
-      if (authResp.statusCode != 200) return;
-      final authJson = jsonDecode(authResp.body) as Map<String, dynamic>;
-      final authSig = authJson['auth']?.toString();
-      if (authSig == null) return;
+      if (authResp.statusCode != 200) return null;
+      final authSig = (jsonDecode(authResp.body) as Map<String, dynamic>)['auth']?.toString();
+      if (authSig == null) return null;
 
-      _send({
-        'event': 'pusher:subscribe',
-        'data': {
-          'channel': privateChannel,
-          'auth': authSig,
-        },
-      });
+      _send({'event': 'pusher:subscribe', 'data': {'channel': privateChannel, 'auth': authSig}});
+      return privateChannel;
     } catch (_) {
       // Silent — realtime is best-effort.
+      return null;
     }
   }
 
