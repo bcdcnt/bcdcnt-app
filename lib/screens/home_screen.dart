@@ -688,6 +688,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _loading = false;
       });
       _fetchLatest(_categories[_latestTab], 1);
+      // Tưởng niệm + Sự kiện giờ nằm ĐẦU trang (trước "Gợi ý cho bạn") giống
+      // web, nên phải nạp sớm — không chờ scroll như các mục below-fold khác.
+      _fetchSpecial();
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -709,11 +712,38 @@ class _HomeScreenState extends State<HomeScreen> {
         safe(ApiClient.query(_audioQuery, {'where': {'AND': [{'column': 'type', 'value': 'audio'}]}})),
         safe(ApiClient.query(_videoDocQuery, {'where': {'AND': [{'column': 'type', 'value': 'video'}]}})),
         safe(ApiClient.query(_newsQuery, {'where': {'AND': [{'column': 'type', 'value': 'news'}]}})),
+        safe(ApiClient.query(_reviewQuery, {'forumId': 28})),
+      ]);
+      if (!mounted) return;
+
+      setState(() {
+        _chartSongs = ((results[0]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
+        _galleryDocs = results[1]['documents']?['data'] ?? [];
+        _audioDocs = results[2]['documents']?['data'] ?? [];
+        _videoDocs = results[3]['documents']?['data'] ?? [];
+        _newsDocs = results[4]['documents']?['data'] ?? [];
+        _reviewUploads = ((results[5]['forum']?['discussions']?['data'] ?? []) as List)
+            .where((d) => (d['file']?['audio_url']?.toString().isNotEmpty ?? false) && ((d['polls']?['data'] as List?)?.isNotEmpty ?? false))
+            .take(10)
+            .toList();
+      });
+    } catch (_) {
+      // Allow retry on next scroll if this round failed entirely.
+      _belowFoldFetched = false;
+    }
+  }
+
+  /// Tưởng niệm + Sự kiện — giờ ở ĐẦU trang nên nạp sớm (song song với
+  /// above-fold), không chờ scroll. Payload nhỏ (người sticky + sự kiện hôm nay).
+  Future<void> _fetchSpecial() async {
+    try {
+      Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) =>
+          f.catchError((_) => <String, dynamic>{});
+      final results = await Future.wait<Map<String, dynamic>>([
         safe(ApiClient.query(_memorialArtists, _stickyWhere)),
         safe(ApiClient.query(_memorialComposers, _stickyWhere)),
         safe(ApiClient.query(_memorialPoets, _stickyWhere)),
         safe(ApiClient.query(_memorialRecomposers, _stickyWhere)),
-        safe(ApiClient.query(_reviewQuery, {'forumId': 28})),
       ]);
       final events = await _fetchEvents();
       if (!mounted) return;
@@ -727,28 +757,16 @@ class _HomeScreenState extends State<HomeScreen> {
           mem.add(m);
         }
       }
-      addMem(results[5]['artists'], 'artist', 'songs');
-      addMem(results[6]['composers'], 'composer', 'songs');
-      addMem(results[7]['poets'], 'poet', 'poems');
-      addMem(results[8]['recomposers'], 'recomposer', 'folks');
+      addMem(results[0]['artists'], 'artist', 'songs');
+      addMem(results[1]['composers'], 'composer', 'songs');
+      addMem(results[2]['poets'], 'poet', 'poems');
+      addMem(results[3]['recomposers'], 'recomposer', 'folks');
 
       setState(() {
-        _chartSongs = ((results[0]['statisticListen']?['data'] ?? []) as List).where((d) => d['object'] != null).toList();
-        _galleryDocs = results[1]['documents']?['data'] ?? [];
-        _audioDocs = results[2]['documents']?['data'] ?? [];
-        _videoDocs = results[3]['documents']?['data'] ?? [];
-        _newsDocs = results[4]['documents']?['data'] ?? [];
-        _reviewUploads = ((results[9]['forum']?['discussions']?['data'] ?? []) as List)
-            .where((d) => (d['file']?['audio_url']?.toString().isNotEmpty ?? false) && ((d['polls']?['data'] as List?)?.isNotEmpty ?? false))
-            .take(10)
-            .toList();
         _memorial = mem;
         _events = events;
       });
-    } catch (_) {
-      // Allow retry on next scroll if this round failed entirely.
-      _belowFoldFetched = false;
-    }
+    } catch (_) {}
   }
 
   Future<List<dynamic>> _fetchEvents() async {
@@ -958,6 +976,29 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 18),
           ],
 
+          // Tưởng niệm + Sự kiện gộp 1 section với outer tabs (section phẳng,
+          // bỏ nhãn nhóm to cho giống web).
+          if (_memorial.isNotEmpty || _events.isNotEmpty) ...[
+            SectionHeader(
+              icon: _specialTab == 0 ? Icons.local_florist_outlined : Icons.event_outlined,
+              title: _specialTab == 0 ? 'Tưởng niệm' : 'Theo dòng sự kiện',
+              subtitle: _specialTab == 0 ? 'Những nghệ sĩ đã khuất' : null,
+            ),
+            if (_memorial.isNotEmpty && _events.isNotEmpty) ...[
+              _specialTabsBar(),
+              const SizedBox(height: 14),
+            ],
+            if (_specialTab == 0 && _memorial.isNotEmpty)
+              ..._memorial.take(3).map(_memorialCard)
+            else if (_specialTab == 1 && _events.isNotEmpty)
+              ..._events.map(_eventCard)
+            else if (_memorial.isNotEmpty)
+              ..._memorial.take(3).map(_memorialCard)
+            else
+              ..._events.map(_eventCard),
+            const SizedBox(height: 24),
+          ],
+
           // Gợi ý cho bạn (chỉ khi đăng nhập) — section phẳng, bỏ nhãn nhóm.
           if (_recommendedSongs.isNotEmpty) ...[
             SectionHeader(
@@ -1136,28 +1177,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 20),
           ],
 
-          // Tưởng niệm + Sự kiện gộp 1 section với outer tabs (section phẳng,
-          // bỏ nhãn nhóm to cho giống web).
-          if (_memorial.isNotEmpty || _events.isNotEmpty) ...[
-            SectionHeader(
-              icon: _specialTab == 0 ? Icons.local_florist_outlined : Icons.event_outlined,
-              title: _specialTab == 0 ? 'Tưởng niệm' : 'Theo dòng sự kiện',
-              subtitle: _specialTab == 0 ? 'Những nghệ sĩ đã khuất' : null,
-            ),
-            if (_memorial.isNotEmpty && _events.isNotEmpty) ...[
-              _specialTabsBar(),
-              const SizedBox(height: 14),
-            ],
-            if (_specialTab == 0 && _memorial.isNotEmpty)
-              ..._memorial.take(3).map(_memorialCard)
-            else if (_specialTab == 1 && _events.isNotEmpty)
-              ..._events.map(_eventCard)
-            else if (_memorial.isNotEmpty)
-              ..._memorial.take(3).map(_memorialCard)
-            else
-              ..._events.map(_eventCard),
-            const SizedBox(height: 24),
-          ],
 
           // Top nghe nhiều + Top thành viên đặt CUỐI trang theo yêu cầu
           // (section phẳng, bỏ nhãn nhóm).

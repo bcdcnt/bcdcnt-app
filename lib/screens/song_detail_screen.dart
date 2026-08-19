@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:video_player/video_player.dart';
+import 'package:chewie/chewie.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
@@ -52,6 +54,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   // song title. Listened on the main scroll controller.
   bool _showStickyTitle = false;
   final ScrollController _scrollCtl = ScrollController();
+  // Trình phát video nhúng cho bài play_type=video (player nhạc dùng just_audio
+  // không render khung hình, nên video cần surface Chewie riêng — giống trang
+  // tư liệu). Khởi tạo sau khi fetch xong (cần file.video_url).
+  VideoPlayerController? _videoCtl;
+  ChewieController? _chewieCtl;
   bool _descExpanded = false;
   bool _storyExpanded = false;
   bool _lyricsExpanded = false;
@@ -70,7 +77,59 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void dispose() {
     _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
+    _chewieCtl?.dispose();
+    _videoCtl?.dispose();
     super.dispose();
+  }
+
+  /// True khi bài hiện tại là video và đã có URL video để phát.
+  bool get _isVideoSong =>
+      _song?['play_type']?.toString() == 'video' &&
+      (_song?['file']?['video_url']?.toString().isNotEmpty ?? false);
+
+  /// Khởi tạo Chewie cho bài video (gọi sau khi fetch xong). An toàn gọi
+  /// nhiều lần — chỉ dựng 1 lần.
+  Future<void> _setupVideo() async {
+    if (_chewieCtl != null) return;
+    final url = _song?['file']?['video_url']?.toString();
+    if (_song?['play_type']?.toString() != 'video' || url == null || url.isEmpty) return;
+    try {
+      final vc = VideoPlayerController.networkUrl(Uri.parse(url));
+      await vc.initialize();
+      if (!mounted) { vc.dispose(); return; }
+      final ar = vc.value.aspectRatio;
+      _videoCtl = vc;
+      _chewieCtl = ChewieController(
+        videoPlayerController: vc,
+        autoPlay: false,
+        looping: false,
+        aspectRatio: (ar.isFinite && ar > 0) ? ar : 16 / 9,
+        materialProgressColors: ChewieProgressColors(
+          playedColor: AppColors.accent,
+          handleColor: AppColors.accent,
+          bufferedColor: AppColors.border,
+          backgroundColor: AppColors.surfaceLight,
+        ),
+      );
+      // Bài video không đi qua audio player — dừng nhạc đang phát (nếu có) để
+      // không chồng tiếng khi người dùng bấm play video.
+      setState(() {});
+    } catch (_) {}
+  }
+
+  /// Play/pause trình video nhúng (dùng cho nút play ở hero của bài video).
+  void _toggleVideo() {
+    final vc = _videoCtl;
+    if (vc == null) return;
+    if (vc.value.isPlaying) {
+      vc.pause();
+    } else {
+      // Tránh chồng tiếng với player nhạc.
+      final player = context.read<PlayerProvider>();
+      if (player.isPlaying) player.togglePlay();
+      vc.play();
+    }
+    setState(() {});
   }
 
   void _onScroll() {
@@ -227,6 +286,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             _isLoved = (loves as List).any((l) => l['user_id'].toString() == userId.toString());
           }
         });
+        // Bài video → dựng trình phát video nhúng (hero sẽ hiện Chewie).
+        _setupVideo();
 
         final sheetId = sheet['id'];
         if (sheetId != null) {
@@ -764,6 +825,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final hasPlayer = player.currentSong != null;
     final isDesktop = w >= 900;
 
+    // Bài video → dựng surface Chewie để thay đúng ô artwork trong hero
+    // (giống web). Player nhạc just_audio không render khung hình.
+    Widget? heroVideo;
+    if (_isVideoSong && _chewieCtl != null) {
+      final ar = _videoCtl!.value.aspectRatio;
+      heroVideo = AspectRatio(
+        aspectRatio: (ar.isFinite && ar > 0) ? ar : 16 / 9,
+        child: Chewie(controller: _chewieCtl!),
+      );
+    }
+
     // Meta block — composers/poets/performers/dates/tags. On desktop these
     // sit inside the hero info column (filling the right-of-artwork dead
     // space). On mobile they stack below the hero as before.
@@ -984,9 +1056,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         loves: loves,
                         hasUploads: uploads.isNotEmpty,
                         isCurrent: isCurrent,
-                        isPlaying: player.isPlaying,
+                        isPlaying: _isVideoSong ? (_videoCtl?.value.isPlaying ?? false) : player.isPlaying,
                         onPlay: () {
-                          if (isCurrent) {
+                          if (_isVideoSong) {
+                            _toggleVideo();
+                          } else if (isCurrent) {
                             context.read<PlayerProvider>().togglePlay();
                           } else {
                             _play();
@@ -1006,7 +1080,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             context.push('/nghe-si/${a['slug']}');
                           }
                         },
-                        onArtworkTap: _openArtworkLightbox,
+                        onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
+                        videoPlayer: heroVideo,
                         credits: desktopCredits.isEmpty ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: desktopCredits),
                         uploadDate: uploadDate,
                         metaContent: tagsWidget,
@@ -1017,15 +1092,18 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         song: song,
                         widthAvailable: w - 40,
                         isCurrent: isCurrent,
-                        isPlaying: player.isPlaying,
+                        isPlaying: _isVideoSong ? (_videoCtl?.value.isPlaying ?? false) : player.isPlaying,
                         onPlay: () {
-                          if (isCurrent) {
+                          if (_isVideoSong) {
+                            _toggleVideo();
+                          } else if (isCurrent) {
                             context.read<PlayerProvider>().togglePlay();
                           } else {
                             _play();
                           }
                         },
-                        onArtworkTap: _openArtworkLightbox,
+                        onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
+                        videoPlayer: heroVideo,
                       ),
 
                     // 4. Empty file warning
@@ -1803,6 +1881,8 @@ class _DesktopHero extends StatelessWidget {
   final Widget? credits;
   // Ngày đăng — hiện trong dòng stats (khớp web).
   final String? uploadDate;
+  // Bài video: thay ô artwork bằng trình phát video (Chewie).
+  final Widget? videoPlayer;
 
   const _DesktopHero({
     required this.song,
@@ -1826,6 +1906,7 @@ class _DesktopHero extends StatelessWidget {
     this.metaContent,
     this.credits,
     this.uploadDate,
+    this.videoPlayer,
   });
 
   @override
@@ -1841,6 +1922,16 @@ class _DesktopHero extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Bài video → trình phát video thay đúng ô artwork (giống web).
+          if (videoPlayer != null)
+            SizedBox(
+              width: 440,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: videoPlayer!,
+              ),
+            )
+          else
           // Artwork — tap to open lightbox with credit caption.
           MouseRegion(
             cursor: onArtworkTap != null ? SystemMouseCursors.click : MouseCursor.defer,
@@ -2002,6 +2093,8 @@ class _MobileHero extends StatelessWidget {
   final bool isPlaying;
   final VoidCallback onPlay;
   final VoidCallback? onArtworkTap;
+  // Bài video: thay ô artwork bằng trình phát video (Chewie tự có control).
+  final Widget? videoPlayer;
 
   const _MobileHero({
     required this.thumb,
@@ -2011,6 +2104,7 @@ class _MobileHero extends StatelessWidget {
     required this.isPlaying,
     required this.onPlay,
     this.onArtworkTap,
+    this.videoPlayer,
   });
 
   @override
@@ -2018,7 +2112,10 @@ class _MobileHero extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        GestureDetector(
+        if (videoPlayer != null)
+          ClipRRect(borderRadius: BorderRadius.circular(20), child: videoPlayer!)
+        else
+          GestureDetector(
           onTap: onArtworkTap,
           child: SizedBox(
           height: widthAvailable,
@@ -2054,12 +2151,15 @@ class _MobileHero extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        _PrimaryPlayButton(
-          isCurrent: isCurrent,
-          isPlaying: isPlaying,
-          onPlay: onPlay,
-        ),
+        // Bài video: Chewie đã có nút play riêng → bỏ nút Phát của hero.
+        if (videoPlayer == null) ...[
+          const SizedBox(height: 14),
+          _PrimaryPlayButton(
+            isCurrent: isCurrent,
+            isPlaying: isPlaying,
+            onPlay: onPlay,
+          ),
+        ],
       ],
     );
   }
