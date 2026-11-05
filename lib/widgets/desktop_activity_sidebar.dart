@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -222,7 +223,7 @@ class _ActivityTile extends StatelessWidget {
             child: SizedBox(
               width: 28, height: 28,
               child: avatar != null && avatar.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => _placeholder(username))
+                  ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => _placeholder(username))
                   : _placeholder(username),
             ),
           ),
@@ -245,7 +246,7 @@ class _ActivityTile extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            Text(shortTimeAgo(activity['created_at']?.toString()), style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+            Text(shortTimeAgo(activity['created_at']?.toString()), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
           ])),
           const SizedBox(width: 6),
           Container(

@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -123,7 +124,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     if (_doc == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy tư liệu', style: AppText.bodyText)),
       );
     }
@@ -138,9 +139,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text(typeLabel.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text(typeLabel),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -151,7 +152,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: CachedNetworkImage(imageUrl: d['thumbnail']['url'], fit: BoxFit.cover),
+                    child: CachedNetworkImage(imageUrl: cdnImg((d['thumbnail']['url']).toString(), 960), fit: BoxFit.cover),
                   ),
                 ),
 
@@ -188,7 +189,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(10)),
-                  child: Text(typeLabel, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accent))),
+                  child: Text(typeLabel, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accent))),
                 ),
                 Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                 if (d['uploader']?['username'] != null)
@@ -268,14 +269,14 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: r['thumbnail']?['url'] != null
-                            ? CachedNetworkImage(imageUrl: r['thumbnail']['url'], width: 60, height: 60, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 60, height: 60, color: AppColors.surface, child: Icon(_typeIcons[type] ?? Icons.folder_outlined, color: AppColors.textMuted)))
+                            ? CachedNetworkImage(imageUrl: cdnImg((r['thumbnail']['url']).toString(), 150), width: 60, height: 60, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 60, height: 60, color: AppColors.surface, child: Icon(_typeIcons[type] ?? Icons.folder_outlined, color: AppColors.textMuted)))
                             : Container(width: 60, height: 60, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8)), child: Icon(_typeIcons[type] ?? Icons.folder_outlined, color: AppColors.textMuted)),
                       ),
                       const SizedBox(width: 12),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
                         const SizedBox(height: 4),
-                        Text(timeago(r['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(timeago(r['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       ])),
                     ]),
                   ),

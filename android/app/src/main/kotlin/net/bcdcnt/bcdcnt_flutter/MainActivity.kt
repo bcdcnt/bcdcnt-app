@@ -1,5 +1,7 @@
 package net.bcdcnt.bcdcnt_flutter
 
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 
-class MainActivity : FlutterActivity()
+// AudioServiceActivity (a FlutterActivity) shares its engine with the
+// audio_service foreground service, so playback survives backgrounding.
+class MainActivity : AudioServiceActivity()

@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/theme.dart';
@@ -72,12 +73,12 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                       radius: 14,
                       backgroundColor: AppColors.surfaceLight,
                       backgroundImage: widget.uploader?['avatar']?['url'] != null
-                          ? CachedNetworkImageProvider(widget.uploader!['avatar']['url'])
+                          ? CachedNetworkImageProvider(cdnImg((widget.uploader!['avatar']['url']).toString(), 160))
                           : null,
                       child: widget.uploader?['avatar']?['url'] == null
                           ? Text(
                               ((widget.uploader?['username'] ?? '?').toString()).substring(0, 1).toUpperCase(),
-                              style: display(const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w800)),
+                              style: display(const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w800)),
                             )
                           : null,
                     ),
@@ -87,14 +88,14 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Đăng bài', style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.6))),
+                          Text('Đăng bài', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.6))),
                           const SizedBox(height: 2),
                           Text(
                             widget.uploader?['username'] ?? '',
                             style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
                           ),
                           if (widget.songCreatedAt != null && widget.songCreatedAt!.isNotEmpty)
-                            Text(_formatDate(widget.songCreatedAt), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                            Text(_formatDate(widget.songCreatedAt), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                         ],
                       ),
                     ),
@@ -136,7 +137,7 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                                 CircleAvatar(
                                   radius: 16,
                                   backgroundColor: AppColors.surfaceLight,
-                                  backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
+                                  backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
                                   child: user?['avatar']?['url'] == null
                                       ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w800)))
                                       : null,
@@ -155,7 +156,7 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                               decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
-                                              child: Text('ĐANG DÙNG', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                                              child: Text('ĐANG DÙNG', style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                                             ),
                                           ],
                                           if (file['is_hq'] == true || file['is_hq'] == 1) ...[
@@ -163,13 +164,13 @@ class _FileHistoryDialogState extends State<FileHistoryDialog> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                               decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(3)),
-                                              child: Text('HQ', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white))),
+                                              child: Text('HQ', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
                                             ),
                                           ],
                                         ],
                                       ),
                                       const SizedBox(height: 2),
-                                      Text(_formatDate(file['created_at']?.toString()), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                                      Text(_formatDate(file['created_at']?.toString()), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                                     ],
                                   ),
                                 ),

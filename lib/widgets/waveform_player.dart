@@ -201,7 +201,7 @@ class _WaveformPainter extends CustomPainter {
 
     void drawPill(String text, double x, bool alignLeft) {
       final tp = TextPainter(
-        text: TextSpan(text: text, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+        text: TextSpan(text: text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
         textDirection: TextDirection.ltr,
       )..layout();
       final pw = tp.width + 10, ph = 18.0, py = mid - ph / 2;

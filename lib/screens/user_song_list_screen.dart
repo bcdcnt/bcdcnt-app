@@ -187,9 +187,9 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text(_title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text(_title),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -288,7 +288,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                         song: song,
                         index: e.key,
                         showIndex: true,
-                        onTap: () => context.push('/song/${song['id']}', extra: song),
+                        queue: asSongList(_items),
                       );
                     }),
 
@@ -308,7 +308,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
 
   Widget _scaffoldEmpty(String msg) => Scaffold(
     backgroundColor: AppColors.bg,
-    appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+    appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
     body: Center(child: Text(msg, style: AppText.bodyText)),
   );
 }

@@ -92,6 +92,11 @@ class TimedLyrics extends StatefulWidget {
   /// the list doesn't auto-scroll — user can read at their own pace
   /// without losing the highlight.
   final bool autoScroll;
+  /// Overrides for hosts with their own surface (the wine FullPlayer):
+  /// active-line colour, the colour far lines fade toward, alignment.
+  final Color? activeColor;
+  final Color? fadeColor;
+  final TextAlign textAlign;
   const TimedLyrics({
     super.key,
     required this.raw,
@@ -99,6 +104,9 @@ class TimedLyrics extends StatefulWidget {
     this.large = false,
     this.fontScale = 1.0,
     this.autoScroll = true,
+    this.activeColor,
+    this.fadeColor,
+    this.textAlign = TextAlign.center,
   });
 
   /// True when the input contains enough LRC tags to render the timed UI.
@@ -175,9 +183,9 @@ class _TimedLyricsState extends State<TimedLyrics> {
           final active = i == _activeIndex;
           // Distance-based fade for non-active lines, à la Apple Music.
           final dist = (_activeIndex < 0) ? 1.0 : ((i - _activeIndex).abs().clamp(0, 4) / 4);
-          final color = active
-              ? AppColors.text
-              : Color.lerp(AppColors.text, AppColors.textMuted, 0.3 + dist * 0.7) ?? AppColors.textMuted;
+          final on = widget.activeColor ?? AppColors.text;
+          final off = widget.fadeColor ?? AppColors.textMuted;
+          final color = active ? on : Color.lerp(on, off, 0.3 + dist * 0.7) ?? off;
           // Scale up for the fullscreen "karaoke" variant — larger active
           // line + more breathing room between lines so the focal text
           // reads at viewing distance (Apple Music / Spotify pattern).
@@ -193,7 +201,7 @@ class _TimedLyricsState extends State<TimedLyrics> {
                 fontSize: fontSize, fontWeight: fontWeight, color: color, height: 1.35,
                 letterSpacing: widget.large ? -0.3 : 0,
               )),
-              child: Text(l.text, textAlign: TextAlign.center),
+              child: Text(l.text, textAlign: widget.textAlign),
             ),
           );
           if (l.time == null) return entry;

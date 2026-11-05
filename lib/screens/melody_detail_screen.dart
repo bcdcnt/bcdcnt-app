@@ -89,9 +89,9 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('LÀN ĐIỆU', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Làn điệu'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _songs.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -153,7 +153,7 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
                 (ctx, i) {
                   final s = _songs[i];
-                  return SongRow(song: s, index: i, showIndex: true, onTap: () => context.push('/song/${s['id']}', extra: s));
+                  return SongRow(song: s, index: i, showIndex: true, queue: asSongList(_songs));
                 },
                 childCount: _songs.length,
               )),

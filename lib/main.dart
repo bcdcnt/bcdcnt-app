@@ -1,15 +1,22 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:go_router/go_router.dart';
 import 'package:window_manager/window_manager.dart';
 import 'constants/theme.dart';
 import 'services/auth.dart';
+import 'services/push.dart';
+import 'services/api.dart';
 import 'services/player.dart';
+import 'services/media_session.dart';
 import 'services/realtime.dart';
 import 'services/theme_provider.dart';
+import 'services/offline_store.dart';
 import 'screens/home_screen.dart';
+import 'screens/home_mobile_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
@@ -20,6 +27,10 @@ import 'screens/user_song_list_screen.dart';
 import 'screens/my_playlists_screen.dart';
 import 'screens/document_archive_screen.dart';
 import 'screens/comments_screen.dart';
+import 'screens/community_screen.dart';
+import 'screens/downloads_screen.dart';
+import 'screens/support_screen.dart';
+import 'screens/faq_screen.dart';
 import 'screens/person_list_screen.dart';
 import 'screens/decade_songs_screen.dart';
 import 'screens/playlist_list_screen.dart';
@@ -57,6 +68,7 @@ import 'widgets/update_banner.dart';
 // gate lives in main() below so this import is harmless on all
 // platforms.
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:audio_session/audio_session.dart';
 import 'services/analytics.dart';
 
 void main() async {
@@ -101,11 +113,27 @@ void main() async {
   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
     JustAudioMediaKit.ensureInitialized();
   }
+  // iOS defaults to the soloAmbient session category, which iOS silences
+  // as soon as the app leaves the foreground. The "music" preset switches
+  // to playback so songs keep going on the lock screen / home screen
+  // (paired with UIBackgroundModes=audio in Info.plist).
+  if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+    WidgetsFlutterBinding.ensureInitialized();
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.music());
+  }
   // Kick off the analytics persistent client_id load before runApp so
   // the first screen_view fired by the GoRouter listener has it ready.
   // No await — Analytics.logEvent waits on the same future internally.
   Analytics.init();
   Analytics.logEvent("app_open");
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    final info = await PackageInfo.fromPlatform();
+    ApiClient.appVersion = '${info.version}+${info.buildNumber}';
+  } catch (_) {}
+  await MediaSession.init();
+  OfflineStore.instance.load();
   runApp(const BcdcntApp());
   _maybeAutoOpenFullPlayer();
   _maybeOpenAuthDialog();
@@ -170,6 +198,7 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => PlayerProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: OfflineStore.instance),
       ],
       child: const _AuthPlayerBridge(
         child: KeyboardShortcuts(
@@ -205,14 +234,21 @@ class _AppRoot extends StatelessWidget {
       // UpdateBanner wraps the route so the "new version available"
       // bar pins above every screen instead of being tied to a
       // specific page that the user might not visit.
-      builder: (context, child) => UpdateBanner(
-        child: Stack(
-          children: [
-            child ?? const SizedBox.shrink(),
-            const MiniPlayerOverlay(),
-          ],
-        ),
-      ),
+      builder: (context, child) {
+        // "Cỡ chữ" preference multiplies on top of the OS text size.
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(textScaler: TextScaler.linear((mq.textScaler.scale(16) / 16 * theme.textScale).clamp(0.9, 1.6))),
+          child: UpdateBanner(
+            child: Stack(
+              children: [
+                child ?? const SizedBox.shrink(),
+                const MiniPlayerOverlay(),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -249,6 +285,8 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
         );
       } catch (_) {}
     });
+    // Lock-screen / Control Center Now Playing card follows this player.
+    MediaSession.bind(player);
     // Apply current cached user (if already restored from prefs) immediately.
     player.applyUserSettings(auth.user);
     // Boot the realtime socket — Pusher protocol over a raw WebSocket.
@@ -256,6 +294,8 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     // the private notification channel once the user is authed.
     realtimeService = RealtimeService(apiBase: apiBase, auth: auth);
     realtimeService!.connect();
+    // Phone push: token registration + opening tapped notifications.
+    PushService.instance.init(auth: auth, router: _router);
   }
 
   @override
@@ -336,10 +376,24 @@ final _router = GoRouter(
     ShellRoute(
       builder: (context, state, child) => MainShell(child: child),
       routes: [
-        GoRoute(path: '/', builder: (c, s) => const HomeScreen()),
-        GoRoute(path: '/binh-luan', builder: (c, s) => const CommentsScreen()),
-        GoRoute(path: '/search', builder: (c, s) => SearchScreen(initialQuery: s.extra is String ? s.extra as String : s.uri.queryParameters['q'])),
-        GoRoute(path: '/library', builder: (c, s) => const LibraryScreen()),
+        // Phone widths get the redesigned home; desktop (>=900, DesktopShell) keeps HomeScreen.
+        // The four tabs. On phones they live in _MobileShell's IndexedStack
+        // (kept alive, switched instantly); the route itself is only a
+        // transparent slot. Desktop renders the screen in the route as before.
+        GoRoute(path: '/', pageBuilder: (c, s) => _tabPage(c, s, const HomeScreen())),
+        GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
+        GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const CommentsScreen())),
+        GoRoute(
+          path: '/search',
+          pageBuilder: (c, s) {
+            // A search opened with a query (chip, deep link) is a real page
+            // on top of the tabs; the plain tab stays in the stack.
+            final q = s.extra is String ? s.extra as String : s.uri.queryParameters['q'];
+            if (q != null && q.isNotEmpty) return MaterialPage(key: s.pageKey, child: SearchScreen(initialQuery: q));
+            return _tabPage(c, s, const SearchScreen());
+          },
+        ),
+        GoRoute(path: '/library', pageBuilder: (c, s) => _tabPage(c, s, const LibraryScreen())),
         GoRoute(path: '/profile', builder: (c, s) => const ProfileScreen()),
         GoRoute(
           path: '/song/:id',
@@ -377,6 +431,7 @@ final _router = GoRouter(
           path: '/the-loai/:slug',
           builder: (c, s) => CategoryDetailScreen(slug: s.pathParameters['slug']!),
         ),
+        GoRoute(path: '/da-tai-ve', builder: (c, s) => const DownloadsScreen()),
         GoRoute(path: '/yeu-thich', builder: (c, s) => const UserSongListScreen(kind: UserListKind.favorites)),
         GoRoute(path: '/nghe-gan-day', builder: (c, s) => const UserSongListScreen(kind: UserListKind.history)),
         GoRoute(path: '/playlist-cua-toi', builder: (c, s) => const MyPlaylistsScreen()),
@@ -411,7 +466,11 @@ final _router = GoRouter(
         GoRoute(path: '/thao-luan/:id', builder: (c, s) => DiscussionDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/gioi-thieu', builder: (c, s) => const StaticPageScreen(slug: 'gioi-thieu')),
         GoRoute(path: '/yeu-cau', builder: (c, s) => const StaticPageScreen(slug: 'yeu-cau')),
-        GoRoute(path: '/gop-y', builder: (c, s) => const StaticPageScreen(slug: 'gop-y')),
+        // Góp ý now goes to BQT privately through support tickets.
+        GoRoute(path: '/gop-y', redirect: (c, s) => '/ho-tro'),
+        GoRoute(path: '/ho-tro', builder: (c, s) => const SupportScreen()),
+        GoRoute(path: '/faq', builder: (c, s) => const FaqScreen()),
+        GoRoute(path: '/ho-tro/:id', builder: (c, s) => TicketDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/p/:slug', builder: (c, s) => StaticPageScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/thong-bao', builder: (c, s) => const NotificationsScreen()),
         GoRoute(path: '/cai-dat', builder: (c, s) => SettingsScreen(initialSection: s.extra is String ? s.extra as String : null)),
@@ -432,6 +491,11 @@ final _router = GoRouter(
   ],
 );
 
+Page<void> _tabPage(BuildContext c, GoRouterState s, Widget desktop) => NoTransitionPage(
+      key: s.pageKey,
+      child: MediaQuery.sizeOf(c).width >= 900 ? desktop : const SizedBox.shrink(),
+    );
+
 /// Picks between mobile and desktop chrome based on viewport width.
 /// 900px breakpoint matches typical desktop tablet boundary; below that we
 /// keep the bottom nav (mobile-friendly), above we render the web-style
@@ -448,69 +512,162 @@ class MainShell extends StatelessWidget {
   }
 }
 
-class _MobileShell extends StatelessWidget {
+class _MobileShell extends StatefulWidget {
   final Widget child;
   const _MobileShell({required this.child});
 
-  // Routes that show the bottom nav. All other routes (detail screens etc.)
-  // get full-screen immersion with no bottom nav, matching the previous
-  // out-of-shell behaviour before everything was unified under ShellRoute.
-  static const _topLevelPaths = {'/', '/binh-luan', '/search', '/library', '/profile'};
+  @override
+  State<_MobileShell> createState() => _MobileShellState();
+}
 
-  int _indexFromPath(String path) {
-    if (path == '/binh-luan') return 1;
-    if (path == '/search') return 2;
-    if (path == '/library') return 3;
-    if (path == '/profile') return 4;
-    return 0;
+class _MobileShellState extends State<_MobileShell> {
+  // Tab screens, built on first visit and then kept alive so switching
+  // tabs is instant and keeps data + scroll position (Spotify/Apple Music).
+  final Map<int, Widget> _tabScreens = {};
+  int _activeTab = 0;
+  PlayerProvider? _player;
+
+  static Widget _buildTab(int i) => switch (i) {
+        0 => const HomeMobileScreen(),
+        1 => const SearchScreen(),
+        2 => const CommunityScreen(),
+        _ => const LibraryScreen(),
+      };
+
+  static const _tabPaths = {'/': 0, '/search': 1, '/cong-dong': 2, '/library': 3};
+
+  static const _tabs = [
+    ('/', Icons.home_outlined, Icons.home_rounded, 'Trang chủ'),
+    ('/search', Icons.explore_outlined, Icons.explore_rounded, 'Khám phá'),
+    ('/cong-dong', Icons.people_outline_rounded, Icons.people_rounded, 'Cộng đồng'),
+    ('/library', Icons.library_music_outlined, Icons.library_music_rounded, 'Thư viện'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _player = context.read<PlayerProvider>();
+    _player!.playErrorTick.addListener(_onPlayError);
+  }
+
+  @override
+  void dispose() {
+    _player?.playErrorTick.removeListener(_onPlayError);
+    super.dispose();
+  }
+
+  void _onPlayError() {
+    if (!mounted) return;
+    final player = _player!;
+    final hasNext = player.queue.length > player.currentIndex + 1;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('Không phát được bài này'),
+      duration: const Duration(seconds: 4),
+      action: hasNext ? SnackBarAction(label: 'Bài tiếp', textColor: const Color(0xFFE0AEAC), onPressed: player.playNext) : null,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final path = GoRouterState.of(context).uri.path;
-    final showBottomNav = _topLevelPaths.contains(path);
-    final index = _indexFromPath(path);
-    final hasPlayer = context.watch<PlayerProvider>().currentSong != null;
-    // Sub-screens render their own MiniPlayer overlay; only the 5 top-level
-    // routes rely on the shell to show it.
-    final shellShouldShowMiniPlayer = hasPlayer && showBottomNav;
+    final state = GoRouterState.of(context);
+    final path = state.uri.path;
+    final hasQuery = state.extra is String || (state.uri.queryParameters['q']?.isNotEmpty ?? false);
+    final tab = _tabPaths[path];
+    final onTab = tab != null && !(tab == 1 && hasQuery);
+    if (onTab) _activeTab = tab;
+    _tabScreens.putIfAbsent(_activeTab, () => _buildTab(_activeTab));
+    final child = widget.child;
+    final hasPlayer = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
 
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Expanded(child: child),
-            if (shellShouldShowMiniPlayer) const Padding(padding: EdgeInsets.only(bottom: 8), child: MiniPlayer()),
-          ],
+    return MiniPlayerScope(
+      child: Scaffold(
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Kept-alive tabs underneath; the route navigator on top
+                    // shows a transparent slot for tab routes and covers them
+                    // with real pages for everything else (and slides those
+                    // in/out over the live tab).
+                    IndexedStack(
+                      index: _activeTab,
+                      sizing: StackFit.expand,
+                      children: [
+                        for (var i = 0; i < 4; i++)
+                          TickerMode(enabled: onTab && i == _activeTab, child: _tabScreens[i] ?? const SizedBox.shrink()),
+                      ],
+                    ),
+                    // On a tab the route is just a transparent slot, but its
+                    // modal barrier would still swallow every touch meant for
+                    // the live tab below — let pointers pass through.
+                    IgnorePointer(ignoring: onTab, child: child),
+                  ],
+                ),
+              ),
+              // One mini player for every phone screen, right above the
+              // tab bar; per-screen copies are muted by MiniPlayerScope.
+              if (hasPlayer) const Padding(padding: EdgeInsets.only(top: 6, bottom: 8), child: MiniPlayer(fromShell: true)),
+            ],
+          ),
         ),
-      ),
-      bottomNavigationBar: !showBottomNav ? null : BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: AppColors.surface,
-        selectedItemColor: AppColors.accentLight,
-        unselectedItemColor: AppColors.textMuted,
-        currentIndex: index,
-        showUnselectedLabels: true,
-        selectedFontSize: 10,
-        unselectedFontSize: 10,
-        onTap: (i) {
-          switch (i) {
-            case 0: context.go('/'); break;
-            case 1: context.go('/binh-luan'); break;
-            case 2: context.go('/search'); break;
-            case 3: context.go('/library'); break;
-            case 4: context.go('/profile'); break;
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Trang chủ'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: 'Bình luận'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tìm kiếm'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_music_outlined), activeIcon: Icon(Icons.library_music), label: 'Thư viện'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Cá nhân'),
-        ],
+        bottomNavigationBar: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.bg,
+            border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 60,
+              child: Row(
+                children: [
+                  for (var i = 0; i < _tabs.length; i++)
+                    Expanded(
+                      child: Semantics(
+                        button: true,
+                        selected: i == _activeTab,
+                        label: _tabs[i].$4,
+                        child: InkResponse(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            if (onTab && i == _activeTab) {
+                              TabReselect.notify(i);
+                              return;
+                            }
+                            context.go(_tabs[i].$1);
+                          },
+                          radius: 40,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted),
+                              const SizedBox(height: 4),
+                              Text(_tabs[i].$4, style: body(TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted,
+                              ))),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+/// Tapping the tab you are already on: tab screens listen and scroll back
+/// to the top (Apple Music / Spotify behaviour).
+class TabReselect {
+  static final ValueNotifier<(int, int)> tick = ValueNotifier((-1, 0));
+  static void notify(int tab) => tick.value = (tab, tick.value.$2 + 1);
 }

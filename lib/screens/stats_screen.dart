@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -186,9 +187,9 @@ class _StatsScreenState extends State<StatsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THỐNG KÊ', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Thống kê'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -332,7 +333,7 @@ class _StatsScreenState extends State<StatsScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.3))),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.3))),
             const SizedBox(height: 2),
             Text(_formatInt(value), style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
           ]),
@@ -364,13 +365,13 @@ class _StatsScreenState extends State<StatsScreen> {
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: r.image != null
-                    ? CachedNetworkImage(imageUrl: r.image!, width: 40, height: 40, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 40, height: 40, color: AppColors.surfaceLight))
+                    ? CachedNetworkImage(imageUrl: cdnImg((r.image!).toString(), 100), width: 40, height: 40, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 40, height: 40, color: AppColors.surfaceLight))
                     : Container(width: 40, height: 40, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 18, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 10),
               Expanded(child: Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)))),
               const SizedBox(width: 8),
-              Text('${r.count} lượt', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              Text('${r.count} lượt', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
             ]),
           ),
         );
@@ -404,13 +405,13 @@ class _StatsScreenState extends State<StatsScreen> {
                   ),
                   child: ClipOval(
                     child: r.image != null
-                        ? CachedNetworkImage(imageUrl: r.image!, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
+                        ? CachedNetworkImage(imageUrl: cdnImg((r.image!).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
                         : const Icon(Icons.person, color: Colors.white70),
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
-                Text('${r.count} lượt', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                Text('${r.count} lượt', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
               ]),
             ),
           );

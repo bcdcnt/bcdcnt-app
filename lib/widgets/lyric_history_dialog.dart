@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -230,15 +231,15 @@ class _LyricHistoryDialogState extends State<LyricHistoryDialog> {
                               CircleAvatar(
                                 radius: 14,
                                 backgroundColor: AppColors.surface,
-                                backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
+                                backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
                                 child: user?['avatar']?['url'] == null
-                                    ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: body(const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)))
+                                    ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: body(const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)))
                                     : null,
                               ),
                               const SizedBox(width: 8),
                               Text(user?['username'] ?? '?', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                               const SizedBox(width: 8),
-                              Text(_timeAgo(item['created_at']?.toString()), style: body(TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: AppColors.textMuted))),
+                              Text(_timeAgo(item['created_at']?.toString()), style: body(TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: AppColors.textMuted))),
                             ],
                           ),
                           const SizedBox(height: 10),

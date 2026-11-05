@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -314,7 +315,7 @@ class _CommentTile extends StatelessWidget {
               child: SizedBox(
                 width: 28, height: 28,
                 child: avatar != null && avatar.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder(username))
+                    ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder(username))
                     : _placeholder(username),
               ),
             ),
@@ -337,7 +338,7 @@ class _CommentTile extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        Text(t, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        Text(t, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ],
                     ),
                   if (objTitle.isNotEmpty) const SizedBox(height: 1),
@@ -345,7 +346,7 @@ class _CommentTile extends StatelessWidget {
                     username,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w600)),
+                    style: body(TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w600)),
                   ),
                   const SizedBox(height: 2),
                   Text(

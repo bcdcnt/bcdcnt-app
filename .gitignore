@@ -49,3 +49,7 @@ google_oauth.json
 
 # Cloudflare Wrangler local cache
 .wrangler/
+
+# Firebase client config (repo is public; keep local, CI builds without push)
+ios/Runner/GoogleService-Info.plist
+android/app/google-services.json

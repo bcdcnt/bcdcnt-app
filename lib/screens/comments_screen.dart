@@ -1,41 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
-import '../services/player.dart';
-import '../widgets/empty_state.dart';
+import '../widgets/song_row.dart' show playOrOpen;
+import '../widgets/ui.dart';
 
-class CommentsScreen extends StatefulWidget {
-  const CommentsScreen({super.key});
-
-  @override
-  State<CommentsScreen> createState() => _CommentsScreenState();
-}
-
-class _CommentsScreenState extends State<CommentsScreen> {
-  final _scrollCtl = ScrollController();
-  List<Map<String, dynamic>> _items = [];
-  int _page = 1;
-  int _lastPage = 1;
-  int _total = 0;
-  bool _loading = true;
-  bool _loadingMore = false;
-
-  static const _query = r'''query($page: Int) {
-    latestComments(first: 20, orderBy: [{column: "created_at", order: DESC}], page: $page) {
-      data {
-        id content created_at
-        user { id username avatar { url } }
-        object {
+const _objFields = '''
           __typename
-          ... on Song { id title slug thumbnail { url } }
-          ... on Folk { id title slug thumbnail { url } }
-          ... on Instrumental { id title slug thumbnail { url } }
-          ... on Poem { id title slug thumbnail { url } }
-          ... on Karaoke { id title slug thumbnail { url } }
+          ... on Song { id title slug thumbnail { url } file { audio_url } }
+          ... on Folk { id title slug thumbnail { url } file { audio_url } }
+          ... on Instrumental { id title slug thumbnail { url } file { audio_url } }
+          ... on Poem { id title slug thumbnail { url } file { audio_url } }
+          ... on Karaoke { id title slug thumbnail { url } file { audio_url } }
           ... on Artist { id title slug avatar { url } }
           ... on Composer { id title slug avatar { url } }
           ... on Poet { id title slug avatar { url } }
@@ -47,12 +25,65 @@ class _CommentsScreenState extends State<CommentsScreen> {
           ... on Page { id title slug }
           ... on Upload { id title slug }
           ... on Ticket { id title slug }
-          ... on Role { id name slug alias }
-        }
-      }
+          ... on Role { id name slug alias }''';
+
+const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
+    latestComments(first: 20, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
+      data { id content likes created_at user { id username avatar { url } } object { $_objFields } }
       paginatorInfo { currentPage lastPage total }
     }
   }''';
+
+const _featuredQuery = 'query { featuredComments(limit: 30) { id snippet likes created_at username user_avatar song_id song_title song_slug song_image audio_url file_type } }';
+
+const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
+
+String _stripHtml(String? html) {
+  if (html == null || html.isEmpty) return '';
+  return html
+      .replaceAll(RegExp(r'<br\s*/?>|</p>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&quot;', '"')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+}
+
+/// Bình luận route (desktop sidebar link and old deep links). On phones the
+/// same feed lives in the Cộng đồng tab.
+class CommentsScreen extends StatelessWidget {
+  const CommentsScreen({super.key});
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: AppColors.bg,
+        body: const SafeArea(bottom: false, child: CommentsFeed(showTitle: true)),
+      );
+}
+
+/// "Cảm nhận" feed: Nổi bật (featuredComments), Mới nhất (comments that are
+/// not requests) and Yêu cầu bổ sung (is_request = 1), split by the API's
+/// own flag so requests to BQT no longer bury listener stories.
+class CommentsFeed extends StatefulWidget {
+  final bool showTitle;
+  const CommentsFeed({super.key, this.showTitle = false});
+  @override
+  State<CommentsFeed> createState() => _CommentsFeedState();
+}
+
+class _CommentsFeedState extends State<CommentsFeed> {
+  static const _filters = ['Nổi bật', 'Mới nhất', 'Yêu cầu bổ sung'];
+  final _scrollCtl = ScrollController();
+  int _filter = 0;
+  List<Map<String, dynamic>> _items = [];
+  int _page = 1;
+  int _lastPage = 1;
+  bool _loading = true;
+  bool _loadingMore = false;
+  bool _failed = false;
 
   @override
   void initState() {
@@ -63,71 +94,78 @@ class _CommentsScreenState extends State<CommentsScreen> {
 
   @override
   void dispose() {
-    _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading) return;
-    if (_page >= _lastPage) return;
-    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) {
-      _fetch(_page + 1);
-    }
+    if (_filter == 0 || _loadingMore || _loading || _page >= _lastPage) return;
+    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final filter = _filter;
+    setState(() {
+      _failed = false;
+      if (page == 1) {
+        _loading = true;
+      } else {
+        _loadingMore = true;
+      }
+    });
     try {
-      final data = await ApiClient.query(_query, {'page': page});
-      final raw = data['latestComments'];
-      final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
-      setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+      List<Map<String, dynamic>> list;
+      if (filter == 0) {
+        final d = await ApiClient.query(_featuredQuery);
+        list = ((d['featuredComments'] ?? []) as List).whereType<Map>().map((c) {
+          final m = Map<String, dynamic>.from(c);
+          return <String, dynamic>{
+            'id': m['id'],
+            'text': m['snippet'],
+            'likes': m['likes'],
+            'created_at': m['created_at'],
+            'user': {'username': m['username'], 'avatar': {'url': m['user_avatar']}},
+            'object': {
+              '__typename': 'Song',
+              'id': m['song_id'],
+              'title': m['song_title'],
+              'slug': m['song_slug'],
+              'file_type': m['file_type'] ?? 'song',
+              if (m['song_image'] != null) 'thumbnail': {'url': m['song_image']},
+              if (m['audio_url'] != null) 'file': {'audio_url': m['audio_url']},
+            },
+          };
+        }).toList();
+        _lastPage = 1;
+        _page = 1;
+      } else {
+        final d = await ApiClient.query(_latestQuery, {
+          'page': page,
+          'where': {'AND': [{'column': 'is_request', 'value': filter == 2 ? 1 : 0}]},
+        });
+        final raw = d['latestComments'];
+        list = ((raw?['data'] ?? []) as List).whereType<Map>().map((e) {
+          final m = Map<String, dynamic>.from(e);
+          m['text'] = _stripHtml(m['content']?.toString());
+          return m;
+        }).where((m) => (m['text'] as String).isNotEmpty).toList();
+        final pi = raw?['paginatorInfo'] ?? {};
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
-        _total = pi['total'] ?? _total;
+      }
+      if (!mounted || filter != _filter) return;
+      setState(() {
+        if (page == 1) {
+          _items = list;
+        } else {
+          _items.addAll(list);
+        }
         _loading = false;
         _loadingMore = false;
       });
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+      if (mounted) setState(() { _loading = false; _loadingMore = false; _failed = _items.isEmpty; });
     }
-  }
-
-  Future<void> _refresh() async => _fetch(1);
-
-  String _stripHtml(String? html) {
-    if (html == null || html.isEmpty) return '';
-    return html.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  String _truncate(String s, int max) => s.length <= max ? s : '${s.substring(0, max)}…';
-
-  String _timeAgo(String? iso) {
-    if (iso == null) return '';
-    try {
-      final d = DateTime.parse(iso);
-      final diff = DateTime.now().difference(d).inSeconds;
-      if (diff < 60) return 'vừa xong';
-      if (diff < 3600) return '${diff ~/ 60} phút trước';
-      if (diff < 86400) return '${diff ~/ 3600} giờ trước';
-      if (diff < 2592000) return '${diff ~/ 86400} ngày trước';
-      if (diff < 31536000) return '${diff ~/ 2592000} tháng trước';
-      return '${diff ~/ 31536000} năm trước';
-    } catch (_) { return ''; }
-  }
-
-  String _objTypeLabel(String? typename) {
-    const map = {
-      'Song': 'Tân nhạc', 'Folk': 'Dân ca', 'Instrumental': 'Khí nhạc', 'Poem': 'Tiếng thơ', 'Karaoke': 'Thành viên hát',
-      'Artist': 'Nghệ sĩ', 'Composer': 'Nhạc sĩ', 'Poet': 'Nhà thơ', 'Recomposer': 'Soạn giả',
-      'Sheet': 'Bản nhạc', 'Document': 'Tư liệu', 'Discussion': 'Thảo luận', 'Playlist': 'Playlist', 'Page': 'Trang',
-      'Upload': 'Bài gửi', 'Ticket': 'Ticket', 'Role': 'Nhóm thành viên',
-    };
-    return map[typename] ?? '';
   }
 
   void _openObject(Map<String, dynamic> obj) {
@@ -135,13 +173,8 @@ class _CommentsScreenState extends State<CommentsScreen> {
     final id = obj['id']?.toString();
     final slug = obj['slug']?.toString();
     if (id == null) return;
-    const fileTypeMap = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
-    if (fileTypeMap.containsKey(tn)) {
-      final song = <String, dynamic>{
-        'id': id, 'title': obj['title'], 'slug': slug, 'file_type': fileTypeMap[tn],
-        if (obj['thumbnail'] != null) 'thumbnail': obj['thumbnail'],
-      };
-      context.push('/song/$id', extra: song);
+    if (_fileTypes.containsKey(tn)) {
+      context.push('/song/$id', extra: {...obj, 'file_type': obj['file_type'] ?? _fileTypes[tn]});
       return;
     }
     switch (tn) {
@@ -149,233 +182,169 @@ class _CommentsScreenState extends State<CommentsScreen> {
       case 'Composer': context.push('/nhac-si/$slug'); break;
       case 'Poet': context.push('/nha-tho/$slug'); break;
       case 'Recomposer': context.push('/soan-gia/$slug'); break;
-      case 'Document':
-        context.push('/tu-lieu/chi-tiet/$id');
-        break;
-      case 'Sheet':
-        context.push('/sheet/$id');
-        break;
-      case 'Discussion':
-        context.push('/thao-luan/$id');
-        break;
-      case 'Playlist':
-        context.push('/playlist/$id');
-        break;
-      case 'Page':
-        context.push('/p/$slug');
-        break;
-      case 'Upload':
-        context.push('/bai-gui/$id');
-        break;
-      case 'Ticket':
-        launchUrl(Uri.parse('$siteUrl/ticket/$slug-$id'), mode: LaunchMode.externalApplication);
-        break;
-      case 'Role':
-        launchUrl(Uri.parse('$siteUrl/nhom/${obj['alias'] ?? slug}'), mode: LaunchMode.externalApplication);
-        break;
+      case 'Document': context.push('/tu-lieu/chi-tiet/$id'); break;
+      case 'Sheet': context.push('/sheet/$id'); break;
+      case 'Discussion': context.push('/thao-luan/$id'); break;
+      case 'Playlist': context.push('/playlist/$id'); break;
+      case 'Page': context.push('/p/$slug'); break;
+      case 'Upload': context.push('/bai-gui/$id'); break;
+      case 'Ticket': context.push('/ho-tro/$id'); break;
+      case 'Role': launchUrl(Uri.parse('$siteUrl/nhom/${obj['alias'] ?? slug}'), mode: LaunchMode.externalApplication); break;
     }
-  }
-
-  String _formatInt(int n) {
-    final s = n.abs().toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return n < 0 ? '-$buf' : buf.toString();
   }
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerProvider>();
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      body: RefreshIndicator(
-        color: AppColors.accent,
-        onRefresh: _refresh,
-        child: CustomScrollView(
-          controller: _scrollCtl,
-          slivers: [
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              sliver: SliverList(delegate: SliverChildListDelegate([
-                Row(
-                  children: [
-                    Container(
-                      width: 38, height: 38,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2)],
-                      ),
-                      child: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text('Bình luận mới nhất', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
-                          if (_total > 0) Text('${_formatInt(_total)} bình luận từ cộng đồng', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-              ])),
-            ),
-
-            if (_loading && _items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-            else if (_items.isEmpty)
-              const SliverFillRemaining(
-                hasScrollBody: false,
-                child: EmptyState(
-                  icon: Icons.chat_bubble_outline,
-                  title: 'Chưa có bình luận',
-                  subtitle: 'Bình luận mới nhất từ cộng đồng sẽ hiển thị ở đây.',
-                ),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (ctx, i) {
-                      if (i == _items.length) {
-                        if (_loadingMore) return Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2)));
-                        return SizedBox(height: player.currentSong != null ? 90 : 20);
-                      }
-                      return _CommentCard(
-                        comment: _items[i],
-                        onTapObject: _openObject,
-                        stripHtml: _stripHtml,
-                        truncate: _truncate,
-                        timeAgo: _timeAgo,
-                        objTypeLabel: _objTypeLabel,
-                      );
-                    },
-                    childCount: _items.length + 1,
-                  ),
-                ),
+    return RefreshIndicator(
+      color: AppColors.accent,
+      onRefresh: () => _fetch(1),
+      child: CustomScrollView(
+        controller: _scrollCtl,
+        slivers: [
+          if (widget.showTitle) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.only(bottom: 14), child: PageTitle('Bình luận'))),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 14, bottom: 6),
+              child: ChipStrip(
+                labels: _filters,
+                selected: _filter,
+                onSelect: (i) {
+                  setState(() {
+                    _filter = i;
+                    _items = [];
+                  });
+                  _fetch(1);
+                },
               ),
-          ],
-        ),
+            ),
+          ),
+          if (_loading && _items.isEmpty)
+            SliverList(delegate: SliverChildBuilderDelegate((_, __) => const _CommentSkeleton(), childCount: 5))
+          else if (_failed)
+            SliverToBoxAdapter(child: EmptyBlock(icon: Icons.wifi_off_rounded, title: 'Chưa tải được bình luận', message: 'Kiểm tra kết nối mạng rồi thử lại.', action: 'Tải lại', onAction: () => _fetch(1)))
+          else if (_items.isEmpty)
+            const SliverToBoxAdapter(child: EmptyBlock(icon: Icons.chat_bubble_outline_rounded, title: 'Chưa có bình luận', message: 'Cảm nhận mới của cộng đồng sẽ hiện ở đây.'))
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (ctx, i) {
+                  if (i.isOdd) return Divider(height: 1, indent: 20, endIndent: 20, color: AppColors.border);
+                  return CommentTile(comment: _items[i ~/ 2], onOpenObject: _openObject);
+                },
+                childCount: _items.length * 2 - 1,
+              ),
+            ),
+          SliverToBoxAdapter(
+            child: _loadingMore
+                ? Padding(padding: const EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2)))
+                : const SizedBox(height: 24),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _CommentCard extends StatelessWidget {
+class _CommentSkeleton extends StatelessWidget {
+  const _CommentSkeleton();
+  @override
+  Widget build(BuildContext context) => const Padding(
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 16),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Skeleton(width: 40, height: 40, radius: 20),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              FractionallySizedBox(widthFactor: 0.4, child: Skeleton(height: 13)),
+              SizedBox(height: 10),
+              Skeleton(height: 12),
+              SizedBox(height: 6),
+              FractionallySizedBox(widthFactor: 0.8, child: Skeleton(height: 12)),
+              SizedBox(height: 12),
+              Skeleton(height: 48, radius: 12),
+            ]),
+          ),
+        ]),
+      );
+}
+
+/// One comment: avatar, name, time, text, the song/page it belongs to (tap
+/// to open, play button for songs) and the like count.
+class CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
-  final void Function(Map<String, dynamic>) onTapObject;
-  final String Function(String?) stripHtml;
-  final String Function(String, int) truncate;
-  final String Function(String?) timeAgo;
-  final String Function(String?) objTypeLabel;
-  const _CommentCard({required this.comment, required this.onTapObject, required this.stripHtml, required this.truncate, required this.timeAgo, required this.objTypeLabel});
+  final void Function(Map<String, dynamic>) onOpenObject;
+  const CommentTile({super.key, required this.comment, required this.onOpenObject});
 
   @override
   Widget build(BuildContext context) {
-    final user = comment['user'];
-    final obj = comment['object'];
-    final plain = truncate(stripHtml(comment['content']?.toString()), 200);
+    final user = comment['user'] as Map?;
+    final obj = comment['object'] is Map ? Map<String, dynamic>.from(comment['object']) : null;
+    final text = (comment['text'] ?? '').toString();
     final tn = obj?['__typename']?.toString();
-    final isPerson = tn == 'Artist' || tn == 'Composer' || tn == 'Poet' || tn == 'Recomposer';
-    final objImage = (obj?['thumbnail']?['url'] ?? obj?['avatar']?['url'])?.toString();
+    final isSong = _fileTypes.containsKey(tn);
+    final img = (obj?['thumbnail']?['url'] ?? obj?['avatar']?['url'])?.toString();
+    final likes = comment['likes'] is num ? (comment['likes'] as num).toInt() : 0;
+    final name = (user?['username'] ?? '').toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Object header
-          if (obj != null) InkWell(
-            onTap: () => onTapObject(Map<String, dynamic>.from(obj as Map)),
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
-                      borderRadius: isPerson ? null : BorderRadius.circular(8),
-                      color: AppColors.surface,
+          UserAvatar(url: user?['avatar']?['url']?.toString(), name: name, size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                  const SizedBox(width: 8),
+                  Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ]),
+                const SizedBox(height: 4),
+                Text(text.length > 320 ? '${text.substring(0, 320)}…' : text, style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
+                if (obj != null) ...[
+                  const SizedBox(height: 10),
+                  Material(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onOpenObject(obj);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Row(children: [
+                          if (img != null) NetImage(url: img, width: 34, height: 34, radius: 8),
+                          if (img != null) const SizedBox(width: 10),
+                          Expanded(child: Text((obj['title'] ?? obj['name'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)))),
+                          if (isSong && obj['file']?['audio_url'] != null)
+                            IconButton(
+                              tooltip: 'Nghe',
+                              visualDensity: VisualDensity.compact,
+                              icon: Icon(Icons.play_circle_fill_rounded, color: AppColors.accentLight, size: 30),
+                              onPressed: () => playOrOpen(context, {...obj, 'file_type': obj['file_type'] ?? _fileTypes[tn]}, [], 'Cộng đồng'),
+                            )
+                          else
+                            Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                        ]),
+                      ),
                     ),
-                    clipBehavior: Clip.hardEdge,
-                    child: objImage != null
-                        ? CachedNetworkImage(imageUrl: objImage, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.music_note, color: AppColors.textMuted, size: 16))
-                        : Icon(Icons.music_note, color: AppColors.textMuted, size: 16),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          (obj['title'] ?? obj['name'] ?? '').toString(),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: display(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accentLight, height: 1.3)),
-                        ),
-                        if (objTypeLabel(tn).isNotEmpty) Text(
-                          objTypeLabel(tn),
-                          style: body(TextStyle(fontSize: 10, color: AppColors.textMuted)),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
                 ],
-              ),
+                if (likes > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(Icons.favorite_border_rounded, size: 16, color: AppColors.textMuted),
+                    const SizedBox(width: 5),
+                    Text('$likes', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                  ]),
+                ],
+              ],
             ),
-          ),
-
-          // Comment content
-          if (plain.isNotEmpty) Text(
-            plain,
-            style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.55)),
-          ),
-
-          if (plain.isNotEmpty) const SizedBox(height: 10),
-
-          // User + time
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 12,
-                backgroundColor: AppColors.surface,
-                backgroundImage: user?['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
-                child: user?['avatar']?['url'] == null
-                    ? Text((user?['username'] ?? '?').toString().substring(0, 1).toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted)))
-                    : null,
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                child: Text(
-                  user?['username'] ?? '?',
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                timeAgo(comment['created_at']?.toString()),
-                style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
-              ),
-            ],
           ),
         ],
       ),

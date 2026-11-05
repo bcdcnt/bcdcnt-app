@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -131,7 +132,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
       );
     }
@@ -145,9 +146,9 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('PLAYLIST CỦA TÔI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('Playlist của tôi'),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -157,7 +158,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
-                      gradient: const LinearGradient(colors: [Color(0xFF388E3C), Color(0xFF81C784)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: const LinearGradient(colors: [Color(0xFF711313), Color(0xFFB48988)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       boxShadow: [BoxShadow(color: const Color(0xFF388E3C).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
@@ -214,7 +215,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(10),
                                 child: thumb != null
-                                    ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover)
+                                    ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover)
                                     : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
                               ),
                               const SizedBox(width: 12),
@@ -225,7 +226,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                                   children: [
                                     Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                                     const SizedBox(height: 4),
-                                    Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                                    Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                                   ],
                                 ),
                               ),

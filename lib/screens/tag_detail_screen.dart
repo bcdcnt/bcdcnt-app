@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -201,9 +202,9 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('TAG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('Tag'),
               centerTitle: true,
-              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -254,7 +255,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                               Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
                               if (total > 0) ...[
                                 const SizedBox(width: 6),
-                                Text('$total', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
+                                Text('$total', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
                               ],
                             ]),
                           ),
@@ -295,7 +296,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                 sliver: SliverList(delegate: SliverChildBuilderDelegate(
                   (ctx, i) {
                     final song = st.items[i];
-                    return SongRow(song: song, index: i, showIndex: true, onTap: () => context.push('/song/${song['id']}', extra: song));
+                    return SongRow(song: song, index: i, showIndex: true, queue: asSongList(st.items));
                   },
                   childCount: st.items.length,
                 )),
@@ -354,7 +355,7 @@ class _ContributorsStrip extends StatelessWidget {
                       ),
                       child: ClipOval(
                         child: shown[i]['avatar']?['url'] != null
-                            ? CachedNetworkImage(imageUrl: shown[i]['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 16, color: AppColors.textMuted))
+                            ? CachedNetworkImage(imageUrl: cdnImg((shown[i]['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 16, color: AppColors.textMuted))
                             : Icon(Icons.person, size: 16, color: AppColors.textMuted),
                       ),
                     ),
@@ -371,7 +372,7 @@ class _ContributorsStrip extends StatelessWidget {
                       color: AppColors.surface,
                     ),
                     alignment: Alignment.center,
-                    child: Text('+$extra', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                    child: Text('+$extra', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
                   ),
                 ),
             ],

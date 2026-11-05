@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -188,7 +189,7 @@ class _RankRow extends StatelessWidget {
               alignment: Alignment.center,
               child: Text(
                 '$rank',
-                style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: rank <= 3 ? Colors.white : AppColors.textMuted)),
+                style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: rank <= 3 ? Colors.white : AppColors.textMuted)),
               ),
             ),
             const SizedBox(width: 8),
@@ -197,7 +198,7 @@ class _RankRow extends StatelessWidget {
               child: SizedBox(
                 width: 28, height: 28,
                 child: item.avatar != null && item.avatar!.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: item.avatar!, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder())
+                    ? CachedNetworkImage(imageUrl: cdnImg((item.avatar!).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder())
                     : _placeholder(),
               ),
             ),
@@ -212,7 +213,7 @@ class _RankRow extends StatelessWidget {
             ),
             Text(
               format(item.value),
-              style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
+              style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
             ),
           ],
         ),

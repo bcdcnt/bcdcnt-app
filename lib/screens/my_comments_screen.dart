@@ -94,9 +94,9 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BÌNH LUẬN CỦA TÔI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Bình luận của tôi'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -127,7 +127,7 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
                         const SizedBox(height: 4),
                         Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
                         const SizedBox(height: 6),
-                        Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       ]),
                     ),
                   );

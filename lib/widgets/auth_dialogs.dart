@@ -5,15 +5,68 @@ import '../constants/theme.dart';
 import '../constants/google_oauth.dart';
 import '../services/auth.dart';
 import '../services/google_signin_desktop.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:google_sign_in/google_sign_in.dart' as gsi;
 
 // Desktop = where the loopback Google OAuth flow runs. The button is hidden
 // elsewhere (mobile uses google_sign_in instead — not wired yet).
-bool get _googleAvailable =>
+bool get _googleDesktop =>
     GoogleOAuth.isConfigured &&
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.macOS ||
         defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux);
+
+// iPhone/iPad: native Google sheet via google_sign_in, once the iOS OAuth
+// client is configured (GoogleOAuth.iosClientId + Info.plist URL scheme).
+bool get _googleIos => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS && GoogleOAuth.iosClientId.isNotEmpty;
+
+bool get _googleAvailable => _googleDesktop || _googleIos;
+
+bool _gsiReady = false;
+
+/// iOS flow: Google's own sign-in sheet → ID token → loginByGoogle.
+/// Returns null on success, '' if cancelled, or a message.
+Future<String?> _runGoogleSignInIos(BuildContext context) async {
+  try {
+    final g = gsi.GoogleSignIn.instance;
+    if (!_gsiReady) {
+      await g.initialize(clientId: GoogleOAuth.iosClientId, serverClientId: GoogleOAuth.webClientId);
+      _gsiReady = true;
+    }
+    final account = await g.authenticate(scopeHint: const ['email']);
+    final idToken = account.authentication.idToken;
+    if (idToken == null) return 'Google không trả về thông tin đăng nhập';
+    if (!context.mounted) return '';
+    return await context.read<AuthProvider>().loginByGoogle(idToken);
+  } on gsi.GoogleSignInException catch (e) {
+    return e.code == gsi.GoogleSignInExceptionCode.canceled ? '' : 'Đăng nhập Google thất bại';
+  } catch (_) {
+    return 'Đăng nhập Google thất bại';
+  }
+}
+
+// Sign in with Apple: iPhone/iPad and Mac (required by App Store review
+// whenever another third-party login is offered).
+bool get _appleAvailable =>
+    !kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.macOS);
+
+/// Runs the Apple sheet and exchanges the identity token for our session.
+/// Returns null on success, '' when the user cancelled, or a message.
+Future<String?> _runAppleSignIn(BuildContext context) async {
+  try {
+    final cred = await SignInWithApple.getAppleIDCredential(scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName]);
+    final token = cred.identityToken;
+    if (token == null) return 'Apple không trả về thông tin đăng nhập';
+    final name = [cred.familyName, cred.givenName].where((s) => s != null && s.trim().isNotEmpty).join(' ');
+    if (!context.mounted) return '';
+    return await context.read<AuthProvider>().loginByApple(token, name.isEmpty ? null : name);
+  } on SignInWithAppleAuthorizationException catch (e) {
+    return e.code == AuthorizationErrorCode.canceled ? '' : 'Đăng nhập Apple thất bại';
+  } catch (_) {
+    return 'Đăng nhập Apple thất bại';
+  }
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Login
@@ -54,7 +107,19 @@ class _LoginDialogState extends State<LoginDialog> {
     if (err == null) {
       Navigator.pop(context);
     } else {
-      setState(() { _error = err; _loading = false; });
+      setState(() { _error = err.isEmpty ? null : err; _loading = false; });
+    }
+  }
+
+  Future<void> _apple() async {
+    if (_loading) return;
+    setState(() { _loading = true; _error = null; });
+    final err = await _runAppleSignIn(context);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() { _error = err.isEmpty ? null : err; _loading = false; });
     }
   }
 
@@ -100,11 +165,13 @@ class _LoginDialogState extends State<LoginDialog> {
         if (_error != null) _AuthError(_error!),
         const SizedBox(height: 12),
         _AuthPrimaryButton(label: 'Đăng nhập', loading: _loading, onTap: _submit),
-        if (_googleAvailable) ...[
+        if (_googleAvailable || _appleAvailable) ...[
           const SizedBox(height: 14),
           const _OrDivider(),
           const SizedBox(height: 14),
-          _GoogleButton(loading: _loading, onTap: _google),
+          if (_appleAvailable) _AppleButton(loading: _loading, onTap: _apple),
+          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
+          if (_googleAvailable) _GoogleButton(loading: _loading, onTap: _google),
         ],
         const SizedBox(height: 10),
         _AuthSwitch(
@@ -123,6 +190,7 @@ class _LoginDialogState extends State<LoginDialog> {
 /// Shared desktop Google sign-in: runs the OAuth flow then exchanges the ID
 /// token for our session. Returns null on success or a message to display.
 Future<String?> _runGoogleSignIn(BuildContext context) async {
+  if (_googleIos) return _runGoogleSignInIos(context);
   try {
     final idToken = await GoogleSignInDesktop.signIn();
     if (!context.mounted) return 'Đã huỷ';
@@ -241,11 +309,13 @@ class _RegisterDialogState extends State<RegisterDialog> {
         if (_error != null) _AuthError(_error!),
         const SizedBox(height: 12),
         _AuthPrimaryButton(label: 'Đăng ký', loading: _loading, onTap: _submit),
-        if (_googleAvailable) ...[
+        if (_googleAvailable || _appleAvailable) ...[
           const SizedBox(height: 14),
           const _OrDivider(),
           const SizedBox(height: 14),
-          _GoogleButton(label: 'Đăng ký bằng Google', loading: _loading, onTap: _google),
+          if (_appleAvailable) _AppleButton(label: 'Đăng ký bằng Apple', loading: _loading, onTap: _apple),
+          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
+          if (_googleAvailable) _GoogleButton(label: 'Đăng ký bằng Google', loading: _loading, onTap: _google),
         ],
         const SizedBox(height: 10),
         _AuthSwitch(
@@ -268,7 +338,19 @@ class _RegisterDialogState extends State<RegisterDialog> {
     if (err == null) {
       Navigator.pop(context);
     } else {
-      setState(() { _error = err; _loading = false; });
+      setState(() { _error = err.isEmpty ? null : err; _loading = false; });
+    }
+  }
+
+  Future<void> _apple() async {
+    if (_loading) return;
+    setState(() { _loading = true; _error = null; });
+    final err = await _runAppleSignIn(context);
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.pop(context);
+    } else {
+      setState(() { _error = err.isEmpty ? null : err; _loading = false; });
     }
   }
 }
@@ -494,7 +576,7 @@ class _AuthShell extends StatelessWidget {
                       children: [
                         Text(title, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
                         const SizedBox(height: 2),
-                        Text(subtitle, maxLines: 2, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        Text(subtitle, maxLines: 2, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       ],
                     ),
                   ),
@@ -602,7 +684,7 @@ class _OrDivider extends StatelessWidget {
       Expanded(child: Divider(color: AppColors.border, height: 1)),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 10),
-        child: Text('hoặc', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+        child: Text('hoặc', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
       ),
       Expanded(child: Divider(color: AppColors.border, height: 1)),
     ]);
@@ -613,32 +695,60 @@ class _GoogleButton extends StatelessWidget {
   final String label;
   final bool loading;
   final VoidCallback? onTap;
-  const _GoogleButton({this.label = 'Đăng nhập bằng Google', this.loading = false, this.onTap});
+  const _GoogleButton({this.label = 'Tiếp tục với Google', this.loading = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton(
-      onPressed: loading ? null : onTap,
-      style: OutlinedButton.styleFrom(
-        backgroundColor: AppColors.surfaceLight,
-        side: BorderSide(color: AppColors.border),
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    return SizedBox(
+      height: 46,
+      child: OutlinedButton(
+        onPressed: loading ? null : onTap,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xFFDADCE0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Blue "G" — recognizable without bundling an asset.
+            const Text('G', style: TextStyle(fontSize: 20, height: 1, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
+            const SizedBox(width: 10),
+            Text(label, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1F1F1F)))),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // White badge + blue "G" — recognizable without bundling an asset.
-          Container(
-            width: 18, height: 18,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(3)),
-            alignment: Alignment.center,
-            child: const Text('G', style: TextStyle(fontSize: 13, height: 1, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
-          ),
-          const SizedBox(width: 10),
-          Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-        ],
+    );
+  }
+}
+
+/// Black "Sign in with Apple" button per Apple's guidelines.
+class _AppleButton extends StatelessWidget {
+  final String label;
+  final bool loading;
+  final VoidCallback? onTap;
+  const _AppleButton({this.label = 'Tiếp tục với Apple', this.loading = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 46,
+      child: FilledButton(
+        onPressed: loading ? null : onTap,
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.black54,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.apple, size: 22, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(label, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white))),
+          ],
+        ),
       ),
     );
   }

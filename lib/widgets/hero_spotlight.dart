@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -210,7 +211,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                   // to a rounded blob and the dark gradient shows through in the
                   // corner gap as a "vệt" (worst at the dark bottom-right).
                   imageFilter: ImageFilter.blur(sigmaX: 24, sigmaY: 24, tileMode: TileMode.clamp),
-                  child: CachedNetworkImage(imageUrl: thumbUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent)),
+                  child: CachedNetworkImage(imageUrl: cdnImg((thumbUrl).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent)),
                 ),
                 if (thumbUrl != null) Container(color: Colors.black.withValues(alpha: 0.38)),
                 // Overlay gradient
@@ -247,7 +248,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(14),
                           child: thumbUrl != null
-                              ? CachedNetworkImage(imageUrl: thumbUrl, fit: BoxFit.cover)
+                              ? CachedNetworkImage(imageUrl: cdnImg((thumbUrl).toString(), 640), fit: BoxFit.cover)
                               : Container(color: Colors.white.withValues(alpha: 0.1), child: const Icon(Icons.music_note, color: Colors.white, size: 48)),
                         ),
                       ),
@@ -260,7 +261,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                             Row(children: [
                               const Icon(Icons.local_fire_department, color: Colors.amberAccent, size: 12),
                               const SizedBox(width: 4),
-                              Text('NỔI BẬT', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 2))),
+                              Text('NỔI BẬT', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 2))),
                             ]),
                             const SizedBox(height: 6),
                             Text(
@@ -271,7 +272,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                             ),
                             if (subtitle != null && subtitle.isNotEmpty) Padding(
                               padding: const EdgeInsets.only(top: 2),
-                              child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, color: Colors.white60, fontStyle: FontStyle.italic))),
+                              child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, color: Colors.white60, fontStyle: FontStyle.italic))),
                             ),
                             if (artistText.isNotEmpty) Padding(
                               padding: const EdgeInsets.only(top: 4),
@@ -308,7 +309,7 @@ class _SpotlightCardState extends State<_SpotlightCard> {
                                   Row(mainAxisSize: MainAxisSize.min, children: [
                                     const Icon(Icons.headphones, size: 11, color: Colors.white70),
                                     const SizedBox(width: 4),
-                                    Text(fmt(total.toInt()), style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white70))),
+                                    Text(fmt(total.toInt()), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white70))),
                                   ]),
                                 ],
                               ],

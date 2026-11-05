@@ -1,31 +1,27 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  // Full palette is mutable so ThemeProvider.setTheme() can swap every
-  // surface, accent, text, and border colour at runtime — mirrors how the
-  // web build's `[data-theme=*]` CSS vars cascade across every component.
-  // Each field is still initialised with a `const Color(...)` literal so the
-  // *values* are canonical-cached; only the bindings are non-const. Any call
-  // site that sat inside a `const` constructor reading these has to drop its
-  // outer `const` (sweep done in same change via /tmp/fix_const.py).
-  static Color bg = const Color(0xFF0C0A0A);
-  static Color surface = const Color(0xFF1A1414);
-  static Color surfaceLight = const Color(0xFF241C1C);
-  static Color surfaceHover = const Color(0xFF2E2424);
+  // Full palette is mutable so ThemeProvider can swap every surface, accent,
+  // text, and border colour at runtime. Each field is still initialised with
+  // a `const Color(...)` literal so the *values* are canonical-cached; only
+  // the bindings are non-const. Defaults = the light brand palette.
+  static Color bg = const Color(0xFFFFFFFF);
+  static Color surface = const Color(0xFFF6F2F2);
+  static Color surfaceLight = const Color(0xFFEEE7E7);
+  static Color surfaceHover = const Color(0xFFE6DCDC);
   static Color accent = const Color(0xFF711313);
-  static Color accentLight = const Color(0xFFB48988);
-  static Color accentSoft = const Color(0x26711313);
-  static Color text = const Color(0xFFF5F0EB);
-  static Color textSecondary = const Color(0xFFA09090);
-  static Color textMuted = const Color(0xFF6B5858);
-  static Color border = const Color(0x14FFFFFF);
-  static Color borderSubtle = const Color(0x0AFFFFFF);
+  static Color accentLight = const Color(0xFF8E1F1F);
+  static Color accentSoft = const Color(0xFFF8EDED);
+  static Color text = const Color(0xFF161112);
+  static Color textSecondary = const Color(0xFF4F4547);
+  static Color textMuted = const Color(0xFF73686A);
+  static Color border = const Color(0xFFECE4E4);
+  static Color borderSubtle = const Color(0xFFF3EEEE);
 
-  /// True when the light/white theme is active. The decorative coloured
-  /// "glow" shadows that read as a soft halo on dark backgrounds look harsh
-  /// and exposed on white, so callers scale their shadow alpha by [shadowMul].
-  static bool isLight = false;
+  /// True when the light theme is active. The decorative coloured "glow"
+  /// shadows that read as a soft halo on dark backgrounds look harsh and
+  /// exposed on white, so callers scale their shadow alpha by [shadowMul].
+  static bool isLight = true;
   static double get shadowMul => isLight ? 0.32 : 1.0;
 
   /// Theme-aware decorative glow. Use instead of inline `BoxShadow(...)` for
@@ -39,65 +35,108 @@ class AppColors {
   }) =>
       [BoxShadow(color: color.withValues(alpha: alpha * shadowMul), blurRadius: blur, offset: offset, spreadRadius: spread)];
 
-  // Static accents that don't change per theme.
+  // Brand constants from the BCĐCNT logo guideline (do not change per theme).
+  static const wine = Color(0xFF711313);
+  static const rose = Color(0xFFB48988);
+  /// Near-black used behind the player and in the dark theme.
+  static const night = Color(0xFF0E0A0A);
   static const gold = Color(0xFFC9A96E);
-  static const error = Color(0xFFE57373);
-  static const success = Color(0xFF66BB6A);
+  static const error = Color(0xFFD23B3B);
+  static const success = Color(0xFF2E8B57);
 }
 
-// Font helpers — pivoted to system default (SF Pro on macOS/iOS, Roboto on
-// Android) so the app feels native instead of web-styled. The custom Nunito
-// brand font is reserved for the wordmark via `brand()` to keep the logo
-// distinctive without weighing down every label.
-TextStyle display([TextStyle? style]) => style ?? const TextStyle();
-TextStyle body([TextStyle? style]) => style ?? const TextStyle();
-TextStyle brand([TextStyle? style]) => GoogleFonts.nunito(textStyle: style);
+// Font helpers. Everything is Montserrat (see pubspec `fonts:`); display()
+// is kept for headings and tightens tracking on large sizes the way the
+// brand mockups do, body() is for everything else.
+const kDisplayFont = 'Montserrat';
+const kBodyFont = 'Montserrat';
+TextStyle display([TextStyle? style]) {
+  final s = style ?? const TextStyle();
+  final size = s.fontSize ?? 14;
+  return s.copyWith(
+    fontFamily: kDisplayFont,
+    letterSpacing: s.letterSpacing ?? (size >= 18 ? -size * 0.02 : null),
+  );
+}
+TextStyle body([TextStyle? style]) => (style ?? const TextStyle()).copyWith(fontFamily: kBodyFont);
+TextStyle brand([TextStyle? style]) => (style ?? const TextStyle()).copyWith(fontFamily: kDisplayFont, fontWeight: FontWeight.w800);
 
-/// Type scale — 7 tiers from caption (11) to hero (32). Use these instead of
-/// raw `fontSize:` overrides so a future tweak (e.g. font size accessibility
-/// preference) only needs to touch one place.
+/// Type scale. Use these instead of raw `fontSize:` overrides so the
+/// app-wide text-size preference only needs to touch one place. Nothing
+/// below 12 — most listeners are 40+.
 ///
-///   hero        32   — detail-screen titles (song / person / playlist)
-///   displayLarge 22   — section headlines, modal titles
-///   displayMedium 18  — sub-headlines
-///   sectionTitle 16   — list section labels
-///   emphasized   15   — hero subtitles, highlighted body
-///   title        14   — list item titles
-///   bodyText     13   — body copy
-///   meta         12   — metadata rows
-///   caption      11   — caption / overline / timestamp
+///   hero          30   — detail-screen titles (song / person / playlist)
+///   displayLarge  24   — page titles, modal titles
+///   displayMedium 20   — section headlines
+///   sectionTitle  17   — list section labels
+///   emphasized    15   — highlighted body
+///   title         16   — list item titles
+///   bodyText      14   — body copy
+///   meta          13   — metadata rows
+///   caption       12   — caption / overline / timestamp
 class AppText {
-  static TextStyle get hero => display(TextStyle(fontSize: 32, fontWeight: FontWeight.w800, height: 1.1, color: AppColors.text));
-  static TextStyle get displayLarge => display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text));
-  static TextStyle get displayMedium => display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text));
-  static TextStyle get sectionTitle => display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
+  static TextStyle get hero => display(TextStyle(fontSize: 30, fontWeight: FontWeight.w800, height: 1.12, color: AppColors.text));
+  static TextStyle get displayLarge => display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text));
+  static TextStyle get displayMedium => display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text));
+  static TextStyle get sectionTitle => display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text));
   static TextStyle get emphasized => body(TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.text));
-  static TextStyle get title => body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text));
-  static TextStyle get bodyText => body(TextStyle(fontSize: 13, color: AppColors.textSecondary));
-  static TextStyle get meta => body(TextStyle(fontSize: 12, color: AppColors.textMuted));
-  static TextStyle get caption => body(TextStyle(fontSize: 11, color: AppColors.textMuted));
+  static TextStyle get title => body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
+  static TextStyle get bodyText => body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textSecondary));
+  static TextStyle get meta => body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+  static TextStyle get caption => body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+  /// Small uppercase label ("GỢI Ý HÔM NAY", "LỜI 1 & 3").
+  static TextStyle get eyebrow => body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.9, color: AppColors.accentLight));
 }
 
 ThemeData appTheme() {
+  final light = AppColors.isLight;
+  final base = light ? ThemeData.light() : ThemeData.dark();
   return ThemeData(
-    brightness: Brightness.dark,
+    brightness: light ? Brightness.light : Brightness.dark,
+    fontFamily: kBodyFont,
     scaffoldBackgroundColor: AppColors.bg,
     primaryColor: AppColors.accent,
-    textTheme: ThemeData.dark().textTheme.apply(
+    splashFactory: InkSparkle.splashFactory,
+    textTheme: base.textTheme.apply(
+      fontFamily: kBodyFont,
       bodyColor: AppColors.text,
       displayColor: AppColors.text,
     ),
-    colorScheme: ColorScheme.dark(
+    colorScheme: (light ? const ColorScheme.light() : const ColorScheme.dark()).copyWith(
       primary: AppColors.accent,
+      onPrimary: Colors.white,
       secondary: AppColors.accentLight,
-      surface: AppColors.surface,
+      surface: AppColors.bg,
+      onSurface: AppColors.text,
       error: AppColors.error,
+    ),
+    dividerColor: AppColors.border,
+    dividerTheme: DividerThemeData(color: AppColors.border, thickness: 1, space: 1),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: AppColors.bg,
+      surfaceTintColor: Colors.transparent,
+      showDragHandle: false,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: AppColors.bg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: const Color(0xFF161112),
+      contentTextStyle: body(const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     ),
     appBarTheme: AppBarTheme(
       backgroundColor: AppColors.bg,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
+      scrolledUnderElevation: 0,
+      centerTitle: true,
       iconTheme: IconThemeData(color: AppColors.text),
-      titleTextStyle: body(TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w700)),
+      titleTextStyle: display(TextStyle(color: AppColors.text, fontSize: 17, fontWeight: FontWeight.w800)),
     ),
   );
 }

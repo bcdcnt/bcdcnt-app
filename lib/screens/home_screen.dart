@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -1218,7 +1219,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 4),
                   Text(
                     'Bài ca đi cùng năm tháng',
-                    style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
+                    style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
                   ),
                 ],
               ),
@@ -1284,7 +1285,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: thumb != null && thumb.isNotEmpty
-                        ? CachedNetworkImage(imageUrl: thumb, width: 72, height: 72, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 72, height: 72, color: Colors.white24, child: const Icon(Icons.music_note, color: Colors.white70)))
+                        ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 180), width: 72, height: 72, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 72, height: 72, color: Colors.white24, child: const Icon(Icons.music_note, color: Colors.white70)))
                         : Container(width: 72, height: 72, color: Colors.white24, child: const Icon(Icons.music_note, color: Colors.white70)),
                   ),
                   const SizedBox(width: 12),
@@ -1444,7 +1445,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: ClipOval(
                     child: loggedIn && avatar != null
-                        ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(icon, color: Colors.white, size: 22))
+                        ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(icon, color: Colors.white, size: 22))
                         : Icon(icon, color: Colors.white, size: 22),
                   ),
                 ),
@@ -1461,7 +1462,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     alignment: Alignment.center,
                     child: Text(
                       (user!['unread'] as int) > 9 ? '9+' : '${user['unread']}',
-                      style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white)),
+                      style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
                     ),
                   ),
                 ),
@@ -1578,7 +1579,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight))
+                          ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 350), width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight))
                           : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 28, color: AppColors.textMuted)),
                     ),
                   ),
@@ -1586,7 +1587,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                   if (reason.isNotEmpty) ...[
                     const SizedBox(height: 3),
-                    Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w500, height: 1.25))),
+                    Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.accentLight, fontWeight: FontWeight.w500, height: 1.25))),
                   ],
                 ]),
               ),
@@ -1647,7 +1648,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(children: [
             ClipOval(
               child: userAvatar != null && userAvatar.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: userAvatar, width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(28))
+                  ? CachedNetworkImage(imageUrl: cdnImg((userAvatar).toString(), 70), width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(28))
                   : _avatarFallback(28),
             ),
             const SizedBox(width: 8),
@@ -1655,7 +1656,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (likes > 0) ...[
               Icon(Icons.favorite, size: 12, color: AppColors.accent),
               const SizedBox(width: 3),
-              Text('$likes', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.accent))),
+              Text('$likes', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
             ],
           ]),
           const SizedBox(height: 8),
@@ -1666,7 +1667,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(children: [
             Icon(Icons.music_note, size: 13, color: AppColors.accentLight),
             const SizedBox(width: 5),
-            Expanded(child: Text(songTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
+            Expanded(child: Text(songTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
           ]),
         ]),
       ),
@@ -1717,7 +1718,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Stack(clipBehavior: Clip.none, children: [
                   ClipOval(
                     child: avatar != null && avatar.isNotEmpty
-                        ? CachedNetworkImage(imageUrl: avatar, width: 96, height: 96, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(96))
+                        ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 240), width: 96, height: 96, fit: BoxFit.cover, errorWidget: (_, _, _) => _avatarFallback(96))
                         : _avatarFallback(96),
                   ),
                   if (likes > 0) Positioned(
@@ -1725,17 +1726,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(999)),
-                      child: Text('♥ ${formatViews(likes)}', style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white))),
+                      child: Text('♥ ${formatViews(likes)}', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white))),
                     ),
                   ),
                 ]),
                 const SizedBox(height: 8),
-                Text(label, style: body(TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                Text(label, style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
                 const SizedBox(height: 2),
                 Text(p['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                 if (listens != null) ...[
                   const SizedBox(height: 2),
-                  Text('${formatViews(listens)} lượt nghe', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 10.5, color: AppColors.textSecondary))),
+                  Text('${formatViews(listens)} lượt nghe', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
                 ],
               ]),
             ),
@@ -1827,7 +1828,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(width: 8),
             if (total > 0) ...[
-              Text('$upPct%', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: green))),
+              Text('$upPct%', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: green))),
               const SizedBox(width: 8),
             ],
             Icon(Icons.thumb_down_outlined, size: 15, color: AppColors.textSecondary),
@@ -1874,7 +1875,7 @@ class _HomeScreenState extends State<HomeScreen> {
           AspectRatio(
             aspectRatio: 16 / 9,
             child: thumb != null && thumb.isNotEmpty
-                ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.article, color: AppColors.textMuted)))
+                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.article, color: AppColors.textMuted)))
                 : Container(color: AppColors.surfaceLight, child: Center(child: Icon(Icons.article, size: 32, color: AppColors.textMuted))),
           ),
           Padding(
@@ -1883,7 +1884,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(d['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.35))),
               if (uploader != null) ...[
                 const SizedBox(height: 8),
-                Text(uploader, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                Text(uploader, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
               ],
             ]),
           ),
@@ -1939,7 +1940,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // its own visual identity tied to the song it's about.
           if (songImage != null && songImage.isNotEmpty)
             CachedNetworkImage(
-              imageUrl: songImage,
+              imageUrl: cdnImg((songImage).toString(), 640),
               fit: BoxFit.cover,
               errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight),
             )
@@ -1985,7 +1986,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   'CẢM NHẬN HAY',
                   style: body(TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                     letterSpacing: 1.2,
@@ -1999,7 +2000,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   '$likes',
                   style: body(TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: Colors.white.withValues(alpha: 0.9),
                   )),
@@ -2010,7 +2011,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   '· $relTime',
                   style: body(TextStyle(
-                    fontSize: 11,
+                    fontSize: 12,
                     color: Colors.white.withValues(alpha: 0.7),
                   )),
                 ),
@@ -2048,10 +2049,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: ClipOval(
                   child: userAvatar != null && userAvatar.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: userAvatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, size: 14, color: Colors.white54))
+                      ? CachedNetworkImage(imageUrl: cdnImg((userAvatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, size: 14, color: Colors.white54))
                       : Center(child: Text(
                           username.isNotEmpty ? username.characters.first.toUpperCase() : '?',
-                          style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                          style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
                         )),
                 ),
               ),
@@ -2124,7 +2125,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(color: AppColors.surfaceLight)
           else
             CachedNetworkImage(
-              imageUrl: thumb,
+              imageUrl: cdnImg((thumb).toString(), 640),
               fit: BoxFit.cover,
               errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight),
             ),
@@ -2163,7 +2164,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   '$count bài',
                   style: body(TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontWeight: FontWeight.w600,
                     color: Colors.white.withValues(alpha: 0.78),
                   )),
@@ -2317,7 +2318,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('TƯỞNG NHỚ', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.gold, letterSpacing: 2))),
+                Text('TƯỞNG NHỚ', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.gold, letterSpacing: 2))),
                 const SizedBox(height: 10),
                 InkWell(
                   onTap: () => context.push(_personRoute(p['personType'], p['slug'])),
@@ -2333,7 +2334,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           child: ClipOval(
                             child: p['avatar']?['url'] != null
-                                ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover)
+                                ? CachedNetworkImage(imageUrl: cdnImg((p['avatar']['url']).toString(), 160), fit: BoxFit.cover)
                                 : Container(color: AppColors.surface, child: Icon(Icons.person, color: AppColors.textMuted)),
                           ),
                         ),
@@ -2356,7 +2357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   child: Text(
                                     '${p['yob'] ?? '?'} – ${p['yod'] ?? '?'}',
-                                    style: body(const TextStyle(fontSize: 11, color: AppColors.gold, fontWeight: FontWeight.w600)),
+                                    style: body(const TextStyle(fontSize: 12, color: AppColors.gold, fontWeight: FontWeight.w600)),
                                   ),
                                 ),
                               ],
@@ -2384,7 +2385,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               width: 20, height: 20,
                               alignment: Alignment.center,
                               decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(5)),
-                              child: Text('${e.key + 1}', style: body(TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
+                              child: Text('${e.key + 1}', style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -2449,7 +2450,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   if (evDate.isNotEmpty) Text(
                     '$evDate${now.year > 0 ? ' — ${now.year}' : ''}',
-                    style: body(const TextStyle(fontSize: 11, color: Colors.white70)),
+                    style: body(const TextStyle(fontSize: 12, color: Colors.white70)),
                   ),
                 ],
               ),
@@ -2457,7 +2458,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (thumb != null)
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surface)),
+                child: CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surface)),
               ),
             if (desc.isNotEmpty)
               Padding(
@@ -2518,7 +2519,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: thumb != null
-                                ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover)
+                                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover)
                                 : Container(color: Colors.white.withValues(alpha: 0.1), child: const Icon(Icons.music_note, color: Colors.white, size: 32)),
                           ),
                         ),
@@ -2539,7 +2540,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                               const Icon(Icons.local_fire_department, color: Colors.amberAccent, size: 12),
                               const SizedBox(width: 4),
-                              Text('NGHE NHIỀU TRONG TUẦN', style: body(const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1.8))),
+                              Text('NGHE NHIỀU TRONG TUẦN', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1.8))),
                             ],
                           ),
                           const SizedBox(height: 6),
@@ -2563,7 +2564,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 const Icon(Icons.headphones, size: 10, color: Colors.white),
                                 const SizedBox(width: 4),
-                                Text('${_formatInt(weekly is num ? weekly.toInt() : 0)} lượt nghe', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white))),
+                                Text('${_formatInt(weekly is num ? weekly.toInt() : 0)} lượt nghe', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white))),
                               ]),
                             ),
                           ),
@@ -2719,7 +2720,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 2),
                 Text(
                   '${_formatInt(_categoryCounts[c.query] ?? 0)} bài',
-                  style: body(const TextStyle(fontSize: 11, color: Colors.white70)),
+                  style: body(const TextStyle(fontSize: 12, color: Colors.white70)),
                 ),
               ],
             ),
@@ -2798,7 +2799,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           'THẬP NIÊN',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.0, color: Colors.white.withValues(alpha: 0.7))),
+                          style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.0, color: Colors.white.withValues(alpha: 0.7))),
                         ),
                         const SizedBox(height: 1),
                         Text(
@@ -2866,7 +2867,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       child: ClipOval(
                         child: avatar != null
-                            ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
+                            ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover)
                             : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: Colors.white70)))),
                       ),
                     ),
@@ -2938,7 +2939,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
                             child: thumb != null
-                                ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover)
+                                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), width: card, height: card, fit: BoxFit.cover)
                                 : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
                           ),
                         ),
@@ -2952,7 +2953,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
                               const Icon(Icons.event, size: 10, color: Colors.white),
                               const SizedBox(width: 4),
-                              Text(eventDate, style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
+                              Text(eventDate, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white))),
                             ]),
                           ),
                         ),
@@ -3131,7 +3132,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: ClipOval(
                     child: avatar != null
-                        ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 32))
+                        ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 32))
                         : const Icon(Icons.person, color: Colors.white70, size: 32),
                   ),
                 ),
@@ -3149,7 +3150,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                   Text(
                     'TOP ${activeLabel.$1.toUpperCase()}',
-                    style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: goldInk)),
+                    style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: goldInk)),
                   ),
                   const SizedBox(height: 4),
                   Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text))),
@@ -3304,7 +3305,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: ClipOval(
                 child: avatar != null
-                    ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 30))
+                    ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70, size: 30))
                     : const Icon(Icons.person, color: Colors.white70, size: 30),
               ),
             ),
@@ -3314,7 +3315,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(children: [
                   Icon(isComposer ? Icons.music_note_outlined : Icons.mic, size: 12, color: AppColors.accentLight),
                   const SizedBox(width: 5),
-                  Text(label, style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.3, color: AppColors.accentLight))),
+                  Text(label, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.3, color: AppColors.accentLight))),
                 ]),
                 const SizedBox(height: 4),
                 Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text))),
@@ -3485,7 +3486,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
                 child: ClipOval(
                   child: u['avatar'] != null
-                      ? CachedNetworkImage(imageUrl: u['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
+                      ? CachedNetworkImage(imageUrl: cdnImg((u['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
                       : const Icon(Icons.person, color: Colors.white70),
                 ),
               ),
@@ -3600,7 +3601,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: thumb != null && thumb.isNotEmpty
-                        ? CachedNetworkImage(imageUrl: thumb, width: tileW, height: tileW, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: tileW, height: tileW, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted)))
+                        ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), width: tileW, height: tileW, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: tileW, height: tileW, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted)))
                         : Container(width: tileW, height: tileW, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted)),
                   ),
                   Positioned(
@@ -3621,7 +3622,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 6),
                 Text(s['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
                 if (artistNames.isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 1), child: Text(artistNames, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                  Padding(padding: const EdgeInsets.only(top: 1), child: Text(artistNames, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
               ]),
             ),
           );
@@ -3656,7 +3657,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ClipRRect(
                   borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
                   child: thumb != null
-                      ? CachedNetworkImage(imageUrl: thumb, width: 64, height: 64, fit: BoxFit.cover)
+                      ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 160), width: 64, height: 64, fit: BoxFit.cover)
                       : Container(width: 64, height: 64, color: AppColors.surface, child: Icon(Icons.music_note, color: AppColors.textMuted)),
                 ),
                 const SizedBox(width: 10),
@@ -3669,7 +3670,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text))),
                       if (artists.isNotEmpty) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        child: Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
@@ -3779,7 +3780,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: thumb != null
-                ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
+                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                 : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
           ),
         );
@@ -3868,7 +3869,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                      if (d['uploader']?['username'] != null) Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                      if (d['uploader']?['username'] != null) Text(d['uploader']['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                     ],
                   ),
                 ),
@@ -3905,7 +3906,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Stack(children: [
                     Positioned.fill(
                       child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
+                          ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                           : (videoUrl != null
                               ? VideoPoster(videoUrl: videoUrl)
                               : Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
@@ -3926,7 +3927,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   d['title'] ?? '',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3)),
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3)),
                 ),
               ),
             ],
@@ -3954,7 +3955,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: thumb != null
-                  ? CachedNetworkImage(imageUrl: thumb, width: 64, height: 64, fit: BoxFit.cover)
+                  ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 160), width: 64, height: 64, fit: BoxFit.cover)
                   : Container(width: 64, height: 64, color: AppColors.surface, child: Icon(Icons.article, color: AppColors.textMuted)),
             ),
             const SizedBox(width: 12),
@@ -3970,7 +3971,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   if (d['uploader']?['username'] != null) Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                    child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                   ),
                 ],
               ),
@@ -4200,7 +4201,7 @@ class _GroupLabel extends StatelessWidget {
           Text(
             text,
             style: body(TextStyle(
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               color: AppColors.accentLight,
               letterSpacing: 2.5,

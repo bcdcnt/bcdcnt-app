@@ -161,11 +161,9 @@ class HeroSkeleton extends StatelessWidget {
                   SizedBox(height: 8),
                   SkBox(width: 180, height: 14, radius: 4),
                   SizedBox(height: 18),
-                  Row(children: [
+                  Wrap(spacing: 18, runSpacing: 8, children: [
                     SkBox(width: 60, height: 12, radius: 4),
-                    SizedBox(width: 18),
                     SkBox(width: 60, height: 12, radius: 4),
-                    SizedBox(width: 18),
                     SkBox(width: 60, height: 12, radius: 4),
                   ]),
                 ],

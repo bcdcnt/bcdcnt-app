@@ -7,7 +7,7 @@ import 'api.dart';
 const meQuery = '''query { me {
   id username email
   avatar { url } background { url }
-  unread
+  unread point listen
   permissions
   player_shuffle player_repeat
   show_comment_sidebar
@@ -27,6 +27,10 @@ const loginMutation = '''mutation(\$identity: String!, \$password: String!) {
 
 const loginByGoogleMutation = '''mutation(\$token: String!) {
   loginByGoogle(token: \$token) { access_token refresh_token message code }
+}''';
+
+const loginByAppleMutation = '''mutation(\$token: String!, \$name: String) {
+  loginByApple(identity_token: \$token, full_name: \$name) { access_token refresh_token message code }
 }''';
 
 const signupMutation = '''mutation(\$username: String!, \$email: String!, \$password: String!) {
@@ -186,6 +190,8 @@ class AuthProvider extends ChangeNotifier {
           'id': me['id'], 'username': me['username'], 'email': me['email'],
           'avatar': me['avatar']?['url'], 'background': me['background']?['url'],
           'unread': me['unread'] ?? 0,
+          'point': me['point'] ?? 0,
+          'listen': me['listen'] ?? 0,
           'permissions': (me['permissions'] is List)
               ? List<String>.from((me['permissions'] as List).whereType<String>())
               : <String>[],
@@ -243,6 +249,27 @@ class AuthProvider extends ChangeNotifier {
       if (msg is String && msg.isNotEmpty) return msg;
       return 'Đăng nhập Google thất bại';
     } catch (e) { return e.toString(); }
+  }
+
+  /// Exchange an Apple identity token (Sign in with Apple, iOS/macOS) for our
+  /// session. [fullName] is only provided by Apple on the first sign-in.
+  Future<String?> loginByApple(String identityToken, String? fullName) async {
+    try {
+      final data = await ApiClient.mutate(loginByAppleMutation, {'token': identityToken, 'name': fullName});
+      final result = data['loginByApple'];
+      if (result?['access_token'] != null) {
+        _token = result['access_token'];
+        _refreshToken = result['refresh_token'];
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('access_token', _token!);
+        if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
+        await _fetchMe();
+        return null;
+      }
+      final msg = result?['message'];
+      if (msg is String && msg.isNotEmpty) return msg;
+      return 'Đăng nhập Apple thất bại';
+    } catch (e) { return e.toString().replaceFirst('Exception: ', ''); }
   }
 
   Future<String?> signup(String username, String email, String password) async {

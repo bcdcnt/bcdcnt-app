@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -61,7 +62,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
     if (_d == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy thảo luận', style: AppText.bodyText)),
       );
     }
@@ -75,9 +76,9 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THẢO LUẬN', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Thảo luận'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -87,10 +88,10 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
                     if (forum['parent']?['title'] != null) ...[
-                      Text(forum['parent']['title'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                      Text(forum['parent']['title'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       Padding(padding: EdgeInsets.symmetric(horizontal: 6), child: Icon(Icons.chevron_right, size: 12, color: AppColors.textMuted)),
                     ],
-                    Text(forum['title'] ?? '', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                    Text(forum['title'] ?? '', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
                   ]),
                 ),
               Text(d['title'] ?? '', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
@@ -102,7 +103,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                   decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
                   child: ClipOval(
                     child: author?['avatar']?['url'] != null
-                        ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 16))
+                        ? CachedNetworkImage(imageUrl: cdnImg((author['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 16))
                         : Icon(Icons.person, color: AppColors.accentLight, size: 16),
                   ),
                 ),
@@ -113,12 +114,12 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                       onTap: () => context.push('/user/${author['id']}'),
                       child: Text(author['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
                     ),
-                  Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                 ])),
                 if ((d['views'] ?? 0) > 0) Row(children: [
                   Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
                   const SizedBox(width: 3),
-                  Text(formatInt((d['views'] as num?)?.toInt() ?? 0), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text(formatInt((d['views'] as num?)?.toInt() ?? 0), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                 ]),
               ]),
               const SizedBox(height: 16),
@@ -219,7 +220,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                 style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
               ),
             ),
-            Text('$total bình chọn', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text('$total bình chọn', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           ]),
           const SizedBox(height: 10),
           ...options.map((o) {
@@ -232,7 +233,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Row(children: [
                   Expanded(child: Text((oo['name'] ?? '').toString(), style: body(TextStyle(fontSize: 13, color: AppColors.text)))),
-                  Text('$votes', style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w700))),
+                  Text('$votes', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w700))),
                 ]),
                 const SizedBox(height: 4),
                 ClipRRect(
@@ -274,12 +275,12 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                                     child: SizedBox(
                                       width: 16, height: 16,
                                       child: avatar != null && avatar.isNotEmpty
-                                          ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent))
-                                          : Container(color: AppColors.accent, alignment: Alignment.center, child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?', style: body(const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w700)))),
+                                          ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent))
+                                          : Container(color: AppColors.accent, alignment: Alignment.center, child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?', style: body(const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)))),
                                     ),
                                   ),
                                   const SizedBox(width: 4),
-                                  Text(username, style: body(TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
+                                  Text(username, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
                                 ]),
                               ),
                             ),
@@ -288,7 +289,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                       if (votes > answers.length)
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text('+${votes - answers.length}', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                          child: Text('+${votes - answers.length}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                         ),
                     ],
                   ),

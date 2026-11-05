@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -99,7 +100,7 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
                     leading: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: 44, height: 44, fit: BoxFit.cover)
+                          ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 110), width: 44, height: 44, fit: BoxFit.cover)
                           : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: Icon(Icons.playlist_play, color: AppColors.textMuted)),
                     ),
                     title: Text(p['title'] ?? '', style: AppText.title),

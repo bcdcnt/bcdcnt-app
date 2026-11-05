@@ -83,7 +83,7 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
     if (_sheet == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy bản nhạc', style: AppText.bodyText)),
       );
     }
@@ -100,9 +100,9 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BẢN NHẠC', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Bản nhạc'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -147,7 +147,7 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
                 Wrap(spacing: 6, runSpacing: 6, children: tags.map((t) => InkWell(
                   onTap: () => context.push('/tag/${t['slug']}'),
                   borderRadius: BorderRadius.circular(14),
-                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)), child: Text('#${t['name']}', style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary)))),
+                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)), child: Text('#${t['name']}', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary)))),
                 )).toList()),
               ],
 
@@ -159,7 +159,7 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
                   Text('Bản thu (${_formatInt(_songs.length)})', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ]),
                 const SizedBox(height: 8),
-                ..._songs.asMap().entries.map((e) => SongRow(song: e.value, index: e.key, showIndex: true, onTap: () => context.push('/song/${e.value['id']}', extra: e.value))),
+                ..._songs.asMap().entries.map((e) => SongRow(song: e.value, index: e.key, showIndex: true, queue: asSongList(_songs))),
               ],
 
               SizedBox(height: player.currentSong != null ? 90 : 20),

@@ -247,7 +247,7 @@ class _ActionBtn extends StatelessWidget {
           ),
           if (badge != null) Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(badge!, style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
+            child: Text(badge!, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white))),
           ),
         ],
       ),

@@ -5,9 +5,13 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import '../constants/theme.dart';
 
 class ApiClient {
+  /// App version ("1.3.0+8"), set once at startup from package_info.
+  static String appVersion = '';
+
   /// Identifies requests as coming from the native app so the BE can branch
   /// behavior (e.g. analytics, in-app webviews, response trimming). Format:
-  /// `bcdcnt-flutter/<platform>` — backend can split on `/`.
+  /// `bcdcnt-flutter/<platform>/<version>` — backend can split on `/`
+  /// (AppAccessGuard only checks that the header is present).
   static String get _clientHeader {
     final platform = kIsWeb
         ? 'web'
@@ -22,7 +26,7 @@ class ApiClient {
                         : Platform.isLinux
                             ? 'linux'
                             : 'unknown');
-    return 'bcdcnt-flutter/$platform';
+    return appVersion.isEmpty ? 'bcdcnt-flutter/$platform' : 'bcdcnt-flutter/$platform/$appVersion';
   }
 
   static Map<String, String> _baseHeaders({String? token, bool jsonContent = false}) {

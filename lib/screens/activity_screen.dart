@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,7 +11,9 @@ import '../widgets/empty_state.dart';
 import '../widgets/mini_player.dart';
 
 class ActivityScreen extends StatefulWidget {
-  const ActivityScreen({super.key});
+  /// Inside the Cộng đồng tab: no app bar, the tab draws the header.
+  final bool embedded;
+  const ActivityScreen({super.key, this.embedded = false});
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
@@ -155,13 +158,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
       backgroundColor: AppColors.bg,
       body: Stack(children: [
         CustomScrollView(controller: _scrollCtl, slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('HOẠT ĐỘNG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
-            centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          ),
+          if (!widget.embedded)
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: AppColors.bg,
+              title: const Text('Hoạt động'),
+              centerTitle: true,
+              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => context.pop()),
+            ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
             sliver: SliverToBoxAdapter(child: Container(
@@ -237,7 +241,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
               child: user?['avatar']?['url'] != null
-                  ? CachedNetworkImage(imageUrl: user['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconData, color: AppColors.accentLight, size: 16))
+                  ? CachedNetworkImage(imageUrl: cdnImg((user['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconData, color: AppColors.accentLight, size: 16))
                   : Icon(iconData, color: AppColors.accentLight, size: 16),
             ),
           ),
@@ -285,7 +289,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             ]),
           ),
           const SizedBox(height: 4),
-          Text(timeago(a['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text(timeago(a['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
         ])),
         const SizedBox(width: 8),
         Container(
@@ -308,7 +312,7 @@ class _DayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
       child: Text(
         label.toUpperCase(),
-        style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

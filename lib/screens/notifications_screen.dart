@@ -1,4 +1,4 @@
-import 'dart:convert';
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,6 +8,8 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/date_groups.dart';
+import '../services/notification_route.dart';
+import '../services/push.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/mini_player.dart';
 
@@ -61,6 +63,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (auth.token == null) return;
     // Update local cache instantly for badge feedback
     auth.clearUnread();
+    PushService.clearBadge();
     try { await auth.authedMutate(r'mutation { resetUnread }', null); } catch (_) {}
   }
 
@@ -111,57 +114,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() { final idx = _items.indexWhere((i) => i['id'] == n['id']); if (idx >= 0) _items[idx]['is_read'] = 1; });
   }
 
-  String? _routeFor(Map<String, dynamic> notif) {
-    Map? router;
-    final extra = notif['extra'];
-    if (extra != null) {
-      try {
-        final parsed = extra is String ? jsonDecode(extra) : extra;
-        if (parsed is Map) router = parsed['router'] is Map ? parsed['router'] : parsed;
-      } catch (_) {}
-    }
-    // Upload notif without router data → review page (admin)
-    if (notif['object_type'] == 'upload' && router?['slug'] == null) {
-      return '/bai-gui/${notif['object_id']}';
-    }
-    final type = (router?['type'] ?? notif['object_type'])?.toString();
-    final id = router?['id'] ?? notif['object_id'];
-    final slug = router?['slug']?.toString();
-    if (type == null) return null;
-
-    const songTypes = {'song', 'folk', 'instrumental', 'karaoke', 'poem'};
-    const peoplePrefix = {'artist': 'nghe-si', 'composer': 'nhac-si', 'recomposer': 'soan-gia', 'poet': 'nha-tho'};
-
-    if (songTypes.contains(type) && id != null) return '/song/$id';
-    if (peoplePrefix.containsKey(type) && slug != null) return '/${peoplePrefix[type]}/$slug';
-    if (type == 'sheet' && id != null) return '/sheet/$id';
-    if (type == 'discussion' && id != null) return '/thao-luan/$id';
-    if (type == 'playlist' && id != null) return '/playlist/$id';
-    if (type == 'document' && id != null) return '/tu-lieu/chi-tiet/$id';
-    if (type == 'upload' && id != null) return '/bai-gui/$id';
-    if (type == 'user' && id != null) return '/user/$id';
-    if (type == 'page' && slug != null) return '/p/$slug';
-    // Comment notifications: navigate to inner object (target of the comment)
-    if (notif['object_type'] == 'comment') {
-      // The inner object info isn't typically in `router` — fall back to nothing.
-      // If router has a `commentable_type`/`commentable_id` we could use it.
-      final ct = router?['commentable_type']?.toString();
-      final cid = router?['commentable_id'];
-      if (ct != null && cid != null) {
-        if (songTypes.contains(ct.toLowerCase())) return '/song/$cid';
-        if (ct.toLowerCase() == 'sheet') return '/sheet/$cid';
-        if (ct.toLowerCase() == 'discussion') return '/thao-luan/$cid';
-        if (ct.toLowerCase() == 'document') return '/tu-lieu/chi-tiet/$cid';
-        if (ct.toLowerCase() == 'playlist') return '/playlist/$cid';
-      }
-    }
-    return null;
-  }
-
   void _open(Map<String, dynamic> notif) {
     if (notif['is_read'] != 1 && notif['is_read'] != true) _markRead(notif);
-    final r = _routeFor(notif);
-    if (r != null) context.push(r);
+    final r = notificationRoute(notif);
+    if (r != null) context.push(r.path, extra: r.extra);
   }
 
   List<Object> get _grouped => groupByDay(_items, (n) => n['created_at']);
@@ -173,7 +129,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Vui lòng đăng nhập để xem thông báo', style: AppText.bodyText)),
       );
     }
@@ -185,9 +141,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THÔNG BÁO', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Thông báo'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
             actions: [
               if (hasUnread)
                 TextButton(onPressed: _markAllRead, child: Text('Đọc tất cả', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
@@ -245,7 +201,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
               child: ClipOval(
                 child: sender?['avatar']?['url'] != null
-                    ? CachedNetworkImage(imageUrl: sender['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18))
+                    ? CachedNetworkImage(imageUrl: cdnImg((sender['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18))
                     : Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18),
               ),
             ),
@@ -258,7 +214,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
             ])),
             const SizedBox(height: 4),
-            Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 11, color: unread ? AppColors.accentLight : AppColors.textMuted))),
+            Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 12, color: unread ? AppColors.accentLight : AppColors.textMuted))),
           ])),
           if (unread)
             Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 4), decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
@@ -280,7 +236,7 @@ class _NotifDayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 18, 8, 6),
       child: Text(
         label.toUpperCase(),
-        style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

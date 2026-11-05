@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -90,7 +91,7 @@ class ProfileScreen extends StatelessWidget {
           child: Center(child: Column(children: [
             Text('BCĐCNT', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppColors.textMuted, letterSpacing: 4))),
             const SizedBox(height: 4),
-            Text('Bài ca đi cùng năm tháng', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontStyle: FontStyle.italic))),
+            Text('Bài ca đi cùng năm tháng', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontStyle: FontStyle.italic))),
           ])),
         ),
       ],
@@ -110,7 +111,7 @@ class ProfileScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
               image: user['background'] != null
-                  ? DecorationImage(image: CachedNetworkImageProvider(user['background']), fit: BoxFit.cover)
+                  ? DecorationImage(image: CachedNetworkImageProvider(cdnImg((user['background']).toString(), 960)), fit: BoxFit.cover)
                   : null,
             ),
             foregroundDecoration: BoxDecoration(
@@ -133,7 +134,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 child: ClipOval(
                   child: user['avatar'] != null
-                      ? CachedNetworkImage(imageUrl: user['avatar'], fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white, size: 36))
+                      ? CachedNetworkImage(imageUrl: cdnImg((user['avatar']).toString(), 240), fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Colors.white, size: 36))
                       : const Icon(Icons.person, color: Colors.white, size: 36),
                 ),
               ),
@@ -152,7 +153,7 @@ class ProfileScreen extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: AppColors.accentSoft, border: Border.all(color: AppColors.accent.withValues(alpha: 0.3))),
-          child: Text('Xem trang cá nhân', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+          child: Text('Xem trang cá nhân', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
         ),
       ),
     ]);
@@ -256,7 +257,7 @@ class ProfileScreen extends StatelessWidget {
               decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(10)),
               constraints: const BoxConstraints(minWidth: 18),
               alignment: Alignment.center,
-              child: Text(badge > 99 ? '99+' : '$badge', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
+              child: Text(badge > 99 ? '99+' : '$badge', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white))),
             ),
           const SizedBox(width: 6),
           Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),

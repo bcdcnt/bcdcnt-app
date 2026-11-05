@@ -84,9 +84,9 @@ class _MyTopicsScreenState extends State<MyTopicsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THẢO LUẬN CỦA TÔI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Thảo luận của tôi'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -114,25 +114,25 @@ class _MyTopicsScreenState extends State<MyTopicsScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(color: _statusColor(status).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-                            child: Text(_statusLabel(status), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _statusColor(status)))),
+                            child: Text(_statusLabel(status), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _statusColor(status)))),
                           ),
                         ]),
                         const SizedBox(height: 6),
                         Wrap(spacing: 12, children: [
                           if (d['forum']?['title'] != null)
-                            Text(d['forum']['title'], style: body(TextStyle(fontSize: 11, color: AppColors.accentLight))),
-                          Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                            Text(d['forum']['title'], style: body(TextStyle(fontSize: 12, color: AppColors.accentLight))),
+                          Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                           if ((d['comment_count'] ?? 0) > 0)
                             Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(Icons.chat_bubble_outline, size: 11, color: AppColors.textMuted),
                               const SizedBox(width: 3),
-                              Text('${d['comment_count']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('${d['comment_count']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                             ]),
                           if ((d['views'] ?? 0) > 0)
                             Row(mainAxisSize: MainAxisSize.min, children: [
                               Icon(Icons.visibility_outlined, size: 11, color: AppColors.textMuted),
                               const SizedBox(width: 3),
-                              Text('${d['views']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('${d['views']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                             ]),
                         ]),
                       ]),

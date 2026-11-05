@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -8,7 +9,9 @@ import '../services/player.dart';
 import '../widgets/mini_player.dart';
 
 class DiscussionListScreen extends StatefulWidget {
-  const DiscussionListScreen({super.key});
+  /// Inside the Cộng đồng tab: no app bar / hero, the tab draws the header.
+  final bool embedded;
+  const DiscussionListScreen({super.key, this.embedded = false});
 
   @override
   State<DiscussionListScreen> createState() => _DiscussionListScreenState();
@@ -54,13 +57,14 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       backgroundColor: AppColors.bg,
       body: Stack(children: [
         CustomScrollView(slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('THẢO LUẬN', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
-            centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          ),
+          if (!widget.embedded)
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: AppColors.bg,
+              title: const Text('Thảo luận'),
+              centerTitle: true,
+              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => context.pop()),
+            ),
           if (_loading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_forums.isEmpty)
@@ -70,7 +74,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
               sliver: SliverList(delegate: SliverChildListDelegate([
                 // Hero
-                Container(
+                if (!widget.embedded) Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
@@ -87,7 +91,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
                     ])),
                   ]),
                 ),
-                const SizedBox(height: 22),
+                if (!widget.embedded) const SizedBox(height: 22),
 
                 ..._forums.map((parent) => _parentForum(parent)),
               ])),
@@ -106,7 +110,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
+          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
         ),
         if (children.isEmpty)
           Container(
@@ -138,13 +142,13 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(forum['title'] ?? '', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                 if ((forum['content'] ?? '').toString().isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
               ])),
               if (total > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
-                  child: Text('$total chủ đề', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  child: Text('$total chủ đề', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                 ),
               const SizedBox(width: 6),
               Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
@@ -184,7 +188,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
               child: author?['avatar']?['url'] != null
-                  ? CachedNetworkImage(imageUrl: author['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 16))
+                  ? CachedNetworkImage(imageUrl: cdnImg((author['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.person, color: AppColors.accentLight, size: 16))
                   : Icon(Icons.person, color: AppColors.accentLight, size: 16),
             ),
           ),
@@ -193,21 +197,21 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
             Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
             const SizedBox(height: 4),
             Wrap(spacing: 8, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
-              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
             ]),
           ])),
           const SizedBox(width: 8),
           if ((d['comment_count'] ?? 0) > 0) ...[
             Icon(Icons.chat_bubble_outline, size: 12, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['comment_count']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text('${d['comment_count']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
             const SizedBox(width: 8),
           ],
           if ((d['views'] ?? 0) > 0) ...[
             Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['views']}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text('${d['views']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           ],
         ]),
       ),

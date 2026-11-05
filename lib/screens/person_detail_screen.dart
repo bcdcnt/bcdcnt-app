@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -5,11 +6,15 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
 import '../constants/theme.dart';
+import '../widgets/ui.dart';
+import '../widgets/auth_dialogs.dart';
 import '../services/api.dart';
+import '../services/push.dart';
 import '../services/auth.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
+import 'home_mobile_screen.dart' show playOrOpen;
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/shimmer.dart';
@@ -105,6 +110,10 @@ const _sortOptions = [
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Map<String, dynamic>? _person;
+  // Theo dõi = ♥ on the person page (same `like` data as the web heart).
+  bool _following = false;
+  int _followers = 0;
+  bool _followBusy = false;
   final Map<String, _SectionState> _sections = {};
   // Document tabs share the same _SectionState shape (items + total).
   // Sort is fixed (id DESC, newest first) so we don't reuse the sort field.
@@ -198,7 +207,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final mediaCountsQuery = _mediaSecs.map((m) =>
       '${m.key}Docs: documents(first: 1, page: 1, where: {column: "type", value: "${m.key}"}) { paginatorInfo { total } }'
     ).join('\n');
-    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads $sectionsQuery $mediaCountsQuery } }';
+    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads loves(first: 500) { data { user_id } paginatorInfo { total } } $sectionsQuery $mediaCountsQuery } }';
     try {
       final data = await ApiClient.query(q, {'slug': widget.slug});
       final p = data[_cfg.queryName];
@@ -206,6 +215,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       if (p == null) { setState(() => _loading = false); return; }
       setState(() {
         _person = Map<String, dynamic>.from(p);
+        final lovers = ((p['loves']?['data'] ?? []) as List).whereType<Map>();
+        final me = context.read<AuthProvider>().user?['id']?.toString();
+        _following = me != null && lovers.any((l) => l['user_id']?.toString() == me);
+        _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? lovers.length;
         for (final c in _cfg.sections) {
           final raw = p[c.key];
           _sections[c.key] = _SectionState(
@@ -328,7 +341,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                     child: InteractiveViewer(
                       minScale: 1, maxScale: 4,
                       child: CachedNetworkImage(
-                        imageUrl: url,
+                        imageUrl: url  /* full size: zoomable viewer */,
                         fit: BoxFit.contain,
                         placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
                         errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
@@ -355,6 +368,40 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
+  Future<void> _toggleFollow() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) {
+      showDialog(context: context, builder: (_) => const LoginDialog());
+      return;
+    }
+    if (_followBusy || _person == null) return;
+    final next = !_following;
+    setState(() {
+      _followBusy = true;
+      _following = next;
+      _followers = (_followers + (next ? 1 : -1)).clamp(0, 1 << 30);
+    });
+    try {
+      await auth.authedMutate(
+        'mutation(\$id: ID!) { ${next ? 'love' : 'unlove'}(lovable_id: \$id, lovable_type: "${_cfg.queryName}") { id } }',
+        {'id': _person!['id'].toString()},
+      );
+      if (mounted && next) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đang theo dõi ${_person!['title']} — bạn sẽ được báo khi có bài mới'), duration: const Duration(seconds: 3)));
+        PushService.instance.maybeAsk(context, reason: 'Nhận thông báo khi ${_person!['title']} có bài mới.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _following = !next;
+          _followers = (_followers + (next ? -1 : 1)).clamp(0, 1 << 30);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _followBusy = false);
+    }
+  }
+
   Future<void> _share() async {
     if (_person == null) return;
     final url = '$siteUrl${_cfg.routePrefix}${_person!['slug']}';
@@ -371,8 +418,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         backgroundColor: AppColors.bg,
         appBar: AppBar(
           backgroundColor: AppColors.bg, elevation: 0,
-          leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          title: Text(_cfg.label.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text(_cfg.label),
           centerTitle: true,
         ),
         body: const SingleChildScrollView(child: Column(children: [
@@ -384,7 +431,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (_person == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy', style: AppText.bodyText)),
       );
     }
@@ -404,30 +451,33 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           children: [
             NestedScrollView(
               headerSliverBuilder: (ctx, _) => [
-                SliverAppBar(
-                  pinned: true,
-                  backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                  leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-                  title: Text(_cfg.label.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
-                  centerTitle: true,
-                  actions: [IconButton(icon: Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
-                ),
+                if (MediaQuery.sizeOf(context).width >= 900)
+                  SliverAppBar(
+                    pinned: true,
+                    backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+                    leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                    title: Text(_cfg.label),
+                    centerTitle: true,
+                    actions: [IconButton(icon: Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
+                  )
+                else
+                  _mobileHero(p),
                 SliverToBoxAdapter(child: _buildHeader(p)),
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _TabBarDelegate(
                     tabs: [
+                      ...visibleSections.map((c) => Tab(text: '${c.label} · ${_formatInt(_sections[c.key]!.total)}')),
                       const Tab(text: 'Tiểu sử'),
-                      ...visibleSections.map((c) => Tab(text: '${c.label} (${_formatInt(_sections[c.key]!.total)})')),
-                      ...visibleMedia.map((m) => Tab(text: '${m.label} (${_formatInt(_media[m.key]!.total)})')),
+                      ...visibleMedia.map((m) => Tab(text: '${m.label} · ${_formatInt(_media[m.key]!.total)}')),
                     ],
                   ),
                 ),
               ],
               body: TabBarView(
                 children: [
-                  _buildBioTab(p, player.currentSong != null),
                   ...visibleSections.map((c) => _buildSectionTab(c)),
+                  _buildBioTab(p, player.currentSong != null),
                   ...visibleMedia.map((m) => _buildMediaTab(m)),
                 ],
               ),
@@ -513,7 +563,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: thumb != null
-                    ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight))
+                    ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight))
                     : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
               ),
             );
@@ -540,7 +590,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       child: Stack(children: [
                         Positioned.fill(
                           child: thumb != null
-                              ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight))
+                              ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight))
                               : Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted)),
                         ),
                         Center(child: Container(width: 40, height: 40, decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), shape: BoxShape.circle), child: const Icon(Icons.play_arrow, color: Colors.white, size: 24))),
@@ -573,7 +623,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       Text(d['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(d['uploader']['username'].toString(), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'].toString(), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       ),
                     ]),
                   ),
@@ -601,7 +651,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   if (thumb != null)
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: CachedNetworkImage(imageUrl: thumb, width: 80, height: 60, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 80, height: 60, color: AppColors.bg)),
+                      child: CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 200), width: 80, height: 60, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 80, height: 60, color: AppColors.bg)),
                     )
                   else
                     Container(width: 80, height: 60, decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(8)), child: Icon(Icons.article_outlined, color: AppColors.textMuted)),
@@ -657,7 +707,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               ),
               child: ClipOval(
                 child: p['avatar']?['url'] != null
-                    ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
+                    ? CachedNetworkImage(imageUrl: cdnImg((p['avatar']['url']).toString(), 480), fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
                     : _initialsFallback(p),
               ),
             ),
@@ -672,7 +722,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 //   space tier  6 → 14 → 6 → 22 (within / between groups)
                 Text(
                   _cfg.label.toUpperCase(),
-                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
                 ),
                 const SizedBox(height: 6),
                 Text(p['title'] ?? '', style: AppText.hero),
@@ -715,69 +765,150 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     );
   }
 
-  Widget _buildMobileHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          Center(
-            child: InkWell(
-              onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
-              borderRadius: BorderRadius.circular(70),
-              child: Container(
-                width: 140, height: 140,
+  // Phone header (2026-11 redesign): avatar beside name, one meta line
+  // (years · quê), a single stats strip, and "Phát tất cả" as the main action.
+  /// Phone hero: the person's photo fills the top (brand-tinted), name and
+  /// life line on it; collapses into a wine bar with the name.
+  Widget _mobileHero(Map<String, dynamic> p) {
+    String year(String k) => (p[k] ?? '').toString();
+    final years = [year('yob'), year('yod')].where((y) => y.isNotEmpty && y != '0').join(' – ');
+    final meta = [years, (p['born_address'] ?? '').toString()].where((s) => s.isNotEmpty).join(' · ');
+    final rank = (p['rank'] ?? '').toString();
+    final avatar = p['avatar']?['url']?.toString();
+    final top = MediaQuery.paddingOf(context).top;
+    Widget circle(IconData icon, String tip, VoidCallback onTap) => Tooltip(
+          message: tip,
+          child: Material(
+            color: Colors.white.withValues(alpha: 0.9),
+            shape: const CircleBorder(),
+            child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: SizedBox(width: 44, height: 44, child: Icon(icon, size: 20, color: AppColors.wine))),
+          ),
+        );
+    return SliverToBoxAdapter(
+      child: SizedBox(
+        height: 340 + top,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              onTap: avatar != null ? () => _showAvatarZoom(p) : null,
+              child: avatar != null
+                  ? BrandTint(child: CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 1000), fit: BoxFit.cover, alignment: const Alignment(0, -0.4), memCacheWidth: 1000))
+                  : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.wine, AppColors.rose]))),
+            ),
+            const IgnorePointer(
+              child: DecoratedBox(
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 30, spreadRadius: -5)],
-                  border: Border.all(color: AppColors.border, width: 3),
-                ),
-                child: ClipOval(
-                  child: p['avatar']?['url'] != null
-                      ? CachedNetworkImage(imageUrl: p['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
-                      : _initialsFallback(p),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [0, 0.3, 1],
+                    colors: [Color(0x400E0A0A), Color(0x000E0A0A), Color(0xE00E0A0A)],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            p['title'] ?? '',
-            textAlign: TextAlign.center,
-            style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text)),
-          ),
-          if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(p['rank'], textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
+            Positioned(
+              top: top + 8,
+              left: 12,
+              right: 12,
+              child: Row(children: [
+                circle(Icons.arrow_back_ios_new_rounded, 'Quay lại', () => context.pop()),
+                const Spacer(),
+                circle(Icons.ios_share_rounded, 'Chia sẻ', _share),
+              ]),
+            ),
+            Positioned(
+              left: 20,
+              right: 20,
+              bottom: 20,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_cfg.label.toUpperCase(), style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0xD9FFFFFF)))),
+                  const SizedBox(height: 6),
+                  Text(p['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 34, height: 1.1, fontWeight: FontWeight.w800, color: Colors.white))),
+                  if (meta.isNotEmpty || rank.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text([meta, rank].where((s) => s.isNotEmpty).join('\n'), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: Color(0xD9FFFFFF)))),
+                  ],
+                ],
+              ),
+            ),
           ],
-          const SizedBox(height: 20),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMobileHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
+    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.total ?? 0) > 0, orElse: () => _cfg.sections.first);
+    final firstState = _sections[first.key];
+    final canPlay = (firstState?.items.isNotEmpty ?? false);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Container(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.border), bottom: BorderSide(color: AppColors.border)),
-            ),
+            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(18)),
             child: IntrinsicHeight(
               child: Row(
                 children: [
-                  _StatCell(label: 'Lượt nghe', value: _formatInt(p['total_listens'])),
+                  _StatCell(label: 'lượt nghe', value: formatViews(((p['total_listens'] ?? 0) as num).toInt())),
                   Container(width: 1, color: AppColors.border),
-                  _StatCell(label: 'Lượt tải', value: _formatInt(p['total_downloads'])),
+                  _StatCell(label: first.label.toLowerCase(), value: _formatInt(firstState?.total ?? 0)),
                   Container(width: 1, color: AppColors.border),
-                  _StatCell(label: 'Lượt xem', value: _formatInt(p['views'])),
+                  _StatCell(label: 'lượt tải', value: formatViews(((p['total_downloads'] ?? 0) as num).toInt())),
                 ],
               ),
             ),
           ),
-          if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty)
-            _InfoRow(icon: Icons.badge_outlined, label: 'Tên thật', value: p['real_name']),
-          if (bornDate != null) _InfoRow(icon: Icons.cake_outlined, label: 'Ngày sinh', value: bornDate),
-          if (deathDate != null) _InfoRow(icon: Icons.whatshot_outlined, label: 'Ngày mất', value: deathDate),
-          if (p['born_address'] != null && (p['born_address'] as String).isNotEmpty)
-            _InfoRow(icon: Icons.place_outlined, label: 'Quê quán', value: p['born_address']),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: PillButton(label: 'Phát tất cả', icon: Icons.play_arrow_rounded, onTap: canPlay ? () => _playSection(first, shuffle: false) : null)),
+              const SizedBox(width: 10),
+              Expanded(child: PillButton(label: 'Ngẫu nhiên', icon: Icons.shuffle_rounded, primary: false, onTap: canPlay ? () => _playSection(first, shuffle: true) : null)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Material(
+            color: _following ? AppColors.accentSoft : Colors.transparent,
+            shape: StadiumBorder(side: BorderSide(color: _following ? Colors.transparent : AppColors.border, width: 1.5)),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: _toggleFollow,
+              child: SizedBox(
+                height: 46,
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(_following ? Icons.check_rounded : Icons.person_add_alt_1_rounded, size: 20, color: _following ? AppColors.accentLight : AppColors.text),
+                  const SizedBox(width: 8),
+                  Text(
+                    [_following ? 'Đang theo dõi' : 'Theo dõi', if (_followers > 0) '$_followers người'].join(' · '),
+                    style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _following ? AppColors.accentLight : AppColors.text)),
+                  ),
+                ]),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// Queue the loaded songs of [cfg] (first page, as sorted) and start.
+  void _playSection(_SectionCfg cfg, {required bool shuffle}) {
+    final items = (_sections[cfg.key]?.items ?? [])
+        .whereType<Map>()
+        .map((s) => {...Map<String, dynamic>.from(s), 'file_type': cfg.fileType})
+        .where((s) => s['file']?['audio_url'] != null)
+        .toList();
+    if (items.isEmpty) return;
+    if (shuffle) items.shuffle();
+    context.read<PlayerProvider>().playSong(items.first, items, 'manual', '${_person?['title'] ?? ''} · ${cfg.label}');
   }
 
   Widget _buildSectionTab(_SectionCfg cfg) {
@@ -813,7 +944,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           final s = state.items[i - 1];
           final sg = Map<String, dynamic>.from(s as Map);
           sg['file_type'] = cfg.fileType;
-          return SongRow(song: sg, metricKey: state.sort == 'newest' ? 'time' : state.sort, onTap: () => context.push('/song/${sg['id']}', extra: sg));
+          final queue = state.items.whereType<Map>().map((x) => {...Map<String, dynamic>.from(x), 'file_type': cfg.fileType}).toList();
+          return Builder(
+            builder: (rowCtx) => SongRow(
+              song: sg,
+              metricKey: state.sort == 'newest' ? 'time' : state.sort,
+              isPlaying: rowCtx.select<PlayerProvider, String?>((pl) => pl.currentSong?['id']?.toString()) == sg['id']?.toString(),
+              onTap: () => playOrOpen(context, sg, queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
+            ),
+          );
         },
       ),
     );
@@ -921,24 +1060,28 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   _TabBarDelegate({required this.tabs});
 
   @override
-  double get minExtent => 48;
+  double get minExtent => 50;
   @override
-  double get maxExtent => 48;
+  double get maxExtent => 50;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
+      height: maxExtent,
       color: AppColors.bg,
       child: TabBar(
         isScrollable: true,
         tabAlignment: TabAlignment.start,
-        labelColor: AppColors.accentLight,
-        unselectedLabelColor: AppColors.textSecondary,
-        indicatorColor: AppColors.accent,
-        indicatorWeight: 2,
-        dividerColor: AppColors.borderSubtle,
-        labelStyle: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-        unselectedLabelStyle: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+        labelColor: AppColors.text,
+        unselectedLabelColor: AppColors.textMuted,
+        indicatorColor: AppColors.wine,
+        indicatorWeight: 3,
+        indicatorSize: TabBarIndicatorSize.label,
+        dividerColor: AppColors.border,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 11),
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        labelStyle: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+        unselectedLabelStyle: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
         tabs: tabs,
       ),
     );
@@ -995,34 +1138,12 @@ class _StatCell extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(value, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+          Text(value, style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text))),
           const SizedBox(height: 2),
-          Text(label, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
         ],
       ),
     );
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _InfoRow({required this.icon, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: AppColors.textMuted),
-          const SizedBox(width: 8),
-          Text('$label: ', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-          Expanded(child: Text(value, style: body(TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w500)))),
-        ],
-      ),
-    );
-  }
-}

@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -96,9 +97,9 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('Playlist'),
               centerTitle: true,
-              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -107,7 +108,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(colors: [Color(0xFF388E3C), Color(0xFF81C784)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: const LinearGradient(colors: [Color(0xFF711313), Color(0xFFB48988)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     boxShadow: [BoxShadow(color: const Color(0xFF388E3C).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Row(
@@ -145,7 +146,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
                         child: Row(children: [
-                          ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted))),
+                          ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted))),
                           const SizedBox(width: 12),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                             Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
@@ -154,10 +155,10 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                               if (pl['user']?['username'] != null) ...[
                                 Icon(Icons.person, size: 11, color: AppColors.textMuted),
                                 const SizedBox(width: 3),
-                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
                                 const SizedBox(width: 8),
                               ],
-                              Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                             ]),
                           ])),
                           Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),

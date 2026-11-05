@@ -34,5 +34,16 @@ class GoogleOAuth {
 
   static const List<String> scopes = ['openid', 'email', 'profile'];
 
+  /// iPhone/iPad "Sign in with Google" (google_sign_in). OAuth client of
+  /// type **iOS** for bundle net.bcdcnt.music in the same Google Cloud
+  /// project (454137046742) — client IDs aren't secret. Info.plist must
+  /// also list its reversed form as a URL scheme. Empty = button hidden.
+  static const String iosClientId = String.fromEnvironment('GOOGLE_IOS_CLIENT_ID', defaultValue: '454137046742-4001925oiid99dhkfr08cdmd5dq6s8or.apps.googleusercontent.com');
+
+  /// The website's client. Passed as serverClientId so the ID token the
+  /// phone gets is addressed to the same client as the web's tokens; the
+  /// backend accepts any client of project 454137046742 either way.
+  static const String webClientId = '454137046742-racuvmqlqadldcummhfcg1eerknrumq6.apps.googleusercontent.com';
+
   static bool get isConfigured => clientId.isNotEmpty && clientSecret.isNotEmpty;
 }

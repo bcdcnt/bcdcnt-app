@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -97,7 +98,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     if (_error != null || _upload == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text(_error ?? 'Không tìm thấy bài gửi', style: AppText.bodyText)),
       );
     }
@@ -114,9 +115,9 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BÀI GỬI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Bài gửi'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -165,7 +166,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                     Row(children: [
                       const Icon(Icons.message_outlined, size: 14, color: Color(0xFFEF5350)),
                       const SizedBox(width: 6),
-                      Text('PHẢN HỒI BQT', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFEF5350), letterSpacing: 0.5))),
+                      Text('PHẢN HỒI BQT', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF5350), letterSpacing: 0.5))),
                     ]),
                     const SizedBox(height: 6),
                     Text(up['reason'], style: body(TextStyle(fontSize: 14, color: AppColors.text, height: 1.6))),
@@ -204,7 +205,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                   if (up['thumbnail']?['url'] != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
-                      child: ClipRRect(borderRadius: BorderRadius.circular(10), child: CachedNetworkImage(imageUrl: up['thumbnail']['url'], fit: BoxFit.cover)),
+                      child: ClipRRect(borderRadius: BorderRadius.circular(10), child: CachedNetworkImage(imageUrl: cdnImg((up['thumbnail']['url']).toString(), 640), fit: BoxFit.cover)),
                     ),
                   if (up['file']?['video_url'] != null && _chewieCtl != null)
                     Padding(
@@ -226,7 +227,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                   _info('Năm sáng tác', up['year']),
                   _info('Năm thu', up['record_year']),
                   if ((up['link'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('LINK GỐC', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('LINK GỐC', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
                     InkWell(
                       onTap: () => launchUrl(Uri.parse(up['link']), mode: LaunchMode.externalApplication),
                       child: Text(up['link'], style: body(TextStyle(fontSize: 13, color: AppColors.accentLight, decoration: TextDecoration.underline))),
@@ -234,12 +235,12 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                     const SizedBox(height: 14),
                   ],
                   if ((up['note'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('GHI CHÚ', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('GHI CHÚ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
                     Text(up['note'], style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
                     const SizedBox(height: 14),
                   ],
                   if ((up['content'] ?? '').toString().isNotEmpty) ...[
-                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('NỘI DUNG', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
+                    Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('NỘI DUNG', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5)))),
                     Html(
                       data: up['content'],
                       style: {
@@ -269,7 +270,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label.toUpperCase(), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+        Text(label.toUpperCase(), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
         const SizedBox(height: 4),
         Text(value.toString(), style: body(TextStyle(fontSize: 14, color: AppColors.text, height: 1.5))),
       ]),

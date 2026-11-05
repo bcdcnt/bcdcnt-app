@@ -1,7 +1,9 @@
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -18,8 +20,35 @@ import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
 import 'hover_effects.dart';
+import 'ui.dart' show UserAvatar;
+import 'song_row.dart' show GeneratedCover;
+import 'brand_logo.dart';
+import 'synced_video.dart';
+import 'lyrics_text.dart';
 import '../services/api.dart';
 import '../services/theme_provider.dart';
+
+/// Fixed "now playing" palette: the logo's wine red with cream type, used
+/// whatever app theme is active (so the player reads as its own room, like
+/// the mockup). Everything in this file colours through _PC, never AppColors
+/// surfaces directly. Sheets opened from here need solid fills, hence the
+/// opaque surface tones.
+class _PC {
+  static const bg = Color(0xFF2A0C0C);
+  static const bgTop = Color(0xFF5A1414);
+  static const surface = Color(0xFF341111);
+  static const surfaceLight = Color(0xFF401616);
+  static const surfaceHover = Color(0xFF4C1C1C);
+  static const accent = Color(0xFFFFFFFF);
+  static const accentLight = Color(0xFFE0AEAC);
+  static const accentSoft = Color(0x1FFFFFFF);
+  static const text = Color(0xFFFFFFFF);
+  static const textSecondary = Color(0xC7FFFFFF);
+  static const textMuted = Color(0x8CFFFFFF);
+  static const border = Color(0x40FFFFFF);
+  static const borderSubtle = Color(0x1FFFFFFF);
+  static const wine = Color(0xFF711313);
+}
 
 class FullPlayer extends StatefulWidget {
   const FullPlayer({super.key});
@@ -36,6 +65,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   // node each rebuild (creating a fresh FocusNode in build() spammed focus
   // requests + caused the listener to drop key events on rapid setState).
   final FocusNode _shortcutFocus = FocusNode(debugLabel: 'FullPlayer F shortcut');
+  // Phone layout's outer scroll (player page + lyrics card below).
+  final ScrollController _mobileScroll = ScrollController();
+  bool _closingByPull = false;
   _PanelMode _panel = _PanelMode.vinyl;
   // Mirrored locally so the icon flip is instant; window_manager itself
   // is queried on the next build via _isDesktop guard.
@@ -60,6 +92,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   // of the artist-only line we used to show.
   List<Map<String, dynamic>> _composers = [];
   List<Map<String, dynamic>> _poets = [];
+  List<Map<String, dynamic>> _recomposers = [];
+  // Performers with avatars for the "Thực hiện" card (queue items often
+  // carry artists without images).
+  List<Map<String, dynamic>> _creditArtists = [];
+  // Phone player cards below the controls: song story, year, the most
+  // liked comment and the comment count.
+  String? _story;
+  String? _year;
+  Map<String, dynamic>? _topComment;
+  int _commentCount = 0;
 
   // Lyrics panel display preferences. Persist across panel toggles
   // within the same session; reset on reload.
@@ -119,7 +161,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 20))..repeat();
+    _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 32))..repeat();
     // Khôi phục cỡ chữ lời đã lưu (đồng bộ trải nghiệm với web).
     SharedPreferences.getInstance().then((p) {
       final v = p.getDouble('lyrics_scale');
@@ -153,6 +195,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     if (_isDesktopOS) windowManager.removeListener(this);
     _rotation.dispose();
     _shortcutFocus.dispose();
+    _mobileScroll.dispose();
     _idleTimer?.cancel();
     // Restore the pill via the cached reference — `context.read`
     // here is unreliable since the element is mid-teardown.
@@ -201,7 +244,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     _artworkAccentForUrl = url;
     try {
       final palette = await PaletteGenerator.fromImageProvider(
-        CachedNetworkImageProvider(url),
+        CachedNetworkImageProvider(cdnImg((url).toString(), 320)),
         size: const Size(96, 96),
         maximumColorCount: 6,
       );
@@ -225,7 +268,20 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     context.push('/song/$id', extra: song);
   }
 
+  /// Person pages live in the app's navigator, under this full-screen
+  /// player — close the player first or the page opens out of sight.
+  void _openPerson(String route) {
+    Navigator.of(context).pop();
+    context.push(route);
+  }
+
   void _openArtistDetail(Map artist) {
+    // Karaoke singers are members, whatever shape the list gave them.
+    final current = context.read<PlayerProvider>().currentSong;
+    if (songKind(current) == 'karaoke' && artist['id'] != null) {
+      _openPerson('/user/${artist['id']}');
+      return;
+    }
     final slug = artist['slug']?.toString();
     if (slug != null && slug.isNotEmpty && artist['title'] != null) {
       Navigator.of(context).pop();
@@ -249,8 +305,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       }
     }
     if (entries.isEmpty) return const SizedBox.shrink();
-    final style = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.accentLight));
-    final sepStyle = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textMuted));
+    final style = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _PC.accentLight));
+    final sepStyle = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _PC.textMuted));
     final children = <Widget>[];
     for (var i = 0; i < entries.length; i++) {
       final a = entries[i];
@@ -278,8 +334,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// Each name tappable; segments collapse out when their role has no
   /// data. Wraps onto multiple lines when the viewport is narrow.
   Widget _buildCreditsBlock(List artists) {
-    final muted = body(TextStyle(fontSize: 13, color: AppColors.textMuted));
-    final accent = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight));
+    final muted = body(TextStyle(fontSize: 13, color: _PC.textMuted));
+    final accent = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _PC.accentLight));
 
     void Function() openOf(Map m, String routePrefix) => () {
       final slug = m['slug']?.toString();
@@ -341,7 +397,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
-          style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)),
+          style: body(TextStyle(fontSize: 13, color: _PC.textMuted)),
         ),
       );
     }
@@ -380,10 +436,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             visualDensity: VisualDensity.compact,
-            hoverColor: AppColors.surfaceHover,
+            hoverColor: _PC.surfaceHover,
             icon: Icon(
               muted ? Icons.volume_off : (value < 0.4 ? Icons.volume_down : Icons.volume_up),
-              color: muted ? AppColors.accentLight : AppColors.textSecondary,
+              color: muted ? _PC.accentLight : _PC.textSecondary,
             ),
             onPressed: player.toggleMute,
           ),
@@ -391,10 +447,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             width: 80,
             child: SliderTheme(
               data: SliderThemeData(
-                activeTrackColor: AppColors.accent,
-                inactiveTrackColor: AppColors.border,
-                thumbColor: AppColors.accent,
-                overlayColor: AppColors.accent.withValues(alpha: 0.18),
+                activeTrackColor: _PC.accent,
+                inactiveTrackColor: _PC.border,
+                thumbColor: _PC.accent,
+                overlayColor: _PC.accent.withValues(alpha: 0.18),
                 trackHeight: 2,
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 4),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
@@ -442,9 +498,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: AppColors.surfaceLight.withValues(alpha: 0.6),
+              color: _PC.surfaceLight.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: _PC.border),
             ),
             // Match the label and title to the same fontSize (12) so
             // crossAxisAlignment.center (Row's default) lines them up
@@ -453,11 +509,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             // Weight (800 vs 600) and colour still separate the two
             // visually without needing a size delta.
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.skip_next, size: 14, color: AppColors.accentLight),
+              Icon(Icons.skip_next, size: 14, color: _PC.accentLight),
               const SizedBox(width: 6),
               Text(
                 'Tiếp theo:',
-                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted)),
+                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: _PC.textMuted)),
               ),
               const SizedBox(width: 6),
               // Flexible (không ConstrainedBox cứng 320) để title co lại vừa
@@ -467,7 +523,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   artistText.isNotEmpty ? '$title — $artistText' : title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text)),
+                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _PC.text)),
                 ),
               ),
             ]),
@@ -484,7 +540,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// have data (no lyrics tab on instrumentals; no queue tab when
   /// the queue is empty).
   Widget _buildPanelSwitcher(PlayerProvider player, bool isInstrumental, bool hasQueue) {
-    final narrow = MediaQuery.sizeOf(context).width < 600; // mobile → chỉ icon
     final tabs = <(_PanelMode, IconData, String, String?)>[
       (_PanelMode.vinyl, Icons.album_outlined, 'Đĩa than', null),
       // Square-ish icons for the other two so the trio reads as a
@@ -500,9 +555,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         child: Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: AppColors.surfaceLight.withValues(alpha: 0.4),
+            color: _PC.surfaceLight.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppColors.borderSubtle),
+            border: Border.all(color: _PC.borderSubtle),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -515,7 +570,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
-                    color: active ? AppColors.accent.withValues(alpha: 0.85) : Colors.transparent,
+                    color: active ? _PC.accent.withValues(alpha: 0.85) : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -524,19 +579,19 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         ? SizedBox(
                             width: 14, height: 14,
                             child: Center(
-                              child: Text('A', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, height: 1, color: active ? Colors.white : AppColors.textSecondary))),
+                              child: Text('A', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, height: 1, color: active ? _PC.wine : _PC.textSecondary))),
                             ),
                           )
-                        : Icon(t.$2, size: 14, color: active ? Colors.white : AppColors.textSecondary),
-                    // Trên mobile/cửa sổ hẹp: chỉ hiện icon, bỏ chữ + badge cho gọn
-                    if (!narrow) ...[
+                        : Icon(t.$2, size: 14, color: active ? _PC.wine : _PC.textSecondary),
+                    // Icon + chữ ở mọi bề rộng (bản thiết kế 2026-11).
+                    ...[
                       const SizedBox(width: 6),
                       Text(
                         t.$3,
                         style: body(TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: active ? Colors.white : AppColors.textSecondary,
+                          color: active ? _PC.wine : _PC.textSecondary,
                         )),
                       ),
                       if (t.$4 != null) ...[
@@ -544,7 +599,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: active ? Colors.white.withValues(alpha: 0.25) : AppColors.surfaceHover,
+                            color: active ? _PC.wine.withValues(alpha: 0.15) : _PC.surfaceHover,
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
@@ -552,7 +607,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                             style: body(TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: active ? Colors.white : AppColors.textMuted,
+                              color: active ? _PC.wine : _PC.textMuted,
                             )),
                           ),
                         ),
@@ -572,8 +627,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// most-frequent action stays one tap. Tiny love count appears
   /// underneath the icon when ≥ 1 person has liked the song,
   /// borrowing the social-proof pattern from song detail.
-  Widget _buildInlineHeart(Map<String, dynamic> song) {
-    final count = _lovers.length;
+  Widget _buildInlineHeart(Map<String, dynamic> song, {bool showCount = true}) {
+    final count = showCount ? _lovers.length : 0;
     return InkWell(
       onTap: () => _handleLove(song),
       borderRadius: BorderRadius.circular(20),
@@ -585,7 +640,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             Icon(
               _liked ? Icons.favorite : Icons.favorite_border,
               size: 22,
-              color: _liked ? AppColors.accent : AppColors.textSecondary,
+              color: _liked ? _PC.accent : _PC.textSecondary,
             ),
             if (count > 0) ...[
               const SizedBox(height: 2),
@@ -594,7 +649,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 style: body(TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: _liked ? AppColors.accent : AppColors.textMuted,
+                  color: _liked ? _PC.accent : _PC.textMuted,
                 )),
               ),
             ],
@@ -628,7 +683,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       Color? activeColor,
       String? badge,
     }) {
-      final color = active ? (activeColor ?? AppColors.accentLight) : AppColors.textSecondary;
+      final color = active ? (activeColor ?? _PC.accentLight) : _PC.textSecondary;
       return Tooltip(
         message: tooltip,
         child: InkWell(
@@ -639,7 +694,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: active ? AppColors.accentSoft : Colors.transparent,
+              color: active ? _PC.accentSoft : Colors.transparent,
             ),
             child: Stack(clipBehavior: Clip.none, children: [
               Icon(icon, size: 20, color: color),
@@ -648,9 +703,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: AppColors.accent,
+                    color: _PC.accent,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.bg, width: 1),
+                    border: Border.all(color: _PC.bg, width: 1),
                   ),
                   constraints: const BoxConstraints(minWidth: 16),
                   alignment: Alignment.center,
@@ -679,7 +734,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   icon: _liked ? Icons.favorite : Icons.favorite_border,
                   tooltip: _liked ? 'Bỏ thích' : 'Yêu thích',
                   active: _liked,
-                  activeColor: AppColors.accent,
+                  activeColor: _PC.accent,
                   onTap: () => _handleLove(song),
                 ),
                 if (!isInstrumental)
@@ -715,10 +770,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
-  String _songType(Map<String, dynamic> song) {
-    final ft = song['file_type'] ?? 'song';
-    return ft == 'audio' ? 'song' : ft;
-  }
+  String _songType(Map<String, dynamic> song) => songKind(song);
 
   Future<void> _fetchLovesAndLyrics(Map<String, dynamic> song) async {
     final id = song['id'].toString();
@@ -731,10 +783,19 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       // Karaoke songs don't have composers/poets at the top level —
       // narrow the field set to avoid GraphQL "Cannot query field"
       // errors on those routes.
-      final wantsCredits = type != 'karaoke';
-      final creditFields = wantsCredits
-          ? 'composers(first: 5) { data { id title slug } } poets(first: 5) { data { id title slug } }'
-          : '';
+      // Each song type exposes different credit relations; asking for one
+      // it doesn't have makes the API reject the whole query (folk /
+      // instrumental / poem used to lose lyrics and likes this way).
+      const person = '{ data { id title slug avatar { url } } }';
+      final creditFields = switch (type) {
+        'song' => 'composers(first: 5) $person poets(first: 5) $person artists(first: 10) $person',
+        'folk' => 'composers(first: 5) $person recomposers(first: 5) $person artists(first: 10) $person',
+        'instrumental' => 'composers(first: 5) $person artists(first: 10) $person',
+        'poem' => 'poets(first: 5) $person artists(first: 10) $person',
+        // Karaoke: the composition's authors sit on the sheet, the singers are members.
+        'karaoke' => 'sheet { composers(first: 5) $person poets(first: 5) $person } users(first: 10) { data { id username avatar { url } } }',
+        _ => '',
+      };
       try {
         final data = await ApiClient.query(
           'query(\$id: ID!) { $type(id: \$id) { content $creditFields loves(first: 50) { data { user_id user { id username avatar { url } } } } } }',
@@ -742,18 +803,28 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         );
         final obj = data[type];
         final lovesData = (obj?['loves']?['data'] ?? []) as List;
-        final composers = ((obj?['composers']?['data']) as List? ?? const [])
+        List<Map<String, dynamic>> people(String key) =>
+            ((obj?[key]?['data'] ?? obj?['sheet']?[key]?['data']) as List? ?? const [])
+                .map((c) => Map<String, dynamic>.from(c as Map))
+                .toList();
+        final composers = people('composers');
+        final poets = people('poets');
+        final recomposers = ((obj?['recomposers']?['data']) as List? ?? const [])
             .map((c) => Map<String, dynamic>.from(c as Map))
             .toList();
-        final poets = ((obj?['poets']?['data']) as List? ?? const [])
-            .map((c) => Map<String, dynamic>.from(c as Map))
-            .toList();
+        final creditArtists = type == 'karaoke'
+            ? ((obj?['users']?['data']) as List? ?? const [])
+                .map((u) => <String, dynamic>{'id': u['id'], 'title': u['username'], 'username': u['username'], 'avatar': u['avatar']})
+                .toList()
+            : people('artists');
         if (!mounted) return;
         setState(() {
           _lovers = lovesData;
           _songLyrics = obj?['content'];
           _composers = composers;
           _poets = poets;
+          _creditArtists = creditArtists;
+          _recomposers = recomposers;
           final userId = context.read<AuthProvider>().user?['id'];
           if (userId != null) {
             _liked = lovesData.any((l) => l['user_id'].toString() == userId.toString());
@@ -761,7 +832,44 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           _loversFetchedForId = true;
         });
       } catch (_) {}
+      _fetchStory(type, id);
     }
+  }
+
+  /// Story / year / best comment for the phone player's cards. Separate
+  /// from the main fetch: not every song type has every field, and a
+  /// failure here must not cost the lyrics.
+  Future<void> _fetchStory(String type, String id) async {
+    setState(() {
+      _story = null;
+      _year = null;
+      _topComment = null;
+      _commentCount = 0;
+    });
+    final sheet = type == 'song' ? 'year sheet { year description }' : '';
+    try {
+      final d = await ApiClient.query(
+        'query(\$id: ID!) { $type(id: \$id) { description $sheet comments(first: 1, orderBy: [{column: "likes", order: DESC}]) { data { content likes user { username avatar { url } } } paginatorInfo { total } } } }',
+        {'id': id},
+      );
+      final o = d[type];
+      if (!mounted || o == null || _lyricsFetchedForId != id) return;
+      String clean(dynamic h) => (h ?? '').toString()
+          .replaceAll(RegExp(r'<br\s*/?>|</p>', caseSensitive: false), '\n')
+          .replaceAll(RegExp(r'<[^>]+>'), '')
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+          .trim();
+      final story = clean(o['description']).isNotEmpty ? clean(o['description']) : clean(o['sheet']?['description']);
+      final year = (o['sheet']?['year'] ?? o['year'])?.toString();
+      final cm = ((o['comments']?['data'] ?? []) as List).whereType<Map>().toList();
+      setState(() {
+        _story = story.isEmpty ? null : story;
+        _year = (year == null || year.isEmpty || year == '0') ? null : year;
+        _topComment = cm.isNotEmpty && clean(cm.first['content']).isNotEmpty ? {...Map<String, dynamic>.from(cm.first), 'text': clean(cm.first['content'])} : null;
+        _commentCount = (o['comments']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      });
+    } catch (_) {}
   }
 
   Future<void> _handleLove(Map<String, dynamic> song) async {
@@ -835,50 +943,62 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   void _showMoreSheet(BuildContext ctx, Map<String, dynamic> song, PlayerProvider player) {
     final speedLabel = '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x';
     final loveCount = _lovers.length > 99 ? '99+' : (_lovers.isEmpty ? null : '${_lovers.length}');
-    final isInstrumental = song['file_type'] == 'instrumental';
+    final isInstrumental = songKind(song) == 'instrumental';
     final hasQueue = player.queue.isNotEmpty;
     showModalBottomSheet(
       context: ctx,
-      backgroundColor: AppColors.surface,
+      backgroundColor: _PC.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (sheetCtx) => SafeArea(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           // Heart + panel toggles live in the main UI now (inline
           // title + tab strip above the panel). This sheet keeps the
-          // less common actions: share, download, speed, mute, sleep.
+          // less common actions: queue, share, download, speed, mute, sleep.
+          if (hasQueue)
+            ListTile(
+              leading: Icon(Icons.queue_music_rounded, color: _PC.textSecondary),
+              title: Text('Danh sách phát', style: body(TextStyle(color: _PC.text))),
+              trailing: Text('${player.queue.length} bài', style: body(TextStyle(color: _PC.textMuted, fontSize: 13))),
+              onTap: () { Navigator.pop(sheetCtx); _showQueueSheet(); },
+            ),
           ListTile(
-            leading: Icon(Icons.ios_share, color: AppColors.textSecondary),
-            title: Text('Chia sẻ', style: body(TextStyle(color: AppColors.text))),
+            leading: Icon(Icons.ios_share, color: _PC.textSecondary),
+            title: Text('Chia sẻ', style: body(TextStyle(color: _PC.text))),
             onTap: () { Navigator.pop(sheetCtx); _handleShare(song); },
           ),
           ListTile(
-            leading: Icon(_downloading ? Icons.hourglass_empty : Icons.download_outlined, color: AppColors.textSecondary),
-            title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(TextStyle(color: AppColors.text))),
+            leading: Icon(_downloading ? Icons.hourglass_empty : Icons.download_outlined, color: _PC.textSecondary),
+            title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(TextStyle(color: _PC.text))),
             onTap: () { Navigator.pop(sheetCtx); _handleDownload(song); },
           ),
-          Divider(height: 1, color: AppColors.borderSubtle),
+          Divider(height: 1, color: _PC.borderSubtle),
           ListTile(
-            leading: Icon(Icons.speed, color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textSecondary),
-            title: Text('Tốc độ phát', style: body(TextStyle(color: AppColors.text))),
+            leading: Icon(Icons.speed, color: player.playbackRate != 1.0 ? _PC.accentLight : _PC.textSecondary),
+            title: Text('Tốc độ phát', style: body(TextStyle(color: _PC.text))),
             trailing: Text(speedLabel, style: body(TextStyle(
-              color: player.playbackRate != 1.0 ? AppColors.accentLight : AppColors.textMuted,
+              color: player.playbackRate != 1.0 ? _PC.accentLight : _PC.textMuted,
               fontSize: 13, fontWeight: FontWeight.w700,
             ))),
             onTap: () { Navigator.pop(sheetCtx); _showSpeedSheet(); },
           ),
           ListTile(
-            leading: Icon(player.muted ? Icons.volume_off : Icons.volume_up, color: AppColors.textSecondary),
-            title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(TextStyle(color: AppColors.text))),
+            leading: Icon(player.muted ? Icons.volume_off : Icons.volume_up, color: _PC.textSecondary),
+            title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(TextStyle(color: _PC.text))),
             onTap: () { Navigator.pop(sheetCtx); player.toggleMute(); },
           ),
           ListTile(
-            leading: Icon(Icons.bedtime_outlined, color: player.hasSleepTimer ? AppColors.accentLight : AppColors.textSecondary),
+            leading: Icon(Icons.bedtime_outlined, color: player.hasSleepTimer ? _PC.accentLight : _PC.textSecondary),
             title: Text(
               player.hasSleepTimer ? 'Hẹn giờ tắt' : 'Hẹn giờ tắt',
-              style: body(TextStyle(color: player.hasSleepTimer ? AppColors.accentLight : AppColors.text)),
+              style: body(TextStyle(color: player.hasSleepTimer ? _PC.accentLight : _PC.text)),
             ),
             trailing: player.hasSleepTimer
-                ? Text(_sleepTimerLabel(player), style: body(TextStyle(color: AppColors.accentLight, fontSize: 13, fontWeight: FontWeight.w700)))
+                // Re-read the countdown on each position tick (the provider
+                // no longer notifies per tick).
+                ? ValueListenableBuilder<Duration>(
+                    valueListenable: player.positionNotifier,
+                    builder: (context, _, _) => Text(_sleepTimerLabel(player), style: body(TextStyle(color: _PC.accentLight, fontSize: 13, fontWeight: FontWeight.w700))),
+                  )
                 : null,
             onTap: () { Navigator.pop(sheetCtx); _showSleepSheet(); },
           ),
@@ -908,7 +1028,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     ];
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: _PC.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -917,14 +1037,14 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Row(children: [
-                Icon(Icons.bedtime_outlined, size: 18, color: AppColors.accentLight),
+                Icon(Icons.bedtime_outlined, size: 18, color: _PC.accentLight),
                 const SizedBox(width: 8),
-                Text('Hẹn giờ tắt', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text('Hẹn giờ tắt', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _PC.text))),
                 const Spacer(),
                 if (player.hasSleepTimer)
                   TextButton(
                     onPressed: () { player.cancelSleepTimer(); Navigator.pop(ctx); },
-                    child: Text('Huỷ', style: body(TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w700))),
+                    child: Text('Huỷ', style: body(TextStyle(color: _PC.accentLight, fontWeight: FontWeight.w700))),
                   ),
               ]),
             ),
@@ -932,14 +1052,14 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
               final active = !player.sleepEndOfSong && player.sleepRemaining != null
                   && (player.sleepRemaining!.inSeconds - p.$1.inSeconds).abs() < 60;
               return ListTile(
-                title: Text(p.$2, style: body(TextStyle(color: active ? AppColors.accentLight : AppColors.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
-                trailing: active ? Icon(Icons.check, color: AppColors.accentLight) : null,
+                title: Text(p.$2, style: body(TextStyle(color: active ? _PC.accentLight : _PC.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
+                trailing: active ? Icon(Icons.check, color: _PC.accentLight) : null,
                 onTap: () { player.setSleepTimer(p.$1); Navigator.pop(ctx); },
               );
             }),
             ListTile(
-              title: Text('Hết bài này', style: body(TextStyle(color: player.sleepEndOfSong ? AppColors.accentLight : AppColors.text, fontWeight: player.sleepEndOfSong ? FontWeight.w700 : FontWeight.w500))),
-              trailing: player.sleepEndOfSong ? Icon(Icons.check, color: AppColors.accentLight) : null,
+              title: Text('Hết bài này', style: body(TextStyle(color: player.sleepEndOfSong ? _PC.accentLight : _PC.text, fontWeight: player.sleepEndOfSong ? FontWeight.w700 : FontWeight.w500))),
+              trailing: player.sleepEndOfSong ? Icon(Icons.check, color: _PC.accentLight) : null,
               onTap: () { player.setSleepEndOfSong(true); Navigator.pop(ctx); },
             ),
           ]),
@@ -952,7 +1072,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final player = context.read<PlayerProvider>();
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: _PC.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -962,13 +1082,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                child: Text('Tốc độ phát', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                child: Text('Tốc độ phát', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _PC.text))),
               ),
               ..._speedPresets.map((s) {
                 final active = (player.playbackRate - s).abs() < 0.01;
                 return ListTile(
-                  title: Text('${s}x', style: body(TextStyle(color: active ? AppColors.accentLight : AppColors.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
-                  trailing: active ? Icon(Icons.check, color: AppColors.accentLight) : null,
+                  title: Text('${s}x', style: body(TextStyle(color: active ? _PC.accentLight : _PC.text, fontWeight: active ? FontWeight.w700 : FontWeight.w500))),
+                  trailing: active ? Icon(Icons.check, color: _PC.accentLight) : null,
                   onTap: () { player.setPlaybackRate(s); Navigator.pop(ctx); },
                 );
               }),
@@ -1005,7 +1125,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         ? song['artists']
         : ((song['artists'] as Map?)?['data'] ?? [])) as List;
     final thumb = song['thumbnail']?['url'];
-    final isInstrumental = song['file_type'] == 'instrumental';
+    final isInstrumental = songKind(song) == 'instrumental';
     final screen = MediaQuery.of(context).size;
     final narrow = screen.width < 600; // mobile/cửa sổ hẹp → rút gọn 1 dòng
     // Use the shortest viewport dimension so the vinyl stays a circle on
@@ -1021,8 +1141,14 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
     final queue = player.queue;
 
-    return Scaffold(
-      backgroundColor: AppColors.bg,
+    if (narrow && !_isFullScreen) {
+      return _buildMobile(context, player, song, thumb, artists, isInstrumental);
+    }
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+      backgroundColor: _PC.bg,
       // Auto-focus + KeyboardListener so 'F' (with no modifier) toggles
       // fullscreen anywhere inside the player. Only swallows F; other keys
       // bubble up to the parent shortcut handler. Disabled on mobile/web
@@ -1047,6 +1173,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           cursor: (_isFullScreen && !_chromeVisible) ? SystemMouseCursors.none : MouseCursor.defer,
           child: Stack(
         children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [_PC.bgTop, _PC.bg]),
+              ),
+            ),
+          ),
           Positioned(
             top: -100, left: 0, right: 0,
             child: AnimatedContainer(
@@ -1091,7 +1224,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 Text(
                                   'ĐANG PHÁT',
                                   textAlign: TextAlign.center,
-                                  style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: AppColors.textMuted)),
+                                  style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: _PC.textMuted)),
                                 ),
                                 if (player.sourceLabel != null && player.sourceLabel!.isNotEmpty) ...[
                                   const SizedBox(height: 1),
@@ -1100,7 +1233,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                     textAlign: TextAlign.center,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                                    style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _PC.text)),
                                   ),
                                 ],
                               ],
@@ -1115,8 +1248,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               padding: const EdgeInsets.all(8),
                               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               visualDensity: VisualDensity.compact,
-                              hoverColor: AppColors.surfaceHover,
-                              icon: Icon(Icons.keyboard_arrow_down, color: AppColors.text),
+                              hoverColor: _PC.surfaceHover,
+                              icon: Icon(Icons.keyboard_arrow_down, color: _PC.text),
                               onPressed: () => Navigator.pop(context),
                             ),
                           ),
@@ -1134,10 +1267,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 padding: const EdgeInsets.all(8),
                                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                                 visualDensity: VisualDensity.compact,
-                                hoverColor: AppColors.surfaceHover,
+                                hoverColor: _PC.surfaceHover,
                                 icon: Icon(
                                   _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                                  color: _isFullScreen ? AppColors.accentLight : AppColors.textSecondary,
+                                  color: _isFullScreen ? _PC.accentLight : _PC.textSecondary,
                                 ),
                                 onPressed: _toggleFullScreen,
                               ),
@@ -1146,8 +1279,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               padding: const EdgeInsets.all(8),
                               constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                               visualDensity: VisualDensity.compact,
-                              hoverColor: AppColors.surfaceHover,
-                              icon: Icon(Icons.more_horiz, color: AppColors.textSecondary),
+                              hoverColor: _PC.surfaceHover,
+                              icon: Icon(Icons.more_horiz, color: _PC.textSecondary),
                               onPressed: () => _showMoreSheet(context, song, player),
                             ),
                           ]),
@@ -1212,11 +1345,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                             textAlign: TextAlign.center,
                                             maxLines: narrow ? 1 : 2,
                                             overflow: TextOverflow.ellipsis,
-                                            style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+                                            style: display(const TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w600, color: _PC.text)),
                                           ),
                                           if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
                                             const SizedBox(height: 2),
-                                            Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+                                            Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: _PC.textMuted))),
                                           ],
                                         ],
                                       ),
@@ -1239,18 +1372,21 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           children: [
                             SliderTheme(
                               data: SliderThemeData(
-                                activeTrackColor: AppColors.accent,
-                                inactiveTrackColor: AppColors.border,
-                                thumbColor: AppColors.accent,
-                                overlayColor: AppColors.accent.withValues(alpha: 0.2),
+                                activeTrackColor: _PC.accent,
+                                inactiveTrackColor: _PC.border,
+                                thumbColor: _PC.accent,
+                                overlayColor: _PC.accent.withValues(alpha: 0.2),
                                 trackHeight: 4,
                                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                               ),
-                              child: Slider(
-                                value: player.position.inMilliseconds.toDouble().clamp(0, player.duration.inMilliseconds.toDouble()),
-                                max: player.duration.inMilliseconds.toDouble() > 0 ? player.duration.inMilliseconds.toDouble() : 1,
-                                onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+                              child: ValueListenableBuilder<Duration>(
+                                valueListenable: player.positionNotifier,
+                                builder: (context, pos, _) => Slider(
+                                  value: pos.inMilliseconds.toDouble().clamp(0, player.duration.inMilliseconds.toDouble()),
+                                  max: player.duration.inMilliseconds.toDouble() > 0 ? player.duration.inMilliseconds.toDouble() : 1,
+                                  onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+                                ),
                               ),
                             ),
                             Padding(
@@ -1258,8 +1394,11 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(_fmt(player.position), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
-                                  Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                                  ValueListenableBuilder<Duration>(
+                                    valueListenable: player.positionNotifier,
+                                    builder: (context, pos, _) => Text(_fmt(pos), style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+                                  ),
+                                  Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
                                 ],
                               ),
                             ),
@@ -1280,24 +1419,24 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: AppColors.text), onPressed: player.playPrev, hoverColor: AppColors.surfaceHover),
+                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: _PC.text), onPressed: player.playPrev, hoverColor: _PC.surfaceHover),
                             HoverScale(
                               scale: 1.08,
                               child: Container(
-                                width: 68, height: 68,
-                                decoration: BoxDecoration(
+                                width: 76, height: 76,
+                                decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
-                                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 20, offset: const Offset(0, 8))],
+                                  color: _PC.accent,
+                                  boxShadow: [BoxShadow(color: Color(0x59000000), blurRadius: 20, offset: Offset(0, 8))],
                                 ),
                                 child: IconButton(
                                   tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
-                                  icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: Colors.white),
+                                  icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: _PC.wine),
                                   onPressed: player.togglePlay,
                                 ),
                               ),
                             ),
-                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: AppColors.text), onPressed: player.playNext, hoverColor: AppColors.surfaceHover),
+                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: _PC.text), onPressed: player.playNext, hoverColor: _PC.surfaceHover),
                             _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
                           ],
                         ),
@@ -1314,6 +1453,467 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       ),
       ),
       ),
+    ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Phone layout (2026-11): one calm screen — disc, title + artists, heart,
+  // scrubber, transport. Lyrics sit right below; their card peeks from the
+  // bottom edge so a scroll reveals them. Queue lives behind the header
+  // button. Desktop/fullscreen keep the panel layout below.
+  // ---------------------------------------------------------------------
+  Widget _buildMobile(BuildContext context, PlayerProvider player, Map<String, dynamic> song, String? thumb, List artists, bool isInstrumental) {
+    bool ok(dynamic s) => s != null && s.toString().isNotEmpty && s != 'Đang cập nhật';
+    final artistText = artists.map((a) => a is Map ? a['title'] : null).where(ok).join(', ');
+    // Tiếng thơ has no composer: the poet is the author, shown in the same place.
+    final isPoem = songKind(song) == 'poem';
+    final isKaraoke = songKind(song) == 'karaoke';
+    final composerText = (isPoem ? _poets : _composers).map((c) => c['title']).where(ok).join(', ');
+    final subline = [artistText, composerText, if (_year != null) _year!].where((s) => s.isNotEmpty).join(' · ');
+    final hasLyrics = !isInstrumental && (_songLyrics?.trim().isNotEmpty ?? false);
+    final bottomPad = MediaQuery.paddingOf(context).bottom;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: AppColors.night,
+        body: DecoratedBox(
+          // Brand room: wine at the top fading to near-black.
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              stops: [0, 0.44, 0.76],
+              colors: [Color(0xFF5A1414), Color(0xFF2A0C0C), AppColors.night],
+            ),
+          ),
+          child: SafeArea(
+            bottom: false,
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final pageH = math.max(box.maxHeight, 600.0);
+                final art = math.min(box.maxWidth - 56, pageH * 0.44);
+                return NotificationListener<ScrollUpdateNotification>(
+                  // Pull down past the top (bounce) to close, like
+                  // Apple Music / Spotify.
+                  onNotification: (n) {
+                    if (!_closingByPull && n.dragDetails != null && n.metrics.pixels < -90) {
+                      _closingByPull = true;
+                      HapticFeedback.lightImpact();
+                      Navigator.pop(context);
+                    }
+                    return false;
+                  },
+                  child: CustomScrollView(
+                    controller: _mobileScroll,
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: SizedBox(
+                          height: pageH - 24,
+                          child: Column(
+                            children: [
+                              _mobileHeader(player, song),
+                              const Spacer(),
+                              if (isVideoSong(song))
+                                _mobileVideo(player, song, box.maxWidth - 32)
+                              else
+                                _mobileArtwork(thumb, art, player.isPlaying, song),
+                              const Spacer(),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 28),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: () => _openSongDetail(song),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(song['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis,
+                                                style: display(const TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                                            if (subline.isNotEmpty) ...[
+                                              const SizedBox(height: 4),
+                                              Text(subline, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                                  style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xBFFFFFFF)))),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: _liked ? 'Bỏ yêu thích' : 'Yêu thích',
+                                      iconSize: 30,
+                                      icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? const Color(0xFFE8A3A0) : Colors.white),
+                                      onPressed: () {
+                                        HapticFeedback.lightImpact();
+                                        _handleLove(song);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              _mobileScrubber(player),
+                              const SizedBox(height: 6),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 18),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
+                                    IconButton(tooltip: 'Bài trước', iconSize: 40, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white), onPressed: () { HapticFeedback.selectionClick(); player.playPrev(); }),
+                                    Material(
+                                      color: Colors.white,
+                                      shape: const CircleBorder(),
+                                      elevation: 8,
+                                      shadowColor: Colors.black54,
+                                      child: InkWell(
+                                        customBorder: const CircleBorder(),
+                                        onTap: () { HapticFeedback.lightImpact(); player.togglePlay(); },
+                                        child: SizedBox(
+                                          width: 76, height: 76,
+                                          child: player.isLoading
+                                              ? const Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
+                                              : Icon(player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 40, color: AppColors.wine),
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(tooltip: 'Bài tiếp', iconSize: 40, icon: const Icon(Icons.skip_next_rounded, color: Colors.white), onPressed: () { HapticFeedback.selectionClick(); player.playNext(); }),
+                                    _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 20),
+                                child: Row(
+                                  children: [
+                                    if (hasLyrics) Expanded(child: _pill(Icons.notes_rounded, 'Lời bài hát', () => _mobileScroll.animateTo(pageH - 70, duration: const Duration(milliseconds: 450), curve: Curves.easeOutCubic))),
+                                    if (hasLyrics) const SizedBox(width: 8),
+                                    Expanded(child: _pill(Icons.bedtime_outlined, player.hasSleepTimer ? 'Đang hẹn' : 'Hẹn giờ', _showSleepSheet, active: player.hasSleepTimer)),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: _pill(Icons.queue_music_rounded, 'Danh sách', _showQueueSheet)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 22),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (hasLyrics)
+                        SliverToBoxAdapter(
+                          child: _card(
+                            title: 'Lời bài hát',
+                            trailing: composerText.isNotEmpty ? composerText : null,
+                            child: TimedLyrics.hasLrc(_songLyrics)
+                                ? SizedBox(height: box.maxHeight * 0.66, child: _buildLyricsPanel(bare: true))
+                                : _buildFlowingLyrics(),
+                          ),
+                        ),
+                      if (_story != null)
+                        SliverToBoxAdapter(
+                          child: _card(
+                            title: 'Câu chuyện bài hát',
+                            child: Text(_story!.length > 700 ? '${_story!.substring(0, 700)}…' : _story!, style: body(const TextStyle(fontSize: 15, height: 1.6, fontWeight: FontWeight.w500, color: Color(0xE6FFFFFF)))),
+                            onTap: () => _openSongDetail(song),
+                          ),
+                        ),
+                      if (_topComment != null)
+                        SliverToBoxAdapter(
+                          child: _card(
+                            title: 'Cảm nhận hay',
+                            trailing: _commentCount > 0 ? '$_commentCount bình luận' : null,
+                            onTap: () => _openSongDetail(song),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('“${(_topComment!['text'] as String).length > 220 ? '${(_topComment!['text'] as String).substring(0, 220)}…' : _topComment!['text']}”',
+                                    style: body(const TextStyle(fontSize: 16, height: 1.55, fontWeight: FontWeight.w600, color: Colors.white))),
+                                const SizedBox(height: 12),
+                                Row(children: [
+                                  UserAvatar(url: _topComment!['user']?['avatar']?['url']?.toString(), name: (_topComment!['user']?['username'] ?? '').toString(), size: 26),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text((_topComment!['user']?['username'] ?? '').toString(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF))))),
+                                  Text('Xem tất cả ›', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
+                                ]),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (_composers.isNotEmpty || _poets.isNotEmpty || artists.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: _card(
+                            title: 'Thực hiện',
+                            child: Column(
+                              children: [
+                                for (final c in _composers) _creditRow(c, 'Sáng tác', () => _openPerson('/nhac-si/${c['slug']}')),
+                                for (final c in _recomposers) _creditRow(c, 'Soạn giả', () => _openPerson('/soan-gia/${c['slug']}')),
+                                for (final c in _poets) _creditRow(c, isPoem ? 'Sáng tác' : 'Lời thơ', () => _openPerson('/nha-tho/${c['slug']}')),
+                                for (final a in (_creditArtists.isNotEmpty ? _creditArtists : artists).whereType<Map>().where((a) => ok(a['title'])))
+                                  isKaraoke
+                                      ? _creditRow(Map<String, dynamic>.from(a), 'Thành viên hát', () => _openPerson('/user/${a['id']}'))
+                                      : _creditRow(Map<String, dynamic>.from(a), 'Trình bày', () => _openArtistDetail(a)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      SliverToBoxAdapter(child: SizedBox(height: 28 + bottomPad)),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _pill(IconData icon, String label, VoidCallback onTap, {bool active = false}) => Material(
+        color: active ? const Color(0x33FFFFFF) : const Color(0x1AFFFFFF),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            onTap();
+          },
+          child: SizedBox(
+            height: 40,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 18, color: Colors.white),
+                const SizedBox(width: 6),
+                Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)))),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  Widget _card({required String title, String? trailing, required Widget child, VoidCallback? onTap}) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        child: Material(
+          color: const Color(0x12FFFFFF),
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(child: Text(title.toUpperCase(), style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0x99FFFFFF))))),
+                    if (trailing != null) Flexible(child: Text(trailing.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0x99FFFFFF))))),
+                  ]),
+                  const SizedBox(height: 12),
+                  child,
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+  Widget _creditRow(Map<String, dynamic> p, String role, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(children: [
+            UserAvatar(url: p['avatar']?['url']?.toString(), name: (p['title'] ?? '').toString(), size: 44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text((p['title'] ?? '').toString(), style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
+                Text(role, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xB3FFFFFF)))),
+              ]),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Color(0x99FFFFFF)),
+          ]),
+        ),
+      );
+
+  /// Square cover with the spinning cassette mark in the corner while
+  /// playing. Swipe left/right on it for next/previous.
+  /// Video songs: the picture (muted, synced to the music player's sound)
+  /// replaces the cover. Tap for full screen.
+  Widget _mobileVideo(PlayerProvider player, Map<String, dynamic> song, double width) => GestureDetector(
+        onTap: () => openFullScreenVideo(context, player, song),
+        child: Container(
+          width: width,
+          height: width * 9 / 16,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [BoxShadow(color: Color(0xB3000000), blurRadius: 50, spreadRadius: -20, offset: Offset(0, 24))],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Stack(fit: StackFit.expand, children: [
+              SyncedVideo(player: player, song: song),
+              Positioned(
+                right: 10,
+                bottom: 10,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), shape: BoxShape.circle),
+                  child: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 24),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _mobileArtwork(String? thumb, double size, bool playing, Map<String, dynamic> song) => GestureDetector(
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v.abs() < 300) return;
+          HapticFeedback.selectionClick();
+          final player = context.read<PlayerProvider>();
+          v < 0 ? player.playNext() : player.playPrev();
+        },
+        child: AnimatedScale(
+          scale: playing ? 1 : 0.9,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutBack,
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: const [BoxShadow(color: Color(0xB3000000), blurRadius: 60, spreadRadius: -20, offset: Offset(0, 30))],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  thumb != null
+                      ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 900), fit: BoxFit.cover, memCacheWidth: 900, errorWidget: (_, __, ___) => GeneratedCover(title: (song['title'] ?? '').toString(), size: size, radius: 0))
+                      : GeneratedCover(title: (song['title'] ?? '').toString(), size: size, radius: 0),
+                  Positioned(
+                    right: 14,
+                    bottom: 14,
+                    child: ClipOval(
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                        child: Container(
+                          width: 46,
+                          height: 46,
+                          color: const Color(0x8C0E0A0A),
+                          alignment: Alignment.center,
+                          child: SpinningReel(size: 30, spinning: playing),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+  Widget _mobileHeader(PlayerProvider player, Map<String, dynamic> song) {
+    final label = player.sourceLabel;
+    return SizedBox(
+      height: 56,
+      child: Row(
+        children: [
+          IconButton(tooltip: 'Thu nhỏ', iconSize: 32, icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('ĐANG PHÁT TỪ', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.9, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF)))),
+                Text(
+                  label != null && label.isNotEmpty ? label : 'BCĐCNT',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ],
+            ),
+          ),
+          IconButton(tooltip: 'Tuỳ chọn', icon: const Icon(Icons.more_horiz_rounded, color: Colors.white), onPressed: () => _showMoreSheet(context, song, player)),
+        ],
+      ),
+    );
+  }
+
+  Widget _mobileScrubber(PlayerProvider player) {
+    final total = player.duration;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: ValueListenableBuilder<Duration>(
+        valueListenable: player.positionNotifier,
+        builder: (context, pos, _) => Column(
+          children: [
+            SliderTheme(
+              data: SliderThemeData(
+                activeTrackColor: Colors.white,
+                inactiveTrackColor: const Color(0x33FFFFFF),
+                thumbColor: Colors.white,
+                overlayColor: Colors.white.withValues(alpha: 0.15),
+                trackHeight: 5,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+              ),
+              child: Slider(
+                value: pos.inMilliseconds.toDouble().clamp(0, total.inMilliseconds.toDouble()),
+                max: total.inMilliseconds > 0 ? total.inMilliseconds.toDouble() : 1,
+                onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(_fmt(pos), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xA6FFFFFF), fontFeatures: [FontFeature.tabularFigures()]))),
+                  Text(_fmt(total), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xA6FFFFFF), fontFeatures: [FontFeature.tabularFigures()]))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showQueueSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _PC.bg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 18, 24, 10),
+              child: Row(children: [
+                Text('Danh sách phát', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: _PC.text))),
+              ]),
+            ),
+            Expanded(
+              child: Consumer<PlayerProvider>(
+                builder: (_, p, _) => _buildQueuePanel(p, p.queue),
+              ),
+            ),
+            SizedBox(height: 12 + MediaQuery.paddingOf(context).bottom),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1323,6 +1923,17 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     }
     if (_panel == _PanelMode.queue && queue.isNotEmpty) {
       return _buildQueuePanel(player, queue);
+    }
+    if (isVideoSong(song)) {
+      return Center(
+        child: GestureDetector(
+          onTap: () => openFullScreenVideo(context, player, song),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: AspectRatio(aspectRatio: 16 / 9, child: SyncedVideo(player: player, song: song)),
+          ),
+        ),
+      );
     }
     return _buildVinyl(thumb, vinylSize);
   }
@@ -1338,71 +1949,65 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         var size = vinylSize;
         if (constraints.maxWidth.isFinite) size = math.min(size, constraints.maxWidth);
         if (constraints.maxHeight.isFinite) size = math.min(size, constraints.maxHeight);
+        // Black grooved record with the cover art as the centre label
+        // (60% of the disc), cream rim around the label, spindle hole.
+        final label = size * 0.6;
         return RotationTransition(
           turns: _rotation,
           child: Container(
             width: size,
             height: size,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [AppColors.accent, AppColors.accentLight],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              gradient: RadialGradient(
+                colors: [Color(0xFF2A0E0E), Color(0xFF1C0909), Color(0xFF2A0E0E), Color(0xFF160707)],
+                stops: [0.0, 0.55, 0.8, 1.0],
               ),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 40, offset: const Offset(0, 24)),
-                BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 60, spreadRadius: -10),
-              ],
-              border: Border.all(color: AppColors.border, width: 4),
+              boxShadow: [BoxShadow(color: Color(0x66000000), blurRadius: 40, offset: Offset(0, 20))],
             ),
-            child: ClipOval(
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (thumb != null)
-                    Positioned.fill(
-                      child: CachedNetworkImage(
-                        imageUrl: thumb,
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight, child: const Icon(Icons.music_note, size: 80, color: Colors.white38)),
-                      ),
-                    ),
-                  for (int i = 0; i < 8; i++)
-                    if (size - (i * 30) > 0)
-                      Container(
-                        width: size - (i * 30),
-                        height: size - (i * 30),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.black.withValues(alpha: 0.08), width: 0.5),
-                        ),
-                      ),
-              // Center logo label
-              Container(
-                width: 62, height: 62,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.bg,
-                  border: Border.all(color: AppColors.border, width: 2),
-                ),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.all(10),
-                // The white logo sinks into the near-white centre hub on the
-                // light theme — tint it accent there so it stays visible.
-                child: SvgPicture.asset(
-                  'assets/logo-on-dark.svg',
-                  width: 36, height: 36,
-                  colorFilter: AppColors.bg.computeLuminance() > 0.5
-                      ? ColorFilter.mode(AppColors.accent, BlendMode.srcIn)
-                      : null,
-                ),
-              ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // Grooves.
+                for (var r = size; r > label + 8; r -= 7)
                   Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent),
+                    width: r, height: r,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.035), width: 1),
+                    ),
                   ),
-                ],
-              ),
+                // Light sheen across the vinyl.
+                Container(
+                  width: size, height: size,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: SweepGradient(colors: [Color(0x00FFFFFF), Color(0x14FFFFFF), Color(0x00FFFFFF), Color(0x00FFFFFF), Color(0x14FFFFFF), Color(0x00FFFFFF)]),
+                  ),
+                ),
+                Container(
+                  width: label, height: label,
+                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _PC.accent, width: 6)),
+                  child: ClipOval(
+                    child: thumb != null
+                        ? CachedNetworkImage(
+                            imageUrl: cdnImg((thumb).toString(), 700),
+                            fit: BoxFit.cover,
+                            memCacheWidth: 700,
+                            errorWidget: (_, __, ___) => Container(color: _PC.surfaceLight, child: const Icon(Icons.music_note, size: 60, color: Colors.white38)),
+                          )
+                        : Container(
+                            color: _PC.wine,
+                            padding: EdgeInsets.all(label * 0.22),
+                            child: SvgPicture.asset('assets/logo-on-dark.svg'),
+                          ),
+                  ),
+                ),
+                Container(
+                  width: 12, height: 12,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: _PC.bg, border: Border.all(color: Colors.black26)),
+                ),
+              ],
             ),
           ),
         );
@@ -1410,22 +2015,27 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildLyricsPanel() {
+  Widget _buildLyricsPanel({bool bare = false}) {
     // In fullscreen we drop the framed surface + use the karaoke variant
     // so the lyrics fill the screen edge-to-edge for a Now Playing feel.
+    // `bare` (phone layout): no card, lyrics sit straight on the wine.
     final useLarge = _isFullScreen;
     // Base chữ lời responsive (giống web): ~15px mobile → ~20px desktop, ở 100%.
     // Áp cho fallback Html (lyrics thường); TimedLyrics đã 16-20px sẵn nên giữ nguyên.
     final lyricsBase = (MediaQuery.sizeOf(context).width * 0.012 + 11).clamp(15.0, 20.0);
     final hasLyrics = _songLyrics != null && _songLyrics!.isNotEmpty;
     final lyricsBody = !hasLyrics
-        ? Center(child: Text('Chưa có lời bài hát', style: body(TextStyle(color: AppColors.textMuted, fontSize: 14))))
+        ? Center(child: Text('Chưa có lời bài hát', style: body(TextStyle(color: _PC.textMuted, fontSize: 14))))
         : TimedLyrics(
             raw: _songLyrics,
             large: useLarge,
-            fontScale: _lyricsScale,
-            autoScroll: _lyricsAutoScroll,
+            fontScale: bare ? 1.15 : _lyricsScale,
+            autoScroll: bare || _lyricsAutoScroll,
+            activeColor: _PC.text,
+            fadeColor: const Color(0x59FFFFFF),
+            textAlign: bare ? TextAlign.left : TextAlign.center,
             fallback: SingleChildScrollView(
+              primary: false,
               child: Html(
                 data: _songLyrics!,
                 style: {
@@ -1434,7 +2044,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     padding: HtmlPaddings.zero,
                     fontSize: FontSize(lyricsBase * _lyricsScale),
                     lineHeight: const LineHeight(2.0),
-                    color: AppColors.textSecondary,
+                    color: _PC.textSecondary,
                     textAlign: TextAlign.center,
                     fontFamily: body().fontFamily,
                   ),
@@ -1444,19 +2054,35 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             ),
           );
     final inner = Column(children: [
-      if (hasLyrics) _buildLyricsToolbar(),
+      if (hasLyrics && !bare) _buildLyricsToolbar(),
       Expanded(child: lyricsBody),
     ]);
+    if (bare) {
+      // TimedLyrics pads its lines by 16, so 12 here lines them up with
+      // the title's 28px edge.
+      return Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: inner);
+    }
     return Container(
       margin: useLarge ? EdgeInsets.zero : const EdgeInsets.symmetric(horizontal: 24),
       padding: useLarge ? EdgeInsets.zero : const EdgeInsets.all(16),
       decoration: useLarge ? null : BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: _PC.surfaceLight,
         borderRadius: BorderRadius.circular(16),
       ),
       child: inner,
     );
   }
+
+  /// Plain lyrics for the phone layout, rendered line by line: verse
+  /// markers typed into the lyrics ("1, 3-", "ĐK:") become small labels
+  /// ("LỜI 1 & 3", "ĐIỆP KHÚC") instead of showing as raw text.
+  Widget _buildFlowingLyrics() => LyricsText(
+        html: _songLyrics ?? '',
+        fontSize: 21,
+        weight: FontWeight.w700,
+        color: const Color(0xEBFFFFFF),
+        labelColor: const Color(0x8CFFFFFF),
+      );
 
   void _setLyricsScale(double v) {
     setState(() => _lyricsScale = v);
@@ -1474,17 +2100,17 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             tooltip: 'Cỡ chữ nhỏ hơn',
             iconSize: 18,
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.text_decrease, color: AppColors.textSecondary),
+            icon: Icon(Icons.text_decrease, color: _PC.textSecondary),
             onPressed: _lyricsScale > 0.7
                 ? () => _setLyricsScale((_lyricsScale - 0.1).clamp(0.7, 1.6))
                 : null,
           ),
-          Text(scaleLabel, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+          Text(scaleLabel, style: body(TextStyle(fontSize: 11, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
           IconButton(
             tooltip: 'Cỡ chữ lớn hơn',
             iconSize: 18,
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.text_increase, color: AppColors.textSecondary),
+            icon: Icon(Icons.text_increase, color: _PC.textSecondary),
             onPressed: _lyricsScale < 1.6
                 ? () => _setLyricsScale((_lyricsScale + 0.1).clamp(0.7, 1.6))
                 : null,
@@ -1496,7 +2122,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             visualDensity: VisualDensity.compact,
             icon: Icon(
               _lyricsAutoScroll ? Icons.lock_open_outlined : Icons.lock_outline,
-              color: _lyricsAutoScroll ? AppColors.accentLight : AppColors.textSecondary,
+              color: _lyricsAutoScroll ? _PC.accentLight : _PC.textSecondary,
             ),
             onPressed: () => setState(() => _lyricsAutoScroll = !_lyricsAutoScroll),
           ),
@@ -1509,7 +2135,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: _PC.surfaceLight,
         borderRadius: BorderRadius.circular(16),
       ),
       child: ClipRRect(
@@ -1538,13 +2164,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
               key: ValueKey('fp-q-${s['id']}-$idx'),
               direction: DismissDirection.horizontal,
               background: Container(
-                color: AppColors.accent.withValues(alpha: 0.85),
+                color: _PC.accent.withValues(alpha: 0.85),
                 alignment: Alignment.centerLeft,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
               ),
               secondaryBackground: Container(
-                color: AppColors.accent.withValues(alpha: 0.85),
+                color: _PC.accent.withValues(alpha: 0.85),
                 alignment: Alignment.centerRight,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: const Icon(Icons.delete_outline, color: Colors.white, size: 20),
@@ -1555,8 +2181,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isActive ? AppColors.accentSoft : Colors.transparent,
-                    border: Border(left: BorderSide(color: isActive ? AppColors.accent : Colors.transparent, width: 3)),
+                    color: isActive ? _PC.accentSoft : Colors.transparent,
+                    border: Border(left: BorderSide(color: isActive ? _PC.accent : Colors.transparent, width: 3)),
                   ),
                   child: Row(
                     children: [
@@ -1564,16 +2190,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         width: 24,
                         child: Center(
                           child: isActive
-                              ? Icon(Icons.graphic_eq, size: 14, color: AppColors.accentLight)
-                              : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                              ? Icon(Icons.graphic_eq, size: 14, color: _PC.accentLight)
+                              : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: _PC.textMuted, fontWeight: FontWeight.w600))),
                         ),
                       ),
                       const SizedBox(width: 8),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(6),
                         child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, width: 36, height: 36, fit: BoxFit.cover)
-                            : Container(width: 36, height: 36, color: AppColors.surface, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
+                            ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 90), width: 36, height: 36, fit: BoxFit.cover)
+                            : Container(width: 36, height: 36, color: _PC.surface, child: Icon(Icons.music_note, size: 16, color: _PC.textMuted)),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -1585,14 +2211,14 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               s['title'] ?? '',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? AppColors.accentLight : AppColors.text)),
+                              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isActive ? _PC.accentLight : _PC.text)),
                             ),
                             if (artistText.isNotEmpty)
                               Text(
                                 artistText,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: body(TextStyle(fontSize: 11, color: isActive ? AppColors.accentLight.withValues(alpha: 0.8) : AppColors.textSecondary)),
+                                style: body(TextStyle(fontSize: 11, color: isActive ? _PC.accentLight.withValues(alpha: 0.8) : _PC.textSecondary)),
                               ),
                           ],
                         ),
@@ -1601,7 +2227,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         index: idx,
                         child: Padding(
                           padding: const EdgeInsets.only(left: 4),
-                          child: Icon(Icons.drag_indicator, size: 18, color: AppColors.textMuted),
+                          child: Icon(Icons.drag_indicator, size: 18, color: _PC.textMuted),
                         ),
                       ),
                     ],
@@ -1629,20 +2255,20 @@ class _ShuffleButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        hoverColor: AppColors.surfaceHover,
+        hoverColor: _PC.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              Icon(Icons.shuffle, size: 22, color: active ? AppColors.accentLight : AppColors.textSecondary),
+              Icon(Icons.shuffle, size: 22, color: active ? _PC.accentLight : _PC.textSecondary),
               if (active)
                 Positioned(
                   bottom: -5,
                   child: Container(
                     width: 4, height: 4,
-                    decoration: BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: _PC.accentLight, shape: BoxShape.circle),
                   ),
                 ),
             ],
@@ -1667,26 +2293,26 @@ class _RepeatButton extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(20),
-        hoverColor: AppColors.surfaceHover,
+        hoverColor: _PC.surfaceHover,
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              Icon(Icons.repeat, size: 22, color: active ? AppColors.accentLight : AppColors.textSecondary),
+              Icon(Icons.repeat, size: 22, color: active ? _PC.accentLight : _PC.textSecondary),
               if (mode == PlayerRepeatMode.all)
                 Positioned(
                   bottom: -5,
                   child: Container(
                     width: 4, height: 4,
-                    decoration: BoxDecoration(color: AppColors.accentLight, shape: BoxShape.circle),
+                    decoration: BoxDecoration(color: _PC.accentLight, shape: BoxShape.circle),
                   ),
                 ),
               if (mode == PlayerRepeatMode.one)
                 Positioned(
                   top: -4, right: -5,
-                  child: Text('1', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                  child: Text('1', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: _PC.accentLight))),
                 ),
             ],
           ),

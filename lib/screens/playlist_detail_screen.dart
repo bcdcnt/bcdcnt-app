@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -149,8 +150,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.bg,
           elevation: 0,
-          leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('Playlist'),
           centerTitle: true,
         ),
         body: const SingleChildScrollView(child: Column(children: [
@@ -162,7 +163,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     if (_playlist == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy playlist', style: AppText.bodyText)),
       );
     }
@@ -186,9 +187,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-              title: Text('PLAYLIST', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+              title: Text('Playlist'),
               centerTitle: true,
-              leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
             ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(isDesktop ? 32 : 20, isDesktop ? 16 : 8, isDesktop ? 32 : 20, 24),
@@ -206,7 +207,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
                         child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
+                            ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
                             : Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted, size: 60)),
                       ),
                     ),
@@ -218,7 +219,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           Text(
                             'Playlist',
                             style: body(TextStyle(
-                              fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w700,
+                              fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w700,
                               color: AppColors.textMuted,
                             )),
                           ),
@@ -229,7 +230,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             CircleAvatar(
                               radius: isDesktop ? 13 : 10,
                               backgroundColor: AppColors.surfaceLight,
-                              backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
+                              backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
                             ),
                             const SizedBox(width: 8),
                             Flexible(child: Text(user['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: usernameSize, color: AppColors.textSecondary, fontWeight: FontWeight.w600)))),
@@ -420,7 +421,7 @@ class _RelatedCardCompact extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: thumb != null
-                ? CachedNetworkImage(imageUrl: thumb, width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
+                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
                 : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
           ),
           const SizedBox(width: 10),
@@ -432,9 +433,9 @@ class _RelatedCardCompact extends StatelessWidget {
                 Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
                 const SizedBox(height: 3),
                 if (ev != null && ev.toString().isNotEmpty)
-                  Text(formatEventDate(ev), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+                  Text(formatEventDate(ev), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
                 else if (total > 0)
-                  Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                  Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
               ],
             ),
           ),
@@ -469,7 +470,7 @@ class _RelatedCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: thumb != null
-                  ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
+                  ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
                   : Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
               ),
             ),
@@ -477,9 +478,9 @@ class _RelatedCard extends StatelessWidget {
             Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
             const SizedBox(height: 2),
             if (ev != null && ev.toString().isNotEmpty)
-              Text(formatEventDate(ev), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+              Text(formatEventDate(ev), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
             else if (total > 0)
-              Text('$total bài', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+              Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
           ],
         ),
       ),

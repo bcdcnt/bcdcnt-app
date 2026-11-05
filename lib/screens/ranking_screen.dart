@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -6,8 +7,8 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
+import '../widgets/ui.dart';
 import '../widgets/mini_player.dart';
-import '../widgets/shimmer.dart';
 
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
@@ -18,7 +19,7 @@ class RankingScreen extends StatefulWidget {
 
 class _RankingScreenState extends State<RankingScreen> {
   static const _types = [('song', 'Tân nhạc'), ('folk', 'Dân ca'), ('instrumental', 'Khí nhạc'), ('poem', 'Tiếng thơ')];
-  static const _periods = [('week', 'Tuần'), ('month', 'Tháng'), ('year', 'Năm'), ('', 'Tất cả')];
+  static const _periods = [('week', 'Tuần'), ('month', 'Tháng'), ('year', 'Năm'), ('', 'Mọi lúc')];
   static const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
 
   static const _artistTiles = [
@@ -36,9 +37,11 @@ class _RankingScreenState extends State<RankingScreen> {
   ];
 
   String _type = 'song';
-  String _period = 'week';
+  String _period = 'month';
   bool _loading = true;
   List<Map<String, dynamic>> _songs = [];
+  // Older API builds don't know `prev_rank`; then no ▲/▼/MỚI at all.
+  bool _hasTrend = false;
 
   @override
   void initState() {
@@ -53,6 +56,7 @@ class _RankingScreenState extends State<RankingScreen> {
         statisticListen(first: 10, page: 1, period: $period, type: $type) {
           data {
             total
+            prev_rank
             object {
               ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } sheet { composers(first: 5) { data { id slug title } } } }
               ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
@@ -62,7 +66,16 @@ class _RankingScreenState extends State<RankingScreen> {
           }
         }
       }''';
-      final data = await ApiClient.query(q, {'period': _period, 'type': _type});
+      Map<String, dynamic> data;
+      var hasTrend = true;
+      try {
+        data = await ApiClient.query(q, {'period': _period, 'type': _type});
+      } catch (_) {
+        // API not yet updated with prev_rank → same query without it.
+        hasTrend = false;
+        data = await ApiClient.query(q.replaceFirst('prev_rank', ''), {'period': _period, 'type': _type});
+      }
+      _hasTrend = hasTrend;
       final list = ((data['statisticListen']?['data'] ?? []) as List)
           .where((d) => d['object'] != null)
           .map((d) {
@@ -78,171 +91,64 @@ class _RankingScreenState extends State<RankingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final player = context.watch<PlayerProvider>();
+    final queue = asSongList(_songs.map((x) => {...Map<String, dynamic>.from(x['object'] as Map), 'views': x['total']}));
     return Scaffold(
       backgroundColor: AppColors.bg,
+      appBar: const SubPageBar(title: 'Bảng xếp hạng'),
       body: Stack(children: [
-        CustomScrollView(slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BẢNG XẾP HẠNG', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
-            centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            sliver: SliverList(delegate: SliverChildListDelegate([
-              // Hero
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  gradient: const LinearGradient(colors: [Color(0xFF711313), Color(0xFFA01818)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  boxShadow: [BoxShadow(color: const Color(0xFF711313).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
-                ),
-                child: Row(children: [
-                  Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.leaderboard_outlined, color: Colors.white, size: 28)),
-                  const SizedBox(width: 14),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Bảng xếp hạng', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
-                    const SizedBox(height: 4),
-                    Text('Nghe nhiều, nghệ sĩ và thành viên', style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
-                  ])),
-                ]),
-              ),
-              const SizedBox(height: 22),
-
-              // Section: Listen
-              Row(children: [
-                Icon(Icons.trending_up, size: 16, color: AppColors.accentLight),
-                const SizedBox(width: 6),
-                Text('Nghe nhiều', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-              ]),
-              const SizedBox(height: 12),
-
-              // Period chips
-              SizedBox(
-                height: 32,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _periods.length,
-                  separatorBuilder: (_, _) => const SizedBox(width: 6),
-                  itemBuilder: (ctx, i) {
-                    final p = _periods[i];
-                    final active = _period == p.$1;
-                    return InkWell(
-                      onTap: active ? null : () { setState(() => _period = p.$1); _fetchListen(); },
-                      borderRadius: BorderRadius.circular(16),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: active ? AppColors.accent : AppColors.surfaceLight,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: active ? AppColors.accent : AppColors.border),
-                        ),
-                        child: Text(p.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary))),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Type tabs
-              Container(
-                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(children: _types.map((t) {
-                    final active = _type == t.$1;
-                    return InkWell(
-                      onTap: active ? null : () { setState(() => _type = t.$1); _fetchListen(); },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: active ? AppColors.accent : Colors.transparent, width: 2))),
-                        child: Text(t.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.text : AppColors.textMuted))),
-                      ),
-                    );
-                  }).toList()),
-                ),
-              ),
-              const SizedBox(height: 14),
-
-              // Listen list (top 10) — top 3 podium, rest as SongRow
-              if (_loading)
-                const Padding(padding: EdgeInsets.only(top: 6), child: SongListSkeleton(rows: 8, showIndex: true))
-              else if (_songs.isEmpty)
-                Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))))
-              else ...[
-                if (_songs.length >= 3) ...[
-                  _RankingPodium(items: _songs.take(3).toList()),
-                  const SizedBox(height: 18),
-                ],
-                ..._songs.asMap().entries.skip(_songs.length >= 3 ? 3 : 0).map((e) {
-                  final s = e.value['object'] as Map<String, dynamic>;
-                  final periodTotal = e.value['total'] is num ? (e.value['total'] as num).toInt() : 0;
-                  final sCopy = Map<String, dynamic>.from(s)..['views'] = periodTotal;
-                  return SongRow(song: sCopy, index: e.key, showIndex: true, onTap: () => context.push('/song/${s['id']}', extra: s));
-                }),
-              ],
-
-              const SizedBox(height: 30),
-
-              // Section: Artists
-              Row(children: [
-                Icon(Icons.mic, size: 16, color: AppColors.accentLight),
-                const SizedBox(width: 6),
-                Text('Nghệ sĩ', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-              ]),
-              const SizedBox(height: 12),
-              ..._artistTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
-
-              const SizedBox(height: 24),
-
-              // Section: Members
-              Row(children: [
-                Icon(Icons.people_outline, size: 16, color: AppColors.accentLight),
-                const SizedBox(width: 6),
-                Text('Thành viên', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-              ]),
-              const SizedBox(height: 12),
-              ..._memberTiles.map((t) => _bigTile(slug: t.$1, label: t.$2, icon: t.$3, color: t.$4)),
-
-              SizedBox(height: player.currentSong != null ? 90 : 20),
-            ])),
-          ),
-        ]),
-        if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
-      ]),
-    );
-  }
-
-  Widget _bigTile({required String slug, required String label, required IconData icon, required Color color}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: () => context.push('/bang-xep-hang/$slug'),
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [color, Color.lerp(color, Colors.black, 0.3)!], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
-          ),
-          child: Row(children: [
-            Container(
-              width: 38, height: 38,
-              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(10)),
-              child: Icon(icon, color: Colors.white, size: 20),
+        ListView(
+          padding: const EdgeInsets.only(bottom: 120),
+          children: [
+            const SizedBox(height: 6),
+            Segmented(
+              labels: [for (final p in _periods) p.$2],
+              selected: _periods.indexWhere((p) => p.$1 == _period),
+              onSelect: (i) {
+                setState(() => _period = _periods[i].$1);
+                _fetchListen();
+              },
             ),
-            const SizedBox(width: 14),
-            Expanded(child: Text(label, style: display(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)))),
-            const Icon(Icons.chevron_right, color: Colors.white70, size: 20),
-          ]),
+            const SizedBox(height: 14),
+            ChipStrip(
+              labels: [for (final t in _types) t.$2],
+              selected: _types.indexWhere((t) => t.$1 == _type),
+              onSelect: (i) {
+                setState(() => _type = _types[i].$1);
+                _fetchListen();
+              },
+            ),
+            const SizedBox(height: 18),
+            if (_loading)
+              for (var i = 0; i < 8; i++) const SkeletonSongRow()
+            else if (_songs.isEmpty)
+              const EmptyBlock(icon: Icons.leaderboard_outlined, title: 'Chưa có dữ liệu', message: 'Chưa có lượt nghe trong khoảng thời gian này.')
+            else ...[
+              if (_songs.length >= 3) ...[
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _RankingPodium(items: _songs.take(3).toList(), queue: queue)),
+                const SizedBox(height: 14),
+              ],
+              for (var i = _songs.length >= 3 ? 3 : 0; i < _songs.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, right: 6),
+                  child: SongRow(
+                    song: queue[i],
+                    index: i,
+                    showIndex: true,
+                    queue: queue,
+                    sourceLabel: 'Bảng xếp hạng',
+                    prevRank: (_songs[i]['prev_rank'] as num?)?.toInt(),
+                    chartNew: _period.isNotEmpty && _hasTrend && _songs[i]['prev_rank'] == null,
+                  ),
+                ),
+            ],
+            const GroupLabel('Nghệ sĩ'),
+            for (final t in _artistTiles) ListItem(icon: t.$3, title: t.$2, onTap: () => context.push('/bang-xep-hang/${t.$1}')),
+            const GroupLabel('Thành viên'),
+            for (final t in _memberTiles) ListItem(icon: t.$3, title: t.$2, onTap: () => context.push('/bang-xep-hang/${t.$1}')),
+          ],
         ),
-      ),
+        const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
     );
   }
 }
@@ -315,15 +221,16 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         pi = raw?['paginatorInfo'] ?? {};
       } else if (type == 'users') {
         final field = cfg.$3;
-        final extra = ', {column: "id", value: 1, operator: NEQ}';
-        final q = '''query(\$page: Int) {
-          users(first: 20, page: \$page, orderBy: [{column: "$field", order: DESC}], where: {AND: [{column: "$field", value: 0, operator: GT}$extra]}) {
+        // Public leaderboard query (API 2026-11); `users` is admin-only
+        // since the PII lockdown, which left these lists empty.
+        final q = '''query(\$page: Int, \$field: String!) {
+          topMember(field: \$field, first: 20, page: \$page) {
             data { id username avatar { url } $field }
             paginatorInfo { currentPage lastPage }
           }
         }''';
-        final data = await ApiClient.query(q, {'page': page});
-        final raw = data['users'];
+        final data = await ApiClient.query(q, {'page': page, 'field': field});
+        final raw = data['topMember'];
         list = ((raw?['data'] ?? []) as List).map((e) {
           final m = Map<String, dynamic>.from(e as Map);
           return {
@@ -385,9 +292,9 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text(title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text(title),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -480,7 +387,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                 padding: const EdgeInsets.all(2),
                 child: ClipOval(
                   child: item['avatar'] != null
-                      ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 22))
+                      ? CachedNetworkImage(imageUrl: cdnImg((item['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 22))
                       : const Icon(Icons.person, color: Colors.white, size: 22),
                 ),
               ),
@@ -528,7 +435,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
             child: ClipOval(
               child: item['avatar'] != null
-                  ? CachedNetworkImage(imageUrl: item['avatar'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 18))
+                  ? CachedNetworkImage(imageUrl: cdnImg((item['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 18))
                   : const Icon(Icons.person, color: Colors.white, size: 18),
             ),
           ),
@@ -548,93 +455,31 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
 /// #1 sits in the centre and is taller, #2 / #3 flank it. Each card shows
 /// rank chip, artwork, title, artist, period total, and tappable navigation
 /// to the song detail.
+/// Top 3 as equal-size covers with big rank numbers (#2 · #1 · #3).
 class _RankingPodium extends StatelessWidget {
   final List items; // each: { object: songMap, total: num }
-  const _RankingPodium({required this.items});
+  final List<Map<String, dynamic>> queue;
+  const _RankingPodium({required this.items, required this.queue});
 
-  String _fmt(num n) {
-    final s = n.toInt().abs().toString();
-    final buf = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return n < 0 ? '-$buf' : buf.toString();
-  }
-
-  Widget _card(BuildContext context, int rank, Map<String, dynamic> entry, {required bool tall}) {
-    final song = entry['object'] as Map<String, dynamic>;
-    final total = entry['total'] is num ? entry['total'] as num : 0;
-    final thumb = song['thumbnail']?['url']?.toString();
-    final artists = (song['artists']?['data'] ?? song['artists'] ?? []) as List;
-    final artistText = artists.map((a) => a['title'] ?? '').join(', ');
-
-    final rankColors = {
-      1: const [Color(0xFFFFD700), Color(0xFFB8860B)], // gold
-      2: const [Color(0xFFC0C0C0), Color(0xFF808080)], // silver
-      3: const [Color(0xFFCD7F32), Color(0xFF8B4513)], // bronze
-    };
-    final colors = rankColors[rank] ?? rankColors[1]!;
-
-    final cover = AspectRatio(
-      aspectRatio: 1,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: thumb != null
-            ? CachedNetworkImage(
-                imageUrl: thumb,
-                fit: BoxFit.cover,
-                errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
-              )
-            : Container(color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 36)),
-      ),
-    );
-
-    return InkWell(
-      onTap: () => context.push('/song/${song['id']}', extra: song),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tall ? 0 : 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              children: [
-                cover,
-                Positioned(
-                  top: 8, left: 8,
-                  child: Container(
-                    width: tall ? 36 : 30, height: tall ? 36 : 30,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: colors, begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      boxShadow: [BoxShadow(color: colors[0].withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
-                    ),
-                    child: Text('$rank', style: display(TextStyle(fontSize: tall ? 16 : 14, fontWeight: FontWeight.w900, color: Colors.white))),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Text(
-              song['title']?.toString() ?? '',
-              maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: display(TextStyle(fontSize: tall ? 15 : 13, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.25)),
-            ),
-            if (artistText.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
-            ],
-            const SizedBox(height: 4),
-            Row(children: [
-              Icon(Icons.headphones, size: 11, color: AppColors.textMuted),
-              const SizedBox(width: 4),
-              Text(_fmt(total), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
-            ]),
-          ],
-        ),
+  Widget _card(BuildContext context, int rank) {
+    final song = queue[rank - 1];
+    return GestureDetector(
+      onTap: () => playOrOpen(context, song, queue, 'Bảng xếp hạng'),
+      onLongPress: () => showSongActions(context, song),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AspectRatio(aspectRatio: 1, child: LayoutBuilder(builder: (_, c) => SongCover(song: song, size: c.maxWidth, radius: 18))),
+          const SizedBox(height: 6),
+          Text('$rank', style: display(TextStyle(fontSize: rank == 1 ? 40 : 32, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 36,
+            child: Text(song['title']?.toString() ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
+          ),
+          Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: AppText.caption),
+        ],
       ),
     );
   }
@@ -642,18 +487,15 @@ class _RankingPodium extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.length < 3) return const SizedBox.shrink();
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          // #2
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.only(right: 6), child: _card(context, 2, items[1] as Map<String, dynamic>, tall: false))),
-          // #1
-          Expanded(flex: 5, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: _card(context, 1, items[0] as Map<String, dynamic>, tall: true))),
-          // #3
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.only(left: 6), child: _card(context, 3, items[2] as Map<String, dynamic>, tall: false))),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: Padding(padding: const EdgeInsets.only(top: 24), child: _card(context, 2))),
+        const SizedBox(width: 10),
+        Expanded(flex: 1, child: _card(context, 1)),
+        const SizedBox(width: 10),
+        Expanded(child: Padding(padding: const EdgeInsets.only(top: 24), child: _card(context, 3))),
+      ],
     );
   }
 }

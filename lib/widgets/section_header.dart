@@ -46,26 +46,14 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 2026-11 brand style: no icon tile, 20/800 title, muted count, a small
+    // wine "Phát" pill and a red text link. `icon` is kept for API
+    // compatibility but no longer drawn.
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (icon != null) ...[
-            Container(
-              width: 34, height: 34,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [AppColors.accentSoft, Color(0x00711313)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Icon(icon, size: 18, color: AppColors.accentLight),
-            ),
-            const SizedBox(width: 10),
-          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,106 +68,54 @@ class SectionHeader extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: display(TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.text,
-                          letterSpacing: -0.2,
-                          height: 1.15,
-                        )),
+                        style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2)),
                       ),
                     ),
                     if (count != null) Padding(
                       padding: const EdgeInsets.only(left: 8),
-                      child: Text(
-                        count!,
-                        style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
-                      ),
+                      child: Text(count!.replaceAll(RegExp(r'[()]'), ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
                     ),
                   ],
                 ),
                 if (subtitle != null) Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    subtitle!,
-                    style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
-                  ),
+                  child: Text(subtitle!, style: AppText.meta),
                 ),
               ],
             ),
           ),
           if (onRefresh != null)
-            Tooltip(
-              message: 'Làm mới',
-              child: Material(
-                color: Colors.transparent,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  onTap: onRefresh,
-                  customBorder: const CircleBorder(),
-                  hoverColor: AppColors.surfaceHover,
-                  child: Padding(
-                    padding: const EdgeInsets.all(6),
-                    child: Icon(Icons.refresh, size: 18, color: AppColors.textSecondary),
-                  ),
-                ),
-              ),
-            ),
+            IconButton(tooltip: 'Làm mới', onPressed: onRefresh, icon: Icon(Icons.refresh_rounded, size: 20, color: AppColors.textSecondary)),
           if (onPlayAll != null) ...[
-            // Opaque gradient hides the InkWell hover, so lift the pill with a
-            // scale + shadow on hover instead.
             HoverScale(
-              scale: 1.06,
-              child: InkWell(
-                onTap: onPlayAll,
+              scale: 1.04,
+              child: Material(
+                color: AppColors.wine,
                 borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
-                    borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  onTap: onPlayAll,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(playAllIcon, size: 18, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(playAllLabel, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white))),
+                    ]),
                   ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(playAllIcon, size: 14, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text(playAllLabel, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white))),
-                  ]),
                 ),
               ),
             ),
-            // Pill and the "Xem tất cả" link/icon can coexist — small gap.
-            if ((actionText != null || actionIcon != null) && onAction != null) const SizedBox(width: 8),
+            if ((actionText != null || actionIcon != null) && onAction != null) const SizedBox(width: 4),
           ],
           if (actionIcon != null && onAction != null)
-            Tooltip(
-              message: actionText ?? '',
-              child: Material(
-                color: Colors.transparent,
-                shape: const CircleBorder(),
-                child: InkWell(
-                  onTap: onAction,
-                  customBorder: const CircleBorder(),
-                  hoverColor: AppColors.surfaceHover,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Icon(actionIcon, size: 16, color: AppColors.textSecondary),
-                  ),
-                ),
-              ),
-            )
+            IconButton(tooltip: actionText ?? '', onPressed: onAction, icon: Icon(actionIcon, size: 20, color: AppColors.textSecondary))
           else if (actionText != null && onAction != null)
-            InkWell(
-              onTap: onAction,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                child: Row(
-                  children: [
-                    Text(actionText!, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                    Icon(Icons.chevron_right, size: 14, color: AppColors.accentLight),
-                  ],
-                ),
-              ),
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(minimumSize: const Size(44, 44), padding: const EdgeInsets.symmetric(horizontal: 8)),
+              child: Text(actionText!, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
             ),
         ],
       ),

@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -203,7 +204,7 @@ class _CommandPaletteState extends State<CommandPalette> {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
       child: Text(
         label.toUpperCase(),
-        style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
       ),
     );
   }
@@ -343,7 +344,7 @@ class _CommandPaletteState extends State<CommandPalette> {
                         color: AppColors.surfaceLight,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text('Esc', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                      child: Text('Esc', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
                     ),
                   ],
                 ),
@@ -439,7 +440,7 @@ class _ActionRow extends StatelessWidget {
                   Text(action.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                   if (action.subtitle != null) ...[
                     const SizedBox(height: 1),
-                    Text(action.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                    Text(action.subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                   ],
                 ],
               ),
@@ -449,7 +450,7 @@ class _ActionRow extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(4), border: Border.all(color: AppColors.border)),
-                child: Text(action.hotkey!, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
+                child: Text(action.hotkey!, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
               ),
             ],
           ]),
@@ -502,7 +503,7 @@ class _PaletteRow extends StatelessWidget {
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: image != null
-                    ? CachedNetworkImage(imageUrl: image, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)))
+                    ? CachedNetworkImage(imageUrl: cdnImg((image).toString(), 90), width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)))
                     : Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 16, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 12),
@@ -514,7 +515,7 @@ class _PaletteRow extends StatelessWidget {
                     Text(hit['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                     if (hit['artist'] != null) ...[
                       const SizedBox(height: 1),
-                      Text(hit['artist'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+                      Text(hit['artist'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
                     ],
                   ],
                 ),
@@ -526,7 +527,7 @@ class _PaletteRow extends StatelessWidget {
                   color: AppColors.accentSoft,
                   borderRadius: BorderRadius.circular(4),
                 ),
-                child: Text(_typeLabel(type), style: body(TextStyle(fontSize: 10, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
+                child: Text(_typeLabel(type), style: body(TextStyle(fontSize: 11, color: AppColors.accentLight, fontWeight: FontWeight.w600))),
               ),
             ],
           ),

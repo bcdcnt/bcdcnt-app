@@ -1,12 +1,15 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
-import 'package:video_player/video_player.dart';
-import 'package:chewie/chewie.dart';
 import '../constants/theme.dart';
+import '../widgets/ui.dart';
+import '../widgets/lyrics_text.dart';
+import '../widgets/synced_video.dart';
+import '../services/offline_store.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/activity.dart';
@@ -54,11 +57,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   // song title. Listened on the main scroll controller.
   bool _showStickyTitle = false;
   final ScrollController _scrollCtl = ScrollController();
-  // Trình phát video nhúng cho bài play_type=video (player nhạc dùng just_audio
-  // không render khung hình, nên video cần surface Chewie riêng — giống trang
-  // tư liệu). Khởi tạo sau khi fetch xong (cần file.video_url).
-  VideoPlayerController? _videoCtl;
-  ChewieController? _chewieCtl;
   bool _descExpanded = false;
   bool _storyExpanded = false;
   bool _lyricsExpanded = false;
@@ -77,8 +75,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void dispose() {
     _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
-    _chewieCtl?.dispose();
-    _videoCtl?.dispose();
     super.dispose();
   }
 
@@ -86,51 +82,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   bool get _isVideoSong =>
       _song?['play_type']?.toString() == 'video' &&
       (_song?['file']?['video_url']?.toString().isNotEmpty ?? false);
-
-  /// Khởi tạo Chewie cho bài video (gọi sau khi fetch xong). An toàn gọi
-  /// nhiều lần — chỉ dựng 1 lần.
-  Future<void> _setupVideo() async {
-    if (_chewieCtl != null) return;
-    final url = _song?['file']?['video_url']?.toString();
-    if (_song?['play_type']?.toString() != 'video' || url == null || url.isEmpty) return;
-    try {
-      final vc = VideoPlayerController.networkUrl(Uri.parse(url));
-      await vc.initialize();
-      if (!mounted) { vc.dispose(); return; }
-      final ar = vc.value.aspectRatio;
-      _videoCtl = vc;
-      _chewieCtl = ChewieController(
-        videoPlayerController: vc,
-        autoPlay: false,
-        looping: false,
-        aspectRatio: (ar.isFinite && ar > 0) ? ar : 16 / 9,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: AppColors.accent,
-          handleColor: AppColors.accent,
-          bufferedColor: AppColors.border,
-          backgroundColor: AppColors.surfaceLight,
-        ),
-      );
-      // Bài video không đi qua audio player — dừng nhạc đang phát (nếu có) để
-      // không chồng tiếng khi người dùng bấm play video.
-      setState(() {});
-    } catch (_) {}
-  }
-
-  /// Play/pause trình video nhúng (dùng cho nút play ở hero của bài video).
-  void _toggleVideo() {
-    final vc = _videoCtl;
-    if (vc == null) return;
-    if (vc.value.isPlaying) {
-      vc.pause();
-    } else {
-      // Tránh chồng tiếng với player nhạc.
-      final player = context.read<PlayerProvider>();
-      if (player.isPlaying) player.togglePlay();
-      vc.play();
-    }
-    setState(() {});
-  }
 
   void _onScroll() {
     // Hero is ~280-380px tall on desktop / square on mobile. Flip the
@@ -142,14 +93,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
+  /// Same id *and* kind: folk #3256 and tân nhạc #3256 are different songs.
+  bool _isThisSong(Map? current) =>
+      current != null && current['id']?.toString() == widget.songId && songKind(current) == _resolvedType;
+
   String get _resolvedType {
     // Priority: fetched song > navigation extras > widget default. The
     // fetched value is authoritative once data lands, so the UI matches
     // what the API returned even if extras were missing/stale.
-    final t = (_song?['file_type']
-        ?? widget.initialSong?['file_type']
-        ?? widget.fileType).toString();
-    return ['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(t) ? t : 'song';
+    // `file_type` straight from the API is "audio"/"video", not a kind —
+    // skip such values instead of letting them hide the next candidate.
+    const kinds = ['song', 'folk', 'instrumental', 'poem', 'karaoke'];
+    for (final c in [_song?['file_type'], widget.initialSong?['file_type'], widget.initialSong?['__typename']?.toString().toLowerCase(), widget.fileType]) {
+      if (kinds.contains(c?.toString())) return c.toString();
+    }
+    return 'song';
   }
 
   /// Build the per-type GraphQL query for a song detail. Returned tuple
@@ -286,8 +244,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             _isLoved = (loves as List).any((l) => l['user_id'].toString() == userId.toString());
           }
         });
-        // Bài video → dựng trình phát video nhúng (hero sẽ hiện Chewie).
-        _setupVideo();
 
         final sheetId = sheet['id'];
         if (sheetId != null) {
@@ -323,7 +279,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       //     log to recentListens (PlayTracker filters by source)
       if (_song != null && mounted) {
         final player = context.read<PlayerProvider>();
-        final isCurrent = player.currentSong?['id']?.toString() == _song!['id'].toString();
+        final isCurrent = _isThisSong(player.currentSong);
         if (!isCurrent) _play();
       }
     } catch (e) { print('fetch error: $e'); }
@@ -473,7 +429,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final data = await ApiClient.query(
         r'''query($id: ID!, $type: String!) {
           suggestSongs(first: 5, id: $id, type: $type) {
-            id title slug views file_type play_type
+            __typename id title slug views file_type play_type
             thumbnail { url }
             file { audio_url video_url duration }
             ... on Song { subtitle artists(first: 100) { data { id title slug avatar { url } } } }
@@ -487,12 +443,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         // (folk/instrumental/poem/karaoke), not the constructor default.
         {'id': widget.songId, 'type': _resolvedType},
       );
-      final list = (data['suggestSongs'] ?? []) as List;
+      // Stamp each suggestion's kind: the API's file_type is "audio", and an
+      // unstamped folk/poem/karaoke row would play as the tân nhạc with the
+      // same id.
+      final list = ((data['suggestSongs'] ?? []) as List)
+          .map((x) {
+            final m = Map<String, dynamic>.from(x as Map);
+            m['file_type'] = songKind(m, _resolvedType);
+            return m;
+          })
+          .toList();
       if (!mounted) return;
       setState(() => _suggestions = list);
       // Refresh queue with suggestions now that they're loaded
       final player = context.read<PlayerProvider>();
-      if (player.currentSong?['id']?.toString() == widget.songId) {
+      if (_isThisSong(player.currentSong)) {
         _updatePlayerQueue();
       }
     } catch (_) {}
@@ -520,7 +485,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final data = await ApiClient.query(
         r'''query($id: ID!, $type: String!, $exceptIds: Mixed) {
           suggestSongs(first: 5, id: $id, type: $type, exceptIds: $exceptIds) {
-            id title slug views file_type play_type
+            __typename id title slug views file_type play_type
             thumbnail { url }
             file { audio_url video_url duration }
             ... on Song { subtitle artists(first: 100) { data { id title slug avatar { url } } } }
@@ -536,6 +501,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           .map((x) {
             final m = Map<String, dynamic>.from(x as Map);
             m['audioUrl'] = m['file']?['audio_url'];
+            m['file_type'] = songKind(m, _resolvedType);
             return m;
           })
           .where((m) => m['audioUrl'] != null)
@@ -630,7 +596,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
                           child: ClipOval(
                             child: avatar != null
-                                ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 18, color: AppColors.textMuted))
+                                ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 18, color: AppColors.textMuted))
                                 : Icon(Icons.person, size: 18, color: AppColors.textMuted),
                           ),
                         ),
@@ -789,8 +755,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         backgroundColor: AppColors.bg,
         appBar: AppBar(
           backgroundColor: AppColors.bg, elevation: 0,
-          leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
-          title: Text('CHI TIẾT', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          title: Text('Chi tiết'),
           centerTitle: true,
         ),
         body: const SingleChildScrollView(child: Column(children: [
@@ -819,20 +785,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final recordYear = (song['record_year']?.toString() ?? '').isEmpty ? null : song['record_year'].toString();
     final emptyFile = song['empty_file'] == 1;
     final player = context.watch<PlayerProvider>();
-    final isCurrent = player.currentSong?['id']?.toString() == song['id'].toString();
+    final isCurrent = _isThisSong(player.currentSong);
     final isVideo = player.currentSong?['play_type'] == 'video';
     final w = MediaQuery.of(context).size.width;
     final hasPlayer = player.currentSong != null;
     final isDesktop = w >= 900;
 
-    // Bài video → dựng surface Chewie để thay đúng ô artwork trong hero
+    // Bài video → hình đồng bộ với trình phát nhạc thay ô artwork trong hero
     // (giống web). Player nhạc just_audio không render khung hình.
+    // Video songs: sound always goes through the music player (keeps playing
+    // with the screen off); while this song is the one playing, the hero
+    // shows its picture in sync. Tap it for full screen.
     Widget? heroVideo;
-    if (_isVideoSong && _chewieCtl != null) {
-      final ar = _videoCtl!.value.aspectRatio;
-      heroVideo = AspectRatio(
-        aspectRatio: (ar.isFinite && ar > 0) ? ar : 16 / 9,
-        child: Chewie(controller: _chewieCtl!),
+    if (_isVideoSong && isCurrent) {
+      heroVideo = GestureDetector(
+        onTap: () => openFullScreenVideo(context, player, song),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(fit: StackFit.expand, children: [
+            SyncedVideo(player: player, song: song),
+            const Positioned(right: 10, bottom: 10, child: Icon(Icons.fullscreen_rounded, color: Colors.white, size: 28)),
+          ]),
+        ),
       );
     }
 
@@ -882,7 +856,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         segs.add(TextSpan(text: 'Thu ', style: muted));
         segs.add(TextSpan(text: recordYear, style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
       }
-      if (song['created_at'] != null) {
+      if (song['created_at'] != null && isDesktop) {
         addSep();
         segs.add(TextSpan(text: 'Đăng ', style: muted));
         segs.add(TextSpan(text: _formatDate(song['created_at']), style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
@@ -892,7 +866,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           padding: const EdgeInsets.only(bottom: 4),
           child: RichText(
             text: TextSpan(
-              style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.5)),
+              style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.6)),
               children: segs,
             ),
           ),
@@ -933,17 +907,16 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
           ],
         ),
-      if (tags.isNotEmpty) Padding(
-        padding: const EdgeInsets.only(top: 6, bottom: 4),
-        child: Wrap(
-          spacing: 14, runSpacing: 4,
-          children: tags.map<Widget>((t) => InkWell(
-            onTap: () => context.push('/tag/${t['slug']}'),
-            child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-          )).toList(),
-        ),
-      ),
     ];
+    final mobileTags = tags.isEmpty ? null : SizedBox(
+      height: 38,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: tags.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => BrandChip(label: '#${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
+      ),
+    );
 
     // Credits kiểu web cho desktop hero: từng dòng "Nhãn: giá trị" đặt GIỮA
     // tiêu đề và stats. Style khớp web: nhãn 13px xám mờ (w500), giá trị 16px
@@ -1024,17 +997,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             if (artists.isNotEmpty) Text(
                               (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', '),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                              style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)),
                             ),
                           ],
                         )
-                      : Text('CHI TIẾT', key: ValueKey('label'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary, fontFamily: 'System')),
+                      : const SizedBox.shrink(key: ValueKey('label')),
                 ),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
                 actions: MediaQuery.of(context).size.width >= 900
                     ? const []
-                    : [IconButton(icon: Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
+                    : [IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song)))],
               ),
 
               SliverPadding(
@@ -1056,11 +1029,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         loves: loves,
                         hasUploads: uploads.isNotEmpty,
                         isCurrent: isCurrent,
-                        isPlaying: _isVideoSong ? (_videoCtl?.value.isPlaying ?? false) : player.isPlaying,
+                        isPlaying: player.isPlaying,
                         onPlay: () {
-                          if (_isVideoSong) {
-                            _toggleVideo();
-                          } else if (isCurrent) {
+                          if (isCurrent) {
                             context.read<PlayerProvider>().togglePlay();
                           } else {
                             _play();
@@ -1086,89 +1057,90 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         uploadDate: uploadDate,
                         metaContent: tagsWidget,
                       )
-                    else
-                      _MobileHero(
-                        thumb: thumb,
+                    else ...[
+                      _MobileHeader(
                         song: song,
-                        widthAvailable: w - 40,
-                        isCurrent: isCurrent,
-                        isPlaying: _isVideoSong ? (_videoCtl?.value.isPlaying ?? false) : player.isPlaying,
-                        onPlay: () {
-                          if (_isVideoSong) {
-                            _toggleVideo();
-                          } else if (isCurrent) {
-                            context.read<PlayerProvider>().togglePlay();
-                          } else {
-                            _play();
-                          }
-                        },
-                        onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
+                        thumb: thumb,
+                        kind: const {'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'poem': 'Tiếng thơ', 'karaoke': 'Thành viên hát'}[_resolvedType] ?? 'Bài hát',
+                        year: year,
                         videoPlayer: heroVideo,
+                        onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
                       ),
-
-                    // 4. Empty file warning
-                    if (emptyFile)
+                      if (emptyFile)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text('Bài này chưa có file nghe.', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFB7791F)))),
+                        ),
+                      const SizedBox(height: 14),
+                      ...metaItems,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          [
+                            if ((song['views'] ?? 0) is num && (song['views'] ?? 0) > 0) '${formatViews((song['views'] as num).toInt())} lượt nghe',
+                            if ((song['downloads'] ?? 0) is num && (song['downloads'] ?? 0) > 0) '${formatViews((song['downloads'] as num).toInt())} lượt tải',
+                          ].join(' · '),
+                          style: AppText.meta,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(children: [
+                        Expanded(
+                          child: PillButton(
+                            label: (isCurrent && player.isPlaying) ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
+                            icon: (isCurrent && player.isPlaying) ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            loading: isCurrent && player.isLoading,
+                            onTap: () {
+                              if (isCurrent) {
+                                context.read<PlayerProvider>().togglePlay();
+                              } else {
+                                _play();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: PillButton(
+                            label: 'Tương tự',
+                            icon: Icons.shuffle_rounded,
+                            primary: false,
+                            onTap: _suggestions.isEmpty ? null : () => _playList(_suggestions),
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      Row(children: [
+                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
+                        Expanded(child: Builder(builder: (ctx) {
+                          // Phones: "Tải về" saves into the app for offline listening.
+                          final store = ctx.watch<OfflineStore>();
+                          final typed = {...Map<String, dynamic>.from(song), 'file_type': _resolvedType};
+                          final saved = store.isSaved(typed);
+                          final prog = store.progressOf(typed);
+                          return LabeledAction(
+                            icon: saved ? Icons.download_done_rounded : Icons.download_rounded,
+                            label: prog != null ? '${(prog * 100).round()}%' : (saved ? 'Đã tải' : 'Tải về'),
+                            active: saved,
+                            onTap: saved
+                                ? () => context.push('/da-tai-ve')
+                                : (prog != null ? null : () => saveForOffline(context, typed)),
+                          );
+                        })),
+                        Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Lưu', onTap: _openPlaylistDialog)),
+                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.history_rounded, label: 'Bản thu', onTap: _openFileHistory)),
+                        Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: 'Chia sẻ', onTap: _share)),
+                      ]),
+                      if (mobileTags != null) ...[const SizedBox(height: 18), mobileTags],
+                    ],
+                    if (isDesktop && emptyFile)
                       Container(
                         margin: const EdgeInsets.only(top: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(color: const Color(0x1FF59E0B), border: Border.all(color: const Color(0x4DF59E0B)), borderRadius: BorderRadius.circular(8)),
-                        child: Row(
-                          children: const [
-                            Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFF59E0B)),
-                            SizedBox(width: 8),
-                            Expanded(child: Text('Thiếu dữ liệu', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFF59E0B)))),
-                          ],
-                        ),
+                        child: const Text('Thiếu dữ liệu', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFF59E0B))),
                       ),
-
-                    // 5-10. Meta block (composers, performers, dates, tags) —
-                    // on desktop these are passed into the hero info column
-                    // via metaContent so they fill the right-of-artwork dead
-                    // space; on mobile they stack inline below the hero.
-                    if (!isDesktop) ...[
-                      const SizedBox(height: 14),
-                      ...metaItems,
-                    ],
-
-                    const SizedBox(height: 16),
-
-                    // 11. Stats + secondary icon row — only on mobile, where
-                    // there's no room for the desktop labelled action cluster
-                    // baked into the hero.
-                    if (!isDesktop)
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: BorderSide(color: AppColors.border),
-                            bottom: BorderSide(color: AppColors.border),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.visibility, size: 16, color: AppColors.textSecondary),
-                            const SizedBox(width: 6),
-                            Text('${_formatInt(song['views'])}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                            if ((song['downloads'] ?? 0) > 0) ...[
-                              const SizedBox(width: 16),
-                              Icon(Icons.download, size: 16, color: AppColors.textSecondary),
-                              const SizedBox(width: 6),
-                              Text('${_formatInt(song['downloads'])}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                            ],
-                            const Spacer(),
-                            _IconBtn(
-                              icon: _isLoved ? Icons.favorite : Icons.favorite_border,
-                              color: _isLoved ? AppColors.accent : AppColors.textSecondary,
-                              bg: _isLoved ? AppColors.accentSoft : AppColors.surfaceLight,
-                              badge: loves.isNotEmpty ? loves.length.toString() : null,
-                              onTap: _toggleLove,
-                            ),
-                            if (uploads.isNotEmpty) _IconBtn(icon: Icons.history, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openFileHistory),
-                            _IconBtn(icon: Icons.download, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _download),
-                            _IconBtn(icon: Icons.add, color: AppColors.textSecondary, bg: AppColors.surfaceLight, onTap: _openPlaylistDialog),
-                          ],
-                        ),
-                      ),
+                    const SizedBox(height: 8),
 
                     // Contributor caption removed — uploader/file owner info
                     // is admin metadata, available via API/admin tooling. A
@@ -1181,11 +1153,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     // column for vertical reading on small screens.
                     Builder(builder: (ctx) {
                       final leftItems = <Widget>[
-                        ..._buildSheetSection(isDesktop),
                         ..._buildDescriptionSection(description),
                         ..._buildStorySection(story),
+                        if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ..._buildStoryInvite(),
                         ..._buildLyricsSection(lyrics, isCurrent),
                         ..._buildLyricEditorsRow(),
+                        ..._buildSheetSection(isDesktop),
                         const SizedBox(height: 28),
                         CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId),
                       ];
@@ -1214,7 +1187,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           ...leftItems.sublist(0, leftItems.length - 2), // strip trailing comments
                           ...rightItems,
                           const SizedBox(height: 28),
-                          CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId),
+                          KeyedSubtree(key: _commentsKey, child: CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId)),
                         ],
                       );
                     }),
@@ -1261,7 +1234,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               child: Container(
                 decoration: BoxDecoration(border: Border.all(color: AppColors.border), color: Colors.white),
                 child: CachedNetworkImage(
-                  imageUrl: _sheetImages[i],
+                  imageUrl: cdnImg((_sheetImages[i]).toString(), 350),
                   height: thumbH,
                   fit: BoxFit.contain,
                   errorWidget: (ctx, url, err) => Container(width: 140, height: thumbH, color: AppColors.surfaceLight, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
@@ -1288,6 +1261,37 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ),
     ];
   }
+
+  final _commentsKey = GlobalKey();
+
+  bool _plainEmpty(dynamic html) => html == null || html.toString().replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty;
+
+  /// Most songs have no story yet (32 of 14k in 2026-11). Invite listeners
+  /// who know how the song came about to share it in the comments, where
+  /// BQT can pick it up for the song's description.
+  List<Widget> _buildStoryInvite() => [
+        const SizedBox(height: 20),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('CÂU CHUYỆN BÀI HÁT', style: AppText.eyebrow),
+            const SizedBox(height: 8),
+            Text('Bài này chưa có câu chuyện. Bạn biết hoàn cảnh ra đời, hay có kỷ niệm gắn với bài hát? Hãy chia sẻ — BQT sẽ bổ sung vào trang.',
+                style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () {
+                final ctx = _commentsKey.currentContext;
+                if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
+              },
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 44), foregroundColor: AppColors.accentLight),
+              icon: const Icon(Icons.edit_note_rounded, size: 22),
+              label: Text('Chia sẻ câu chuyện', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+            ),
+          ]),
+        ),
+      ];
 
   List<Widget> _buildStorySection(dynamic story) {
     if (story == null) return const [];
@@ -1337,7 +1341,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               ),
             );
           }
-          return Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)});
+          return LyricsText(html: str, color: AppColors.text, labelColor: AppColors.accentLight);
         }(),
       ),
     ];
@@ -1362,7 +1366,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       decoration: BoxDecoration(border: Border.all(color: AppColors.bg, width: 1.5), borderRadius: BorderRadius.circular(12)),
                       child: ClipOval(
                         child: _lyricEditors[i]['avatar']?['url'] != null
-                            ? CachedNetworkImage(imageUrl: _lyricEditors[i]['avatar']['url'], width: 24, height: 24, fit: BoxFit.cover)
+                            ? CachedNetworkImage(imageUrl: cdnImg((_lyricEditors[i]['avatar']['url']).toString(), 60), width: 24, height: 24, fit: BoxFit.cover)
                             : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: Icon(Icons.person, size: 12, color: AppColors.textMuted)),
                       ),
                     ),
@@ -1395,7 +1399,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final out = <Widget>[];
     for (int i = 0; i < songs.length; i++) {
       final sg = Map<String, dynamic>.from(songs[i]);
-      out.add(SongRow(song: sg, onTap: () => context.push('/song/${sg['id']}', extra: sg)));
+      out.add(SongRow(song: sg, queue: asSongList(songs)));
       if (i < songs.length - 1) out.add(Divider(height: 1, color: AppColors.borderSubtle, indent: 60));
     }
     return out;
@@ -1721,71 +1725,36 @@ class _ExpandCard extends StatelessWidget {
   final VoidCallback onToggle;
   const _ExpandCard({required this.child, required this.expanded, required this.onToggle});
 
+  // Text sits straight on the page (no grey card); collapsed it shows the
+  // first verses and fades out above "Xem toàn bộ lời".
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        children: [
-          AnimatedSize(
-            duration: const Duration(milliseconds: 300),
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: expanded ? double.infinity : 200),
-              child: ClipRect(child: child),
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 300),
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: expanded ? double.infinity : 280),
+            child: expanded
+                ? child
+                : ShaderMask(
+                    shaderCallback: (r) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0.7, 1], colors: [Colors.white, Colors.transparent]).createShader(r),
+                    blendMode: BlendMode.dstIn,
+                    // Lets the full lyrics lay out at their natural height and
+                    // just clips them (no overflow error) while collapsed.
+                    child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: child),
+                  ),
           ),
-          InkWell(
-            onTap: onToggle,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Text(expanded ? 'Thu gọn' : 'Xem thêm', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final Color bg;
-  final String? badge;
-  final VoidCallback onTap;
-  const _IconBtn({required this.icon, required this.color, required this.bg, this.badge, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 6),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-              child: Icon(icon, size: 18, color: color),
-            ),
-            if (badge != null) Positioned(
-              top: -4, right: -4,
-              child: Container(
-                constraints: const BoxConstraints(minWidth: 16),
-                height: 16,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(8)),
-                alignment: Alignment.center,
-                child: Text(badge!, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
-              ),
-            ),
-          ],
         ),
-      ),
+        TextButton.icon(
+          onPressed: onToggle,
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 44), foregroundColor: AppColors.accentLight),
+          icon: Icon(expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 22),
+          label: Text(expanded ? 'Thu gọn' : 'Xem toàn bộ lời', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+        ),
+      ],
     );
   }
 }
@@ -1881,7 +1850,7 @@ class _DesktopHero extends StatelessWidget {
   final Widget? credits;
   // Ngày đăng — hiện trong dòng stats (khớp web).
   final String? uploadDate;
-  // Bài video: thay ô artwork bằng trình phát video (Chewie).
+  // Bài video: thay ô artwork bằng hình đồng bộ với trình phát nhạc.
   final Widget? videoPlayer;
 
   const _DesktopHero({
@@ -1946,7 +1915,7 @@ class _DesktopHero extends StatelessWidget {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: thumb != null
-                      ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
+                      ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
                       : Container(
                           decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
                           child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
@@ -1968,7 +1937,7 @@ class _DesktopHero extends StatelessWidget {
                 // Groups: [TYPE] · [TITLE] · [ARTIST + STATS] · [ACTIONS] · [META].
                 Text(
                   _typeLabelFor(resolvedType).toUpperCase(),
-                  style: body(TextStyle(fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
+                  style: body(TextStyle(fontSize: 12, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
                 ),
                 const SizedBox(height: 6),
                 // Title with subtitle inlined as a smaller muted suffix —
@@ -2085,90 +2054,6 @@ class _DesktopHero extends StatelessWidget {
 
 /// Mobile fallback hero — keeps the previous full-bleed banner UX since it
 /// reads better on a narrow viewport than the desktop split layout.
-class _MobileHero extends StatelessWidget {
-  final String? thumb;
-  final Map<String, dynamic> song;
-  final double widthAvailable;
-  final bool isCurrent;
-  final bool isPlaying;
-  final VoidCallback onPlay;
-  final VoidCallback? onArtworkTap;
-  // Bài video: thay ô artwork bằng trình phát video (Chewie tự có control).
-  final Widget? videoPlayer;
-
-  const _MobileHero({
-    required this.thumb,
-    required this.song,
-    required this.widthAvailable,
-    required this.isCurrent,
-    required this.isPlaying,
-    required this.onPlay,
-    this.onArtworkTap,
-    this.videoPlayer,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (videoPlayer != null)
-          ClipRRect(borderRadius: BorderRadius.circular(20), child: videoPlayer!)
-        else
-          GestureDetector(
-          onTap: onArtworkTap,
-          child: SizedBox(
-          height: widthAvailable,
-          width: double.infinity,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  ),
-                ),
-                if (thumb != null)
-                  CachedNetworkImage(imageUrl: thumb!, fit: BoxFit.cover, errorWidget: (_, _, _) => const Center(child: Icon(Icons.music_note, size: 80, color: Colors.white38))),
-                Positioned(
-                  left: 0, right: 0, bottom: 0, height: 80,
-                  child: Container(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, AppColors.bg]))),
-                ),
-              ],
-            ),
-          ),
-        ),
-        ),
-        const SizedBox(height: 24),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(text: song['title'] ?? '', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
-              if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty)
-                TextSpan(text: ' ${song['subtitle']}', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w400, color: AppColors.textMuted))),
-            ],
-          ),
-        ),
-        // Bài video: Chewie đã có nút play riêng → bỏ nút Phát của hero.
-        if (videoPlayer == null) ...[
-          const SizedBox(height: 14),
-          _PrimaryPlayButton(
-            isCurrent: isCurrent,
-            isPlaying: isPlaying,
-            onPlay: onPlay,
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-/// Labelled action pill for the desktop hero. Primary variant has the
-/// accent gradient + white text (used for Phát); the rest are surface-tone
-/// with optional accent state for Love.
-/// Avatar tròn nhỏ cho hàng "đã thích" — ảnh người dùng hoặc chữ cái đầu.
 class _LoverAvatar extends StatelessWidget {
   final dynamic love;
   const _LoverAvatar({required this.love});
@@ -2178,7 +2063,7 @@ class _LoverAvatar extends StatelessWidget {
     final url = user?['avatar']?['url']?.toString();
     final name = user?['username']?.toString() ?? '?';
     if (url != null && url.isNotEmpty) {
-      return CachedNetworkImage(imageUrl: url, width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _initial(name));
+      return CachedNetworkImage(imageUrl: cdnImg((url).toString(), 70), width: 28, height: 28, fit: BoxFit.cover, errorWidget: (_, _, _) => _initial(name));
     }
     return _initial(name);
   }
@@ -2292,6 +2177,55 @@ class _OverflowActionPill extends StatelessWidget {
         ),
         child: Icon(Icons.more_horiz, size: 18, color: AppColors.text),
       ),
+    );
+  }
+}
+
+
+/// Phone header (2026-11): cover beside kind · year and the title.
+class _MobileHeader extends StatelessWidget {
+  final Map<String, dynamic> song;
+  final String? thumb;
+  final String kind;
+  final String? year;
+  final Widget? videoPlayer;
+  final VoidCallback? onArtworkTap;
+  const _MobileHeader({required this.song, required this.thumb, required this.kind, this.year, this.videoPlayer, this.onArtworkTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final title = (song['title'] ?? '').toString();
+    final subtitle = (song['subtitle'] ?? '').toString();
+    final head = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text([kind, if (year != null) year!].join(' · ').toUpperCase(), style: AppText.eyebrow),
+        const SizedBox(height: 4),
+        Text(title, style: display(TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
+        if (subtitle.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle, style: AppText.meta)),
+      ],
+    );
+    if (videoPlayer != null) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(borderRadius: BorderRadius.circular(18), child: videoPlayer!),
+        const SizedBox(height: 16),
+        head,
+      ]);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        GestureDetector(
+          onTap: onArtworkTap,
+          child: DecoratedBox(
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: AppColors.glow(AppColors.wine, alpha: 0.5, blur: 30, offset: const Offset(0, 16))),
+            child: SongCover(song: song, size: 136, radius: 20),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(child: head),
+      ],
     );
   }
 }

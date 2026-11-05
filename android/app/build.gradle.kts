@@ -5,6 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Push needs android/app/google-services.json (from Firebase, kept out of git).
+// Without it the app builds and runs, just without push.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "net.bcdcnt.bcdcnt_flutter"
     compileSdk = flutter.compileSdkVersion
@@ -21,7 +27,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "net.bcdcnt.bcdcnt_flutter"
+        applicationId = "net.bcdcnt.music"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

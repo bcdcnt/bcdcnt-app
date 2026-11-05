@@ -134,7 +134,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (cfg == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy thể loại', style: AppText.bodyText)),
       );
     }
@@ -149,9 +149,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('THỂ LOẠI', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('Thể loại'),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
 
               SliverPadding(
@@ -257,7 +257,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           index: (_page - 1) * 10 + e.key,
                           showIndex: true,
                           metricKey: _sort == 'newest' ? 'time' : _sort,
-                          onTap: () => context.push('/song/${song['id']}', extra: song),
+                          queue: asSongList(_items),
                         );
                       }),
 

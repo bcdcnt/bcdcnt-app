@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
@@ -210,9 +211,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text(_label.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text(_label),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -304,7 +305,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                                 ),
                                 child: ClipOval(
                                   child: avatar != null
-                                      ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
+                                      ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
                                       : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white70)))),
                                 ),
                               ),
@@ -312,7 +313,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                               Text(p['title'] ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
                               if ((p['total_listens'] ?? 0) > 0) Padding(
                                 padding: const EdgeInsets.only(top: 2),
-                                child: Text('${_formatInt(p['total_listens'])} nghe', style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                                child: Text('${_formatInt(p['total_listens'])} nghe', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                               ),
                             ],
                           ),

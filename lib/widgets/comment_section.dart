@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:http/http.dart' as http;
 import 'package:pasteboard/pasteboard.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/push.dart';
 import '../services/auth.dart';
 import 'comment_media.dart';
 import 'quill_comment_input.dart';
@@ -215,7 +217,13 @@ class _CommentSectionState extends State<CommentSection> {
           }
         }
       }''';
-      final data = await ApiClient.query(query, {'val': widget.id, 'page': page});
+      // Tickets are private (only the author and BQT can read them), so
+      // their comments need the session; public pages stay anonymous so
+      // the edge cache keeps serving them.
+      final auth = context.read<AuthProvider>();
+      final data = widget.type == 'ticket' && auth.isAuthenticated
+          ? await auth.authedQuery(query, {'val': widget.id, 'page': page})
+          : await ApiClient.query(query, {'val': widget.id, 'page': page});
       final result = data[field];
       final items = (result?['comments']?['data'] ?? []) as List;
       final pi = result?['comments']?['paginatorInfo'];
@@ -576,7 +584,7 @@ class _CommentSectionState extends State<CommentSection> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 14, color: AppColors.textSecondary),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 11, color: AppColors.text)),
+        Text(label, style: TextStyle(fontSize: 12, color: AppColors.text)),
         const SizedBox(width: 4),
         GestureDetector(
           onTap: onRemove,
@@ -607,6 +615,7 @@ class _CommentSectionState extends State<CommentSection> {
       _attachedAudios.clear();
       _attachedVideos.clear();
       await _fetchComments(1);
+      if (mounted) PushService.instance.maybeAsk(context, reason: 'Biết ngay khi có người trả lời hoặc thích bình luận của bạn.');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -828,7 +837,7 @@ class _CommentSectionState extends State<CommentSection> {
                                         CircleAvatar(
                                           radius: 12,
                                           backgroundColor: AppColors.surface,
-                                          backgroundImage: avatar != null ? CachedNetworkImageProvider(avatar) : null,
+                                          backgroundImage: avatar != null ? CachedNetworkImageProvider(cdnImg((avatar).toString(), 160)) : null,
                                           child: avatar == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
                                         ),
                                         const SizedBox(width: 8),
@@ -857,7 +866,7 @@ class _CommentSectionState extends State<CommentSection> {
                       CircleAvatar(
                         radius: 14,
                         backgroundColor: AppColors.surface,
-                        backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(auth.user!['avatar']) : null,
+                        backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(cdnImg((auth.user!['avatar']).toString(), 160)) : null,
                         child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
                       ),
                       const SizedBox(width: 4),
@@ -899,7 +908,7 @@ class _CommentSectionState extends State<CommentSection> {
                       padding: const EdgeInsets.only(top: 4, left: 36),
                       child: Text(
                         _uploadingAudio ? 'Đang chuyển audio...' : 'Đang chuyển video...',
-                        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
                       ),
                     ),
                   ]),
@@ -950,7 +959,7 @@ class _CommentSectionState extends State<CommentSection> {
                     child: CircleAvatar(
                       radius: 18,
                       backgroundColor: AppColors.surfaceLight,
-                      backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(user['avatar']['url']) : null,
+                      backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
                       child: user['avatar']?['url'] == null ? Icon(Icons.person, size: 16, color: AppColors.textMuted) : null,
                     ),
                   ),
@@ -975,7 +984,7 @@ class _CommentSectionState extends State<CommentSection> {
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-                              child: Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                              child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
                             );
                           }),
                           Text(timeago(c['created_at']), style: AppText.caption),
@@ -1062,7 +1071,7 @@ class _CommentSectionState extends State<CommentSection> {
                                 Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 14, color: isLoved ? AppColors.error : AppColors.textMuted),
                                 if (loveCount > 0) ...[
                                   const SizedBox(width: 4),
-                                  Text('$loveCount', style: TextStyle(fontSize: 11, color: isLoved ? AppColors.error : AppColors.textMuted)),
+                                  Text('$loveCount', style: TextStyle(fontSize: 12, color: isLoved ? AppColors.error : AppColors.textMuted)),
                                 ],
                               ],
                             ),
@@ -1074,7 +1083,7 @@ class _CommentSectionState extends State<CommentSection> {
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.edit_outlined, size: 13, color: AppColors.textMuted),
                                 SizedBox(width: 3),
-                                Text('Sửa', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                                Text('Sửa', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
                               ]),
                             ),
                             SizedBox(width: 10),
@@ -1083,7 +1092,7 @@ class _CommentSectionState extends State<CommentSection> {
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.delete_outline, size: 13, color: AppColors.textMuted),
                                 SizedBox(width: 3),
-                                Text('Xoá', style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                                Text('Xoá', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
                               ]),
                             ),
                           ],

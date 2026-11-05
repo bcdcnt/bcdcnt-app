@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -286,7 +287,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
               child: InteractiveViewer(
                 minScale: 1, maxScale: 4,
                 child: CachedNetworkImage(
-                  imageUrl: url,
+                  imageUrl: url  /* full size: zoomable viewer */,
                   fit: BoxFit.contain,
                   placeholder: (_, _) => const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.white70)),
                   errorWidget: (_, _, _) => const Padding(padding: EdgeInsets.all(40), child: Icon(Icons.broken_image, color: Colors.white38, size: 48)),
@@ -325,7 +326,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-          child: Text(label, style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white))),
+          child: Text(label, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white))),
         );
       }).toList()),
     );
@@ -338,7 +339,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
     if (_user == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
         body: Center(child: Text('Không tìm thấy thành viên', style: AppText.bodyText)),
       );
     }
@@ -367,7 +368,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
               flexibleSpace: FlexibleSpaceBar(
                 background: Stack(fit: StackFit.expand, children: [
                   if (u['background']?['url'] != null)
-                    CachedNetworkImage(imageUrl: u['background']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surface))
+                    CachedNetworkImage(imageUrl: cdnImg((u['background']['url']).toString(), 960), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surface))
                   else
                     Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight))),
                   Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
@@ -381,7 +382,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
                           decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 3)),
                           child: ClipOval(
                             child: u['avatar']?['url'] != null
-                                ? CachedNetworkImage(imageUrl: u['avatar']['url'], fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white))
+                                ? CachedNetworkImage(imageUrl: cdnImg((u['avatar']['url']).toString(), 240), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white))
                                 : Container(color: AppColors.accent, child: const Icon(Icons.person, color: Colors.white)),
                           ),
                         ),
@@ -459,7 +460,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
         if (_karaokes.isNotEmpty) ...[
           _previewHeader(Icons.mic, 'Bản thu', () => _tabCtl.animateTo(1)),
           const SizedBox(height: 4),
-          ..._karaokes.take(3).toList().asMap().entries.map((e) => SongRow(song: e.value, index: e.key, showIndex: true, onTap: () => context.push('/song/${e.value['id']}', extra: e.value))),
+          ..._karaokes.take(3).toList().asMap().entries.map((e) => SongRow(song: e.value, index: e.key, showIndex: true, queue: asSongList(_karaokes))),
           const SizedBox(height: 22),
         ],
 
@@ -508,7 +509,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
             return const SizedBox(height: 16);
           }
           final s = _karaokes[i];
-          return SongRow(song: s, index: i, showIndex: true, onTap: () => context.push('/song/${s['id']}', extra: s));
+          return SongRow(song: s, index: i, showIndex: true, queue: asSongList(_karaokes));
         },
       ),
     );
@@ -554,7 +555,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
           const SizedBox(height: 4),
           Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
           const SizedBox(height: 6),
-          Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
         ]),
       ),
     );
@@ -595,7 +596,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
               Text(target!['title'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.accentLight))),
             ],
             const SizedBox(height: 2),
-            Text(timeago(pt['created_at']), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+            Text(timeago(pt['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
           ])),
         ]),
       ),
@@ -629,7 +630,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
         Text(_formatInt(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
         const SizedBox(height: 4),
-        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
       ]),
     );
     if (onTap == null) return tile;

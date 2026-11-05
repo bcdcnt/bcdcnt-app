@@ -2,12 +2,26 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- Google Sign-In: reversed iOS OAuth client ID -->
+				<string>com.googleusercontent.apps.454137046742-4001925oiid99dhkfr08cdmd5dq6s8or</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>454137046742-4001925oiid99dhkfr08cdmd5dq6s8or.apps.googleusercontent.com</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Bcdcnt Flutter</string>
+	<string>BCĐCNT</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,8 +38,18 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần dùng camera để bạn chụp ảnh đại diện hoặc ảnh đính kèm khi đăng bài, bình luận.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ứng dụng cần dùng micro để bạn tìm bài hát bằng giọng nói và thu âm khi hát karaoke.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Ứng dụng nhận dạng giọng nói để bạn tìm bài hát, nhạc sĩ, ca sĩ bằng cách nói.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Ứng dụng cần truy cập thư viện ảnh để bạn chọn ảnh đại diện hoặc ảnh đính kèm khi đăng bài, bình luận.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -49,6 +73,11 @@
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

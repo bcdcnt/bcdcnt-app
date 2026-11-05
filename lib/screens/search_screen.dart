@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
-import '../widgets/empty_state.dart';
+import '../widgets/song_row.dart';
+import '../widgets/ui.dart';
+import '../widgets/voice_search_sheet.dart';
 
 class SearchScreen extends StatefulWidget {
   /// Pre-fill the search box + auto-run on first build. Used by the home
@@ -40,6 +40,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   static const _filterOptions = [
     ('all', 'Tất cả', null),
+    ('lyric', 'Lời bài hát', null),
     ('song', 'Tân nhạc', null),
     ('folk', 'Dân ca', null),
     ('instrumental', 'Khí nhạc', null),
@@ -168,18 +169,59 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() => _loading = true);
     try {
       final limit = _filter == 'all' ? 5 : 50;
+      // "Lời bài hát": the same search over song lyrics (people often
+      // remember a line, not the title). Needs the API's `lyric` flag.
+      final byLyric = _filter == 'lyric';
       final data = await ApiClient.query(
-        r'query($q: String!, $limit: Int, $type: String!) { search(q: $q, limit: $limit, type: $type) }',
-        {'q': q, 'limit': limit, 'type': _filter},
+        byLyric
+            ? r'query($q: String!, $limit: Int) { search(q: $q, limit: $limit, type: "song", lyric: true) }'
+            : r'query($q: String!, $limit: Int, $type: String!) { search(q: $q, limit: $limit, type: $type) }',
+        byLyric ? {'q': q, 'limit': 30} : {'q': q, 'limit': limit, 'type': _filter},
       );
       final raw = (data['search'] ?? []) as List;
       final filtered = raw.where((g) => (g['hits'] as List?)?.isNotEmpty ?? false).toList();
+      if (byLyric) {
+        for (final g in filtered) {
+          (g as Map)['type'] = 'lyric';
+          g['hits'] = _lyricHits((g['hits'] as List?) ?? const []);
+        }
+      }
+      // In "Tất cả", also look the words up inside lyrics and add the songs
+      // whose lyrics match as a "Lời bài hát" group (silently skipped if
+      // the server doesn't support it yet).
+      if (_filter == 'all' && q.split(' ').length >= 3) {
+        try {
+          final ld = await ApiClient.query(r'query($q: String!) { search(q: $q, limit: 5, type: "song", lyric: true) }', {'q': q});
+          final hits = _lyricHits(((ld['search'] ?? []) as List).expand((g) => ((g['hits'] as List?) ?? [])).toList()).take(3).toList();
+          if (hits.isNotEmpty) filtered.add({'type': 'lyric', 'name': 'Lời bài hát', 'hits': hits});
+        } catch (_) {}
+      }
       if (!mounted) return;
       setState(() { _groups = filtered; _loading = false; });
       _trackKeyword(q);
     } catch (_) {
       if (mounted) setState(() { _groups = []; _loading = false; });
     }
+  }
+
+  /// Lyric matches: one row per song title (several recordings of a song
+  /// share the same lyrics) and a clean snippet without verse markers
+  /// ("1, 3-") or photo captions ("(Ảnh …)").
+  List<dynamic> _lyricHits(List hits) {
+    final seen = <String>{};
+    final out = [];
+    for (final h in hits.whereType<Map>()) {
+      var s = (h['lyric_snippet'] ?? '').toString();
+      if (s.isEmpty) continue;
+      if (!seen.add((h['title'] ?? '').toString().toLowerCase().trim())) continue;
+      s = s
+          .replaceAll(RegExp(r'\((Ảnh|ảnh|Nguồn|nguồn)[^)]*\)?'), ' ')
+          .replaceAll(RegExp(r'(^|\s)(\d+(\s*[,&]\s*\d+)*\s*[-–.:)]|ĐK\s*:?|Đk\s*:?)\s', caseSensitive: false), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      out.add({...Map<String, dynamic>.from(h), 'lyric_snippet': s});
+    }
+    return out;
   }
 
   Future<void> _trackKeyword(String q) async {
@@ -244,7 +286,15 @@ class _SearchScreenState extends State<SearchScreen> {
           if (hit['audio_url'] != null || hit['video_url'] != null) 'file': {'audio_url': hit['audio_url'], 'video_url': hit['video_url']},
           'play_type': hit['play_type'] ?? 'audio',
         };
-        context.push('/song/$id', extra: song);
+        // Tap = play (app-wide rule); the group's songs become the queue.
+        final group = _groups.firstWhere((g) => g['type'] == t, orElse: () => {'hits': [hit]});
+        final queue = ((group['hits'] as List?) ?? [hit]).whereType<Map>().map((h) => <String, dynamic>{
+              'id': h['id'], 'title': h['title'], 'slug': h['slug'], 'file_type': t,
+              if (h['image'] != null) 'thumbnail': {'url': h['image']},
+              if (h['artist'] != null) 'artists': {'data': [{'title': h['artist']}]},
+              if (h['audio_url'] != null) 'file': {'audio_url': h['audio_url'], 'video_url': h['video_url']},
+            }).toList();
+        playOrOpen(context, song, queue, 'Tìm kiếm: ${_query.trim()}');
         break;
       case 'artist': context.push('/nghe-si/$slug'); break;
       case 'composer': context.push('/nhac-si/$slug'); break;
@@ -331,117 +381,111 @@ class _SearchScreenState extends State<SearchScreen> {
     final auth = context.watch<AuthProvider>();
     final hasQuery = _query.trim().isNotEmpty;
 
-    return Column(
-      children: [
-        // Search bar
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-          child: Container(
-            height: 46,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.border),
-            ),
+    return ColoredBox(
+      color: AppColors.bg,
+      child: Column(
+        children: [
+          if (!hasQuery && !_focus.hasFocus) const PageTitle('Khám phá'),
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, hasQuery || _focus.hasFocus ? 10 : 16, 20, 4),
             child: Row(
               children: [
-                Icon(Icons.search, size: 20, color: AppColors.textMuted),
-                const SizedBox(width: 10),
                 Expanded(
-                  child: TextField(
-                    controller: _ctrl,
-                    focusNode: _focus,
-                    autofocus: true,
-                    style: body(TextStyle(color: AppColors.text, fontSize: 14)),
-                    decoration: InputDecoration(
-                      hintText: 'Tìm bài hát, nghệ sĩ, nhạc sĩ, tư liệu...',
-                      hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 14)),
-                      border: InputBorder.none,
-                      isDense: true,
+                  child: Container(
+                    height: 50,
+                    padding: const EdgeInsets.only(left: 18, right: 8),
+                    decoration: BoxDecoration(
+                      color: _focus.hasFocus ? AppColors.bg : AppColors.surface,
+                      borderRadius: BorderRadius.circular(25),
+                      border: Border.all(color: _focus.hasFocus ? AppColors.wine : Colors.transparent, width: 2),
                     ),
-                    onChanged: _onChanged,
+                    child: Row(
+                      children: [
+                        Icon(Icons.search_rounded, size: 22, color: AppColors.textMuted),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _ctrl,
+                            focusNode: _focus,
+                            autofocus: widget.initialQuery != null,
+                            textInputAction: TextInputAction.search,
+                            style: body(TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600)),
+                            decoration: InputDecoration(
+                              hintText: 'Bài hát, nhạc sĩ, ca sĩ, lời…',
+                              hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 16, fontWeight: FontWeight.w600)),
+                              border: InputBorder.none,
+                              isDense: true,
+                            ),
+                            onTap: () => setState(() {}),
+                            onTapOutside: (_) {
+                              _focus.unfocus();
+                              setState(() {});
+                            },
+                            onSubmitted: (v) => _runSearch(v.trim()),
+                            onChanged: _onChanged,
+                          ),
+                        ),
+                        if (hasQuery)
+                          IconButton(
+                            tooltip: 'Xoá',
+                            icon: Icon(Icons.cancel_rounded, size: 20, color: AppColors.textMuted),
+                            onPressed: () { _ctrl.clear(); _onChanged(''); },
+                          )
+                        else
+                          IconButton(
+                            tooltip: 'Tìm bằng giọng nói',
+                            icon: Icon(Icons.mic_none_rounded, size: 24, color: AppColors.accentLight),
+                            onPressed: () async {
+                              final heard = await showVoiceSearch(context);
+                              if (heard == null || heard.isEmpty || !mounted) return;
+                              _ctrl.text = heard;
+                              setState(() => _query = heard);
+                              _runSearch(heard);
+                            },
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-                if (hasQuery)
-                  GestureDetector(
-                    onTap: () { _ctrl.clear(); _onChanged(''); },
-                    child: Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Icon(Icons.cancel, size: 18, color: AppColors.textMuted),
-                    ),
+                if (hasQuery || _focus.hasFocus)
+                  TextButton(
+                    onPressed: () {
+                      _ctrl.clear();
+                      _onChanged('');
+                      _focus.unfocus();
+                      setState(() {});
+                    },
+                    style: TextButton.styleFrom(minimumSize: const Size(56, 44)),
+                    child: Text('Huỷ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                   ),
               ],
             ),
           ),
-        ),
-
-        // Filter — only when there's a query to narrow. Underline tab
-        // style matches the rest of the app's in-page tabs (Bài hát mới
-        // cập nhật, BXH, Tab "Hoạt động"…). 12 categories scroll
-        // horizontally on every viewport so they stay one line.
-        if (hasQuery) Builder(builder: (ctx) {
-          Widget pill(String f, String label) {
-            final active = _filter == f;
-            return InkWell(
-              onTap: active ? null : () => _setFilter(f),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
-                ),
-                child: Text(
-                  label,
-                  style: body(TextStyle(
-                    fontSize: 13,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                    color: active ? AppColors.accentLight : AppColors.textSecondary,
-                  )),
-                ),
-              ),
-            );
-          }
-          return Container(
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-            child: SizedBox(
-              height: 40,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: _filterOptions.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 16),
-                itemBuilder: (_, i) => pill(_filterOptions[i].$1, _filterOptions[i].$2),
+          if (hasQuery)
+            Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 4),
+              child: ChipStrip(
+                labels: [for (final o in _filterOptions) o.$2],
+                selected: _filterOptions.indexWhere((o) => o.$1 == _filter),
+                onSelect: (i) => _setFilter(_filterOptions[i].$1),
               ),
             ),
-          );
-        }),
-
-        Expanded(
-          child: hasQuery ? _buildResults() : _buildEmpty(auth.isAuthenticated),
-        ),
-      ],
+          Expanded(
+            child: hasQuery ? _buildResults() : _buildEmpty(auth.isAuthenticated),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildEmpty(bool authed) {
+    final serverRecent = authed && _recentLoaded && _recent.isNotEmpty;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: const EdgeInsets.only(bottom: 32),
       children: [
-        if (authed && _recentLoaded && _recent.isNotEmpty) ...[
-          Row(
-            children: [
-              Icon(Icons.history, size: 16, color: AppColors.textSecondary),
-              const SizedBox(width: 8),
-              Expanded(child: Text('Tìm kiếm gần đây', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
-              TextButton(
-                onPressed: _clearAllRecent,
-                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                child: Text('Xoá tất cả', style: body(TextStyle(fontSize: 11, color: AppColors.accentLight))),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          ..._recent.map((r) {
+        if (serverRecent) ...[
+          SectionTitle('Tìm gần đây', action: 'Xoá', onAction: _clearAllRecent, padding: const EdgeInsets.fromLTRB(20, 20, 12, 6)),
+          ..._recent.take(5).map((r) {
             final q = r['q']?.toString();
             final obj = r['object'];
             if (obj != null) {
@@ -455,84 +499,36 @@ class _SearchScreenState extends State<SearchScreen> {
               );
             }
             if (q != null && q.isNotEmpty) {
-              return _RecentRow(
-                keyword: q,
-                onTap: () => _useKeyword(q),
-                onDelete: () => _deleteRecent(r['id'].toString()),
-              );
+              return _RecentRow(keyword: q, onTap: () => _useKeyword(q), onDelete: () => _deleteRecent(r['id'].toString()));
             }
             return const SizedBox.shrink();
           }),
-          const SizedBox(height: 22),
-        ]
-        // Local recent — fallback for unauthed (no server-side history)
-        // and for authed users whose server list is still empty. Stored in
-        // SharedPreferences so it survives app restarts even without login.
-        else if (_localRecent.isNotEmpty) ...[
-          Row(children: [
-            Icon(Icons.history, size: 16, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
-            Expanded(child: Text('Tìm kiếm gần đây', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
-            TextButton(
-              onPressed: _clearLocalRecent,
-              style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-              child: Text('Xoá tất cả', style: body(TextStyle(fontSize: 11, color: AppColors.accentLight))),
+        ] else if (_localRecent.isNotEmpty) ...[
+          SectionTitle('Tìm gần đây', action: 'Xoá', onAction: _clearLocalRecent, padding: const EdgeInsets.fromLTRB(20, 20, 12, 6)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final q in _localRecent.take(5)) BrandChip(label: q, icon: Icons.history_rounded, onTap: () => _useKeyword(q))],
             ),
-          ]),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _localRecent.map((q) {
-              return InkWell(
-                onTap: () => _useKeyword(q),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.history, size: 13, color: AppColors.textMuted),
-                    const SizedBox(width: 6),
-                    Text(q, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
-                  ]),
-                ),
-              );
-            }).toList(),
           ),
-          const SizedBox(height: 22),
         ],
         if (_trendingLoaded && _trending.isNotEmpty) ...[
-          Row(children: [
-            Icon(Icons.local_fire_department, size: 16, color: AppColors.accentLight),
-            const SizedBox(width: 8),
-            Text('Xu hướng tìm kiếm', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
-          ]),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _trending.map((kw) {
-              final name = kw['name']?.toString() ?? '';
-              return InkWell(
-                onTap: () => _useKeyword(name),
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Text(name, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
-                ),
-              );
-            }).toList(),
+          SectionTitle('Đang được tìm', action: null, padding: const EdgeInsets.fromLTRB(20, 24, 12, 10)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final kw in _trending.take(8))
+                  BrandChip(label: kw['name']?.toString() ?? '', soft: true, onTap: () => _useKeyword(kw['name']?.toString() ?? '')),
+              ],
+            ),
           ),
         ],
-        if (!_trendingLoaded && (!authed || _recent.isEmpty))
-          Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
+        const _BrowseBlocks(),
       ],
     );
   }
@@ -563,39 +559,26 @@ class _SearchScreenState extends State<SearchScreen> {
       // No results — surface trending keywords as alternatives so the
       // user has somewhere to go instead of bouncing.
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        padding: const EdgeInsets.only(bottom: 40),
         children: [
-          EmptyState(
-            icon: Icons.search_off,
+          EmptyBlock(
+            icon: Icons.search_off_rounded,
             title: 'Không tìm thấy kết quả',
-            subtitle: 'Thử từ khoá khác hoặc bỏ bớt dấu, ký tự đặc biệt. Bộ lọc hiện tại: ${_filterOptions.firstWhere((o) => o.$1 == _filter).$2}.',
-            ctaLabel: _filter == 'all' ? null : 'Tìm trong "Tất cả"',
-            onCta: _filter == 'all' ? null : () => _setFilter('all'),
+            message: _filter == 'lyric'
+                ? 'Thử gõ đúng một câu hát bạn nhớ, có dấu càng tốt.'
+                : 'Thử từ khoá khác, hoặc tìm theo một câu trong lời bài hát.',
+            action: _filter == 'all' ? 'Tìm trong lời bài hát' : 'Tìm trong "Tất cả"',
+            onAction: () => _setFilter(_filter == 'all' ? 'lyric' : 'all'),
           ),
           if (_trending.isNotEmpty) ...[
-            const SizedBox(height: 12),
+            SectionTitle('Đang được tìm', action: null),
             Padding(
-              padding: const EdgeInsets.fromLTRB(2, 8, 2, 10),
-              child: Text('XU HƯỚNG TÌM KIẾM', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.5, color: AppColors.textMuted))),
-            ),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: _trending.take(8).map((t) {
-                final name = (t['name'] ?? '').toString();
-                return InkWell(
-                  onTap: () => _useKeyword(name),
-                  borderRadius: BorderRadius.circular(18),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceLight,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text(name, style: body(TextStyle(fontSize: 12, color: AppColors.text))),
-                  ),
-                );
-              }).toList(),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [for (final kw in _trending.take(8)) BrandChip(label: kw['name']?.toString() ?? '', soft: true, onTap: () => _useKeyword(kw['name']?.toString() ?? ''))],
+              ),
             ),
           ],
         ],
@@ -615,7 +598,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final totalHits = _groups.fold<int>(0, (s, g) => s + ((g['hits'] as List?)?.length ?? 0));
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
       itemCount: displayGroups.length + (topHit != null ? 2 : 1), // +1 result count, +1 if topHit
       itemBuilder: (ctx, idx) {
         if (idx == 0) {
@@ -648,7 +631,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   Expanded(
                     child: Text(
                       label.toUpperCase(),
-                      style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
+                      style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
                     ),
                   ),
                   if (_filter == 'all' && type != null && type.isNotEmpty)
@@ -658,7 +641,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                         child: Row(children: [
-                          Text('Xem tất cả', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                          Text('Xem tất cả', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                           Icon(Icons.chevron_right, size: 13, color: AppColors.textMuted),
                         ]),
                       ),
@@ -687,100 +670,58 @@ class _TopResultCard extends StatelessWidget {
     final t = hit['_search_type']?.toString();
     final image = hit['image']?.toString();
     final title = hit['title']?.toString() ?? '';
-    final subtitle = isSongLike(t) ? hit['artist']?.toString() : null;
     final isPerson = t == 'artist' || t == 'composer' || t == 'poet' || t == 'recomposer' || t == 'user';
-
-    // Desktop: larger artwork + hero-tier title (Apple Music / Spotify scale).
-    // Mobile keeps the compact original sizing.
-    final isDesktop = MediaQuery.of(context).size.width >= 900;
-    final imgSize = isDesktop ? 140.0 : 84.0;
-    final titleSize = isDesktop ? 24.0 : 16.0;
-    final subSize = isDesktop ? 14.0 : 12.0;
-    final cardPadding = isDesktop ? 22.0 : 14.0;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 2, bottom: 8),
-            child: Row(
-              children: [
-                Icon(Icons.workspace_premium_outlined, size: 14, color: AppColors.accentLight),
-                const SizedBox(width: 6),
-                Text(
-                  'KẾT QUẢ HÀNG ĐẦU',
-                  style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
-                ),
-              ],
-            ),
-          ),
-          InkWell(
+    final views = hit['views'] is num ? (hit['views'] as num).toInt() : 0;
+    final sub = [
+      typeLabel,
+      if (isSongLike(t) && (hit['artist']?.toString() ?? '').isNotEmpty) hit['artist'].toString(),
+      if (views > 0) '${formatViews(views)} lượt nghe',
+    ].join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text('Kết quả hàng đầu', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+        ),
+        Material(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(22),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
             onTap: onTap,
-            borderRadius: BorderRadius.circular(14),
-            child: Container(
-              padding: EdgeInsets.all(cardPadding),
-              decoration: BoxDecoration(
-                color: AppColors.surfaceLight,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.accent.withValues(alpha: 0.4)),
-                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.12 * AppColors.shadowMul), blurRadius: 16, spreadRadius: -4, offset: const Offset(0, 6))],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: imgSize, height: imgSize,
-                    decoration: BoxDecoration(
-                      shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
-                      borderRadius: isPerson ? null : BorderRadius.circular(12),
-                      color: AppColors.surface,
-                      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))],
-                    ),
-                    clipBehavior: Clip.hardEdge,
-                    child: image != null
-                        ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(iconFor(t), color: AppColors.textMuted))
-                        : Icon(iconFor(t), color: AppColors.textMuted, size: imgSize * 0.4),
-                  ),
-                  SizedBox(width: isDesktop ? 22 : 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(4)),
-                          child: Text(typeLabel.toUpperCase(), style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1))),
-                        ),
-                        SizedBox(height: isDesktop ? 10 : 6),
-                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: titleSize, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.15, letterSpacing: -0.3))),
-                        if (subtitle != null && subtitle.isNotEmpty) Padding(
-                          padding: EdgeInsets.only(top: isDesktop ? 6 : 4),
-                          child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: subSize, color: AppColors.textSecondary))),
-                        ),
-                        // Listen count for song-like top hits (headphones +
-                        // formatViews — same convention as the result rows).
-                        if (isSongLike(t) && (hit['views'] is num) && (hit['views'] as num) > 0) Padding(
-                          padding: EdgeInsets.only(top: isDesktop ? 8 : 5),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.headphones, size: isDesktop ? 14 : 12, color: AppColors.textMuted),
-                              const SizedBox(width: 4),
-                              Text('${formatViews((hit['views'] as num).toInt())} lượt nghe', style: body(TextStyle(fontSize: subSize - 1, color: AppColors.textMuted))),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(children: [
+                NetImage(
+                  url: image,
+                  width: 76,
+                  height: 76,
+                  circle: isPerson,
+                  radius: isPerson ? 0 : 14,
+                  fallback: GeneratedCover(title: title, size: 76, radius: isPerson ? 38 : 14),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, height: 1.2, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    const SizedBox(height: 4),
+                    Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.meta),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(color: AppColors.wine, shape: BoxShape.circle),
+                  child: Icon(isSongLike(t) ? Icons.play_arrow_rounded : Icons.arrow_forward_rounded, color: Colors.white, size: 28),
+                ),
+              ]),
             ),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }
@@ -799,48 +740,25 @@ class _RecentObjectRow extends StatelessWidget {
     final image = (obj['thumbnail']?['url'] ?? obj['avatar']?['url'])?.toString();
     final title = (obj['title'] ?? obj['name'] ?? '').toString();
     final isPerson = tn == 'Artist' || tn == 'Composer' || tn == 'Poet' || tn == 'Recomposer';
-    const typeKeyMap = {
-      'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem',
-      'Karaoke': 'karaoke', 'Artist': 'artist', 'Composer': 'composer',
-      'Poet': 'poet', 'Recomposer': 'recomposer', 'Document': 'document',
-    };
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.fromLTRB(20, 6, 8, 6),
         child: Row(
           children: [
-            Icon(Icons.history, size: 14, color: AppColors.textMuted),
-            const SizedBox(width: 10),
-            Container(
-              width: 36, height: 36,
-              decoration: BoxDecoration(
-                shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
-                borderRadius: isPerson ? null : BorderRadius.circular(6),
-                color: AppColors.surfaceLight,
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: image != null
-                  ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconFor(typeKeyMap[tn]), color: AppColors.textMuted, size: 16))
-                  : Icon(iconFor(typeKeyMap[tn]), color: AppColors.textMuted, size: 16),
-            ),
-            const SizedBox(width: 10),
+            NetImage(url: image, width: 48, height: 48, circle: isPerson, radius: isPerson ? 0 : 10, fallback: GeneratedCover(title: title, size: 48, radius: isPerson ? 24 : 10)),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
-                  if (typeLabel.isNotEmpty) Text(typeLabel, style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+                  if (typeLabel.isNotEmpty) Text(typeLabel, style: AppText.meta),
                 ],
               ),
             ),
-            IconButton(
-              icon: Icon(Icons.close, size: 14, color: AppColors.textMuted),
-              onPressed: onDelete,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
+            IconButton(tooltip: 'Xoá khỏi lịch sử', icon: Icon(Icons.close_rounded, size: 20, color: AppColors.textMuted), onPressed: onDelete),
           ],
         ),
       ),
@@ -855,27 +773,25 @@ class _RecentRow extends StatelessWidget {
   const _RecentRow({required this.keyword, required this.onTap, required this.onDelete});
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          children: [
-            Icon(Icons.history, size: 16, color: AppColors.textMuted),
-            const SizedBox(width: 12),
-            Expanded(child: Text(keyword, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text)))),
-            IconButton(
-              icon: Icon(Icons.close, size: 14, color: AppColors.textMuted),
-              onPressed: onDelete,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
-          ],
+  Widget build(BuildContext context) => InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
+                child: Icon(Icons.search_rounded, size: 22, color: AppColors.textMuted),
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: Text(keyword, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title)),
+              IconButton(tooltip: 'Xoá khỏi lịch sử', icon: Icon(Icons.close_rounded, size: 20, color: AppColors.textMuted), onPressed: onDelete),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
 }
 
 class _HitRow extends StatelessWidget {
@@ -890,68 +806,170 @@ class _HitRow extends StatelessWidget {
     final t = hit['_search_type']?.toString();
     final image = hit['image']?.toString();
     final title = hit['title']?.toString() ?? '';
-    final subtitle = isSongLike(t) ? hit['artist']?.toString() : null;
     final isPerson = t == 'artist' || t == 'composer' || t == 'poet' || t == 'recomposer' || t == 'user';
-
+    final views = hit['views'] is num ? (hit['views'] as num).toInt() : 0;
+    final snippet = (hit['lyric_snippet'] ?? '').toString();
+    final sub = snippet.isNotEmpty
+        ? '“…$snippet…”'
+        : [
+            if (isSongLike(t) && (hit['artist']?.toString() ?? '').isNotEmpty && hit['artist'] != 'Đang cập nhật') hit['artist'].toString(),
+            if (views > 0) '${formatViews(views)} lượt nghe',
+          ].join(' · ');
+    final song = isSongLike(t)
+        ? <String, dynamic>{
+            'id': hit['id'], 'title': title, 'slug': hit['slug'], 'file_type': t,
+            if (image != null) 'thumbnail': {'url': image},
+            if (hit['artist'] != null) 'artists': {'data': [{'title': hit['artist']}]},
+            if (hit['audio_url'] != null) 'file': {'audio_url': hit['audio_url'], 'video_url': hit['video_url']},
+          }
+        : null;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            // Thumbnail
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                shape: isPerson ? BoxShape.circle : BoxShape.rectangle,
-                borderRadius: isPerson ? null : BorderRadius.circular(8),
-                color: AppColors.surface,
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: image != null
-                  ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconFor(t), color: AppColors.textMuted, size: 18))
-                  : Icon(iconFor(t), color: AppColors.textMuted, size: 18),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                  if (subtitle != null && subtitle.isNotEmpty) Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
-                  ),
-                ],
-              ),
-            ),
-            // Song-like hits show their listen count (matches SongRow's
-            // headphones + formatViews convention); everything else keeps
-            // the affordance chevron.
-            if (isSongLike(t) && (hit['views'] is num) && (hit['views'] as num) > 0)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Row(
+      onLongPress: song == null ? null : () => showSongActions(context, song),
+      borderRadius: BorderRadius.circular(12),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 64),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              NetImage(url: image, width: 52, height: 52, circle: isPerson, radius: isPerson ? 0 : 12, fallback: GeneratedCover(title: title, size: 52, radius: isPerson ? 26 : 12)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.headphones, size: 12, color: AppColors.textMuted),
-                    const SizedBox(width: 3),
-                    Text(formatViews((hit['views'] as num).toInt()), style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+                    if (sub.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(sub, maxLines: snippet.isNotEmpty ? 2 : 1, overflow: TextOverflow.ellipsis, style: snippet.isNotEmpty ? AppText.meta.copyWith(fontStyle: FontStyle.italic) : AppText.meta)),
                   ],
                 ),
-              )
-            else
-              Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
-          ],
+              ),
+              if (song != null)
+                IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_vert_rounded, color: AppColors.textMuted), onPressed: () => showSongActions(context, song))
+              else
+                Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// Browse shortcuts under the empty search box: kinds, decades, popular
+/// topics and the archive — an empty search still leads somewhere.
+class _BrowseBlocks extends StatefulWidget {
+  const _BrowseBlocks();
+  @override
+  State<_BrowseBlocks> createState() => _BrowseBlocksState();
+}
+
+class _BrowseBlocksState extends State<_BrowseBlocks> {
+  static const _kinds = [
+    ('Tân nhạc', '/the-loai/tan-nhac', Color(0xFF711313)),
+    ('Dân ca', '/the-loai/dan-ca', Color(0xFF8C3B3A)),
+    ('Khí nhạc', '/the-loai/khi-nhac', Color(0xFF3B0F0F)),
+    ('Tiếng thơ', '/the-loai/tieng-tho', Color(0xFF9C5E5C)),
+    ('Thành viên hát', '/the-loai/thanh-vien-hat', Color(0xFF5A1D1D)),
+    ('Bản nhạc', '/sheet', Color(0xFFB48988)),
+  ];
+  static const _decades = [1940, 1950, 1960, 1970, 1980, 1990];
+
+  List<Map<String, dynamic>> _tags = [];
+
+  @override
+  void initState() {
+    super.initState();
+    ApiClient.query(r'query { popularTags(limit: 12) { id name slug song_count sample_images } }').then((d) {
+      if (!mounted) return;
+      setState(() => _tags = ((d['popularTags'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList());
+    }).catchError((_) {});
+  }
+
+  List<String> get _images => [
+        for (final t in _tags)
+          ...((t['sample_images'] is List) ? (t['sample_images'] as List).whereType<String>() : const <String>[]),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
+    final imgs = _images;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle('Thể loại', action: null),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.6,
+            children: [
+              for (var i = 0; i < _kinds.length; i++)
+                Material(
+                  color: _kinds[i].$3,
+                  borderRadius: BorderRadius.circular(18),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => context.push(_kinds[i].$2),
+                    child: Stack(children: [
+                      if (i < imgs.length)
+                        Positioned(
+                          right: -16,
+                          bottom: -12,
+                          child: Transform.rotate(
+                            angle: 0.3,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 6))]),
+                              child: NetImage(url: imgs[i], width: 84, height: 84, radius: 12, tint: true),
+                            ),
+                          ),
+                        ),
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Text(_kinds[i].$1, style: display(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
+                      ),
+                    ]),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        SectionTitle('Thập niên', action: null),
+        SizedBox(
+          height: 38,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: _decades.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) => BrandChip(label: 'Thập niên ${_decades[i] % 100 == 0 ? '00' : _decades[i] % 100}', onTap: () => context.push('/bai-hat/thap-nien/${_decades[i]}')),
+          ),
+        ),
+        if (_tags.isNotEmpty) ...[
+          SectionTitle('Chủ đề', action: 'Tất cả', onAction: () => context.push('/tag')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final t in _tags) BrandChip(label: '#${t['name']}', onTap: () => context.push('/tag/${t['slug']}'))],
+            ),
+          ),
+        ],
+        SectionTitle('Kho tư liệu', action: null),
+        ListItem(icon: Icons.photo_outlined, title: 'Ảnh tư liệu', onTap: () => context.push('/tu-lieu/hinh-anh')),
+        ListItem(icon: Icons.videocam_outlined, title: 'Video tư liệu', onTap: () => context.push('/tu-lieu/video')),
+        ListItem(icon: Icons.graphic_eq_rounded, title: 'Tư liệu âm thanh', onTap: () => context.push('/tu-lieu/am-thanh')),
+        ListItem(icon: Icons.emoji_events_outlined, title: 'Bảng xếp hạng', onTap: () => context.push('/bang-xep-hang')),
+        ListItem(icon: Icons.person_search_outlined, title: 'Nhạc sĩ', onTap: () => context.push('/nhac-si')),
+        ListItem(icon: Icons.mic_none_rounded, title: 'Ca sĩ', onTap: () => context.push('/nghe-si')),
+        ListItem(icon: Icons.queue_music_rounded, title: 'Playlist cộng đồng', onTap: () => context.push('/playlist')),
+      ],
     );
   }
 }

@@ -68,9 +68,9 @@ class _SheetListScreenState extends State<SheetListScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('BẢN NHẠC', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Bản nhạc'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -118,10 +118,10 @@ class _SheetListScreenState extends State<SheetListScreen> {
                           Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
                           const SizedBox(height: 2),
                           Row(children: [
-                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
                             if (s['year'] != null && s['year'].toString().isNotEmpty) ...[
                               if (composers.isNotEmpty) const SizedBox(width: 6),
-                              Text('(${s['year']})', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                              Text('(${s['year']})', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                             ],
                           ]),
                         ])),

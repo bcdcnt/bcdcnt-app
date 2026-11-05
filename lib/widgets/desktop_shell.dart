@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -484,7 +485,7 @@ class _Sidebar extends StatelessWidget {
                       child: Text(
                         _primaryNavGroups[g].label!,
                         style: body(TextStyle(
-                          fontSize: 10, fontWeight: FontWeight.w700,
+                          fontSize: 11, fontWeight: FontWeight.w700,
                           letterSpacing: 1.2, color: AppColors.textMuted,
                         )),
                       ),
@@ -500,7 +501,7 @@ class _Sidebar extends StatelessWidget {
                     child: Text(
                       'THƯ VIỆN CỦA TÔI',
                       style: body(TextStyle(
-                        fontSize: 10, fontWeight: FontWeight.w700,
+                        fontSize: 11, fontWeight: FontWeight.w700,
                         letterSpacing: 1.2, color: AppColors.textMuted,
                       )),
                     ),
@@ -609,7 +610,7 @@ class _NotifBell extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(8)),
                 alignment: Alignment.center,
-                child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
+                child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
         ],
@@ -713,7 +714,7 @@ class _AccountFooter extends StatelessWidget {
               child: SizedBox(
                 width: 30, height: 30,
                 child: avatar != null && avatar.isNotEmpty
-                    ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder(username))
+                    ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder(username))
                     : _placeholder(username),
               ),
             ),

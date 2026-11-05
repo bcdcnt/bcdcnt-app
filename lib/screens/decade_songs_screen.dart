@@ -117,9 +117,9 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('THẬP NIÊN', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('Thập niên'),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -184,7 +184,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
                         final song = _items[i];
-                        return SongRow(song: song, index: i, showIndex: true, onTap: () => context.push('/song/${song['id']}', extra: song));
+                        return SongRow(song: song, index: i, showIndex: true, queue: asSongList(_items));
                       },
                       childCount: _items.length,
                     ),

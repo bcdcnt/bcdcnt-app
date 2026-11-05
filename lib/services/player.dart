@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'offline_store.dart';
 import 'play_tracker.dart';
 import 'analytics.dart';
 
@@ -13,6 +14,20 @@ typedef FetchMoreFn = Future<List<Map<String, dynamic>>> Function(List<Map<Strin
 /// Optional callback invoked when shuffle/repeat changes so the host app
 /// can persist the change (e.g. via the updateMe GraphQL mutation).
 typedef OnPlayerSettingChanged = Future<void> Function(String key, Object value);
+
+const _songKinds = {'song', 'folk', 'instrumental', 'poem', 'karaoke'};
+const _typenameKinds = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
+
+/// Which table a song row comes from: song (tân nhạc) / folk / instrumental /
+/// poem / karaoke. The API's own `file_type` field means the media kind
+/// ("audio"/"video"), so screens stamp the real kind into `file_type`; when
+/// they didn't, fall back to `__typename`. IDs repeat across tables, so a
+/// wrong kind loads a different song with the same id.
+String songKind(Map? song, [String fallback = 'song']) {
+  final ft = song?['file_type']?.toString();
+  if (_songKinds.contains(ft)) return ft!;
+  return _typenameKinds[song?['__typename']?.toString()] ?? fallback;
+}
 
 class PlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
@@ -59,12 +74,18 @@ class PlayerProvider extends ChangeNotifier {
   // the root-level pill can self-hide while the full-screen player is
   // visible (otherwise the pill floats on top of it).
   bool _fullPlayerOpen = false;
+  // Buffering/loading flag for the spinner on play buttons, and a one-shot
+  // error signal the shell turns into a "Không phát được bài này" toast.
+  bool _isLoading = false;
+  final ValueNotifier<int> playErrorTick = ValueNotifier(0);
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
   int get currentIndex => _currentIndex;
   bool get isPlaying => _isPlaying;
+  bool get isLoading => _isLoading;
   Duration get position => _position;
+  final ValueNotifier<Duration> positionNotifier = ValueNotifier(Duration.zero);
   Duration get duration => _duration;
   double get progress => _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0;
   bool get shuffle => _shuffle;
@@ -117,16 +138,25 @@ class PlayerProvider extends ChangeNotifier {
       }
       notifyListeners();
     });
+    // Position ticks several times a second. Publishing them through
+    // notifyListeners() rebuilt every widget watching the player (20+
+    // screens) on each tick, which is what made scrolling stutter while
+    // music played. Only progress bars/timestamps listen to [positionNotifier].
     _player.positionStream.listen((pos) {
       _position = pos;
+      positionNotifier.value = pos;
       _tracker?.onTimeUpdate();
-      notifyListeners();
     });
     _player.durationStream.listen((dur) {
       _duration = dur ?? Duration.zero;
       notifyListeners();
     });
     _player.playerStateStream.listen((state) {
+      final loading = state.processingState == ProcessingState.loading || state.processingState == ProcessingState.buffering;
+      if (loading != _isLoading) {
+        _isLoading = loading;
+        notifyListeners();
+      }
       if (state.processingState == ProcessingState.completed) {
         _tracker?.endSession(reason: 'completed');
         _onSongEnded();
@@ -216,14 +246,16 @@ class PlayerProvider extends ChangeNotifier {
     notifyListeners();
 
     final url = song['audioUrl'] ?? song['file']?['audio_url'];
-    if (url == null) return;
+    // Songs saved in "Đã tải về" play from the phone, with or without network.
+    final local = OfflineStore.instance.localPath(song);
+    if (url == null && local == null) return;
 
     // Begin a tracking session before audio loads so we accumulate time
     // from the very first frame. `source=manual` means the user actively
     // chose to play this song; `queue` is auto-advance; `autoplay` is the
     // (now-removed) detail-page auto-start, which never logs.
     final id = song['id']?.toString();
-    final type = (song['file_type'] ?? 'song').toString();
+    final type = songKind(song);
     final dur = (song['file']?['duration'] is num) ? (song['file']['duration'] as num).toDouble() : null;
     if (id != null) {
       _tracker?.startSession(songId: id, objectType: type, songDuration: dur, source: source);
@@ -240,9 +272,17 @@ class PlayerProvider extends ChangeNotifier {
     }
 
     try {
-      await _player.setUrl(url);
+      if (local != null) {
+        await _player.setFilePath(local);
+      } else {
+        await _player.setUrl(url);
+      }
       await _player.play();
-    } catch (_) {}
+    } catch (_) {
+      _isLoading = false;
+      playErrorTick.value++;
+      notifyListeners();
+    }
     _maybeRefillQueue();
   }
 
@@ -458,6 +498,7 @@ class PlayerProvider extends ChangeNotifier {
   @override
   void dispose() {
     _player.dispose();
+    positionNotifier.dispose();
     super.dispose();
   }
 }

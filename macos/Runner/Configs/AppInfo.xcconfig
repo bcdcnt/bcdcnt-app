@@ -13,7 +13,7 @@ PRODUCT_NAME = Bài ca đi cùng năm tháng
 EXECUTABLE_NAME = bcdcnt
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = net.bcdcnt.app
+PRODUCT_BUNDLE_IDENTIFIER = net.bcdcnt.music
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 bcdcnt.net. All rights reserved.

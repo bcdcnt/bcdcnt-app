@@ -1,7 +1,7 @@
 name: bcdcnt
 description: BCĐCNT - Bài Ca Đi Cùng Năm Tháng
 publish_to: 'none'
-version: 1.2.0+4
+version: 1.3.0+10
 
 environment:
   sdk: ^3.11.5
@@ -17,6 +17,7 @@ dependencies:
   shared_preferences: ^2.3.0
   cached_network_image: ^3.4.0
   just_audio: ^0.9.40
+  audio_session: ^0.1.25
   # just_audio only ships native backends for iOS/Android/macOS/Web.
   # Windows & Linux desktop need a libmpv-backed implementation or
   # audio playback silently fails (duration stays at 0:00). Pulled
@@ -40,6 +41,13 @@ dependencies:
   vsc_quill_delta_to_html: ^1.0.5
   package_info_plus: ^8.0.0
   flutter_html_table: ^3.0.0-beta.2
+  audio_service: ^0.18.19
+  speech_to_text: ^7.4.0
+  path_provider: ^2.1.6
+  sign_in_with_apple: ^8.1.0
+  google_sign_in: ^7.2.0
+  firebase_core: ^5.1.0
+  firebase_messaging: ^17.0.1
 
 dev_dependencies:
   flutter_test:
@@ -50,3 +58,19 @@ flutter:
   uses-material-design: true
   assets:
     - assets/
+  # Bundled (not fetched by google_fonts at runtime) so the first launch
+  # renders with the right faces offline. Montserrat is the brand typeface
+  # (tagline font in the BCĐCNT logo guideline) and is used for all text.
+  fonts:
+    - family: Montserrat
+      fonts:
+        - asset: assets/fonts/Montserrat-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Montserrat-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Montserrat-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Montserrat-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Montserrat-ExtraBold.ttf
+          weight: 800

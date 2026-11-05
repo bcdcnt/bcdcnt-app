@@ -1,3 +1,4 @@
+import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,10 +22,10 @@ class _Cfg {
 }
 
 const _cfg = <ArchiveType, _Cfg>{
-  ArchiveType.image: _Cfg(label: 'Thư viện ảnh', docType: 'image', icon: Icons.image_outlined, tint: Color(0xFF7986CB)),
-  ArchiveType.audio: _Cfg(label: 'Tư liệu âm thanh', docType: 'audio', icon: Icons.audiotrack, tint: Color(0xFF81C784)),
-  ArchiveType.video: _Cfg(label: 'Tư liệu video', docType: 'video', icon: Icons.video_library_outlined, tint: Color(0xFFE57373)),
-  ArchiveType.news: _Cfg(label: 'Tư liệu bài viết', docType: 'news', icon: Icons.article_outlined, tint: Color(0xFFFFB74D)),
+  ArchiveType.image: _Cfg(label: 'Thư viện ảnh', docType: 'image', icon: Icons.image_outlined, tint: Color(0xFF711313)),
+  ArchiveType.audio: _Cfg(label: 'Tư liệu âm thanh', docType: 'audio', icon: Icons.audiotrack, tint: Color(0xFF8C3B3A)),
+  ArchiveType.video: _Cfg(label: 'Tư liệu video', docType: 'video', icon: Icons.video_library_outlined, tint: Color(0xFF5A1D1D)),
+  ArchiveType.news: _Cfg(label: 'Tư liệu bài viết', docType: 'news', icon: Icons.article_outlined, tint: Color(0xFF9C5E5C)),
 };
 
 const _slugMap = <String, ArchiveType>{
@@ -178,9 +179,9 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-                title: Text('TƯ LIỆU', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+                title: Text('Tư liệu'),
                 centerTitle: true,
-                leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -276,7 +277,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: thumb != null
-                ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
+                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                 : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
           ),
         );
@@ -314,7 +315,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                       Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
@@ -355,7 +356,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     children: [
                       Positioned.fill(
                         child: thumb != null
-                            ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
+                            ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
                             : (videoUrl != null
                                 ? VideoPoster(videoUrl: videoUrl)
                                 : Container(color: AppColors.surfaceLight, child: Icon(Icons.movie, color: AppColors.textMuted))),
@@ -403,7 +404,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: thumb != null
-                      ? CachedNetworkImage(imageUrl: thumb, width: 72, height: 72, fit: BoxFit.cover)
+                      ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 180), width: 72, height: 72, fit: BoxFit.cover)
                       : Container(width: 72, height: 72, color: AppColors.surface, child: Icon(Icons.article, color: AppColors.textMuted)),
                 ),
                 const SizedBox(width: 12),
@@ -419,7 +420,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                       ),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 10, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
                       ),
                     ],
                   ),

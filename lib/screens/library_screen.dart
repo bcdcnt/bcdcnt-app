@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
-import '../widgets/section_header.dart';
-import '../widgets/hover_effects.dart';
-import '../services/player.dart';
+import '../services/offline_store.dart';
+import '../widgets/auth_dialogs.dart';
+import '../widgets/brand_logo.dart';
+import '../widgets/ui.dart';
+import '../widgets/listening_profile_card.dart';
+import '../main.dart' show TabReselect;
 
+/// Thư viện tab (2026-11): everything "của tôi" in one place — the old
+/// Thư viện and Cá nhân tabs merged. Profile card on top, four big tiles,
+/// my playlists, then my activity and settings.
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
   @override
@@ -17,397 +21,321 @@ class LibraryScreen extends StatefulWidget {
 }
 
 class _LibraryScreenState extends State<LibraryScreen> {
-  List<dynamic> _latest = [];
-  // Folk-music sub-data — populated lazily so the grid can show melodies +
-  // folk categories under the Dân ca section (parity with web's Library).
-  // Recently-listened — only populated when authenticated. Renders as a
-  // horizontal carousel above the "Của bạn" tile grid.
-  List<Map<String, dynamic>> _recent = [];
-  bool _loading = true;
+  List<Map<String, dynamic>> _playlists = [];
+  // People the member follows (♥ on person pages): {type, id, title, slug, avatar}.
+  List<Map<String, dynamic>> _following = [];
+  bool _loadingPlaylists = false;
+  String? _loadedFor;
+  AuthProvider? _auth;
+  final _scroll = ScrollController();
 
-  AuthProvider? _authRef;
-  bool _didFetchRecent = false;
+  void _onReselect() {
+    if (TabReselect.tick.value.$1 == 3 && _scroll.hasClients) {
+      _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _fetch();
-    // Recent listens need auth; wait for the token to finish restoring so a
-    // fresh launch doesn't skip the rail (auth not ready → empty, no retry).
+    TabReselect.tick.addListener(_onReselect);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _authRef = context.read<AuthProvider>();
-      _authRef!.addListener(_maybeFetchRecent);
-      _maybeFetchRecent();
+      _auth = context.read<AuthProvider>()..addListener(_maybeFetch);
+      _maybeFetch();
     });
   }
 
   @override
   void dispose() {
-    _authRef?.removeListener(_maybeFetchRecent);
+    TabReselect.tick.removeListener(_onReselect);
+    _scroll.dispose();
+    _auth?.removeListener(_maybeFetch);
     super.dispose();
   }
 
-  void _maybeFetchRecent() {
-    if (_didFetchRecent || !mounted) return;
-    final auth = context.read<AuthProvider>();
-    if (auth.loading) return;
-    _didFetchRecent = true;
-    _fetchRecent();
+  void _maybeFetch() {
+    final auth = _auth;
+    if (auth == null || auth.loading || !mounted) return;
+    final uid = auth.isAuthenticated ? (auth.user?['id']?.toString()) : null;
+    if (uid == _loadedFor) return;
+    _loadedFor = uid;
+    if (uid == null) {
+      setState(() {
+        _playlists = [];
+        _following = [];
+      });
+      return;
+    }
+    _fetchPlaylists(auth);
+    _fetchFollowing(auth, uid);
   }
 
-  Future<void> _fetchRecent() async {
-    final auth = context.read<AuthProvider>();
-    final userId = auth.user?['id']?.toString();
-    if (!auth.isAuthenticated || userId == null) return;
+  Future<void> _fetchPlaylists(AuthProvider auth) async {
+    setState(() => _loadingPlaylists = true);
+    const obj = '... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } }';
     try {
-      final data = await auth.authedQuery(r'''query($id: ID!) {
-        user(id: $id) {
-          recentListens(first: 8, page: 1, orderBy: [{column: "id", order: DESC}]) {
-            data {
-              object {
-                __typename
-                ... on Song { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
-                ... on Folk { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
-                ... on Instrumental { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
-                ... on Poem { id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 3) { data { id title slug } } }
-                ... on Karaoke { id title slug play_type thumbnail { url } file { audio_url video_url } users(first: 3) { data { id username } } }
-              }
-            }
-          }
-        }
-      }''', {'id': userId});
+      final d = await auth.authedQuery('''query { myPlaylists(first: 6, page: 1, orderBy: [{column: "id", order: DESC}]) {
+        data { id title slug thumbnail { url } items(first: 4) { paginatorInfo { total } data { object { $obj } } } }
+      } }''', null);
       if (!mounted) return;
-      const tnMap = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
-      final fresh = <Map<String, dynamic>>[];
-      final seen = <String>{};
-      for (final entry in (data['user']?['recentListens']?['data'] ?? []) as List) {
-        final obj = entry['object'];
-        if (obj == null) continue;
-        final m = Map<String, dynamic>.from(obj as Map);
-        final id = m['id'].toString();
-        if (seen.contains(id)) continue;
-        seen.add(id);
-        m['file_type'] = tnMap[m['__typename']] ?? 'song';
-        if (m['users'] != null && m['artists'] == null) {
-          // Karaoke → expose users as artists for SongRow / cards.
-          final users = (m['users']?['data'] ?? []) as List;
-          m['artists'] = {'data': users.map((u) => {'title': u['username'], 'id': u['id']}).toList()};
-        }
-        fresh.add(m);
-      }
-      setState(() => _recent = fresh);
+      setState(() {
+        _playlists = ((d['myPlaylists']?['data'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+        _loadingPlaylists = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingPlaylists = false);
+    }
+  }
+
+  Future<void> _fetchFollowing(AuthProvider auth, String uid) async {
+    // `myFollowing` (API 2026-11): people this member ♥'d on person pages.
+    // On older API builds the query fails and the section stays hidden.
+    try {
+      final d = await auth.authedQuery('query { myFollowing(first: 30) { id title slug object_type avatar { url } } }', null);
+      final list = ((d['myFollowing'] ?? []) as List).whereType<Map>().map((p) => {...Map<String, dynamic>.from(p), 'type': p['object_type']}).toList();
+      if (mounted) setState(() => _following = list);
     } catch (_) {}
   }
 
-  Future<void> _fetch() async {
-    try {
-      // Library only needs the latest-songs carousel now — folk vocabulary
-      // (melodies + fcats) is fetched on demand by the dedicated index
-      // pages, so we don't pre-load 400 chips for a tile dashboard.
-      final data = await ApiClient.query(r'''query {
-        songs(first: 8, orderBy: [{column: "id", order: DESC}]) {
-          data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
-        }
-      }''');
-      if (!mounted) return;
-      setState(() {
-        _latest = data['songs']?['data'] ?? [];
-        _loading = false;
-      });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
-  }
+  static const _personRoutes = {'composer': '/nhac-si/', 'artist': '/nghe-si/', 'poet': '/nha-tho/', 'recomposer': '/soan-gia/'};
 
-  void _openWeb(String path) => launchUrl(Uri.parse('$siteUrl$path'), mode: LaunchMode.externalApplication);
+  void _open(String route) {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) {
+      showDialog(context: context, builder: (_) => const LoginDialog());
+      return;
+    }
+    context.push(route);
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final user = auth.isAuthenticated ? auth.user : null;
+    final name = (user?['username'] ?? '').toString();
 
-    return RefreshIndicator(
-      color: AppColors.accent,
-      onRefresh: _fetch,
+    return ColoredBox(
+      color: AppColors.bg,
       child: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        controller: _scroll,
+        padding: const EdgeInsets.only(bottom: 32),
         children: [
-          // Header
-          Text(
+          PageTitle(
             'Thư viện',
-            style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: AppColors.text, letterSpacing: -0.5)),
+            leading: user != null
+                ? GestureDetector(onTap: () => context.push('/user/${user['id']}'), child: UserAvatar(url: user['avatar']?.toString(), name: name, size: 44))
+                : null,
+            actions: [RoundIcon(icon: Icons.settings_outlined, tooltip: 'Cài đặt', onTap: () => context.push('/cai-dat'))],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Khám phá kho nhạc theo thể loại, thập niên, nghệ sĩ và tư liệu',
-            style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)),
-          ),
-          const SizedBox(height: 24),
-
-          // Recently played — only when there's data to show, so the
-          // section doesn't render an empty rail for new accounts.
-          if (auth.isAuthenticated && _recent.isNotEmpty) ...[
-            const SectionHeader(icon: Icons.history, title: 'Nghe gần đây'),
-            _RecentCarousel(items: _recent),
-            const SizedBox(height: 28),
-          ],
-
-          // Của bạn (logged in only)
-          if (auth.isAuthenticated) ...[
-            const SectionHeader(icon: Icons.bookmark_outline, title: 'Của bạn'),
-            _grid([
-              _Tile(label: 'Yêu thích', icon: Icons.favorite, color: const Color(0xFFE57373), onTap: () => context.push('/yeu-thich')),
-              _Tile(label: 'Nghe gần đây', icon: Icons.access_time, color: const Color(0xFF7986CB), onTap: () => context.push('/nghe-gan-day')),
-              _Tile(label: 'Playlist của tôi', icon: Icons.queue_music, color: const Color(0xFF81C784), onTap: () => context.push('/playlist-cua-toi')),
-              _Tile(label: 'Bài tôi gửi', icon: Icons.upload_outlined, color: const Color(0xFFFFB74D), onTap: () => context.push('/bai-gui-cua-toi')),
-            ]),
-            const SizedBox(height: 28),
-          ],
-
-          // Mới cập nhật — sits just below the personalized rails (Nghe gần
-          // đây + Của bạn) so both content carousels stay near the top,
-          // ahead of the category-navigation tile grids.
-          if (_latest.isNotEmpty) ...[
-            SectionHeader(
-              icon: Icons.fiber_new,
-              title: 'Mới cập nhật',
-              actionText: 'Xem tất cả',
-              onAction: () => context.push('/the-loai/tan-nhac'),
+          const SizedBox(height: 16),
+          if (user != null) ...[
+            _ProfileCard(user: user),
+            const SizedBox(height: 12),
+            ListeningProfileCard(key: ValueKey('lp-${user['id']}')),
+          ] else if (!auth.loading)
+            const _GuestCard(),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: GridView.count(
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 1.55,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _Tile(icon: Icons.favorite_rounded, title: 'Yêu thích', subtitle: 'Bài đã thả tim', strong: true, onTap: () => _open('/yeu-thich')),
+                _Tile(icon: Icons.history_rounded, title: 'Nghe gần đây', subtitle: 'Lịch sử nghe', onTap: () => _open('/nghe-gan-day')),
+                Consumer<OfflineStore>(builder: (_, store, __) => _Tile(icon: Icons.download_for_offline_rounded, title: 'Đã tải về', subtitle: store.items.isEmpty ? 'Nghe không cần mạng' : '${store.items.length} bài · nghe offline', onTap: () => context.push('/da-tai-ve'))),
+                _Tile(icon: Icons.upload_rounded, title: 'Bài gửi', subtitle: 'Bài tôi đã gửi', onTap: () => _open('/bai-gui-cua-toi')),
+              ],
             ),
-            _latestCarousel(),
-            const SizedBox(height: 28),
-          ] else if (_loading) ...[
-            Padding(padding: EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
-          ],
-
-          // Thể loại
-          const SectionHeader(icon: Icons.category_outlined, title: 'Thể loại'),
-          _grid([
-            _Tile(label: 'Tân nhạc', icon: Icons.music_note, color: const Color(0xFF711313), onTap: () => context.push('/the-loai/tan-nhac')),
-            _Tile(label: 'Dân ca', icon: Icons.album_outlined, color: const Color(0xFF8B6914), onTap: () => context.push('/the-loai/dan-ca')),
-            _Tile(label: 'Khí nhạc', icon: Icons.piano, color: const Color(0xFF7A3B3A), onTap: () => context.push('/the-loai/khi-nhac')),
-            _Tile(label: 'Tiếng thơ', icon: Icons.auto_stories_outlined, color: const Color(0xFF6B5210), onTap: () => context.push('/the-loai/tieng-tho')),
-            _Tile(label: 'Thành viên hát', icon: Icons.mic_outlined, color: const Color(0xFF2D5E3A), onTap: () => context.push('/the-loai/thanh-vien-hat')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Tân nhạc — sub-categories (web parity)
-          const SectionHeader(icon: Icons.music_note, title: 'Tân nhạc'),
-          _grid([
-            _Tile(label: 'Nhạc thiếu nhi', icon: Icons.child_care, color: const Color(0xFF8B6914), onTap: () => context.push('/tag/nhac-thieu-nhi')),
-            _Tile(label: 'Nhạc nước ngoài', icon: Icons.public, color: const Color(0xFF2D5E3A), onTap: () => context.push('/tag/nhac-nuoc-ngoai')),
-            _Tile(label: 'Nhạc nhẹ', icon: Icons.music_note_outlined, color: const Color(0xFF6B5210), onTap: () => context.push('/tag/nhac-nhe')),
-            _Tile(label: 'Nhạc tiền chiến', icon: Icons.history_toggle_off, color: const Color(0xFFA89060), onTap: () => context.push('/tag/nhac-tien-chien')),
-            _Tile(label: 'Nhạc phim', icon: Icons.movie_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag/nhac-phim')),
-            _Tile(label: 'Video', icon: Icons.play_circle_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/tag/video')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Dân ca — sub-tiles for the two reference indexes (genres /
-          // melodies). Mirrors the "Tân nhạc — sub-categories" layout so
-          // the library reads as a flat tile dashboard.
-          const SectionHeader(icon: Icons.album_outlined, title: 'Dân ca'),
-          _grid([
-            _Tile(label: 'Thể loại dân ca', icon: Icons.category_outlined, color: const Color(0xFF8B6914), onTap: () => context.push('/the-loai-dan-ca')),
-            _Tile(label: 'Làn điệu dân ca', icon: Icons.graphic_eq, color: const Color(0xFFA89060), onTap: () => context.push('/lan-dieu')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Khí nhạc — sub-categories
-          const SectionHeader(icon: Icons.piano, title: 'Khí nhạc'),
-          _grid([
-            _Tile(label: 'Nhạc Việt Nam', icon: Icons.flag_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag/nhac-viet-nam')),
-            _Tile(label: 'Nhạc nước ngoài', icon: Icons.public, color: const Color(0xFF2D5E3A), onTap: () => context.push('/tag/nhac-nuoc-ngoai')),
-            _Tile(label: 'Video', icon: Icons.play_circle_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/tag/khi-nhac-video')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Khám phá
-          const SectionHeader(icon: Icons.explore_outlined, title: 'Khám phá'),
-          _grid([
-            _Tile(label: 'Bảng xếp hạng', icon: Icons.leaderboard_outlined, color: const Color(0xFF711313), onTap: () => context.push('/bang-xep-hang')),
-            _Tile(label: 'Bản nhạc', icon: Icons.music_note_outlined, color: const Color(0xFF4A0D0D), onTap: () => context.push('/sheet')),
-            _Tile(label: 'Playlist', icon: Icons.queue_music_outlined, color: const Color(0xFF2D5E3A), onTap: () => context.push('/playlist')),
-            _Tile(label: 'Tag', icon: Icons.tag, color: const Color(0xFF7A3B3A), onTap: () => context.push('/tag')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Nghệ sĩ & Tác giả
-          const SectionHeader(icon: Icons.people_outline, title: 'Nghệ sĩ & Tác giả'),
-          _grid([
-            _Tile(label: 'Nghệ sĩ', icon: Icons.mic, color: const Color(0xFF711313), onTap: () => context.push('/nghe-si')),
-            _Tile(label: 'Nhạc sĩ', icon: Icons.music_note, color: const Color(0xFF8B6914), onTap: () => context.push('/nhac-si')),
-            _Tile(label: 'Nhà thơ', icon: Icons.auto_stories_outlined, color: const Color(0xFF6B5210), onTap: () => context.push('/nha-tho')),
-            _Tile(label: 'Soạn giả', icon: Icons.edit_outlined, color: const Color(0xFF7A3B3A), onTap: () => context.push('/soan-gia')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Thư viện tư liệu
-          const SectionHeader(icon: Icons.collections_bookmark_outlined, title: 'Tư liệu'),
-          _grid([
-            _Tile(label: 'Hình ảnh', icon: Icons.image_outlined, color: const Color(0xFF7986CB), onTap: () => context.push('/tu-lieu/hinh-anh')),
-            _Tile(label: 'Âm thanh', icon: Icons.audiotrack, color: const Color(0xFF81C784), onTap: () => context.push('/tu-lieu/am-thanh')),
-            _Tile(label: 'Video', icon: Icons.video_library_outlined, color: const Color(0xFFE57373), onTap: () => context.push('/tu-lieu/video')),
-            _Tile(label: 'Bài viết', icon: Icons.article_outlined, color: const Color(0xFFFFB74D), onTap: () => context.push('/tu-lieu/bai-viet')),
-          ]),
-          const SizedBox(height: 28),
-
-          // Theo thập niên
-          const SectionHeader(icon: Icons.history_toggle_off, title: 'Tân nhạc theo thập niên'),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020].map((d) {
-              return HoverGlow(
-                radius: 20,
-                child: InkWell(
-                  onTap: () => context.push('/bai-hat/thap-nien/$d'),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceLight,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: Text('${d}s', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                  ),
-                ),
-              );
-            }).toList(),
           ),
-          const SizedBox(height: 28),
-
-          // Cộng đồng
-          const SectionHeader(icon: Icons.forum_outlined, title: 'Cộng đồng'),
-          _grid([
-            _Tile(label: 'Thảo luận', icon: Icons.chat_bubble_outline, color: const Color(0xFF4A0D0D), onTap: () => context.push('/thao-luan')),
-            _Tile(label: 'Hoạt động', icon: Icons.timeline, color: const Color(0xFF2D1B4E), onTap: () => context.push('/cong-dong/hoat-dong-thanh-vien')),
-            _Tile(label: 'Giới thiệu', icon: Icons.info_outline, color: const Color(0xFF711313), onTap: () => context.push('/gioi-thieu')),
-            _Tile(label: 'Hỏi đáp AI', icon: Icons.auto_awesome, color: const Color(0xFF1A3A5C), onTap: () => _openWeb('/hoi-dap')),
-          ]),
-          const SizedBox(height: 28),
-
-          // (Dân ca section moved up to sit beneath Tân nhạc — see above.)
-
-          const SizedBox(height: 100),
-        ],
-      ),
-    );
-  }
-
-  Widget _grid(List<_Tile> tiles) {
-    final w = MediaQuery.of(context).size.width;
-    // Native desktop pattern: more columns + taller tiles than mobile.
-    final cols = w >= 1280 ? 4 : (w >= 900 ? 3 : 2);
-    final tileHeight = w >= 900 ? 80.0 : 64.0;
-    return GridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: cols,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      mainAxisExtent: tileHeight,
-      children: tiles,
-    );
-  }
-
-  // Soft fade on the right edge — same treatment as the homepage carousels so
-  // the row visibly hints at more content scrolling off-screen.
-  Widget _fadeRightEdge(double height, Widget listView) {
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (rect) {
-        final stop = (1 - 34 / rect.width).clamp(0.0, 1.0);
-        return LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: const [Colors.white, Colors.white, Colors.transparent],
-          stops: [0.0, stop, 1.0],
-        ).createShader(rect);
-      },
-      child: SizedBox(height: height, child: listView),
-    );
-  }
-
-  Widget _latestCarousel() {
-    final queue = _latest.map((e) => Map<String, dynamic>.from(e)).toList();
-    // Mirrors the homepage song carousel: HoverCard padding + HoverRevealPlay
-    // (artwork zoom + reveal play button) so the card behaves identically.
-    return _fadeRightEdge(
-      216,
-      ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-        itemCount: queue.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 2),
-        itemBuilder: (ctx, i) {
-          final song = queue[i];
-          final artists = (song['artists']?['data'] ?? []) as List;
-          final thumb = song['thumbnail']?['url']?.toString();
-          return HoverCard(
-            child: InkWell(
-              onTap: () => context.push('/song/${song['id']}', extra: song),
-              borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
-                width: 140,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  HoverRevealPlay(
-                    size: 140,
-                    onPlay: () => context.read<PlayerProvider>().playSong(song, queue),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: thumb != null
-                          ? CachedNetworkImage(imageUrl: thumb, width: 140, height: 140, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
-                          : Container(width: 140, height: 140, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                  if (artists.isNotEmpty)
-                    Text(artists.map((a) => a['title'] ?? '').join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
-                ]),
+          if (user != null) ...[
+            SectionTitle('Playlist của tôi', action: 'Tất cả', onAction: () => context.push('/playlist-cua-toi')),
+            if (_loadingPlaylists)
+              for (var i = 0; i < 3; i++) const SkeletonSongRow()
+            else if (_playlists.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text('Bạn chưa có playlist. Bấm ⋮ ở một bài hát rồi chọn "Thêm vào playlist" để tạo.', style: AppText.bodyText),
+              )
+            else
+              for (final p in _playlists) _PlaylistRow(playlist: p),
+            if (_following.isNotEmpty) ...[
+              SectionTitle('Đang theo dõi', action: null),
+              Rail(
+                height: 128,
+                gap: 14,
+                count: _following.length,
+                builder: (_, i) {
+                  final p = _following[i];
+                  return PersonBubble(
+                    name: (p['title'] ?? '').toString(),
+                    image: p['avatar']?['url']?.toString(),
+                    tint: false,
+                    onTap: () => context.push('${_personRoutes[p['type']]}${p['slug']}'),
+                  );
+                },
               ),
+            ],
+            const GroupLabel('Hoạt động của tôi'),
+            ListItem(icon: Icons.chat_bubble_outline_rounded, title: 'Bình luận của tôi', onTap: () => context.push('/binh-luan-cua-toi')),
+            ListItem(icon: Icons.forum_outlined, title: 'Chủ đề thảo luận', onTap: () => context.push('/thao-luan-cua-toi')),
+            ListItem(icon: Icons.insights_rounded, title: 'Điểm & thống kê nghe', onTap: () => context.push('/thong-ke')),
+            ListItem(icon: Icons.notifications_none_rounded, title: 'Thông báo', trailingText: (user['unread'] ?? 0) > 0 ? '${user['unread']}' : null, onTap: () => context.push('/thong-bao')),
+          ],
+          const GroupLabel('Khác'),
+          ListItem(icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Giao diện, cỡ chữ, nghe nhạc', onTap: () => context.push('/cai-dat')),
+          ListItem(icon: Icons.info_outline_rounded, title: 'Giới thiệu BCĐCNT', onTap: () => context.push('/gioi-thieu')),
+          ListItem(icon: Icons.help_outline_rounded, title: 'Câu hỏi thường gặp', subtitle: 'Nghe, tải nhạc, tài khoản, đóng góp', onTap: () => context.push('/faq')),
+          ListItem(icon: Icons.support_agent_rounded, title: 'Góp ý & hỗ trợ', subtitle: 'Gửi riêng cho BQT', onTap: () => context.push('/ho-tro')),
+          if (user != null)
+            ListItem(
+              icon: Icons.logout_rounded,
+              title: 'Đăng xuất',
+              titleColor: AppColors.error,
+              trailing: const SizedBox.shrink(),
+              onTap: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Đăng xuất'),
+                    content: const Text('Bạn có chắc muốn đăng xuất?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất', style: TextStyle(color: AppColors.error))),
+                    ],
+                  ),
+                );
+                if (ok == true) auth.logout();
+              },
             ),
-          );
-        },
+          const SizedBox(height: 24),
+          const Center(child: BrandLogo(height: 26)),
+        ],
       ),
     );
   }
 }
 
-class _Tile extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _Tile({required this.label, required this.icon, required this.color, required this.onTap});
+class _ProfileCard extends StatelessWidget {
+  final Map<String, dynamic> user;
+  const _ProfileCard({required this.user});
 
   @override
   Widget build(BuildContext context) {
-    return HoverScale(
-      scale: 1.04,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [color, Color.lerp(color, Colors.black, 0.3)!],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -3, offset: const Offset(0, 4))],
+    final point = user['point'] is num ? (user['point'] as num).toInt() : null;
+    final listen = user['listen'] is num ? (user['listen'] as num).toInt() : null;
+    final meta = [
+      if (point != null && point > 0) '${formatViews(point)} điểm',
+      if (listen != null && listen > 0) '${formatViews(listen)} lượt nghe',
+    ].join(' · ');
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => context.push('/user/${user['id']}'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((user['username'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  if (meta.isNotEmpty)
+                    Padding(padding: const EdgeInsets.only(top: 2), child: Text(meta, style: AppText.meta)),
+                ]),
+              ),
+              Text('Hồ sơ ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+            ]),
           ),
-          child: Row(
+        ),
+      ),
+    );
+  }
+}
+
+class _GuestCard extends StatelessWidget {
+  const _GuestCard();
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: const LinearGradient(colors: [AppColors.wine, AppColors.rose])),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const BrandLogo(height: 28, onDark: true),
+            const SizedBox(height: 14),
+            Text('Đăng nhập để lưu bài yêu thích, tạo playlist và tiếp tục nghe trên mọi thiết bị.',
+                style: body(const TextStyle(fontSize: 15, height: 1.5, fontWeight: FontWeight.w600, color: Colors.white))),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(25),
+                    onTap: () => showDialog(context: context, builder: (_) => const LoginDialog()),
+                    child: SizedBox(height: 50, child: Center(child: Text('Đăng nhập', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.wine))))),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(25),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(25),
+                    onTap: () => showDialog(context: context, builder: (_) => const RegisterDialog()),
+                    child: SizedBox(height: 50, child: Center(child: Text('Đăng ký', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))))),
+                  ),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      );
+}
+
+class _Tile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool strong;
+  final VoidCallback onTap;
+  const _Tile({required this.icon, required this.title, required this.subtitle, required this.onTap, this.strong = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = strong ? Colors.white : AppColors.text;
+    return Material(
+      color: strong ? AppColors.wine : AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: Colors.white, size: 18),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(color: strong ? Colors.white.withValues(alpha: 0.16) : AppColors.bg, borderRadius: BorderRadius.circular(12)),
+                child: Icon(icon, size: 22, color: strong ? Colors.white : AppColors.accentLight),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white))),
-              ),
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg))),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg.withValues(alpha: 0.7)))),
+              ]),
             ],
           ),
         ),
@@ -416,76 +344,54 @@ class _Tile extends StatelessWidget {
   }
 }
 
-/// Horizontal carousel of the user's most recent listens. Cards scale
-/// 130/160/180 across mobile/laptop/ultrawide so the row stays one-line at
-/// common widths. Tap plays the track via PlayerProvider, treating the
-/// carousel itself as the playback queue.
-class _RecentCarousel extends StatelessWidget {
-  final List<Map<String, dynamic>> items;
-  const _RecentCarousel({required this.items});
+class _PlaylistRow extends StatelessWidget {
+  final Map<String, dynamic> playlist;
+  const _PlaylistRow({required this.playlist});
 
   @override
   Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final card = w >= 1280 ? 180.0 : (w >= 900 ? 160.0 : 130.0);
-    // Same card behaviour as the homepage carousels: HoverCard padding +
-    // HoverRevealPlay (artwork zoom + reveal play button) + right-edge fade.
-    return ShaderMask(
-      blendMode: BlendMode.dstIn,
-      shaderCallback: (rect) {
-        final stop = (1 - 34 / rect.width).clamp(0.0, 1.0);
-        return LinearGradient(
-          begin: Alignment.centerLeft,
-          end: Alignment.centerRight,
-          colors: const [Colors.white, Colors.white, Colors.transparent],
-          stops: [0.0, stop, 1.0],
-        ).createShader(rect);
-      },
-      child: SizedBox(
-        height: card + 76,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
-          itemCount: items.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 2),
-          itemBuilder: (ctx, i) {
-            final s = items[i];
-            final thumb = s['thumbnail']?['url']?.toString();
-            final artists = (s['artists']?['data'] ?? []) as List;
-            final artistText = artists.map((a) => a['title'] ?? '').join(', ');
-            return HoverCard(
-              child: InkWell(
-                onTap: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  width: card,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      HoverRevealPlay(
-                        size: card,
-                        onPlay: () => context.read<PlayerProvider>().playSong(Map<String, dynamic>.from(s), items),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: thumb != null
-                              ? CachedNetworkImage(imageUrl: thumb, width: card, height: card, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)))
-                              : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.music_note, color: AppColors.textMuted, size: 28)),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(s['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
-                      if (artistText.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(artistText, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, color: AppColors.textSecondary))),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
+    final own = playlist['thumbnail']?['url']?.toString();
+    final thumbs = ((playlist['items']?['data'] ?? []) as List)
+        .whereType<Map>()
+        .map((i) => i['object']?['thumbnail']?['url']?.toString())
+        .whereType<String>()
+        .toList();
+    final total = playlist['items']?['paginatorInfo']?['total'];
+    Widget cover;
+    if (own != null) {
+      cover = NetImage(url: own, width: 52, height: 52, radius: 12);
+    } else if (thumbs.length >= 4) {
+      cover = ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: 52,
+          height: 52,
+          child: GridView.count(crossAxisCount: 2, padding: EdgeInsets.zero, physics: const NeverScrollableScrollPhysics(), children: [for (final u in thumbs.take(4)) NetImage(url: u)]),
         ),
+      );
+    } else {
+      cover = Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
+        child: Icon(Icons.queue_music_rounded, color: AppColors.accentLight),
+      );
+    }
+    return InkWell(
+      onTap: () => context.push('/playlist/${playlist['id']}'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Row(children: [
+          cover,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((playlist['title'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+              if (total != null) Text('$total bài', style: AppText.meta),
+            ]),
+          ),
+          Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+        ]),
       ),
     );
   }

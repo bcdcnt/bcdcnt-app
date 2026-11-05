@@ -1,3 +1,6 @@
+import '../services/push.dart';
+import '../widgets/push_settings.dart';
+import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -273,7 +276,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final auth = context.watch<AuthProvider>();
     // Theme (Phối màu) + shortcuts (Phím tắt) are local-only, so guests can
     // use them too — only the account sections need a login.
-    const localOnlyIds = {'theme', 'shortcuts'};
+    const localOnlyIds = {'push', 'theme', 'shortcuts'};
     final sections = auth.isAuthenticated
         ? _sectionDefs()
         : _sectionDefs().where((s) => localOnlyIds.contains(s.id)).toList();
@@ -286,9 +289,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg.withValues(alpha: 0.88),
-            title: Text('CÀI ĐẶT', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1, color: AppColors.textSecondary))),
+            title: Text('Cài đặt'),
             centerTitle: true,
-            leading: IconButton(icon: Icon(Icons.arrow_back, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
           ),
           if (showLoading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -317,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             borderRadius: BorderRadius.circular(12),
             color: AppColors.surfaceLight,
             image: _bgUrl != null
-                ? DecorationImage(image: CachedNetworkImageProvider(_bgUrl!), fit: BoxFit.cover)
+                ? DecorationImage(image: CachedNetworkImageProvider(cdnImg((_bgUrl!).toString(), 960)), fit: BoxFit.cover)
                 : null,
           ),
           child: _bgUrl == null
@@ -338,7 +341,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 else
                   const Icon(Icons.camera_alt_outlined, size: 14, color: Colors.white),
                 const SizedBox(width: 6),
-                Text('Đổi ảnh nền', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white))),
+                Text('Đổi ảnh nền', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white))),
               ]),
             ),
           ),
@@ -353,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: BoxDecoration(
               shape: BoxShape.circle, color: AppColors.surfaceLight,
               image: _avatarUrl != null
-                  ? DecorationImage(image: CachedNetworkImageProvider(_avatarUrl!), fit: BoxFit.cover)
+                  ? DecorationImage(image: CachedNetworkImageProvider(cdnImg((_avatarUrl!).toString(), 160)), fit: BoxFit.cover)
                   : null,
             ),
             child: _avatarUrl == null
@@ -370,7 +373,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Ảnh đại diện', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
           const SizedBox(height: 4),
-          Text('JPG / PNG / WEBP', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+          Text('JPG / PNG / WEBP', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
         ])),
         OutlinedButton.icon(
           onPressed: _uploading != null ? null : () => _uploadImage('avatar'),
@@ -407,7 +410,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
-            child: Text(label, style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color))),
+            child: Text(label, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color))),
           ),
           if (status == 'pending') ...[
             const SizedBox(width: 6),
@@ -420,7 +423,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if ((r['reject_reason'] ?? '').toString().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(r['reject_reason'], style: body(const TextStyle(fontSize: 11, color: AppColors.error))),
+            child: Text(r['reject_reason'], style: body(const TextStyle(fontSize: 12, color: AppColors.error))),
           ),
       ]),
     );
@@ -438,7 +441,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text))),
             if (subtitle != null)
-              Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+              Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
           ])),
           Switch(
             value: value,
@@ -603,16 +606,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
           if (_usernameReqs.isNotEmpty) ...[
             const SizedBox(height: 14),
-            Text('LỊCH SỬ', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+            Text('LỊCH SỬ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
             const SizedBox(height: 6),
             ..._usernameReqs.map(_usernameReqRow),
           ],
         ]),
       ),
+      if (PushService.supported)
+        _SettingsSectionDef(
+          id: 'push',
+          icon: Icons.notifications_active_outlined,
+          title: 'Thông báo điện thoại',
+          builder: () => const PushSettings(),
+        ),
       _SettingsSectionDef(
         id: 'theme',
         icon: Icons.palette_outlined,
-        title: 'Phối màu',
+        title: 'Giao diện & cỡ chữ',
         builder: () => const _ThemePicker(),
       ),
       _SettingsSectionDef(
@@ -760,56 +770,63 @@ class _ThemePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
+    const modes = [('sang', 'Sáng'), ('toi', 'Tối'), ('system', 'Theo máy')];
+    final scales = kTextScaleLabels.entries.toList();
+    Widget label(String s, [String? sub]) => Padding(
+          padding: const EdgeInsets.only(bottom: 10, top: 4),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s, style: AppText.title),
+            if (sub != null) Text(sub, style: AppText.meta),
+          ]),
+        );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 14),
-          child: Text(
-            'Tông màu chủ đạo của ứng dụng. Hiện áp dụng cho gradient nền player; bản cập nhật sau sẽ phủ toàn UI.',
-            style: body(TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.5)),
-          ),
-        ),
-        Wrap(
-          spacing: 12, runSpacing: 12,
-          children: kAppPalettes.map((p) {
-            final active = themeProv.name == p.name;
-            return HoverScale(
-              scale: 1.04,
-              child: InkWell(
-              onTap: () => themeProv.setTheme(p.name),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: 140,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: active ? p.accent : AppColors.border, width: active ? 2 : 1),
-                  boxShadow: active ? AppColors.glow(p.accent, alpha: 0.35, blur: 14, offset: const Offset(0, 4)) : null,
-                ),
-                child: Row(
-                  children: [
-                    themeSwatch(p),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        p.label,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w800 : FontWeight.w600, color: AppColors.text)),
-                      ),
-                    ),
-                    if (active) Icon(Icons.check_circle, size: 16, color: p.accentLight),
-                  ],
-                ),
-              ),
-              ),
-            );
-          }).toList(),
+        label('Giao diện'),
+        _Seg(labels: [for (final m in modes) m.$2], selected: modes.indexWhere((m) => m.$1 == themeProv.mode), onSelect: (i) => themeProv.setTheme(modes[i].$1)),
+        const SizedBox(height: 20),
+        label('Cỡ chữ', 'Áp dụng cho toàn ứng dụng'),
+        _Seg(labels: [for (final s in scales) s.value], selected: scales.indexWhere((s) => s.key == themeProv.textScaleKey), onSelect: (i) => themeProv.setTextScale(scales[i].key)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(18)),
+          child: Text('Xem trước: Nơi anh đến là biển xa, nơi anh tới ngoài đảo xa', style: body(TextStyle(fontSize: 17, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text))),
         ),
       ],
     );
   }
+}
+
+class _Seg extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelect;
+  const _Seg({required this.labels, required this.selected, required this.onSelect});
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
+        child: Row(children: [
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onSelect(i),
+                child: Container(
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: i == selected ? AppColors.bg : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: i == selected ? [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 4, offset: const Offset(0, 1))] : null,
+                  ),
+                  child: Text(labels[i], style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
+                ),
+              ),
+            ),
+        ]),
+      );
 }
 
 class _ShortcutsList extends StatelessWidget {
