@@ -1,3 +1,4 @@
+import 'playlist_embed.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
@@ -17,7 +18,10 @@ class CommentMedia extends StatefulWidget {
   /// popups show "Ảnh: <username>" credit (parity with sheet music
   /// captions on song detail).
   final String? authorName;
-  const CommentMedia({super.key, required this.html, this.authorName});
+  /// Keep each picture where it sits in the text (discussion posts).
+  /// Comments (false) gather pictures into one strip at the bottom.
+  final bool inlineImages;
+  const CommentMedia({super.key, required this.html, this.authorName, this.inlineImages = false});
 
   @override
   State<CommentMedia> createState() => _CommentMediaState();
@@ -45,7 +49,10 @@ class _CommentMediaState extends State<CommentMedia> {
     final blocks = <_Block>[];
     // Match image / audio / video / iframe in order
     final pattern = RegExp(
-      r'<img[^>]+src="([^"]+)"[^>]*>|<audio[^>]*>(.*?)</audio>|<video[^>]*>(.*?)</video>|<source[^>]+src="([^"]+)"[^>]*>|<iframe[^>]+src="([^"]+)"[^>]*></iframe>|<oembed[^>]+url="([^"]+)"[^>]*></oembed>',
+      // <oembed> from the web editor usually has NO closing tag
+      // (<figure class="media"><oembed url="…mp3#audio"></figure>), so the
+      // closing tag is optional. Tables get their own block (scrolls sideways).
+      r'<img[^>]+src="([^"]+)"[^>]*>|<audio[^>]*>(.*?)</audio>|<video[^>]*>(.*?)</video>|<source[^>]+src="([^"]+)"[^>]*>|<iframe[^>]+src="([^"]+)"[^>]*></iframe>|<oembed[^>]+url="([^"]+)"[^>]*>(?:\s*</oembed>)?|(<table[^>]*>.*?</table>)|(?:<p[^>]*>\s*)?\[playlist\b([^\]]*)\](?:\s*</p>)?',
       caseSensitive: false, dotAll: true,
     );
     int cursor = 0;
@@ -112,6 +119,13 @@ class _CommentMediaState extends State<CommentMedia> {
           blocks.add(_Block.video(src));
         }
       }
+      else if (m.group(7) != null) {
+        blocks.add(_Block.table(m.group(7)!));
+      }
+      // [playlist nghe-si="…"] shortcode (posts) → embedded song list, like the web.
+      else if (m.group(8) != null) {
+        blocks.add(_Block.playlist(m.group(8)!));
+      }
       cursor = m.end;
     }
     if (cursor < html.length) {
@@ -137,46 +151,26 @@ class _CommentMediaState extends State<CommentMedia> {
     // bottom. Old web comments with images interleaved between
     // paragraphs end up looking the same as new app comments where
     // the user typed text then attached images at the end.
-    final nonImageBlocks = _blocks.where((b) => b.kind != _BlockKind.image).toList();
     final imageUrls = _blocks
         .where((b) => b.kind == _BlockKind.image)
         .map((b) => b.value)
         .toList();
+    final nonImageBlocks = widget.inlineImages ? _blocks : _blocks.where((b) => b.kind != _BlockKind.image).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ...nonImageBlocks.map((b) {
           switch (b.kind) {
           case _BlockKind.text:
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1),
-              child: Html(
-                data: b.value,
-                // flutter_html 3.x bỏ render <table> mặc định → cần extension.
-                extensions: const [TableHtmlExtension()],
-                style: {
-                  'body': Style(
-                    margin: Margins.zero,
-                    padding: HtmlPaddings.zero,
-                    fontSize: FontSize(13),
-                    lineHeight: const LineHeight(1.55),
-                    color: AppColors.textSecondary,
-                    fontFamily: body().fontFamily,
-                  ),
-                  'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
-                  'p': Style(margin: Margins.only(bottom: 4)),
-                  'table': Style(border: Border.all(color: AppColors.border)),
-                  'th': Style(padding: HtmlPaddings.all(6), backgroundColor: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
-                  'td': Style(padding: HtmlPaddings.all(6), border: Border.all(color: AppColors.border)),
-                },
-                onLinkTap: (url, _, __) {
-                  if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-                },
-              ),
-            );
+            return Padding(padding: const EdgeInsets.symmetric(vertical: 1), child: _html(b.value));
+          case _BlockKind.table:
+            return _table(b.value);
+          case _BlockKind.playlist:
+            final code = PlaylistShortcode.parse(b.value);
+            return code == null ? const SizedBox.shrink() : PlaylistEmbed(code: code);
           case _BlockKind.image:
-            // Unreachable — handled by the group branch above.
-            return const SizedBox.shrink();
+            // Only reached with inlineImages: the picture stays where it was written.
+            return _inlineImage(context, b.value, imageUrls);
           case _BlockKind.audio:
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 6),
@@ -204,10 +198,72 @@ class _CommentMediaState extends State<CommentMedia> {
             return _YoutubeCard(url: b.value, videoId: _youtubeId(b.value));
         }
       }),
-      if (imageUrls.isNotEmpty) _buildImageStrip(context, imageUrls),
+      if (imageUrls.isNotEmpty && !widget.inlineImages) _buildImageStrip(context, imageUrls),
       ],
     );
   }
+
+  Widget _html(String data) => Html(
+        data: data,
+        // flutter_html 3.x bỏ render <table> mặc định → cần extension.
+        extensions: const [TableHtmlExtension()],
+        style: {
+          'body': Style(
+            margin: Margins.zero,
+            padding: HtmlPaddings.zero,
+            fontSize: FontSize(13),
+            lineHeight: const LineHeight(1.55),
+            color: AppColors.textSecondary,
+            fontFamily: body().fontFamily,
+          ),
+          'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
+          'p': Style(margin: Margins.only(bottom: 4)),
+          'figcaption': Style(textAlign: TextAlign.center, fontStyle: FontStyle.italic, color: AppColors.textMuted),
+          'table': Style(border: Border.all(color: AppColors.border)),
+          'th': Style(padding: HtmlPaddings.all(6), backgroundColor: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
+          'td': Style(padding: HtmlPaddings.all(6), border: Border.all(color: AppColors.border)),
+        },
+        onLinkTap: (url, _, __) {
+          if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        },
+      );
+
+  /// Wide tables scroll sideways instead of squeezing every column
+  /// ("RIGHT OVERFLOWED" stripes): ~130 px per column, never narrower
+  /// than the available width.
+  Widget _table(String html) {
+    final firstRow = RegExp(r'<tr[^>]*>(.*?)</tr>', caseSensitive: false, dotAll: true).firstMatch(html)?.group(1) ?? '';
+    final cols = RegExp(r'<t[hd][\s>]', caseSensitive: false).allMatches(firstRow).length;
+    return LayoutBuilder(builder: (context, c) {
+      final width = (cols * 130.0).clamp(c.maxWidth, 2400.0);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: width, child: _html(html)),
+        ),
+      );
+    });
+  }
+
+  Widget _inlineImage(BuildContext context, String url, List<String> all) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: InkWell(
+            onTap: () => _showImageZoom(context, all, all.indexOf(url).clamp(0, all.length - 1)),
+            borderRadius: BorderRadius.circular(10),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, _) => Container(height: 200, color: AppColors.surfaceLight),
+                errorWidget: (_, _, _) => Container(height: 140, color: AppColors.surfaceLight, alignment: Alignment.center, child: Icon(Icons.broken_image, color: AppColors.textMuted)),
+              ),
+            ),
+          ),
+        ),
+      );
 
   // Threads-style horizontal image strip. Single image fits inline
   // at a slightly larger size; multiple images become a horizontally
@@ -393,7 +449,7 @@ String? _youtubeId(String url) {
   }
 }
 
-enum _BlockKind { text, image, audio, video, youtube }
+enum _BlockKind { text, image, audio, video, youtube, table, playlist }
 
 class _Block {
   final _BlockKind kind;
@@ -404,6 +460,8 @@ class _Block {
   factory _Block.audio(String v) => _Block._(_BlockKind.audio, v);
   factory _Block.video(String v) => _Block._(_BlockKind.video, v);
   factory _Block.youtube(String v) => _Block._(_BlockKind.youtube, v);
+  factory _Block.table(String v) => _Block._(_BlockKind.table, v);
+  factory _Block.playlist(String v) => _Block._(_BlockKind.playlist, v);
 }
 
 /// Card YouTube: thumbnail + nút play → mở YouTube ngoài app.

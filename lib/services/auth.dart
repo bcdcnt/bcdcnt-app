@@ -8,7 +8,7 @@ const meQuery = '''query { me {
   id username email
   avatar { url } background { url }
   unread point listen
-  permissions
+  permissions roles { alias }
   player_shuffle player_repeat
   show_comment_sidebar
 }}''';
@@ -88,7 +88,10 @@ class AuthProvider extends ChangeNotifier {
 
   /// True if the current user has [name] in their `permissions` list.
   /// Returns false when not logged in or when the list is missing.
+  bool get isAdmin => _user?['is_admin'] == true;
+
   bool hasPermission(String name) {
+    if (isAdmin) return true;
     final perms = _user?['permissions'];
     if (perms is! List) return false;
     return perms.contains(name);
@@ -192,6 +195,8 @@ class AuthProvider extends ChangeNotifier {
           'unread': me['unread'] ?? 0,
           'point': me['point'] ?? 0,
           'listen': me['listen'] ?? 0,
+          // Super admin can do everything, like the web's isAdmin.
+          'is_admin': ((me['roles'] as List?) ?? const []).any((r) => r is Map && r['alias'] == 'super_admin'),
           'permissions': (me['permissions'] is List)
               ? List<String>.from((me['permissions'] as List).whereType<String>())
               : <String>[],

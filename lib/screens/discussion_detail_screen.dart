@@ -132,7 +132,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
               // a waveform player and images use CachedNetworkImage (parity
               // with how the same author's posts render in song comments).
               if ((d['content'] ?? '').toString().isNotEmpty)
-                CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString()),
+                CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString(), inlineImages: true),
 
               // Polls / "đánh giá" — render each poll with its options and
               // current vote counts. Voting itself is read-only here for now.

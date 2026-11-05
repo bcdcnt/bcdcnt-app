@@ -16,6 +16,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
+import 'comment_actions.dart';
 import 'comment_media.dart';
 import 'quill_comment_input.dart';
 
@@ -28,7 +29,9 @@ class CommentSection extends StatefulWidget {
   /// flashes its background. Used by deep-links from Cảm nhận hay so
   /// the user lands on the exact quote, not page 1.
   final String? highlightCommentId;
-  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId});
+  /// A comment action changed the page itself (lyric, recording, picture…).
+  final VoidCallback? onPageChanged;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -209,7 +212,7 @@ class _CommentSectionState extends State<CommentSection> {
         $field(id: \$val) {
           comments(first: 10, page: \$page, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
             data {
-              id content created_at nickname
+              id content created_at nickname is_request request_status processRequestUser { id username }
               user { id username avatar { url } roles { name alias display_in_comment group_type userRolePivot { custom_title } } }
               loves(first: 50) { data { user_id } paginatorInfo { total } }
             }
@@ -628,12 +631,16 @@ class _CommentSectionState extends State<CommentSection> {
 
   Future<void> _love(String commentId, bool isLoved) async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isAuthenticated) return;
+    if (!auth.isAuthenticated) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đăng nhập để thích bình luận')));
+      return;
+    }
     try {
+      // Same mutation as the web (there is no loveComment/unloveComment).
       await auth.authedMutate(
         isLoved
-            ? r'''mutation($id: ID!) { unloveComment(comment_id: $id) { id } }'''
-            : r'''mutation($id: ID!) { loveComment(comment_id: $id) { id } }''',
+            ? r'''mutation($id: ID!) { unlove(lovable_id: $id, lovable_type: "comment") { id } }'''
+            : r'''mutation($id: ID!) { love(lovable_id: $id, lovable_type: "comment") { id } }''',
         {'id': commentId},
       );
       if (!mounted) return;
@@ -655,7 +662,31 @@ class _CommentSectionState extends State<CommentSection> {
           };
         }
       });
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không thích được: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: AppColors.error));
+    }
+  }
+
+  Future<void> _openActions(Map<String, dynamic> c) async {
+    final change = await showCommentActions(context, comment: c, type: widget.type, objectId: widget.id);
+    if (!mounted || change == null) return;
+    final cid = c['id'].toString();
+    switch (change) {
+      case CommentUpdated(:final fields):
+        setState(() {
+          final i = _comments.indexWhere((x) => x['id'].toString() == cid);
+          if (i >= 0) _comments[i] = {..._comments[i], ...fields};
+        });
+      case CommentRemoved():
+        setState(() {
+          _comments.removeWhere((x) => x['id'].toString() == cid);
+          if (_total > 0) _total--;
+        });
+      case CommentEditRequested():
+        _startEdit(c);
+      case CommentPageChanged():
+        widget.onPageChanged?.call();
+    }
   }
 
   void _startEdit(Map<String, dynamic> c) {
@@ -933,7 +964,6 @@ class _CommentSectionState extends State<CommentSection> {
             final isLoved = userId != null && loves.any((l) => l['user_id'].toString() == userId.toString());
             final roles = ((user['roles'] ?? []) as List).where((r) => r != null && r['display_in_comment'] == true).toList();
             final content = (c['content'] ?? '').toString();
-            final isOwn = userId != null && user['id']?.toString() == userId.toString();
             final isHighlight = widget.highlightCommentId != null && c['id']?.toString() == widget.highlightCommentId;
             return AnimatedContainer(
               key: isHighlight ? _highlightKey : null,
@@ -1076,26 +1106,31 @@ class _CommentSectionState extends State<CommentSection> {
                               ],
                             ),
                           ),
-                          if (isOwn) ...[
-                            SizedBox(width: 14),
-                            InkWell(
-                              onTap: () => _startEdit(c),
+                          if (requestBadge(c) case final b?) ...[
+                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.edit_outlined, size: 13, color: AppColors.textMuted),
-                                SizedBox(width: 3),
-                                Text('Sửa', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
-                              ]),
-                            ),
-                            SizedBox(width: 10),
-                            InkWell(
-                              onTap: () => _confirmDelete(c),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.delete_outline, size: 13, color: AppColors.textMuted),
-                                SizedBox(width: 3),
-                                Text('Xoá', style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
+                                Icon(Icons.back_hand_outlined, size: 12, color: b.color),
+                                const SizedBox(width: 4),
+                                Text(
+                                  c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} · ${c['processRequestUser']['username']}' : b.label,
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: b.color),
+                                ),
                               ]),
                             ),
                           ],
+                          const Spacer(),
+                          if (auth.isAuthenticated)
+                            InkWell(
+                              onTap: () => _openActions(c),
+                              borderRadius: BorderRadius.circular(16),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Icon(Icons.more_vert_rounded, size: 18, color: AppColors.textMuted),
+                              ),
+                            ),
                         ]),
                       ],
                     ),

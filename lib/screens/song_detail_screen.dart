@@ -17,6 +17,7 @@ import '../services/player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/song_admin_actions.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/sheet_lightbox.dart';
 import '../widgets/playlist_dialog.dart';
@@ -119,10 +120,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           dataKey = 'folk';
           query = r'''query($id: ID!) { folk(id: $id) {
             id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
-            thumbnail { url }
+            thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
+            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
+            accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
             composers(first: 20) { data { id slug title avatar { url } } }
@@ -138,10 +140,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           dataKey = 'instrumental';
           query = r'''query($id: ID!) { instrumental(id: $id) {
             id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
-            thumbnail { url }
+            thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
+            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
+            accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
             composers(first: 20) { data { id slug title avatar { url } } }
@@ -154,10 +157,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           dataKey = 'poem';
           query = r'''query($id: ID!) { poem(id: $id) {
             id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
-            thumbnail { url }
+            thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
+            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
+            accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             sheet { id slug title year lyric_type content description }
             poets(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
@@ -169,10 +173,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           dataKey = 'karaoke';
           query = r'''query($id: ID!) { karaoke(id: $id) {
             id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
-            thumbnail { url }
+            thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
+            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
+            accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             song { id slug title }
             users(first: 100) { data { id username avatar { url } } }
@@ -183,10 +188,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           dataKey = 'song';
           query = r'''query($id: ID!) { song(id: $id) {
             id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
-            thumbnail { url }
+            thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq audio_url video_url duration created_at user { id username avatar { url } } }
+            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
+            accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             artists(first: 100) { data { id title slug avatar { url } } }
@@ -196,7 +202,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     return (query, dataKey);
   }
 
-  Future<void> _fetch() async {
+  /// [fresh]: reload after a CTV edit — authed POST (skips the CDN cache),
+  /// no autoplay, no extra view log.
+  Future<void> _fetch({bool fresh = false}) async {
     try {
       final type = _resolvedType;
       // IDs are NOT unique across song/folk/instrumental/poem/karaoke
@@ -204,7 +212,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       // would silently load the wrong record. Trust the preferred type
       // strictly; fix the upstream extras instead.
       final pair = _queryForType(type);
-      final data = await ApiClient.query(pair.$1, {'id': widget.songId});
+      final data = fresh
+          ? await context.read<AuthProvider>().authedQuery(pair.$1, {'id': widget.songId})
+          : await ApiClient.query(pair.$1, {'id': widget.songId});
       final raw = data[pair.$2];
       Map<String, dynamic>? s = raw == null ? null : Map<String, dynamic>.from(raw as Map);
       if (s != null) {
@@ -251,22 +261,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           _fetchSheetImages(sheetId, sheet['content']);
         }
 
-        final artists = (normalized['artists']?['data'] ?? []) as List;
-        for (final a in artists) {
-          if (a['id'] != null) _fetchArtistSongs(a['id']);
-        }
+        // These lists append, so a CTV reload (fresh) leaves them as they are.
+        if (!fresh) {
+          final artists = (normalized['artists']?['data'] ?? []) as List;
+          for (final a in artists) {
+            if (a['id'] != null) _fetchArtistSongs(a['id']);
+          }
 
-        final composers = (sheet['composers']?['data'] ?? []) as List;
-        for (final c in composers) {
-          _fetchComposerSongs(c['id']);
-        }
+          final composers = (sheet['composers']?['data'] ?? []) as List;
+          for (final c in composers) {
+            _fetchComposerSongs(c['id']);
+          }
 
-        _fetchLyricEditors();
+          _fetchLyricEditors();
+        }
       }
-      _fetchSuggestions();
+      if (!fresh) _fetchSuggestions();
 
       // Log view activity — mirrors web's SongDetailClient. Uses the
       // resolved type so folk/karaoke/etc. log to the right object_type.
+      if (fresh) return;
       logActivity(context.read<AuthProvider>(), 'view', _resolvedType, _song?['id']);
 
       // Auto-play on detail visit. Source is read from the route's extra
@@ -1005,9 +1019,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 ),
                 centerTitle: true,
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
-                actions: MediaQuery.of(context).size.width >= 900
-                    ? const []
-                    : [IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song)))],
+                actions: [
+                  // CTV tools (same menu as the web), only for members with a CTV permission.
+                  if (canUseSongAdmin(context.watch<AuthProvider>()))
+                    IconButton(
+                      tooltip: 'Công cụ CTV',
+                      icon: Icon(Icons.edit_note_rounded, color: AppColors.text),
+                      onPressed: () => showSongAdminSheet(context, song: Map<String, dynamic>.from(song), type: _resolvedType, onRefresh: () => _fetch(fresh: true)),
+                    ),
+                  if (MediaQuery.of(context).size.width < 900)
+                    IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song))),
+                ],
               ),
 
               SliverPadding(
@@ -1160,7 +1182,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ..._buildLyricEditorsRow(),
                         ..._buildSheetSection(isDesktop),
                         const SizedBox(height: 28),
-                        CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId),
+                        CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true)),
                       ];
                       final rightItems = _buildRelatedSections(artists, composers);
 
@@ -1187,7 +1209,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           ...leftItems.sublist(0, leftItems.length - 2), // strip trailing comments
                           ...rightItems,
                           const SizedBox(height: 28),
-                          KeyedSubtree(key: _commentsKey, child: CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId)),
+                          KeyedSubtree(key: _commentsKey, child: CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true))),
                         ],
                       );
                     }),
