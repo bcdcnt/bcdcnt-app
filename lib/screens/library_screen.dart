@@ -31,9 +31,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _scroll = ScrollController();
 
   void _onReselect() {
-    if (TabReselect.tick.value.$1 == 3 && _scroll.hasClients) {
+    if (TabReselect.tick.value.$1 != 3) return;
+    if (_scroll.hasClients) {
       _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
     }
+    _refresh();
+  }
+
+  /// Pull-to-refresh / tab reselect / back from a sub-page: reload the
+  /// member's playlists and follows (they change on other screens).
+  Future<void> _refresh() async {
+    final auth = _auth;
+    if (auth == null || auth.loading || !auth.isAuthenticated || !mounted) return;
+    final uid = auth.user?['id']?.toString();
+    if (uid == null) return;
+    _loadedFor = uid;
+    await Future.wait([_fetchPlaylists(auth, quiet: _playlists.isNotEmpty), _fetchFollowing(auth, uid)]);
+  }
+
+  /// Push a sub-page and refresh when the member comes back to Thư viện.
+  Future<void> _pushThenRefresh(String route) async {
+    await context.push(route);
+    if (mounted) _refresh();
   }
 
   @override
@@ -71,8 +90,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _fetchFollowing(auth, uid);
   }
 
-  Future<void> _fetchPlaylists(AuthProvider auth) async {
-    setState(() => _loadingPlaylists = true);
+  Future<void> _fetchPlaylists(AuthProvider auth, {bool quiet = false}) async {
+    // quiet: keep the current list on screen while refreshing (no skeleton).
+    if (!quiet) setState(() => _loadingPlaylists = true);
     const obj = '... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } }';
     try {
       final d = await auth.authedQuery('''query { myPlaylists(first: 6, page: 1, orderBy: [{column: "id", order: DESC}]) {
@@ -85,7 +105,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
       });
       _playlistsFailed = false;
     } catch (_) {
-      if (mounted) setState(() { _loadingPlaylists = false; _playlistsFailed = true; });
+      // A failed quiet refresh keeps the list already shown.
+      if (mounted) setState(() { _loadingPlaylists = false; _playlistsFailed = !quiet || _playlists.isEmpty; });
     }
   }
 
@@ -118,16 +139,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final user = auth.isAuthenticated ? auth.user : null;
     final name = (user?['username'] ?? '').toString();
 
+    // Tile height grows with the text-size setting so "Rất lớn" never overflows:
+    // padding + icon + gap + title line + subtitle line.
+    final ts = MediaQuery.textScalerOf(context);
+    final tileExtent = (28 + 40 + 10 + ts.scale(16) * 1.35 + ts.scale(13) * 1.35 + 6).clamp(110.0, 260.0);
+
     return ColoredBox(
       color: AppColors.bg,
-      child: ListView(
+      child: RefreshIndicator(
+        color: AppColors.accentFg,
+        onRefresh: _refresh,
+        child: ListView(
         controller: _scroll,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 32),
         children: [
           PageTitle(
             'Thư viện',
             leading: user != null
-                ? GestureDetector(onTap: () => context.push('/user/${user['id']}'), child: UserAvatar(url: user['avatar']?.toString(), name: name, size: 44))
+                ? Semantics(
+                    label: 'Hồ sơ của tôi',
+                    button: true,
+                    excludeSemantics: true,
+                    child: GestureDetector(onTap: () => context.push('/user/${user['id']}'), child: UserAvatar(url: user['avatar']?.toString(), name: name, size: 44)),
+                  )
                 : null,
             actions: [RoundIcon(icon: Icons.settings_outlined, tooltip: 'Cài đặt', onTap: () => context.push('/cai-dat'))],
           ),
@@ -141,24 +176,26 @@ class _LibraryScreenState extends State<LibraryScreen> {
           const SizedBox(height: 14),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: GridView.count(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.55,
+            child: GridView(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                mainAxisExtent: tileExtent,
+              ),
               shrinkWrap: true,
+              padding: EdgeInsets.zero,
               physics: const NeverScrollableScrollPhysics(),
               children: [
                 _Tile(icon: Icons.favorite_rounded, title: 'Yêu thích', subtitle: 'Bài đã thả tim', onTap: () => _open('/yeu-thich')),
                 _Tile(icon: Icons.history_rounded, title: 'Nghe gần đây', subtitle: 'Lịch sử nghe', onTap: () => _open('/nghe-gan-day')),
-                Consumer<OfflineStore>(builder: (_, store, __) => _Tile(icon: Icons.download_for_offline_rounded, title: 'Đã tải về', subtitle: store.items.isEmpty ? 'Nghe không cần mạng' : '${store.items.length} bài · nghe offline', onTap: () => context.push('/da-tai-ve'))),
+                Consumer<OfflineStore>(builder: (_, store, _) => _Tile(icon: Icons.download_for_offline_rounded, title: 'Đã tải về', subtitle: store.items.isEmpty ? 'Nghe không cần mạng' : '${store.items.length} bài · nghe offline', onTap: () => context.push('/da-tai-ve'))),
                 _Tile(icon: Icons.upload_rounded, title: 'Bài gửi', subtitle: 'Bài bạn đã gửi', onTap: () => _open('/bai-gui-cua-toi')),
               ],
             ),
           ),
-          const NewDocumentsRail(),
           if (user != null) ...[
-            SectionTitle('Playlist của tôi', action: 'Xem tất cả', onAction: () => context.push('/playlist-cua-toi')),
+            SectionTitle('Playlist của tôi', action: 'Xem tất cả', onAction: () => _pushThenRefresh('/playlist-cua-toi')),
             if (_loadingPlaylists)
               for (var i = 0; i < 3; i++) const SkeletonSongRow()
             else if (_playlistsFailed && _playlists.isEmpty)
@@ -170,7 +207,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   TextButton(
                     onPressed: () { final a = context.read<AuthProvider>(); _fetchPlaylists(a); },
                     style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
-                    child: Text('Tải lại', style: body(TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                    child: Text('Tải lại', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
                   ),
                 ]),
               )
@@ -180,7 +217,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: Text('Bạn chưa có playlist. Bấm ⋮ ở một bài hát rồi chọn "Thêm vào playlist" để tạo.', style: AppText.bodyText),
               )
             else
-              for (final p in _playlists) _PlaylistRow(playlist: p),
+              for (final p in _playlists) _PlaylistRow(playlist: p, onOpen: () => _pushThenRefresh('/playlist/${p['id']}')),
             if (_following.isNotEmpty) ...[
               SectionTitle('Đang theo dõi', action: null),
               Rail(
@@ -193,28 +230,30 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     name: (p['title'] ?? '').toString(),
                     image: p['avatar']?['url']?.toString(),
                     tint: true,
-                    onTap: () => context.push('${_personRoutes[p['type']]}${p['slug']}'),
+                    onTap: () => _pushThenRefresh('${_personRoutes[p['type']]}${p['slug']}'),
                   );
                 },
               ),
             ],
             const GroupLabel('Hoạt động của tôi'),
             ListItem(icon: Icons.chat_bubble_outline_rounded, title: 'Bình luận của tôi', onTap: () => context.push('/binh-luan-cua-toi')),
-            ListItem(icon: Icons.forum_outlined, title: 'Chủ đề thảo luận', onTap: () => context.push('/thao-luan-cua-toi')),
+            ListItem(icon: Icons.forum_outlined, title: 'Thảo luận của tôi', onTap: () => context.push('/thao-luan-cua-toi')),
             ListItem(icon: Icons.insights_rounded, title: 'Điểm & thống kê nghe', onTap: () => context.push('/thong-ke')),
             ListItem(icon: Icons.volunteer_activism_outlined, title: 'Góp tay cho kho nhạc', subtitle: 'Bổ sung tác giả, năm sáng tác… được cộng điểm', onTap: () => context.push('/gop-tay')),
             ListItem(icon: Icons.notifications_none_rounded, title: 'Thông báo', trailingText: (user['unread'] ?? 0) > 0 ? '${user['unread']}' : null, onTap: () => context.push('/thong-bao')),
           ],
+          // Below the personal content so it never pushes "của tôi" down while loading.
+          const NewDocumentsRail(),
           const GroupLabel('Khác'),
-          ListItem(icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Giao diện, cỡ chữ, nghe nhạc', onTap: () => context.push('/cai-dat')),
           ListItem(icon: Icons.info_outline_rounded, title: 'Giới thiệu BCĐCNT', onTap: () => context.push('/gioi-thieu')),
           ListItem(icon: Icons.help_outline_rounded, title: 'Câu hỏi thường gặp', subtitle: 'Nghe, tải nhạc, tài khoản, đóng góp', onTap: () => context.push('/faq')),
           ListItem(icon: Icons.support_agent_rounded, title: 'Góp ý & hỗ trợ', subtitle: 'Gửi riêng cho BQT', onTap: () => context.push('/ho-tro')),
+          ListItem(icon: Icons.policy_outlined, title: 'Chính sách & điều khoản', subtitle: 'Quyền riêng tư, điều khoản sử dụng', onTap: () => context.push('/p/dieu-khoan')),
           if (user != null)
             ListItem(
               icon: Icons.logout_rounded,
               title: 'Đăng xuất',
-              titleColor: AppColors.error,
+              titleColor: AppColors.errorText,
               trailing: const SizedBox.shrink(),
               onTap: () async {
                 final ok = await showDialog<bool>(
@@ -224,7 +263,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     content: const Text('Bạn có chắc muốn đăng xuất?'),
                     actions: [
                       TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Đăng xuất', style: TextStyle(color: AppColors.error))),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Đăng xuất', style: TextStyle(color: AppColors.errorText))),
                     ],
                   ),
                 );
@@ -234,6 +273,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           const SizedBox(height: 24),
           const Center(child: BrandLogo(height: 26)),
         ],
+        ),
       ),
     );
   }
@@ -269,7 +309,7 @@ class _ProfileCard extends StatelessWidget {
                     Padding(padding: const EdgeInsets.only(top: 2), child: Text(meta, style: AppText.meta)),
                 ]),
               ),
-              Text('Hồ sơ ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+              Text('Hồ sơ ›', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
             ]),
           ),
         ),
@@ -349,7 +389,7 @@ class _Tile extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(color: strong ? Colors.white.withValues(alpha: 0.16) : AppColors.bg, borderRadius: BorderRadius.circular(12)),
-                child: Icon(icon, size: 22, color: strong ? Colors.white : AppColors.accentLight),
+                child: Icon(icon, size: 22, color: strong ? Colors.white : AppColors.accentFg),
               ),
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(title, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg))),
@@ -365,7 +405,8 @@ class _Tile extends StatelessWidget {
 
 class _PlaylistRow extends StatelessWidget {
   final Map<String, dynamic> playlist;
-  const _PlaylistRow({required this.playlist});
+  final VoidCallback? onOpen;
+  const _PlaylistRow({required this.playlist, this.onOpen});
 
   @override
   Widget build(BuildContext context) {
@@ -397,7 +438,7 @@ class _PlaylistRow extends StatelessWidget {
       );
     }
     return InkWell(
-      onTap: () => context.push('/playlist/${playlist['id']}'),
+      onTap: onOpen ?? () => context.push('/playlist/${playlist['id']}'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Row(children: [

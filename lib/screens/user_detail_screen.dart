@@ -10,6 +10,7 @@ import '../services/auth.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../services/share.dart';
+import '../services/friendly_error.dart';
 import '../widgets/ui.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -49,13 +50,13 @@ const _objFragments = '''
   ... on Sheet { id title slug }
   ... on Discussion { id title slug }
   ... on Playlist { id title slug }
-  ... on Upload { id title }
+  ... on Upload { id title user_id status result }
 ''';
 
 const _karaokeFields = 'id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } users(first: 5) { data { id username avatar { url } } } sheet { year composers(first: 5) { data { id slug title } } }';
 const _commentFields = 'id content created_at object { $_objFragments }';
 const _pointFields = 'id point reward_type reason created_at activity { action object_type object_id object { $_objFragments } }';
-const _uploadFields = 'id title type composers artists poets year created_at';
+const _uploadFields = 'id title type status result composers artists poets year created_at';
 const _approved = '{AND: [{column: "status", value: "approved"}]}';
 const _commentWhere = '{AND: [{column: "status", value: 1}]}';
 
@@ -140,6 +141,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
       WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
     }
   }
+
+  /// Tap handler for a stat tile — null (not tappable) when that tab
+  /// doesn't exist for this member.
+  VoidCallback? _tabTap(String key) => _tabs.contains(key) ? () => _goTab(key) : null;
 
   void _goTab(String key) {
     final i = _tabs.indexOf(key);
@@ -415,13 +420,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     if (obj == null || obj['id'] == null) return null;
     final type = (obj['__typename'] ?? '').toString().toLowerCase();
     final id = obj['id'];
+    if (type == 'upload') return context.read<AuthProvider>().uploadRoute(obj)?.path;
     if (['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(type)) return '/song/$id';
     return switch (type) {
       'sheet' => '/sheet/$id',
       'discussion' => '/thao-luan/$id',
       'document' => '/tu-lieu/chi-tiet/$id',
       'playlist' => '/playlist/$id',
-      'upload' => '/bai-gui/$id',
       _ => null,
     };
   }
@@ -481,20 +486,21 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Wrap(spacing: 6, runSpacing: 6, children: [
-        if (_rank != null) _badge('Hạng #$_rank cống hiến', const Color(0xFFB8860B), icon: Icons.emoji_events_rounded),
+        // Badge fills are dark enough for ≥4.5:1 with white text.
+        if (_rank != null) _badge('Hạng #$_rank cống hiến', const Color(0xFF8A6508), icon: Icons.emoji_events_rounded),
         ...roles.map((r) {
           // userRolePivot.custom_title can be null OR "" — treat empty as none.
           final ct = r['userRolePivot']?['custom_title']?.toString().trim() ?? '';
           final label = ct.isNotEmpty ? ct : (r['name']?.toString() ?? '');
           final alias = (r['alias'] ?? '').toString();
           final group = (r['group_type'] ?? '').toString();
-          Color color = AppColors.accentLight;
+          Color color = const Color(0xFF8E1F1F);
           if (alias == 'admin' || alias == 'ban') {
-            color = const Color(0xFFE74C3C);
+            color = const Color(0xFFB03A2E);
           } else if (alias == 'mod') {
-            color = const Color(0xFF3498DB);
+            color = const Color(0xFF1F6FA8);
           } else if (group == 'nhom') {
-            color = const Color(0xFF2ECC71);
+            color = const Color(0xFF1E7E45);
           }
           return _badge(label, color);
         }),
@@ -512,6 +518,75 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
   ButtonStyle get _circleBtn => IconButton.styleFrom(backgroundColor: Colors.black38, foregroundColor: Colors.white, fixedSize: const Size(48, 48));
 
   Widget _plainBack() => IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_rounded, color: AppColors.text), onPressed: () => goBack(context));
+
+  bool get _isOwnProfile => context.read<AuthProvider>().user?['id']?.toString() == widget.id;
+
+  /// Own profile or a moderator: may see penalty (negative) entries.
+  bool _canSeePenalties(AuthProvider auth) =>
+      auth.user?['id']?.toString() == widget.id ||
+      auth.hasPermission('manage_comment') || auth.hasPermission('manage_upload') || auth.hasPermission('access_admin');
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Blocked in this session (the public profile query can't tell us).
+  bool _blocked = false;
+
+  Future<void> _unblockUser() async {
+    final auth = context.read<AuthProvider>();
+    try {
+      await auth.authedMutate(r'mutation($id: ID!) { unblockUser(user_id: $id) }', {'id': widget.id});
+      if (mounted) setState(() => _blocked = false);
+      _snack('Đã bỏ chặn');
+    } catch (e) {
+      _snack(friendlyError(e));
+    }
+  }
+
+  Future<void> _blockUser() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) { askLogin(context); return; }
+    if (_blocked) { await _unblockUser(); return; }
+    final name = (_user?['username'] ?? 'thành viên này').toString();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Chặn $name?', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+        content: Text('$name sẽ không nhắn tin được cho bạn nữa.', style: body(const TextStyle(fontSize: 16, height: 1.5))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), style: TextButton.styleFrom(minimumSize: const Size(64, 48)), child: Text('Huỷ', style: body(const TextStyle(fontSize: 16)))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), style: TextButton.styleFrom(minimumSize: const Size(64, 48), foregroundColor: const Color(0xFFD64535)), child: Text('Chặn', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final d = await auth.authedMutate(r'mutation($id: ID!) { blockUser(user_id: $id) }', {'id': widget.id});
+      if (d['blockUser'] == false) { _snack('Chưa chặn được, vui lòng thử lại.'); return; }
+      if (mounted) setState(() => _blocked = true);
+      _snack('Đã chặn $name');
+    } catch (e) {
+      _snack(friendlyError(e, fallback: 'Chưa chặn được, vui lòng thử lại.'));
+    }
+  }
+
+  static const _reportReasons = ['Nội dung xúc phạm, thô tục', 'Quấy rối, làm phiền', 'Spam, quảng cáo', 'Mạo danh người khác'];
+
+  Future<void> _reportUser() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) { askLogin(context); return; }
+    final name = (_user?['username'] ?? '').toString();
+    final reason = await showDialog<String>(context: context, builder: (_) => _ReportDialog(name: name, reasons: _reportReasons));
+    if (reason == null || reason.trim().isEmpty) return;
+    try {
+      await auth.authedMutate(r'mutation($id: ID!, $reason: String) { reportMessage(user_id: $id, reason: $reason) }', {'id': widget.id, 'reason': reason.trim()});
+      _snack('Đã gửi báo cáo. BQT sẽ xem xét sớm.');
+    } catch (e) {
+      _snack(friendlyError(e, fallback: 'Chưa gửi được báo cáo, vui lòng thử lại.'));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -542,7 +617,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           headerSliverBuilder: (ctx, innerBoxScrolled) => [
             SliverAppBar(
               pinned: true,
-              expandedHeight: 220,
+              // Grows with the text size so the name/badges never overflow
+              // under the toolbar at 200% text.
+              expandedHeight: 220 + (MediaQuery.textScalerOf(context).scale(100) - 100).clamp(0, 140).toDouble(),
               backgroundColor: AppColors.bg,
               surfaceTintColor: Colors.transparent,
               leadingWidth: 64,
@@ -554,6 +631,19 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                   icon: const Icon(Icons.ios_share, color: Colors.white),
                   onPressed: () => _share(bctx),
                 )),
+                if (!_isOwnProfile) ...[
+                  const SizedBox(width: 6),
+                  PopupMenuButton<String>(
+                    tooltip: 'Thêm',
+                    style: _circleBtn,
+                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.white),
+                    onSelected: (v) => v == 'block' ? _blockUser() : _reportUser(),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'report', height: 52, child: Row(children: [Icon(Icons.flag_outlined, color: AppColors.text), const SizedBox(width: 12), Text('Báo cáo', style: body(TextStyle(fontSize: 16, color: AppColors.text)))])),
+                      PopupMenuItem(value: 'block', height: 52, child: Row(children: [const Icon(Icons.block_rounded, color: Color(0xFFD64535)), const SizedBox(width: 12), Text(_blocked ? 'Bỏ chặn' : 'Chặn thành viên', style: body(const TextStyle(fontSize: 16, color: Color(0xFFD64535))))])),
+                    ],
+                  ),
+                ],
                 const SizedBox(width: 8),
               ],
               flexibleSpace: LayoutBuilder(builder: (lctx, c) {
@@ -733,13 +823,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
         else ...[
           // Stats — every tile jumps to its tab.
           Row(children: [
-            Expanded(child: _statTile('Điểm', point, () => _goTab('point'))),
+            Expanded(child: _statTile('Điểm', point, _tabTap('point'))),
             const SizedBox(width: 8),
-            Expanded(child: _statTile('Bài gửi', _uploadTotal, () => _goTab('upload'))),
+            Expanded(child: _statTile('Bài gửi', _uploadTotal, _tabTap('upload'))),
             const SizedBox(width: 8),
-            Expanded(child: _statTile('Bản thu', _karaokeTotal, () => _goTab('karaoke'))),
+            Expanded(child: _statTile('Bản thu', _karaokeTotal, _tabTap('karaoke'))),
             const SizedBox(width: 8),
-            Expanded(child: _statTile('Bình luận', _commentTotal, () => _goTab('comment'))),
+            Expanded(child: _statTile('Bình luận', _commentTotal, _tabTap('comment'))),
           ]),
           const SizedBox(height: 22),
         ],
@@ -788,9 +878,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           const SizedBox(height: 22),
         ],
 
-        if (_previewPoints.isNotEmpty) ...[
+        if (_visiblePoints(_previewPoints, auth).isNotEmpty) ...[
           _previewHeader(Icons.workspace_premium_outlined, 'Cống hiến', () => _goTab('point')),
-          ..._previewPoints.map(_pointRow),
+          ..._visiblePoints(_previewPoints, auth).map(_pointRow),
         ],
 
         SizedBox(height: player.currentSong != null ? 90 : 20),
@@ -851,24 +941,45 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     );
   }
 
+  /// Penalties (negative points) are between the member and BQT: hidden
+  /// on a public profile unless it's your own or you moderate.
+  List<Map<String, dynamic>> _visiblePoints(List<Map<String, dynamic>> list, AuthProvider auth) =>
+      _canSeePenalties(auth) ? list : list.where((p) => _int(p['point']) >= 0).toList();
+
   Widget _pointsTab() {
     if (!_pointsLoaded) {
       if (_pointsError) return _offlineTab(_loadPoints);
       return _skeletonList();
     }
-    if (_points.isEmpty) return ListView(children: const [EmptyBlock(icon: Icons.workspace_premium_outlined, title: 'Chưa có cống hiến')]);
+    final auth = context.watch<AuthProvider>();
+    final points = _visiblePoints(_points, auth);
+    final hasMore = _pointPage < _pointLastPage;
+    if (points.isEmpty && !hasMore) return ListView(children: const [EmptyBlock(icon: Icons.workspace_premium_outlined, title: 'Chưa có cống hiến')]);
+    final filtered = points.length != _points.length;
     return ListView.separated(
       key: const PageStorageKey('user-points'),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-      itemCount: _points.length + 1,
+      itemCount: points.length + 1,
       separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.borderSubtle),
-      itemBuilder: (ctx, i) => i == _points.length
-          ? _moreFooter(shown: _points.length, total: _contribTotal, hasMore: _pointPage < _pointLastPage, loading: _pointsLoading, label: 'cống hiến', onMore: _loadPoints)
-          : _pointRow(_points[i]),
+      itemBuilder: (ctx, i) => i == points.length
+          // When penalties are hidden the "x / total" counter would not add
+          // up, so count only what we loaded.
+          ? _moreFooter(shown: filtered ? _points.length : points.length, total: _contribTotal, hasMore: hasMore, loading: _pointsLoading, label: 'cống hiến', onMore: _loadPoints)
+          : _pointRow(points[i]),
     );
   }
 
+  /// Others' uploads can't be opened (/bai-gui is owner/BQT only): open the
+  /// published page instead when there is one, else the row isn't tappable.
+  VoidCallback? _uploadTap(Map<String, dynamic> up) {
+    // This tab lists the member's own uploads: owner = this profile.
+    final r = context.read<AuthProvider>().uploadRoute({...up, 'user_id': widget.id});
+    if (r == null) return null;
+    return () => context.push(r.path, extra: r.extra);
+  }
+
   Widget _uploadRow(Map<String, dynamic> up) {
+    final onTap = _uploadTap(up);
     final type = (up['type'] ?? '').toString();
     final people = [up['composers'], up['poets'], up['artists']]
         .map((v) => (v ?? '').toString().trim())
@@ -877,7 +988,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     final sub = [_uploadTypeLabels[type] ?? type, people, timeago(up['created_at']?.toString())].where((s) => s.isNotEmpty).join(' · ');
     final title = (up['title'] ?? '').toString();
     return InkWell(
-      onTap: () => context.push('/bai-gui/${up['id']}'),
+      onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
@@ -895,7 +1006,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
               if (sub.isNotEmpty)
                 Padding(padding: const EdgeInsets.only(top: 2), child: Text(sub, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.meta)),
             ])),
-            Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.textMuted),
+            if (onTap != null) Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.textMuted),
           ]),
         ),
       ),
@@ -1001,7 +1112,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     );
   }
 
-  Widget _statTile(String label, int value, VoidCallback onTap) {
+  Widget _statTile(String label, int value, VoidCallback? onTap) {
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(12),
@@ -1025,6 +1136,73 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           ]),
         ),
       ),
+    );
+  }
+}
+
+/// "Báo cáo" picker: a few common reasons plus a free-text "Lý do khác".
+class _ReportDialog extends StatefulWidget {
+  final String name;
+  final List<String> reasons;
+  const _ReportDialog({required this.name, required this.reasons});
+
+  @override
+  State<_ReportDialog> createState() => _ReportDialogState();
+}
+
+class _ReportDialogState extends State<_ReportDialog> {
+  int? _picked; // index in reasons; reasons.length = "Lý do khác"
+  final _other = TextEditingController();
+
+  @override
+  void dispose() { _other.dispose(); super.dispose(); }
+
+  String? get _reason => _picked == null
+      ? null
+      : _picked! < widget.reasons.length ? widget.reasons[_picked!] : _other.text.trim();
+
+  @override
+  Widget build(BuildContext context) {
+    final options = [...widget.reasons, 'Lý do khác'];
+    final r = _reason;
+    return AlertDialog(
+      title: Text(widget.name.isEmpty ? 'Báo cáo thành viên' : 'Báo cáo ${widget.name}', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))),
+      contentPadding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
+      content: SingleChildScrollView(
+        child: RadioGroup<int>(
+          groupValue: _picked,
+          onChanged: (v) => setState(() => _picked = v),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            for (var i = 0; i < options.length; i++)
+              RadioListTile<int>(
+                value: i,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                title: Text(options[i], style: body(const TextStyle(fontSize: 16))),
+              ),
+            if (_picked == widget.reasons.length)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: TextField(
+                  controller: _other,
+                  autofocus: true,
+                  maxLines: 3,
+                  minLines: 2,
+                  onChanged: (_) => setState(() {}),
+                  style: body(const TextStyle(fontSize: 16)),
+                  decoration: const InputDecoration(hintText: 'Mô tả ngắn lý do', border: OutlineInputBorder()),
+                ),
+              ),
+          ]),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), style: TextButton.styleFrom(minimumSize: const Size(64, 48)), child: Text('Huỷ', style: body(const TextStyle(fontSize: 16)))),
+        TextButton(
+          onPressed: r == null || r.isEmpty ? null : () => Navigator.pop(context, r),
+          style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+          child: Text('Gửi báo cáo', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+        ),
+      ],
     );
   }
 }

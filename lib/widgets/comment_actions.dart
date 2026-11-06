@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import 'song_admin_actions.dart' show PeopleField;
 
 // The "⋮" menu on a comment — same actions and permissions as the web
@@ -115,7 +116,7 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
     try {
       return await f();
     } catch (e) {
-      toast('Lỗi: ${e.toString().replaceFirst('Exception: ', '')}', error: true);
+      toast(friendlyError(e), error: true);
       return null;
     }
   }
@@ -325,7 +326,7 @@ Future<bool> _applyLyric(BuildContext context, AuthProvider auth, {required Map 
                           if (ctx.mounted) Navigator.pop(ctx, true);
                         } catch (e) {
                           setState(() => busy = false);
-                          if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: AppColors.error));
+                          if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
                         }
                       },
                 style: FilledButton.styleFrom(backgroundColor: AppColors.accent, padding: const EdgeInsets.symmetric(vertical: 13), shape: const StadiumBorder()),
@@ -387,7 +388,7 @@ Future<void> _tagDocument(BuildContext context, AuthProvider auth, Map comment) 
                             if (ctx.mounted) Navigator.pop(ctx, true);
                           } catch (e) {
                             setState(() => busy = false);
-                            if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: AppColors.error));
+                            if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
                           }
                         },
                   style: FilledButton.styleFrom(backgroundColor: AppColors.accent, padding: const EdgeInsets.symmetric(vertical: 13), shape: const StadiumBorder()),

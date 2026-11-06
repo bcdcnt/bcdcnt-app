@@ -69,7 +69,7 @@ const List<AppPalette> kAppPalettes = [
     accentSoft: Color(0xFFF8EDED),
     text: Color(0xFF161112),
     textSecondary: Color(0xFF4F4547),
-    textMuted: Color(0xFF73686A),
+    textMuted: Color(0xFF665C5E),
     border: Color(0xFFECE4E4),
     borderSubtle: Color(0xFFF3EEEE),
   ),

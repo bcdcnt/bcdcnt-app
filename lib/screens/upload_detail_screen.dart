@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, EmptyBlock, OfflineBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -38,12 +39,16 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     'sheet': 'Bản nhạc',
   };
   static const _statusLabels = {'pending': 'Chờ duyệt', 'approved': 'Đã duyệt', 'rejected': 'Không duyệt', 'not_sure': 'Chưa rõ'};
-  static const _statusColors = {'pending': Color(0xFFFFA726), 'approved': Color(0xFF66BB6A), 'rejected': Color(0xFFEF5350), 'not_sure': Color(0xFFFFA726)};
+  // Text-safe tones (≥4.5:1) — the old Material 400 shades were 1.6–2:1 on light.
+  static Map<String, Color> get _statusColors => {'pending': AppColors.warningText, 'approved': AppColors.successText, 'rejected': AppColors.errorText, 'not_sure': AppColors.warningText};
   static const _statusIcons = {'pending': Icons.access_time, 'approved': Icons.check_circle_outline, 'rejected': Icons.cancel_outlined, 'not_sure': Icons.help_outline};
 
   Map<String, dynamic>? _upload;
   bool _loading = true;
   String? _error;
+  bool _needLogin = false, _failed = false;
+  /// Video couldn't be opened in-app → offer "Mở video" (external) instead.
+  bool _videoFailed = false;
   VideoPlayerController? _videoCtl;
   ChewieController? _chewieCtl;
 
@@ -52,55 +57,90 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
   @override
   void dispose() { _chewieCtl?.dispose(); _videoCtl?.dispose(); super.dispose(); }
 
+  static const _fields = '''
+    id title type status reason result link note
+    content year record_year karaoke_type
+    created_at modified_at
+    file { audio_url video_url type duration }
+    thumbnail { url }
+    composers artists poets recomposers
+    processor { id username }
+    user { id username }
+  ''';
+
   Future<void> _fetch() async {
     final auth = context.read<AuthProvider>();
-    if (auth.token == null) { setState(() { _loading = false; _error = 'Vui lòng đăng nhập'; }); return; }
+    if (auth.token == null) { setState(() { _loading = false; _needLogin = true; }); return; }
+    setState(() { _loading = true; _failed = false; _error = null; _needLogin = false; });
     try {
-      final data = await auth.authedQuery(r'''query($first: Int!, $where: WhereConditions) {
-        me {
-          uploads(first: $first, where: $where) {
-            data {
-              id title type status reason result link note
-              content year record_year karaoke_type
-              created_at modified_at
-              file { audio_url video_url type duration }
-              thumbnail { url }
-              composers artists poets recomposers
-              processor { id username }
-              user { id username }
-            }
-          }
-        }
+      final data = await auth.authedQuery('''query(\$first: Int!, \$where: WhereConditions) {
+        me { uploads(first: \$first, where: \$where) { data { $_fields } } }
       }''', {'first': 1, 'where': {'AND': [{'column': 'id', 'value': widget.id}]}});
       final list = (data['me']?['uploads']?['data'] ?? []) as List;
-      if (!mounted) return;
-      if (list.isEmpty) { setState(() { _loading = false; _error = 'Không tìm thấy bài gửi'; }); return; }
-      final up = Map<String, dynamic>.from(list.first as Map);
-      final videoUrl = up['file']?['video_url'];
-      if (videoUrl != null) {
-        _videoCtl = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-        await _videoCtl!.initialize();
-        if (!mounted) return;
-        _chewieCtl = ChewieController(
-          videoPlayerController: _videoCtl!,
-          autoPlay: false,
-          looping: false,
-          aspectRatio: _videoCtl!.value.aspectRatio,
-        );
+      Map<String, dynamic>? up = list.isEmpty ? null : Map<String, dynamic>.from(list.first as Map);
+      // Not ours: only moderators may read someone else's upload
+      // (UploadPolicy::viewUpload = owner or manage_upload).
+      if (up == null && auth.hasPermission('manage_upload')) {
+        final d2 = await auth.authedQuery('''query(\$id: ID!) { upload(id: \$id) { $_fields } }''', {'id': widget.id});
+        if (d2['upload'] is Map) up = Map<String, dynamic>.from(d2['upload'] as Map);
       }
+      if (!mounted) return;
+      if (up == null) {
+        setState(() { _loading = false; _error = 'Bài gửi này chỉ người gửi và BQT xem được, hoặc đã bị xoá.'; });
+        return;
+      }
+      // Show the page now; the video loads on its own.
       setState(() { _upload = up; _loading = false; });
-    } catch (e) { if (mounted) setState(() { _loading = false; _error = 'Không thể tải bài gửi'; }); }
+      final videoUrl = up['file']?['video_url'];
+      if (videoUrl is String && videoUrl.isNotEmpty) _initVideo(videoUrl);
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _failed = true; _error = friendlyError(e); });
+    }
+  }
+
+  Future<void> _initVideo(String url) async {
+    final ctl = VideoPlayerController.networkUrl(Uri.parse(url));
+    try {
+      await ctl.initialize().timeout(const Duration(seconds: 20));
+    } catch (_) {
+      ctl.dispose();
+      if (mounted) setState(() => _videoFailed = true);
+      return;
+    }
+    if (!mounted) { ctl.dispose(); return; }
+    setState(() {
+      _videoCtl = ctl;
+      _chewieCtl = ChewieController(
+        videoPlayerController: ctl,
+        autoPlay: false,
+        looping: false,
+        aspectRatio: ctl.value.aspectRatio,
+      );
+    });
+  }
+
+  void _openResult(String result) {
+    final r = uploadResultRoute(result);
+    if (r != null) {
+      context.push(r.path, extra: r.extra);
+    } else {
+      launchUrl(Uri.parse(result), mode: LaunchMode.externalApplication);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
-    if (_error != null || _upload == null) {
+    if (_error != null || _upload == null || _needLogin) {
       return Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-        body: Center(child: Text(_error ?? 'Không tìm thấy bài gửi', style: AppText.bodyText)),
+        body: Center(child: SingleChildScrollView(child: _needLogin
+            ? EmptyBlock(icon: Icons.lock_outline, title: 'Đăng nhập để xem bài gửi', action: 'Đăng nhập', onAction: () async { await askLogin(context); if (mounted) _fetch(); })
+            : _failed
+                ? OfflineBlock(onRetry: _fetch)
+                : EmptyBlock(icon: Icons.description_outlined, title: 'Không xem được bài gửi', message: _error ?? 'Không tìm thấy bài gửi'))),
       );
     }
     final up = _upload!;
@@ -159,13 +199,13 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                   padding: const EdgeInsets.all(14),
                   margin: const EdgeInsets.only(bottom: 14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF5350).withValues(alpha: 0.08),
-                    border: Border.all(color: const Color(0xFFEF5350).withValues(alpha: 0.3)),
+                    color: AppColors.errorText.withValues(alpha: 0.08),
+                    border: Border.all(color: AppColors.errorText.withValues(alpha: 0.3)),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      const Icon(Icons.message_outlined, size: 14, color: Color(0xFFEF5350)),
+                      Icon(Icons.message_outlined, size: 14, color: AppColors.errorText),
                       const SizedBox(width: 6),
                       Text('PHẢN HỒI BQT', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFEF5350), letterSpacing: 0.5))),
                     ]),
@@ -177,7 +217,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
               // Result link
               if (status == 'approved' && (up['result'] ?? '').toString().isNotEmpty)
                 InkWell(
-                  onTap: () => launchUrl(Uri.parse(up['result']), mode: LaunchMode.externalApplication),
+                  onTap: () => _openResult(up['result'].toString()),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.all(14),
@@ -215,6 +255,25 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                         borderRadius: BorderRadius.circular(10),
                         child: AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio, child: Chewie(controller: _chewieCtl!)),
                       ),
+                    )
+                  else if (up['file']?['video_url'] != null && _videoFailed)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: OutlinedButton.icon(
+                        onPressed: () => launchUrl(Uri.parse(up['file']['video_url']), mode: LaunchMode.externalApplication),
+                        style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: Text('Mở video', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
+                      ),
+                    )
+                  else if (up['file']?['video_url'] != null && _chewieCtl == null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: AspectRatio(aspectRatio: 16 / 9, child: Container(
+                        decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(10)),
+                        alignment: Alignment.center,
+                        child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
+                      )),
                     )
                   else if (up['file']?['audio_url'] != null)
                     Padding(

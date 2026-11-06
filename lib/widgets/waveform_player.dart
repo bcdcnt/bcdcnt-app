@@ -77,6 +77,7 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
   bool _loaded = false;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -97,12 +98,25 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
     if (widget.autoPlay) _loadUrl();
   }
 
-  Future<void> _loadUrl() async {
+  Future<bool> _loadUrl() async {
+    if (_loaded) return true;
+    if (_loading) return false;
+    if (mounted) setState(() => _loading = true);
     try {
       await _player.setUrl(widget.audioUrl);
-      if (mounted) setState(() => _loaded = true);
+      if (!mounted) return false;
+      setState(() { _loaded = true; _loading = false; });
       if (widget.autoPlay) await _player.play();
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          const SnackBar(content: Text('Không mở được bản ghi âm, vui lòng thử lại.')),
+        );
+      }
+      return false;
+    }
   }
 
   @override
@@ -124,7 +138,10 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
     }
     // One sound at a time: pause the song before playing the comment audio.
     try { context.read<PlayerProvider>().pause(); } catch (_) {}
-    if (!_loaded) await _loadUrl();
+    if (!_loaded) {
+      final ok = await _loadUrl();
+      if (!ok || !mounted) return;
+    }
     _player.play();
   }
 
@@ -139,19 +156,24 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     return Row(
       children: [
-        GestureDetector(
-          onTap: _loaded ? _toggle : null,
+        Semantics(
+          button: true,
+          label: _playing ? 'Tạm dừng ghi âm' : 'Phát ghi âm',
+          child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _loading ? null : _toggle,
           child: Container(
-            width: 44, height: 44,
+            width: 48, height: 48,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
               boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
             ),
-            child: _loaded
-                ? Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 22)
-                : const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70)),
+            child: _loading
+                ? const Padding(padding: EdgeInsets.all(13), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+                : Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24),
           ),
+        ),
         ),
         const SizedBox(width: 12),
         Expanded(

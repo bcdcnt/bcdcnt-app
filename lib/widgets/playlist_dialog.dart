@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
+import 'ui.dart';
 
 class PlaylistDialog extends StatefulWidget {
   final String songId;
@@ -18,7 +20,16 @@ class PlaylistDialog extends StatefulWidget {
 class _PlaylistDialogState extends State<PlaylistDialog> {
   List<dynamic> _playlists = [];
   bool _loading = true;
+  bool _failed = false;
   final Set<String> _adding = {};
+  final _titleCtrl = TextEditingController();
+  bool _creating = false;
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -29,17 +40,45 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
   Future<void> _fetch() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) { setState(() => _loading = false); return; }
+    setState(() { _loading = true; _failed = false; });
     try {
       final data = await ApiClient.authedQuery(
         r'''query { myPlaylists(first: 50) { data { id title thumbnail { url } songs(first: 0) { paginatorInfo { total } } } } }''',
         null,
         auth.token!,
       );
+      if (!mounted) return;
       setState(() {
         _playlists = data['myPlaylists']?['data'] ?? [];
         _loading = false;
       });
-    } catch (_) { setState(() => _loading = false); }
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _failed = true; });
+    }
+  }
+
+  /// No playlist yet: make one right here and put the song in it, instead of
+  /// sending the listener away to another screen.
+  Future<void> _createAndAdd() async {
+    final title = _titleCtrl.text.trim();
+    if (title.isEmpty || _creating) return;
+    setState(() => _creating = true);
+    try {
+      final data = await context.read<AuthProvider>().authedMutate(
+        r'''mutation($title: String!) { createPlaylist(input: {title: $title}) { id } }''',
+        {'title': title},
+      );
+      final id = data['createPlaylist']?['id']?.toString();
+      if (!mounted) return;
+      setState(() => _creating = false);
+      if (id != null) await _addTo(id);
+      // Adding failed but the playlist exists now: show it so they can retry.
+      if (mounted) _fetch();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _creating = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
+    }
   }
 
   Future<void> _addTo(String playlistId) async {
@@ -54,7 +93,7 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: AppColors.error));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _adding.remove(playlistId));
   }
@@ -81,11 +120,46 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
               ),
             ),
             if (!auth.isAuthenticated)
-              Padding(padding: const EdgeInsets.all(24), child: Text('Đăng nhập để sử dụng tính năng này', style: AppText.bodyText))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Text('Đăng nhập để lưu bài vào playlist của bạn.', style: body(TextStyle(fontSize: 16, color: AppColors.text))),
+                  const SizedBox(height: 14),
+                  PillButton(
+                    label: 'Đăng nhập',
+                    icon: Icons.login_rounded,
+                    onTap: () async {
+                      await askLogin(context);
+                      if (context.mounted && context.read<AuthProvider>().isAuthenticated) _fetch();
+                    },
+                  ),
+                ]),
+              )
             else if (_loading)
               Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.accent))
+            else if (_failed)
+              OfflineBlock(onRetry: _fetch)
             else if (_playlists.isEmpty)
-              Padding(padding: const EdgeInsets.all(24), child: Text('Bạn chưa có playlist nào', style: AppText.bodyText))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Text('Bạn chưa có playlist nào. Đặt tên để tạo playlist và lưu bài này vào:', style: body(TextStyle(fontSize: 16, color: AppColors.text))),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _titleCtrl,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _createAndAdd(),
+                    style: body(TextStyle(fontSize: 16, color: AppColors.text)),
+                    decoration: InputDecoration(
+                      hintText: 'Tên playlist, ví dụ: Nhạc yêu thích',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  PillButton(label: 'Tạo playlist', icon: Icons.add_rounded, loading: _creating, onTap: _creating ? null : _createAndAdd),
+                ]),
+              )
             else Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
@@ -103,6 +177,7 @@ class _PlaylistDialogState extends State<PlaylistDialog> {
                           ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 110), width: 44, height: 44, fit: BoxFit.cover)
                           : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: Icon(Icons.playlist_play, color: AppColors.textMuted)),
                     ),
+                    minVerticalPadding: 10,
                     title: Text(p['title'] ?? '', style: AppText.title),
                     subtitle: Text('$count bài', style: AppText.caption),
                     trailing: isAdding

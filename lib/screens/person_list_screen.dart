@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -28,6 +28,9 @@ class _PersonListScreenState extends State<PersonListScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _failed = false;
+  bool _moreFailed = false;
+  int _reqId = 0;
   // Filter: starting letter (uppercase Vietnamese). Null means "all".
   // Selecting it resets pagination.
   String? _letter;
@@ -100,7 +103,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading) return;
+    if (_loadingMore || _loading || _moreFailed) return;
     if (_page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) {
       _fetch(_page + 1);
@@ -108,7 +111,11 @@ class _PersonListScreenState extends State<PersonListScreen> {
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final req = ++_reqId;
+    setState(() {
+      if (page == 1) { _loading = true; _failed = false; } else { _loadingMore = true; }
+      _moreFailed = false;
+    });
     // Build a where clause with an optional letter (title LIKE 'X%').
     final wheres = <String>[];
     if (_letter != null) {
@@ -126,9 +133,14 @@ class _PersonListScreenState extends State<PersonListScreen> {
       final raw = data[_queryName];
       final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != _reqId || !mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) {
+          _items = list;
+        } else {
+          final seen = _items.map((e) => e['id']?.toString()).toSet();
+          _items.addAll(list.where((e) => !seen.contains(e['id']?.toString())));
+        }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
@@ -136,15 +148,25 @@ class _PersonListScreenState extends State<PersonListScreen> {
         _loadingMore = false;
       });
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+      if (req != _reqId || !mounted) return;
+      setState(() {
+        if (page == 1) { _failed = true; } else { _moreFailed = true; }
+        _loading = false;
+        _loadingMore = false;
+      });
     }
+  }
+
+  static String _initial(dynamic title) {
+    final t = (title ?? '').toString().trim();
+    return t.isEmpty ? '?' : t.characters.first.toUpperCase();
   }
 
   void _setLetter(String? l) {
     if (_letter == l) return;
     setState(() {
       _letter = l;
-      _items = []; _page = 1; _lastPage = 1; _total = 0;
+      _items = []; _page = 1; _lastPage = 1; _total = 0; _loadingMore = false;
     });
     _fetch(1);
   }
@@ -155,7 +177,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
     return Container(
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
       child: SizedBox(
-        height: 36,
+        height: 48,
         child: ListView(
           scrollDirection: Axis.horizontal,
           children: [
@@ -169,22 +191,30 @@ class _PersonListScreenState extends State<PersonListScreen> {
   }
 
   Widget _letterBtn({required String label, required bool active, required VoidCallback onTap}) {
-    return InkWell(
+    return Semantics(
+      button: true,
+      selected: active,
+      label: label == 'Tất cả' ? 'Tất cả' : 'Chữ $label',
+      excludeSemantics: true,
+      child: InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        constraints: const BoxConstraints(minWidth: 44),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
         ),
         child: Text(
           label,
           style: body(TextStyle(
-            fontSize: 13,
+            fontSize: 16,
             fontWeight: active ? FontWeight.w700 : FontWeight.w500,
             color: active ? AppColors.accentLight : AppColors.textSecondary,
             letterSpacing: 0.3,
           )),
         ),
+      ),
       ),
     );
   }
@@ -202,6 +232,10 @@ class _PersonListScreenState extends State<PersonListScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    // Tile height grows with the user's text size so names never overflow:
+    // avatar 80 + gaps + 2-line name (14pt) + listen count (13pt) + slack.
+    final ts = MediaQuery.textScalerOf(context);
+    final tileExtent = 80 + 8 + 2 + ts.scale(14) * 1.35 * 2 + ts.scale(13) * 1.4 + 16;
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
@@ -240,7 +274,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                             children: [
                               Text(_label, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_total > 0 ? '${_formatInt(_total)} ${_label.toLowerCase()}' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                              Text(_total > 0 ? '${_formatInt(_total)} ${_label.toLowerCase()}' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -255,25 +289,23 @@ class _PersonListScreenState extends State<PersonListScreen> {
               ),
               if (_loading && _items.isEmpty)
                 SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              else if (_failed && _items.isEmpty)
+                SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
               else if (_items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(color: AppColors.textMuted)))))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   sliver: SliverGrid(
                     // Responsive cols: more on desktop so each tile doesn't
                     // stretch with huge horizontal gaps between rows.
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                       maxCrossAxisExtent: 180,
                       crossAxisSpacing: 14,
                       mainAxisSpacing: 18,
-                      // Tile content: avatar 80 + 8 + name (2 lines @
-                      // 12px line-height ≈ 36) + 2 + listen count 14 =
-                      // 140. Use mainAxisExtent for a fixed 152px cell
-                      // — childAspectRatio caused 1-2px overflow because
-                      // cell width wasn't always exactly 180 (depends on
-                      // available width / cross axis).
-                      mainAxisExtent: 152,
+                      // mainAxisExtent (not childAspectRatio, which caused
+                      // 1-2px overflow) computed from the text scale above.
+                      mainAxisExtent: tileExtent,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
@@ -307,14 +339,14 @@ class _PersonListScreenState extends State<PersonListScreen> {
                                 child: ClipOval(
                                   child: avatar != null
                                       ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
-                                      : Center(child: Text((p['title'] ?? '?').toString().substring(0, 1).toUpperCase(), style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white70)))),
+                                      : Center(child: Text(_initial(p['title']), style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white70)))),
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Text(p['title'] ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
+                              Text(p['title'] ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w600, color: AppColors.text))),
                               if ((p['total_listens'] ?? 0) > 0) Padding(
                                 padding: const EdgeInsets.only(top: 2),
-                                child: Text('${_formatInt(p['total_listens'])} nghe', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                                child: Text('${_formatInt(p['total_listens'])} nghe', maxLines: 1, style: body(TextStyle(fontSize: 13, height: 1.3, color: AppColors.textSecondary))),
                               ),
                             ],
                           ),
@@ -328,6 +360,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
               SliverToBoxAdapter(
                 child: Column(children: [
                   if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),

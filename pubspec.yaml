@@ -1,13 +1,17 @@
 name: bcdcnt
 description: BCĐCNT - Bài Ca Đi Cùng Năm Tháng
 publish_to: 'none'
-version: 1.4.0+13
+version: 1.4.1+14
 
 environment:
   sdk: ^3.11.5
 
 dependencies:
   flutter:
+    sdk: flutter
+  # Vietnamese system strings: text selection menu (Sao chép / Dán),
+  # date pickers, VoiceOver labels on back buttons and tooltips.
+  flutter_localizations:
     sdk: flutter
   cupertino_icons: ^1.0.8
   http: ^1.2.0

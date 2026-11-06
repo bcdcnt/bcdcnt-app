@@ -50,8 +50,13 @@ class _RankingScreenState extends State<RankingScreen> {
   }
 
   bool _failed = false;
+  /// Bumped per request: switching period/type quickly must not let an
+  /// older, slower answer overwrite the chart on screen.
+  int _req = 0;
 
   Future<void> _fetchListen() async {
+    final req = ++_req;
+    final period = _period, type = _type;
     setState(() { _loading = true; _failed = false; });
     try {
       const q = r'''query($period: String, $type: String!) {
@@ -71,24 +76,25 @@ class _RankingScreenState extends State<RankingScreen> {
       Map<String, dynamic> data;
       var hasTrend = true;
       try {
-        data = await ApiClient.query(q, {'period': _period, 'type': _type});
+        data = await ApiClient.query(q, {'period': period, 'type': type});
       } catch (_) {
         // API not yet updated with prev_rank → same query without it.
         hasTrend = false;
-        data = await ApiClient.query(q.replaceFirst('prev_rank', ''), {'period': _period, 'type': _type});
+        data = await ApiClient.query(q.replaceFirst('prev_rank', ''), {'period': period, 'type': type});
       }
+      if (!mounted || req != _req) return;
       _hasTrend = hasTrend;
       final list = ((data['statisticListen']?['data'] ?? []) as List)
           .where((d) => d['object'] != null)
           .map((d) {
         final m = Map<String, dynamic>.from(d as Map);
         m['object'] = Map<String, dynamic>.from(m['object'] as Map);
-        m['object']['file_type'] = _fileTypes[m['object']['__typename']] ?? _type;
+        m['object']['file_type'] = _fileTypes[m['object']['__typename']] ?? type;
         return m;
       }).toList();
       if (!mounted) return;
       setState(() { _songs = list; _loading = false; });
-    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
+    } catch (_) { if (mounted && req == _req) setState(() { _loading = false; _failed = true; }); }
   }
 
   @override
@@ -181,7 +187,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1;
-  bool _loading = true, _loadingMore = false;
+  bool _loading = true, _loadingMore = false, _failed = false;
 
   @override
   void initState() { super.initState(); _scrollCtl.addListener(_onScroll); _fetch(1); }
@@ -193,7 +199,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    setState(() { _failed = false; if (page == 1) { _loading = true; } else { _loadingMore = true; } });
     try {
       final cfg = _configs[widget.slug];
       if (cfg == null) { if (mounted) setState(() => _loading = false); return; }
@@ -274,7 +280,11 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         _lastPage = pi['lastPage'] ?? 1;
         _loading = false; _loadingMore = false;
       });
-    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _loading = false; _loadingMore = false; _failed = page == 1 || _items.isEmpty; });
+      if (page > 1) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải thêm được. Kiểm tra mạng rồi thử lại.')));
+    }
   }
 
   String _formatInt(int n) {
@@ -302,8 +312,10 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_failed && _items.isEmpty)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
           else if (_items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: AppText.bodyText)))
+            const SliverToBoxAdapter(child: EmptyBlock(icon: Icons.leaderboard_outlined, title: 'Chưa có dữ liệu'))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -371,10 +383,12 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                 child: Text(
                   '$rank',
                   textAlign: TextAlign.center,
+                  // Text in AppColors.text: gold/silver on a light page fail
+                  // contrast. The medal colour lives on the ring and tint.
                   style: display(TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w900,
-                    color: medal,
+                    color: AppColors.text,
                     letterSpacing: -1,
                     height: 1,
                   )),
@@ -401,12 +415,12 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
+                    Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
                     const SizedBox(height: 4),
                     Row(children: [
-                      Icon(_metricIcon(valueLabel), size: 12, color: medal),
+                      Icon(_metricIcon(valueLabel), size: 16, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
-                      Text('${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: medal))),
+                      Flexible(child: Text('${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary)))),
                     ]),
                   ],
                 ),
@@ -430,7 +444,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             child: Text(
               '$rank',
               textAlign: TextAlign.center,
-              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted, letterSpacing: -0.5)),
+              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: -0.5)),
             ),
           ),
           const SizedBox(width: 10),
@@ -444,11 +458,11 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
           const SizedBox(width: 8),
-          Icon(_metricIcon(valueLabel), size: 11, color: AppColors.textMuted),
+          Icon(_metricIcon(valueLabel), size: 14, color: AppColors.textMuted),
           const SizedBox(width: 4),
-          Text('${_formatInt(value)} $valueLabel', style: AppText.caption),
+          Text('${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
         ]),
       ),
     );

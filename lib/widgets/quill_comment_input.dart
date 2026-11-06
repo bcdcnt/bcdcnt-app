@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as q;
 import 'package:flutter_quill/quill_delta.dart' show Delta;
@@ -43,14 +45,14 @@ class QuillCommentInput extends StatelessWidget {
           scrollable: true,
           customStyles: q.DefaultStyles(
             paragraph: q.DefaultTextBlockStyle(
-              TextStyle(color: AppColors.text, fontSize: 14, height: 1.45),
+              TextStyle(color: AppColors.text, fontSize: 17, height: 1.45),
               const q.HorizontalSpacing(0, 0),
               const q.VerticalSpacing(2, 2),
               const q.VerticalSpacing(0, 0),
               null,
             ),
             placeHolder: q.DefaultTextBlockStyle(
-              TextStyle(color: AppColors.textMuted, fontSize: 14),
+              TextStyle(color: AppColors.textMuted, fontSize: 17),
               const q.HorizontalSpacing(0, 0),
               const q.VerticalSpacing(2, 2),
               const q.VerticalSpacing(0, 0),
@@ -69,6 +71,16 @@ class QuillCommentController {
   late final q.QuillController _quill;
   final FocusNode _focus = FocusNode();
   final ScrollController _scroll = ScrollController();
+  // Listeners subscribe here, not to the quill document directly: the
+  // document is swapped by setHtml(), and a direct subscription would go
+  // silent after that (the @mention typeahead died after the first post).
+  final StreamController<dynamic> _changes = StreamController<dynamic>.broadcast();
+  StreamSubscription? _docSub;
+
+  void _attachDoc() {
+    _docSub?.cancel();
+    _docSub = _quill.document.changes.listen(_changes.add);
+  }
 
   QuillCommentController({String? initialHtml}) {
     final delta = (initialHtml != null && initialHtml.isNotEmpty)
@@ -78,6 +90,7 @@ class QuillCommentController {
       document: q.Document.fromDelta(delta),
       selection: const TextSelection.collapsed(offset: 0),
     );
+    _attachDoc();
   }
 
   /// Returns the editor content as HTML in the same shape the web
@@ -98,6 +111,7 @@ class QuillCommentController {
   void setHtml(String html) {
     final delta = _htmlToDelta(html);
     _quill.document = q.Document.fromDelta(delta);
+    _attachDoc();
     _quill.updateSelection(
       TextSelection.collapsed(offset: _quill.document.length - 1),
       q.ChangeSource.local,
@@ -124,15 +138,20 @@ class QuillCommentController {
     );
   }
 
+  /// Empties the editor in place (same document), so listeners keep firing.
   void clear() {
-    _quill.document = q.Document();
+    final len = _quill.document.length - 1;
+    if (len > 0) {
+      _quill.replaceText(0, len, '', const TextSelection.collapsed(offset: 0));
+    }
+    _quill.updateSelection(const TextSelection.collapsed(offset: 0), q.ChangeSource.local);
   }
 
   void requestFocus() => _focus.requestFocus();
 
   /// Stream of document change events — every keystroke / paste /
   /// replaceText surfaces here. Used by the mention typeahead.
-  Stream<dynamic> get documentChanges => _quill.document.changes;
+  Stream<dynamic> get documentChanges => _changes.stream;
 
   /// Plain text + cursor offset that match what the user typed,
   /// for mention detection (`@token` substring matching).
@@ -150,6 +169,8 @@ class QuillCommentController {
   }
 
   void dispose() {
+    _docSub?.cancel();
+    _changes.close();
     _quill.dispose();
     _focus.dispose();
     _scroll.dispose();

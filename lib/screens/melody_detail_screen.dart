@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
@@ -22,6 +21,8 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
   List<Map<String, dynamic>> _songs = [];
   int _page = 1, _lastPage = 1, _total = 0;
   bool _loading = true, _loadingMore = false;
+  bool _failed = false, _moreFailed = false;
+  int _reqId = 0;
   String _sort = 'views';
 
   @override
@@ -29,12 +30,16 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
   @override
   void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _moreFailed || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final req = ++_reqId;
+    setState(() {
+      if (page == 1) { _loading = true; _failed = false; _loadingMore = false; } else { _loadingMore = true; }
+      _moreFailed = false;
+    });
     try {
       final q = '''query(\$slug: Mixed, \$page: Int) {
         melodies(first: 1, where: { column: "slug", value: \$slug }) {
@@ -54,8 +59,8 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
       final data = await ApiClient.query(q, {'slug': widget.slug, 'page': page});
       final melody = ((data['melodies']?['data'] ?? []) as List).isNotEmpty
           ? Map<String, dynamic>.from(data['melodies']['data'][0] as Map) : null;
-      if (!mounted) return;
-      if (melody == null) { setState(() => _loading = false); return; }
+      if (req != _reqId || !mounted) return;
+      if (melody == null) { setState(() { _loading = false; _loadingMore = false; }); return; }
       final folks = ((melody['folks']?['data'] ?? []) as List).map((e) {
         final m = Map<String, dynamic>.from(e as Map);
         m['file_type'] = 'folk';
@@ -64,13 +69,24 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
       final pi = melody['folks']?['paginatorInfo'] ?? {};
       setState(() {
         _melody = melody;
-        if (page == 1) _songs = folks; else _songs.addAll(folks);
+        if (page == 1) {
+          _songs = folks;
+        } else {
+          final seen = _songs.map((e) => e['id']?.toString()).toSet();
+          _songs.addAll(folks.where((e) => !seen.contains(e['id']?.toString())));
+        }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? 0;
         _loading = false; _loadingMore = false;
       });
-    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+    } catch (_) {
+      if (req != _reqId || !mounted) return;
+      setState(() {
+        if (page == 1) { _failed = true; } else { _moreFailed = true; }
+        _loading = false; _loadingMore = false;
+      });
+    }
   }
 
   String _formatInt(int n) {
@@ -94,8 +110,10 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
-          if (_loading && _songs.isEmpty)
+          if (_loading && _melody == null)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_failed && _melody == null)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
           else if (_melody == null)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Không tìm thấy làn điệu', style: AppText.bodyText)))
           else ...[
@@ -115,14 +133,14 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(_melody!['title'] ?? '', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                       const SizedBox(height: 4),
-                      Text(_total > 0 ? '${_formatInt(_total)} bài' : 'Đang tải...', style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                      Text(_total > 0 ? '${_formatInt(_total)} bài' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có bài')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                     ])),
                   ]),
                 ),
                 const SizedBox(height: 14),
                 // Sort tabs
                 SizedBox(
-                  height: 32,
+                  height: 48,
                   child: ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: 2,
@@ -132,15 +150,16 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
                       final active = _sort == s.$1;
                       return InkWell(
                         onTap: active ? null : () { setState(() => _sort = s.$1); _fetch(1); },
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(24),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
                           decoration: BoxDecoration(
                             color: active ? AppColors.accent : AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(24),
                             border: Border.all(color: active ? AppColors.accent : AppColors.border),
                           ),
-                          child: Text(s.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary))),
+                          child: Text(s.$2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary))),
                         ),
                       );
                     },
@@ -149,6 +168,13 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
                 const SizedBox(height: 8),
               ])),
             ),
+            if (_loading)
+              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: AppColors.accent))))
+            else if (_failed)
+              SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
+            else if (_songs.isEmpty)
+              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài nào thuộc làn điệu này', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted))))))
+            else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
@@ -162,6 +188,7 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
           ],
           SliverToBoxAdapter(child: Column(children: [
             if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

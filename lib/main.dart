@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -229,6 +230,15 @@ class _AppRoot extends StatelessWidget {
       theme: appTheme(),
       debugShowCheckedModeBanner: false,
       routerConfig: _router,
+      // Vietnamese system UI: "Sao chép / Dán" menu, "Quay lại" for
+      // VoiceOver, picker labels — not English mixed into a Vietnamese app.
+      locale: const Locale('vi'),
+      supportedLocales: const [Locale('vi'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       // Stack the collapsed-mini-player pill above every route. The
       // pill is mounted once at the root so its drag offset survives
       // navigation; it self-hides when no song is playing or the
@@ -268,10 +278,20 @@ class _AuthPlayerBridge extends StatefulWidget {
 }
 
 class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
+  AuthProvider? _auth;
+  // Back from the background (or a new notification over the socket):
+  // re-read `me` so the unread badge and points aren't hours old.
+  late final AppLifecycleListener _life = AppLifecycleListener(onResume: _refreshMe);
+  ValueNotifier<int>? _notifTick;
+
+  void _refreshMe() => _auth?.refreshMe().catchError((_) {});
+
   @override
   void initState() {
     super.initState();
     final auth = context.read<AuthProvider>();
+    _auth = auth;
+    _life; // start listening
     final player = context.read<PlayerProvider>();
     player.setOnSettingChanged(auth.updatePlayerSetting);
     // Wire the listen-tracker so PlayTracker can fire `logListen` when a
@@ -297,12 +317,15 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     // the private notification channel once the user is authed.
     realtimeService = RealtimeService(apiBase: apiBase, auth: auth);
     realtimeService!.connect();
+    _notifTick = realtimeService!.notificationTick..addListener(_refreshMe);
     // Phone push: token registration + opening tapped notifications.
     PushService.instance.init(auth: auth, router: _router);
   }
 
   @override
   void dispose() {
+    _life.dispose();
+    _notifTick?.removeListener(_refreshMe);
     realtimeService?.dispose();
     realtimeService = null;
     super.dispose();

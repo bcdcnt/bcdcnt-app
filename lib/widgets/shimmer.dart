@@ -8,13 +8,16 @@ class Shimmer extends StatefulWidget {
   // AppColors.surfaceLight in build(). Default-value parameters must be
   // const, but AppColors fields are now mutable per the theme refactor.
   final Color? baseColor;
-  final Color highlightColor;
+  /// Sheen colour. Defaults to a tint derived from the active palette:
+  /// lighter than the base on both themes (the old fixed dark-brown sheen
+  /// read as a dirty smear on the light theme).
+  final Color? highlightColor;
   final Duration duration;
   const Shimmer({
     super.key,
     required this.child,
     this.baseColor,
-    this.highlightColor = const Color(0xFF302424),
+    this.highlightColor,
     this.duration = const Duration(milliseconds: 1400),
   });
 
@@ -38,7 +41,20 @@ class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Respect "Reduce motion": hold a static placeholder instead of sweeping.
+    final reduce = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    if (reduce && _ctl.isAnimating) {
+      _ctl.stop();
+    } else if (!reduce && !_ctl.isAnimating) {
+      _ctl.repeat();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return widget.child;
     return AnimatedBuilder(
       animation: _ctl,
       builder: (ctx, child) {
@@ -47,10 +63,12 @@ class _ShimmerState extends State<Shimmer> with SingleTickerProviderStateMixin {
           shaderCallback: (bounds) {
             final dx = bounds.width * 2 * _ctl.value - bounds.width;
             final base = widget.baseColor ?? AppColors.surfaceLight;
+            final highlight = widget.highlightColor ??
+                Color.lerp(base, Colors.white, AppColors.isLight ? 0.65 : 0.10)!;
             return LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [base, widget.highlightColor, base],
+              colors: [base, highlight, base],
               stops: const [0.35, 0.5, 0.65],
               transform: _SlideTransform(dx),
             ).createShader(bounds);

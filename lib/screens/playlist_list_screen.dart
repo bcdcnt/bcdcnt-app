@@ -1,9 +1,8 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -18,7 +17,6 @@ class PlaylistListScreen extends StatefulWidget {
 }
 
 class _PlaylistListScreenState extends State<PlaylistListScreen> {
-  static const _perPage = 20;
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   int _page = 1;
@@ -26,6 +24,9 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _failed = false;
+  bool _moreFailed = false;
+  int _reqId = 0;
 
   @override
   void initState() {
@@ -42,12 +43,16 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _moreFailed || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final req = ++_reqId;
+    setState(() {
+      if (page == 1) { _loading = true; _failed = false; } else { _loadingMore = true; }
+      _moreFailed = false;
+    });
     const q = r'''query($page: Int, $where: WhereConditions) {
       playlists(first: 20, page: $page, where: $where, orderBy: [{column: "id", order: DESC}]) {
         data { id slug title thumbnail { url } user { id username avatar { url } } items(first: 1) { paginatorInfo { total } } }
@@ -62,9 +67,14 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
       final raw = data['playlists'];
       final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != _reqId || !mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) {
+          _items = list;
+        } else {
+          final seen = _items.map((e) => e['id']?.toString()).toSet();
+          _items.addAll(list.where((e) => !seen.contains(e['id']?.toString())));
+        }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
@@ -72,7 +82,12 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
         _loadingMore = false;
       });
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+      if (req != _reqId || !mounted) return;
+      setState(() {
+        if (page == 1) { _failed = true; } else { _moreFailed = true; }
+        _loading = false;
+        _loadingMore = false;
+      });
     }
   }
 
@@ -119,7 +134,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Playlist', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                         const SizedBox(height: 4),
-                        Text(_total > 0 ? '${_formatInt(_total)} playlist' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                        Text(_total > 0 ? '${_formatInt(_total)} playlist' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                       ])),
                     ],
                   ),
@@ -129,8 +144,10 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
             ),
             if (_loading && _items.isEmpty)
               SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            else if (_failed && _items.isEmpty)
+              SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
             else if (_items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có playlist', style: body(TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có playlist', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -150,16 +167,16 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
                           ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted))),
                           const SizedBox(width: 12),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                            Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
                             const SizedBox(height: 4),
                             Row(children: [
                               if (pl['user']?['username'] != null) ...[
-                                Icon(Icons.person, size: 11, color: AppColors.textMuted),
+                                Icon(Icons.person, size: 14, color: AppColors.textMuted),
                                 const SizedBox(width: 3),
-                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                                Flexible(child: Text(pl['user']['username'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary)))),
                                 const SizedBox(width: 8),
                               ],
-                              Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                              Text('$total bài', style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
                             ]),
                           ])),
                           Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
@@ -172,6 +189,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> {
               ),
             SliverToBoxAdapter(child: Column(children: [
               if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+              if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ],

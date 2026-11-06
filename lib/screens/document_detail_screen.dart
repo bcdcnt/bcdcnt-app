@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -28,9 +29,11 @@ class DocumentDetailScreen extends StatefulWidget {
 class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   Map<String, dynamic>? _doc;
   List<Map<String, dynamic>> _related = [];
-  bool _loading = true;
+  bool _loading = true, _failed = false;
   VideoPlayerController? _videoCtl;
   ChewieController? _chewieCtl;
+  /// Video couldn't be opened in-app → show an "Mở video" button instead.
+  bool _videoFailed = false;
 
   static const _typeLabels = {'audio': 'Âm thanh', 'video': 'Video', 'image': 'Hình ảnh', 'news': 'Bài viết'};
   static const _typeIcons = {'audio': Icons.audiotrack, 'video': Icons.videocam_outlined, 'image': Icons.image_outlined, 'news': Icons.article_outlined};
@@ -46,6 +49,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   }
 
   Future<void> _fetch() async {
+    if (_failed) setState(() { _failed = false; _loading = true; });
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         document(id: $id) {
@@ -59,25 +63,64 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       if (!mounted) return;
       if (d != null) {
         final doc = Map<String, dynamic>.from(d as Map);
-        final videoUrl = doc['file']?['video_url'];
-        if (videoUrl != null) {
-          _videoCtl = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-          await _videoCtl!.initialize();
-          if (!mounted) return;
-          _chewieCtl = ChewieController(
-            videoPlayerController: _videoCtl!,
-            autoPlay: false,
-            looping: false,
-            aspectRatio: _videoCtl!.value.aspectRatio,
-          );
-        }
+        // Page first; the video loads on its own and can't block or
+        // "not found" the whole page if it fails.
         setState(() { _doc = doc; _loading = false; });
         logActivity(context.read<AuthProvider>(), 'view', 'document', doc['id']);
+        final videoUrl = doc['file']?['video_url'];
+        if (videoUrl is String && videoUrl.isNotEmpty) _initVideo(videoUrl);
         _fetchRelated(doc['type']?.toString());
       } else {
         setState(() => _loading = false);
       }
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
+  }
+
+  Future<void> _initVideo(String url) async {
+    final ctl = VideoPlayerController.networkUrl(Uri.parse(url));
+    try {
+      await ctl.initialize().timeout(const Duration(seconds: 20));
+    } catch (_) {
+      ctl.dispose();
+      if (mounted) setState(() => _videoFailed = true);
+      return;
+    }
+    if (!mounted) { ctl.dispose(); return; }
+    setState(() {
+      _videoCtl = ctl;
+      _chewieCtl = ChewieController(videoPlayerController: ctl, autoPlay: false, looping: false, aspectRatio: ctl.value.aspectRatio);
+    });
+  }
+
+  /// Full-screen pinch-to-zoom viewer for a picture in the document.
+  void _openImage(String url) {
+    Navigator.of(context, rootNavigator: true).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (ctx) => Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(children: [
+          Positioned.fill(child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Center(child: CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              placeholder: (_, _) => const Center(child: CircularProgressIndicator(color: Colors.white70)),
+              errorWidget: (_, _, _) => const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 56),
+            )),
+          )),
+          Positioned(
+            top: MediaQuery.paddingOf(ctx).top + 8, right: 12,
+            child: IconButton(
+              tooltip: 'Đóng',
+              style: IconButton.styleFrom(backgroundColor: Colors.black54, fixedSize: const Size(48, 48)),
+              icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ),
+        ]),
+      ),
+    ));
   }
 
   Future<void> _fetchRelated(String? type) async {
@@ -97,7 +140,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
   Future<void> _download() async {
     final auth = context.read<AuthProvider>();
     if (auth.token == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng đăng nhập để tải')));
+      askLogin(context);
       return;
     }
     try {
@@ -106,8 +149,8 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       }''', {'objectType': 'document', 'objectId': widget.id});
       final url = data['download']?['url'];
       if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể tải xuống')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e, fallback: 'Chưa tải về được, vui lòng thử lại.'))));
     }
   }
 
@@ -126,7 +169,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
       return Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-        body: Center(child: Text('Không tìm thấy tư liệu', style: AppText.bodyText)),
+        body: Center(child: SingleChildScrollView(child: _failed
+            ? OfflineBlock(onRetry: _fetch)
+            : const EmptyBlock(icon: Icons.folder_off_outlined, title: 'Không tìm thấy tư liệu', message: 'Tư liệu này không còn hoặc đã bị ẩn.'))),
       );
     }
     final d = _doc!;
@@ -151,9 +196,16 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
               if ((type == 'image' || type == 'news') && d['thumbnail']?['url'] != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: CachedNetworkImage(imageUrl: cdnImg((d['thumbnail']['url']).toString(), 960), fit: BoxFit.cover),
+                  child: Semantics(
+                    button: true,
+                    label: 'Phóng to ảnh',
+                    child: GestureDetector(
+                      onTap: () => _openImage(d['thumbnail']['url'].toString()),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: CachedNetworkImage(imageUrl: cdnImg((d['thumbnail']['url']).toString(), 960), fit: BoxFit.cover),
+                      ),
+                    ),
                   ),
                 ),
 
@@ -169,6 +221,25 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 ),
 
               // Video
+              if (type == 'video' && d['file']?['video_url'] != null && _videoFailed)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: () => launchUrl(Uri.parse(d['file']['video_url'].toString()), mode: LaunchMode.externalApplication),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+                    icon: const Icon(Icons.play_circle_outline),
+                    label: Text('Mở video', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                  ),
+                )
+              else if (type == 'video' && d['file']?['video_url'] != null && _chewieCtl == null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: AspectRatio(aspectRatio: 16 / 9, child: Container(
+                    decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(14)),
+                    alignment: Alignment.center,
+                    child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
+                  )),
+                ),
               if (type == 'video' && _chewieCtl != null)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
@@ -190,13 +261,13 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(10)),
-                  child: Text(typeLabel, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accent))),
+                  child: Text(typeLabel, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accent))),
                 ),
-                Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                 if (d['uploader']?['username'] != null)
                   InkWell(
                     onTap: () => context.push('/user/${d['uploader']['id']}'),
-                    child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 12, color: AppColors.accentLight))),
+                    child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
                   ),
               ]),
               const SizedBox(height: 16),
@@ -208,25 +279,33 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 child: Row(children: [
                   Expanded(child: Wrap(spacing: 16, runSpacing: 4, children: [
                     Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.visibility_outlined, size: 14, color: AppColors.textSecondary),
+                      Icon(Icons.visibility_outlined, size: 16, color: AppColors.textSecondary),
                       const SizedBox(width: 6),
-                      Text('${_formatInt(d['views'] is num ? (d['views'] as num).toInt() : 0)} lượt xem', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                      Text('${_formatInt(d['views'] is num ? (d['views'] as num).toInt() : 0)} lượt xem', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                     ]),
                     if ((d['downloads'] ?? 0) > 0)
                       Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.download_outlined, size: 14, color: AppColors.textSecondary),
+                        Icon(Icons.download_outlined, size: 16, color: AppColors.textSecondary),
                         const SizedBox(width: 6),
-                        Text('${_formatInt(d['downloads'] is num ? (d['downloads'] as num).toInt() : 0)} lượt tải', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary))),
+                        Text('${_formatInt(d['downloads'] is num ? (d['downloads'] as num).toInt() : 0)} lượt tải', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                       ]),
                   ])),
                   if (hasFile || (type == 'image' && d['thumbnail']?['url'] != null))
-                    InkWell(
-                      onTap: _download,
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        width: 36, height: 36,
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
-                        child: Icon(Icons.download, size: 18, color: AppColors.textSecondary),
+                    Semantics(
+                      button: true,
+                      label: 'Tải về tư liệu',
+                      excludeSemantics: true,
+                      child: TextButton.icon(
+                        onPressed: _download,
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          backgroundColor: AppColors.surfaceLight,
+                          foregroundColor: AppColors.text,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        icon: const Icon(Icons.download_rounded, size: 20),
+                        label: Text('Tải về', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700))),
                       ),
                     ),
                 ]),
@@ -238,7 +317,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Html(
                   data: d['content'],
                   style: {
-                    'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(14), lineHeight: const LineHeight(1.8), color: AppColors.textSecondary, fontFamily: body().fontFamily),
+                    'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(16), lineHeight: const LineHeight(1.75), color: AppColors.text, fontFamily: body().fontFamily),
                     'h1, h2, h3': Style(color: AppColors.text, fontFamily: display().fontFamily),
                     'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
                     'p': Style(margin: Margins.only(bottom: 10)),
@@ -248,15 +327,21 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                   onLinkTap: (url, _, __) {
                     if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                   },
+                  // Old scans/photos are small on a phone: tap to zoom.
+                  extensions: [
+                    OnImageTapExtension(onImageTap: (src, _, _) {
+                      if (src != null && src.startsWith('http')) _openImage(src);
+                    }),
+                  ],
                 ),
 
               // Related documents
               if (_related.isNotEmpty) ...[
                 const SizedBox(height: 24),
                 Row(children: [
-                  Icon(_typeIcons[type] ?? Icons.folder_outlined, size: 14, color: AppColors.textSecondary),
+                  Icon(_typeIcons[type] ?? Icons.folder_outlined, size: 18, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text('Tư liệu khác', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Text('Tư liệu khác', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ]),
                 const SizedBox(height: 10),
                 ..._related.map((r) => InkWell(
@@ -275,9 +360,9 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
+                        Text(r['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
                         const SizedBox(height: 4),
-                        Text(timeago(r['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                        Text(timeago(r['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                       ])),
                     ]),
                   ),

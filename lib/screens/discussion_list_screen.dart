@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
+import '../main.dart' show TabReselect;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -20,12 +21,28 @@ class DiscussionListScreen extends StatefulWidget {
 
 class _DiscussionListScreenState extends State<DiscussionListScreen> {
   List<Map<String, dynamic>> _forums = [];
-  bool _loading = true;
+  bool _loading = true, _failed = false;
+  final _scrollCtl = ScrollController();
 
   @override
-  void initState() { super.initState(); _fetch(); }
+  void initState() {
+    super.initState();
+    if (widget.embedded) TabReselect.tick.addListener(_onReselect);
+    _fetch();
+  }
+
+  @override
+  void dispose() { TabReselect.tick.removeListener(_onReselect); _scrollCtl.dispose(); super.dispose(); }
+
+  /// Cộng đồng tab tapped again while this pane is on screen → back to top.
+  void _onReselect() {
+    if (TabReselect.tick.value.$1 != 2 || !_scrollCtl.hasClients) return;
+    if (!TickerMode.valuesOf(context).enabled) return;
+    _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+  }
 
   Future<void> _fetch() async {
+    if (_failed) setState(() { _failed = false; _loading = true; });
     try {
       final data = await ApiClient.query(r'''query {
         forums(first: 100, where: {AND: [{column: "parent_id", value: null}]}, orderBy: [{column: "position", order: ASC}]) {
@@ -47,8 +64,9 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       setState(() {
         _forums = ((data['forums']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
+        _failed = false;
       });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
   }
 
   @override
@@ -57,19 +75,24 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(slivers: [
+        RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: _fetch,
+          child: CustomScrollView(controller: _scrollCtl, physics: const AlwaysScrollableScrollPhysics(), slivers: [
           if (!widget.embedded)
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg,
               title: const Text('Thảo luận'),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
+              leading: IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
             ),
           if (_loading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_failed && _forums.isEmpty)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: _fetch))
           else if (_forums.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có diễn đàn nào', style: AppText.bodyText)))
+            const SliverToBoxAdapter(child: EmptyBlock(icon: Icons.forum_outlined, title: 'Chưa có diễn đàn'))
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -98,7 +121,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               ])),
             ),
           SliverToBoxAdapter(child: SizedBox(height: player.currentSong != null ? 90 : 20)),
-        ]),
+        ])),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
@@ -111,14 +134,14 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
+          child: Text((parent['title'] ?? '').toString().toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),
         ),
         if (children.isEmpty)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
             alignment: Alignment.center,
-            child: Text('Chưa có box nào', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            child: Text('Chưa có chuyên mục', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted))),
           )
         else
           _ForumChildrenLayout(children: children, buildBox: _forumBox),
@@ -141,23 +164,23 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
             decoration: BoxDecoration(color: AppColors.surfaceLight, border: Border(bottom: BorderSide(color: AppColors.border))),
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(forum['title'] ?? '', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                Text(forum['title'] ?? '', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text))),
                 if ((forum['content'] ?? '').toString().isNotEmpty)
-                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                  Padding(padding: const EdgeInsets.only(top: 2), child: Text(forum['content'], style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)))),
               ])),
               if (total > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)),
-                  child: Text('$total chủ đề', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                  child: Text('$total chủ đề', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                 ),
               const SizedBox(width: 6),
-              Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+              Icon(Icons.chevron_right, size: 20, color: AppColors.textMuted),
             ]),
           ),
         ),
         if (discussions.isEmpty)
-          Padding(padding: const EdgeInsets.all(20), child: Center(child: Text('Chưa có chủ đề nào', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))))
+          Padding(padding: const EdgeInsets.all(20), child: Center(child: Text('Chưa có chủ đề nào', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))))
         else ...[
           ...discussions.map(_discussionRow),
           if (total > 5)
@@ -165,10 +188,11 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               onTap: () => context.push('/dien-dan/${forum['id']}'),
               child: Container(
                 width: double.infinity,
+                constraints: const BoxConstraints(minHeight: 48),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
                 alignment: Alignment.center,
-                child: Text('Xem tất cả $total chủ đề →', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+                child: Text('Xem tất cả $total chủ đề', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
               ),
             ),
         ],
@@ -181,11 +205,11 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
     return InkWell(
       onTap: () => context.push('/thao-luan/${d['id']}'),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
-            width: 32, height: 32, margin: const EdgeInsets.only(top: 2),
+            width: 36, height: 36, margin: const EdgeInsets.only(top: 2),
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
               child: author?['avatar']?['url'] != null
@@ -195,24 +219,24 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
           ),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(d['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
+            Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
             const SizedBox(height: 4),
             Wrap(spacing: 8, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
-              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
+              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
             ]),
           ])),
           const SizedBox(width: 8),
           if ((d['comment_count'] ?? 0) > 0) ...[
-            Icon(Icons.chat_bubble_outline, size: 12, color: AppColors.textMuted),
+            Icon(Icons.chat_bubble_outline, size: 14, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['comment_count']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            Text('${d['comment_count']}', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
             const SizedBox(width: 8),
           ],
           if ((d['views'] ?? 0) > 0) ...[
-            Icon(Icons.visibility_outlined, size: 12, color: AppColors.textMuted),
+            Icon(Icons.visibility_outlined, size: 14, color: AppColors.textMuted),
             const SizedBox(width: 3),
-            Text('${d['views']}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            Text(formatViews(d['views'] is num ? (d['views'] as num).toInt() : null), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
           ],
         ]),
       ),

@@ -29,6 +29,10 @@ String songKind(Map? song, [String fallback = 'song']) {
   return _typenameKinds[song?['__typename']?.toString()] ?? fallback;
 }
 
+/// Same song = same id *and* same table: song 12 and folk 12 are different.
+bool sameSong(Map? a, Map? b) =>
+    a != null && b != null && a['id']?.toString() == b['id']?.toString() && songKind(a) == songKind(b);
+
 class PlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   Map<String, dynamic>? _currentSong;
@@ -254,13 +258,32 @@ class PlayerProvider extends ChangeNotifier {
       await _player.play();
       return;
     }
-    if (_queue.isEmpty) return;
-    final next = _currentIndex + 1;
-    if (next < _queue.length) {
-      await playAtIndex(next, source: 'queue');
-    } else if (_repeat == PlayerRepeatMode.all) {
-      await playAtIndex(0, source: 'queue');
+    final next = _nextIndex();
+    if (next != null) await playAtIndex(next, source: 'queue');
+  }
+
+  /// Index the queue advances to (respecting shuffle / repeat-all), or null
+  /// at the end of a non-repeating queue. Shared by auto-advance and the
+  /// Next button so they never disagree.
+  int? _nextIndex() {
+    if (_queue.isEmpty) return null;
+    if (_shuffle) {
+      if (_queue.length <= 1) return null;
+      final rand = Random();
+      int next;
+      do { next = rand.nextInt(_queue.length); } while (next == _currentIndex);
+      return next;
     }
+    final next = _currentIndex + 1;
+    if (next < _queue.length) return next;
+    return _repeat == PlayerRepeatMode.all ? 0 : null;
+  }
+
+  /// Whether Next has somewhere to go (end of queue + repeat-all wraps).
+  bool get hasNext {
+    if (_queue.isEmpty) return false;
+    if (_shuffle) return _queue.length > 1;
+    return _currentIndex < _queue.length - 1 || _repeat == PlayerRepeatMode.all;
   }
 
   /// Start a fixed-duration sleep timer. Cancels any previous timer first.
@@ -307,7 +330,11 @@ class PlayerProvider extends ChangeNotifier {
     _lastGoodPosition = Duration.zero;
     if (list != null) {
       _queue = list;
-      _currentIndex = list.indexWhere((s) => s['id'].toString() == song['id'].toString());
+      // A refill callback belongs to the queue that registered it (e.g. a
+      // song page's suggestions); a new list must not inherit it. Callers
+      // that want one set it again right after this call.
+      _fetchMore = null;
+      _currentIndex = list.indexWhere((s) => sameSong(s, song));
       if (_currentIndex < 0) _currentIndex = 0;
       // Refresh the label only when a fresh queue is supplied — calls
       // that inherit the existing queue (next/prev advance, reorder)
@@ -374,7 +401,7 @@ class PlayerProvider extends ChangeNotifier {
   void setQueue(List<Map<String, dynamic>> list, {int startIndex = 0}) {
     _queue = list;
     if (_currentSong != null) {
-      final idx = list.indexWhere((s) => s['id'].toString() == _currentSong!['id'].toString());
+      final idx = list.indexWhere((s) => sameSong(s, _currentSong));
       _currentIndex = idx >= 0 ? idx : startIndex.clamp(0, list.isEmpty ? 0 : list.length - 1);
     } else {
       _currentIndex = startIndex.clamp(0, list.isEmpty ? 0 : list.length - 1);
@@ -406,9 +433,9 @@ class PlayerProvider extends ChangeNotifier {
         // No more songs available; drop the callback so we stop trying.
         _fetchMore = null;
       } else {
-        // Deduplicate by id against current queue
-        final ids = _queue.map((s) => s['id'].toString()).toSet();
-        final filtered = more.where((s) => !ids.contains(s['id'].toString())).toList();
+        // Deduplicate by id + kind against current queue
+        final keys = _queue.map((s) => '${songKind(s)}-${s['id']}').toSet();
+        final filtered = more.where((s) => !keys.contains('${songKind(s)}-${s['id']}')).toList();
         if (filtered.isEmpty) {
           _fetchMore = null;
         } else {
@@ -421,6 +448,20 @@ class PlayerProvider extends ChangeNotifier {
     } finally {
       _isFetchingMore = false;
     }
+  }
+
+  /// Stop playback and close the mini player ("Dừng phát").
+  Future<void> stop() async {
+    _tracker?.endSession(reason: 'skip');
+    _loadGen++;
+    _stallTimer?.cancel();
+    _currentSong = null;
+    _queue = [];
+    _currentIndex = 0;
+    _fetchMore = null;
+    _sourceLabel = null;
+    notifyListeners();
+    await _player.stop();
   }
 
   /// Pause if playing (e.g. a voice/audio clip in a comment starts).
@@ -437,24 +478,16 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> playNext() async {
-    if (_queue.isEmpty) return;
-    int next;
-    if (_shuffle) {
-      if (_queue.length <= 1) return;
-      final rand = Random();
-      do { next = rand.nextInt(_queue.length); } while (next == _currentIndex);
-    } else {
-      next = _currentIndex + 1;
-      if (next >= _queue.length) {
-        if (_repeat == PlayerRepeatMode.all) next = 0;
-        else return;
-      }
-    }
-    await playAtIndex(next);
+    final next = _nextIndex();
+    if (next != null) await playAtIndex(next);
   }
 
   Future<void> playPrev() async {
-    if (_queue.isEmpty) return;
+    // Like every music app: a few seconds in, "Previous" restarts the song.
+    if (_position > const Duration(seconds: 3) || _queue.isEmpty) {
+      await _player.seek(Duration.zero);
+      return;
+    }
     final prev = _currentIndex - 1;
     if (prev >= 0) {
       await playAtIndex(prev);
@@ -498,11 +531,11 @@ class PlayerProvider extends ChangeNotifier {
     // Remember the active song id so we can restore the index after the
     // structural shift — playback isn't interrupted because the underlying
     // AudioPlayer keeps its current source.
-    final activeId = _currentSong?['id']?.toString();
+    final active = _currentSong;
     final item = _queue.removeAt(oldIndex);
     _queue.insert(target, item);
-    if (activeId != null) {
-      final newCur = _queue.indexWhere((s) => s['id'].toString() == activeId);
+    if (active != null) {
+      final newCur = _queue.indexWhere((s) => sameSong(s, active));
       if (newCur >= 0) _currentIndex = newCur;
     }
     notifyListeners();
@@ -567,6 +600,17 @@ class PlayerProvider extends ChangeNotifier {
     _volume = v.clamp(0.0, 1.0);
     _muted = _volume == 0;
     await _player.setVolume(_muted ? 0 : _volume);
+    notifyListeners();
+  }
+
+  /// Phones have hardware volume keys and no mute button in the player, so
+  /// a mute left over from an older build would mean silent playback with
+  /// no way to undo it.
+  Future<void> ensureUnmuted() async {
+    if (!_muted && _volume > 0) return;
+    _muted = false;
+    if (_volume <= 0) _volume = 1.0;
+    await _player.setVolume(_volume);
     notifyListeners();
   }
 

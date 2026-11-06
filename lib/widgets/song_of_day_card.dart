@@ -5,7 +5,7 @@ import 'share_card.dart';
 import 'package:go_router/go_router.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
-import 'auth_dialogs.dart';
+import '../services/friendly_error.dart' show askLogin;
 import 'song_row.dart' show SongCover, playOrOpen, songByline;
 import 'ui.dart';
 
@@ -32,6 +32,9 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
   String? _sending;
   String? _forUser;
   bool _guestVote = false;
+  // No song today, or offline: the card takes no space instead of showing
+  // a skeleton that never resolves.
+  bool _gone = false;
 
   // Guest answers live only for this app session: on a shared family
   // tablet the next person to sign in must not "answer" for the last one.
@@ -59,12 +62,17 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
       final d = auth.isAuthenticated ? await auth.authedQuery(_query, null) : await ApiClient.query(_query);
       final s = d['songOfTheDay'];
       // An older response (e.g. the guest one) must not overwrite a newer one.
-      if (!mounted || seq != _loadSeq || s is! Map || s['song'] == null) return;
+      if (!mounted || seq != _loadSeq) return;
+      if (s is! Map || s['song'] == null) {
+        if (_data == null) setState(() => _gone = true);
+        return;
+      }
       final pid = '${s['poll']?['id'] ?? ''}';
       final local = pid.isEmpty ? null : _sessionVotes[pid];
       final server = {for (final id in (s['my_option_ids'] as List? ?? const [])) '$id'};
       setState(() {
         _data = Map<String, dynamic>.from(s);
+        _gone = false;
         _mine = server.isNotEmpty ? server : (local != null ? {local} : {});
         _guestVote = server.isEmpty && local != null && !auth.isAuthenticated;
       });
@@ -72,7 +80,10 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
       if (auth.isAuthenticated && server.isEmpty && local != null) {
         _answer(local, fromGuest: pid);
       }
-    } catch (_) {}
+    } catch (_) {
+      // Keep a card already shown (e.g. reload after login failed).
+      if (mounted && seq == _loadSeq && _data == null) setState(() => _gone = true);
+    }
   }
 
   Future<void> _answer(String optionId, {String? fromGuest}) async {
@@ -118,6 +129,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
   @override
   Widget build(BuildContext context) {
     final d = _data;
+    if (d == null && _gone) return const SizedBox.shrink();
     // Hold the space while loading so the page doesn't jump down later.
     if (d == null) return const Skeleton(height: 300, radius: 22, margin: EdgeInsets.fromLTRB(20, 20, 20, 0));
     final song = <String, dynamic>{...Map<String, dynamic>.from(d['song'] as Map), 'file_type': 'song'};
@@ -133,7 +145,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('BÀI HÁT CỦA NGÀY', style: body(TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          Text('BÀI HÁT CỦA NGÀY', style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
           if (lead != null && lead.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(lead, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
@@ -178,11 +190,17 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
                     child: InkWell(
                       customBorder: const StadiumBorder(),
                       onTap: () => _answer('${o['id']}'),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        child: _sending == '${o['id']}'
-                            ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
-                            : Text('${o['name']}', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                      // 48pt tall: an easy target for an unsteady finger.
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                            _sending == '${o['id']}'
+                                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
+                                : Text('${o['name']}', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+                          ]),
+                        ),
                       ),
                     ),
                   ),
@@ -190,7 +208,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
             else ...[
               for (final o in options) _ResultBar(name: '${o['name']}', percent: ((o['percent'] as num?) ?? 0).toDouble(), mine: _mine.contains('${o['id']}')),
               const SizedBox(height: 4),
-              Text(_guestVote ? 'Cảm ơn bạn! Đăng nhập để câu trả lời được tính.' : '$total người đã trả lời · Cảm ơn bạn!', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              Text(_guestVote ? 'Cảm ơn bạn! Đăng nhập để câu trả lời được tính.' : '$total người đã trả lời · Cảm ơn bạn!', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
               const SizedBox(height: 12),
               // Voting is the warm-up: next, tell the memory or pass the song on.
               Row(children: [
@@ -200,7 +218,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
                     icon: _guestVote ? Icons.login_rounded : Icons.edit_note_rounded,
                     height: 46,
                     onTap: _guestVote
-                        ? () => showDialog(context: context, builder: (_) => const LoginDialog())
+                        ? () => askLogin(context)
                         : () => context.push('/song/${song['id']}?binh-luan=1', extra: song),
                   ),
                 ),

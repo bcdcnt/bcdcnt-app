@@ -19,7 +19,11 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>vi</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>vi</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>BCĐCNT</string>
 	<key>CFBundleExecutable</key>
@@ -29,7 +33,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>bcdcnt_flutter</string>
+	<string>BCĐCNT</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

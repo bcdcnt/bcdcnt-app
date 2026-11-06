@@ -14,6 +14,7 @@ import '../widgets/synced_video.dart';
 import '../services/offline_store.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -56,6 +57,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// [_sheetImages] — empty string means "no credit available".
   List<String?> _sheetCaptions = [];
   bool _isLoved = false;
+  // Real number of likes (paginatorInfo.total): the list itself stops at 100.
+  int _loveTotal = 0;
+  bool _loveBusy = false;
   bool _loading = true;
   // Drives the sticky-title appbar — flips to true once the user has
   // scrolled past the hero so the appbar can swap "CHI TIẾT" for the
@@ -139,7 +143,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             melodies(first: 10) { data { id slug title } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
-            loves(first: 100) { data { user_id user { id username avatar { url } } } }
+            loves(first: 100) { data { user_id user { id username avatar { url } } } paginatorInfo { total } }
           } }''';
           break;
         case 'instrumental':
@@ -156,7 +160,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             composers(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
-            loves(first: 100) { data { user_id user { id username avatar { url } } } }
+            loves(first: 100) { data { user_id user { id username avatar { url } } } paginatorInfo { total } }
           } }''';
           break;
         case 'poem':
@@ -172,7 +176,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             poets(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
-            loves(first: 100) { data { user_id user { id username avatar { url } } } }
+            loves(first: 100) { data { user_id user { id username avatar { url } } } paginatorInfo { total } }
           } }''';
           break;
         case 'karaoke':
@@ -187,7 +191,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             song { id slug title }
             users(first: 100) { data { id username avatar { url } } }
-            loves(first: 100) { data { user_id user { id username avatar { url } } } }
+            loves(first: 100) { data { user_id user { id username avatar { url } } } paginatorInfo { total } }
           } }''';
           break;
         default:
@@ -202,7 +206,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             artists(first: 100) { data { id title slug avatar { url } } }
-            loves(first: 100) { data { user_id user { id username avatar { url } } } }
+            loves(first: 100) { data { user_id user { id username avatar { url } } } paginatorInfo { total } }
           } }''';
     }
     return (query, dataKey);
@@ -221,6 +225,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final data = fresh
           ? await context.read<AuthProvider>().authedQuery(pair.$1, {'id': widget.songId})
           : await ApiClient.query(pair.$1, {'id': widget.songId});
+      if (!mounted) return;
       final raw = data[pair.$2];
       Map<String, dynamic>? s = raw == null ? null : Map<String, dynamic>.from(raw as Map);
       if (s != null) {
@@ -260,12 +265,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             if (ctx != null && ctx.mounted) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 600), curve: Curves.easeOutCubic);
           });
         }
+        final loveList = loves as List;
+        final loveTotal = ((s['loves']?['paginatorInfo']?['total'] ?? loveList.length) as num).toInt();
+        final lovedInList = userId != null && loveList.any((l) => l['user_id'].toString() == userId.toString());
         setState(() {
           _song = normalized;
-          if (userId != null) {
-            _isLoved = (loves as List).any((l) => l['user_id'].toString() == userId.toString());
-          }
+          _loveTotal = loveTotal;
+          if (userId != null) _isLoved = lovedInList;
         });
+        // The list holds only the first 100 likes: past that, ask directly
+        // whether this listener is one of them.
+        if (userId != null && !lovedInList && loveTotal > loveList.length) _fetchMyLove(type, userId);
 
         final sheetId = sheet['id'];
         if (sheetId != null) {
@@ -276,9 +286,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         // These lists append, so a CTV reload (fresh) leaves them as they are.
         if (!fresh) {
           if (_plainEmpty(normalized['description']) && _plainEmpty(sheet['description'])) _fetchMemberStory(type);
-          final artists = (normalized['artists']?['data'] ?? []) as List;
-          for (final a in artists) {
-            if (a['id'] != null) _fetchArtistSongs(a['id']);
+          // Karaoke "artists" are members (user ids), not artists: looking
+          // them up with artistByID would show some other artist's songs.
+          if (type != 'karaoke') {
+            final artists = (normalized['artists']?['data'] ?? []) as List;
+            for (final a in artists) {
+              if (a['id'] != null) _fetchArtistSongs(a['id']);
+            }
           }
 
           final composers = (sheet['composers']?['data'] ?? []) as List;
@@ -286,7 +300,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             _fetchComposerSongs(c['id']);
           }
 
-          _fetchLyricEditors();
+          _fetchLyricEditors(type);
         }
       }
       if (!fresh) _fetchSuggestions();
@@ -382,7 +396,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         for (final s in (sheet['songs']?['data'] ?? []) as List) {
           final m = Map<String, dynamic>.from(s);
           m['file_type'] = 'song';
-          if (m['id'].toString() != widget.songId) allSongs.add(m);
+          if (!_isThisSong(m)) allSongs.add(m);
         }
         for (final s in (sheet['karaokes']?['data'] ?? []) as List) {
           final m = Map<String, dynamic>.from(s);
@@ -400,14 +414,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               }).toList(),
             };
           }
-          if (m['id'].toString() != widget.songId) allSongs.add(m);
+          if (!_isThisSong(m)) allSongs.add(m);
         }
         for (final s in (sheet['instrumentals']?['data'] ?? []) as List) {
           final m = Map<String, dynamic>.from(s);
           m['file_type'] = 'instrumental';
-          if (m['id'].toString() != widget.songId) allSongs.add(m);
+          if (!_isThisSong(m)) allSongs.add(m);
         }
-        setState(() => _sameSheet = allSongs);
+        if (mounted) setState(() => _sameSheet = allSongs);
       }
     } catch (_) {}
   }
@@ -419,7 +433,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         {'id': artistId.toString()},
       );
       final songs = ((data['artistByID']?['songs']?['data'] ?? []) as List).where((x) => x['id'].toString() != widget.songId).toList();
-      if (songs.isNotEmpty) setState(() {
+      if (songs.isNotEmpty && mounted) setState(() {
         _artistSongs = [..._artistSongs, {'artistId': artistId, 'songs': songs}];
       });
     } catch (_) {}
@@ -432,17 +446,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         {'id': composerId.toString()},
       );
       final songs = ((data['composerByID']?['songs']?['data'] ?? []) as List).where((x) => x['id'].toString() != widget.songId).toList();
-      if (songs.isNotEmpty) setState(() {
+      if (songs.isNotEmpty && mounted) setState(() {
         _composerSongs = [..._composerSongs, {'composerId': composerId, 'songs': songs}];
       });
     } catch (_) {}
   }
 
-  Future<void> _fetchLyricEditors() async {
+  Future<void> _fetchLyricEditors(String type) async {
     try {
       final data = await ApiClient.query(
         r'''query($where: WhereConditions) { activities(first: 20, orderBy: [{column: "id", order: DESC}], where: $where) { edges { node { user { id username avatar { url } } } } } }''',
-        {'where': {'AND': [{'column': 'action', 'value': 'update_lyric'}, {'column': 'object_type', 'value': 'song'}, {'column': 'object_id', 'value': widget.songId}]}},
+        {'where': {'AND': [{'column': 'action', 'value': 'update_lyric'}, {'column': 'object_type', 'value': type}, {'column': 'object_id', 'value': widget.songId}]}},
       );
       final edges = (data['activities']?['edges'] ?? []) as List;
       final editors = <Map<String, dynamic>>[];
@@ -454,7 +468,20 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           editors.add(Map<String, dynamic>.from(u));
         }
       }
-      setState(() => _lyricEditors = editors);
+      if (mounted) setState(() => _lyricEditors = editors);
+    } catch (_) {}
+  }
+
+  Future<void> _fetchMyLove(String type, dynamic userId) async {
+    final uid = int.tryParse(userId.toString());
+    if (uid == null) return;
+    try {
+      final d = await ApiClient.query(
+        'query(\$id: ID!) { $type(id: \$id) { loves(first: 1, where: {column: "user_id", value: $uid}) { paginatorInfo { total } } } }',
+        {'id': widget.songId},
+      );
+      final n = ((d[type]?['loves']?['paginatorInfo']?['total'] ?? 0) as num).toInt();
+      if (mounted && n > 0 && !_loveBusy) setState(() => _isLoved = true);
     } catch (_) {}
   }
 
@@ -578,11 +605,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final memory = _memberStory?['plain']?.toString();
     final hook = firstLyricLine(_song!['content']) ??
         (memory == null ? null : (memory.length > 140 ? '${memory.substring(0, 138)}…' : memory));
-    await showSongShareSheet(context, _song!, hook: hook);
+    await showSongShareSheet(context, _song!, hook: hook, kind: _resolvedType);
   }
 
   void _showLoversSheet(List loves) {
     if (loves.isEmpty) return;
+    final total = _loveTotal > loves.length ? _loveTotal : loves.length;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -599,7 +627,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               child: Row(children: [
                 Icon(Icons.favorite, size: 18, color: AppColors.accentLight),
                 const SizedBox(width: 8),
-                Expanded(child: Text('${loves.length} người yêu thích', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                Expanded(child: Text('$total người yêu thích', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
                 IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.of(ctx).pop()),
               ]),
             ),
@@ -630,7 +658,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(child: Text(username, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text)))),
+                        Expanded(child: Text(username, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text)))),
                         Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
                       ]),
                     ),
@@ -681,7 +709,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bạn đã tải quá nhiều, thử lại sau'), backgroundColor: AppColors.error));
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải: $e'), backgroundColor: AppColors.error));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Chưa tải về được. ${friendlyError(e)}'), backgroundColor: AppColors.error));
     }
   }
 
@@ -736,25 +764,30 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     );
   }
 
+  void _applyLove(bool liked, Map? user) {
+    _isLoved = liked;
+    _loveTotal = (_loveTotal + (liked ? 1 : -1)).clamp(0, 1 << 30);
+    final loves = ((_song?['loves']?['data'] ?? []) as List).toList();
+    if (user != null) {
+      loves.removeWhere((l) => l['user_id'].toString() == user['id'].toString());
+      if (liked) loves.insert(0, {'user_id': user['id'], 'user': user});
+    }
+    _song?['loves'] = {'data': loves, 'paginatorInfo': {'total': _loveTotal}};
+  }
+
   Future<void> _toggleLove() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng đăng nhập để yêu thích'), backgroundColor: AppColors.error));
+      await askLogin(context);
       return;
     }
+    // A second tap while the first is still on its way would race it.
+    if (_loveBusy) return;
+    _loveBusy = true;
     final newLiked = !_isLoved;
     final user = auth.user;
     // Optimistic update
-    setState(() {
-      _isLoved = newLiked;
-      final loves = ((_song?['loves']?['data'] ?? []) as List).toList();
-      if (newLiked && user != null) {
-        loves.insert(0, {'user_id': user['id'], 'user': user});
-      } else if (user != null) {
-        loves.removeWhere((l) => l['user_id'].toString() == user['id'].toString());
-      }
-      _song?['loves'] = {'data': loves};
-    });
+    setState(() => _applyLove(newLiked, user));
     try {
       await auth.authedMutate(
         newLiked
@@ -763,18 +796,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             : 'mutation(\$id: ID!) { unlove(lovable_id: \$id, lovable_type: "$_resolvedType") { id } }',
         {'id': widget.songId},
       );
-    } catch (_) {
-      // Rollback
-      setState(() {
-        _isLoved = !newLiked;
-        final loves = ((_song?['loves']?['data'] ?? []) as List).toList();
-        if (newLiked && user != null) {
-          loves.removeWhere((l) => l['user_id'].toString() == user['id'].toString());
-        } else if (user != null) {
-          loves.insert(0, {'user_id': user['id'], 'user': user});
-        }
-        _song?['loves'] = {'data': loves};
-      });
+    } catch (e) {
+      // Rollback, and say so: a heart that silently un-fills looks broken.
+      if (mounted) {
+        setState(() => _applyLove(!newLiked, user));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${newLiked ? 'Chưa yêu thích được' : 'Chưa bỏ yêu thích được'}. ${friendlyError(e)}'),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      _loveBusy = false;
     }
   }
 
@@ -828,7 +860,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final noMedia = emptyFile || ((song['file']?['audio_url'] ?? song['audioUrl']) == null && song['file']?['video_url'] == null);
     final player = context.watch<PlayerProvider>();
     final isCurrent = _isThisSong(player.currentSong);
-    final isVideo = player.currentSong?['play_type'] == 'video';
     final w = MediaQuery.of(context).size.width;
     final hasPlayer = player.currentSong != null;
     final isDesktop = w >= 900;
@@ -909,7 +940,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: RichText(
         textScaler: MediaQuery.textScalerOf(context),
             text: TextSpan(
-              style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.6)),
+              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.6)),
               children: segs,
             ),
           ),
@@ -945,14 +976,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               baseline: TextBaseline.alphabetic,
               child: GestureDetector(
                 onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
-                child: Text(song['song']['title'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Text(song['song']['title'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.accentLight, decoration: TextDecoration.underline, decorationColor: AppColors.accent, decorationStyle: TextDecorationStyle.dotted))),
+                ),
               ),
             ),
           ],
         ),
     ];
-    final mobileTags = tags.isEmpty ? null : BleedRow(height: 20 + MediaQuery.textScalerOf(context).scale(18), builder: (pad) => SizedBox(
-      height: 20 + MediaQuery.textScalerOf(context).scale(18),
+    final tagRowH = (28 + MediaQuery.textScalerOf(context).scale(18)).clamp(48.0, 120.0);
+    final mobileTags = tags.isEmpty ? null : BleedRow(height: tagRowH, builder: (pad) => SizedBox(
+      height: tagRowH,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: pad,
@@ -986,7 +1022,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       if (mel.isNotEmpty) desktopCredits.add(_webCreditLine('Làn điệu', _creditLinkRow(mel, 'title', (m) => context.push('/lan-dieu/${m['slug']}'))));
     }
     if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem')) {
-      final poetLabel = (lyricType != null && (lyricType as String).trim().isNotEmpty) ? (lyricType as String).trim().replaceAll(RegExp(r':\s*$'), '') : 'Thơ';
+      final poetLabel = (lyricType != null && (lyricType as String).trim().isNotEmpty) ? lyricType.trim().replaceAll(RegExp(r':\s*$'), '') : 'Thơ';
       desktopCredits.add(_webCreditLine(poetLabel, _creditLinkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}'))));
     }
     if (artists.isNotEmpty) {
@@ -1013,9 +1049,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final uploadDate = song['created_at'] != null ? _formatDate(song['created_at']) : null;
     final tagsWidget = tags.isEmpty ? null : Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Wrap(spacing: 14, runSpacing: 4, children: tags.map<Widget>((t) => InkWell(
+      child: Wrap(spacing: 10, runSpacing: 0, children: tags.map<Widget>((t) => InkWell(
         onTap: () => context.push('/tag/${t['slug']}'),
-        child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 40),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+          child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+        ),
       )).toList()),
     );
 
@@ -1039,7 +1080,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           children: [
                             Text(song['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
                             if (artists.isNotEmpty) Text(
-                              (artists as List).map((a) => a['title'] ?? a['username'] ?? '').join(', '),
+                              artists.map((a) => a['title'] ?? a['username'] ?? '').join(', '),
                               maxLines: 1, overflow: TextOverflow.ellipsis,
                               style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)),
                             ),
@@ -1077,7 +1118,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         artists: artists,
                         resolvedType: _resolvedType,
                         isLoved: _isLoved,
-                        loveCount: loves.length,
+                        loveCount: _loveTotal,
                         loves: loves,
                         hasUploads: uploads.isNotEmpty,
                         isCurrent: isCurrent,
@@ -1193,7 +1234,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ]),
                       const SizedBox(height: 16),
                       Row(children: [
-                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
+                        // Tap = like; long-press = who liked it.
+                        Expanded(child: Semantics(
+                          onLongPressHint: loves.isNotEmpty ? 'xem ai đã thích' : null,
+                          child: GestureDetector(
+                            onLongPress: loves.isNotEmpty ? () => _showLoversSheet(loves) : null,
+                            child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: _loveTotal > 0 ? '$_loveTotal thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove),
+                          ),
+                        )),
                         if (!noMedia) Expanded(child: Builder(builder: (ctx) {
                           // Phones: "Tải về" saves into the app for offline listening.
                           final store = ctx.watch<OfflineStore>();
@@ -1209,7 +1257,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                                 : (prog != null ? null : () => saveForOffline(context, typed)),
                           );
                         })),
-                        Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Playlist', onTap: _openPlaylistDialog)),
+                        Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Lưu', onTap: _openPlaylistDialog)),
                         if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.library_music_outlined, label: 'Bản thu', onTap: _openFileHistory)),
                         Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: 'Chia sẻ', onTap: _share)),
                       ]),
@@ -1468,7 +1516,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       _ExpandCard(
         expanded: _storyExpanded,
         onToggle: () => setState(() => _storyExpanded = !_storyExpanded),
-        child: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+        child: Html(data: str, style: {'body': Style(color: AppColors.text, fontSize: FontSize(16), lineHeight: const LineHeight(1.6), margin: Margins.zero, padding: HtmlPaddings.zero)}),
       ),
     ];
   }
@@ -1503,7 +1551,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               height: _lyricsExpanded ? 640 : 220,
               child: TimedLyrics(
                 raw: str,
-                fallback: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+                fallback: Html(data: str, style: {'body': Style(color: AppColors.text, fontSize: FontSize(16), lineHeight: const LineHeight(1.8), margin: Margins.zero, padding: HtmlPaddings.zero)}),
               ),
             );
           }
@@ -1543,14 +1591,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           const SizedBox(width: 8),
           Text('·', style: TextStyle(color: AppColors.border)),
           const SizedBox(width: 8),
-          InkWell(
-            onTap: _openLyricHistory,
-            child: Row(
-              children: [
-                Icon(Icons.access_time, size: 12, color: AppColors.textMuted),
-                const SizedBox(width: 4),
-                Text('Lịch sử sửa lời', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
-              ],
+          Semantics(
+            button: true,
+            label: 'Lịch sử sửa lời',
+            excludeSemantics: true,
+            child: InkWell(
+              onTap: _openLyricHistory,
+              borderRadius: BorderRadius.circular(8),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    children: [
+                      Icon(Icons.access_time, size: 18, color: AppColors.textSecondary),
+                      const SizedBox(width: 6),
+                      Text('Lịch sử sửa lời', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary, decoration: TextDecoration.underline, decorationColor: AppColors.textMuted))),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],
@@ -1584,7 +1644,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             SectionHeader(
               icon: Icons.album_outlined,
-              title: _resolvedType == 'karaoke' ? 'Thành viên hát bài này' : 'Bản thu khác',
+              title: _resolvedType == 'karaoke' ? 'Ca sĩ trình bày' : 'Bản thu khác',
               count: '(${filtered.length})',
               onPlayAll: () => _playList(filtered),
             ),
@@ -1600,7 +1660,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       }
 
       // 19. Karaoke covers (when current is a song and karaoke versions exist)
-      final karaokes = _sameSheet.where((s) => s['file_type'] == 'karaoke' && s['id'].toString() != widget.songId).toList();
+      final karaokes = _sameSheet.where((s) => s['file_type'] == 'karaoke' && !_isThisSong(s)).toList();
       if (karaokes.isNotEmpty) {
         final shown = _karaokeExpanded ? karaokes : karaokes.take(5).toList();
         widgets.add(Padding(
@@ -1712,6 +1772,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => onTap(Map<String, dynamic>.from(item)),
             child: Text(item[key] ?? '', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
           ),
@@ -1729,18 +1790,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       result.add(WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
         baseline: TextBaseline.alphabetic,
-        child: GestureDetector(
+        child: Semantics(
+          link: true,
+          child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () => onTap(Map<String, dynamic>.from(item)),
+          child: Padding(
+          // Taller hit area for older fingers; the line already has room.
+          padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
             item[key] ?? '',
             style: body(TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600,
+              fontSize: 15, fontWeight: FontWeight.w600,
               color: AppColors.accentLight,
               decoration: TextDecoration.underline,
               decorationColor: AppColors.accent,
               decorationStyle: TextDecorationStyle.dotted,
             )),
           ),
+          ),
+        ),
         ),
       ));
     }
@@ -1752,66 +1821,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final d = DateTime.tryParse(iso);
     if (d == null) return '';
     return '${d.day}/${d.month}/${d.year}';
-  }
-
-  String _formatInt(dynamic n) {
-    if (n == null) return '0';
-    final v = n is num ? n.toInt() : (int.tryParse(n.toString()) ?? 0);
-    final s = v.abs().toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
-      buf.write(s[i]);
-    }
-    return v < 0 ? '-${buf.toString()}' : buf.toString();
-  }
-}
-
-/// Primary play CTA shown directly below the title — Apple Music / Spotify
-/// pattern. When the song is the current track we flip into a "Tạm dừng /
-/// Đang phát" toggle so it stays useful instead of re-triggering playback.
-class _PrimaryPlayButton extends StatelessWidget {
-  final bool isCurrent;
-  final bool isPlaying;
-  final VoidCallback onPlay;
-  const _PrimaryPlayButton({
-    required this.isCurrent,
-    required this.isPlaying,
-    required this.onPlay,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final showPause = isCurrent && isPlaying;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPlay,
-          borderRadius: BorderRadius.circular(28),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 14, offset: const Offset(0, 4))],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(showPause ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 22),
-                const SizedBox(width: 8),
-                Text(
-                  showPause ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
-                  style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.3)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -1827,7 +1836,7 @@ class _MetaLine extends StatelessWidget {
       child: RichText(
         textScaler: MediaQuery.textScalerOf(context),
         text: TextSpan(
-          style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.5)),
+          style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.5)),
           children: [
             TextSpan(text: '$label '),
             ...children,
@@ -1859,27 +1868,36 @@ class _ArtistBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final row = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Row(children: [
+        Icon(icon, size: 20, color: AppColors.text),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text('Do $name $role', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
+        ),
+        const SizedBox(width: 8),
+        if (onTap != null)
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
+            child: Icon(Icons.arrow_forward, size: 18, color: AppColors.text),
+          ),
+      ]),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 4, top: 4),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Icon(icon, size: 18, color: AppColors.text),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text('Do $name $role', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
-          ),
-          const SizedBox(width: 8),
-          if (onTap != null)
-            InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                width: 30, height: 30,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
-                child: Icon(Icons.arrow_forward, size: 15, color: AppColors.text),
-              ),
-            ),
-        ]),
+        // The whole line opens the person's page, not just the small arrow.
+        if (onTap != null)
+          Semantics(
+            button: true,
+            label: 'Do $name $role, mở trang $name',
+            excludeSemantics: true,
+            child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(10), child: row),
+          )
+        else
+          row,
         const SizedBox(height: 6),
         Divider(height: 1, color: AppColors.border),
       ]),
@@ -1967,11 +1985,14 @@ class _ShowMoreButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return Semantics(
+      button: true,
+      child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         margin: const EdgeInsets.only(top: 6),
+        constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: AppColors.surfaceLight,
@@ -1984,13 +2005,14 @@ class _ShowMoreButton extends StatelessWidget {
           children: [
             Text(
               expanded ? 'Thu gọn' : 'Xem thêm ($remaining bài)',
-              style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)),
+              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
             ),
             const SizedBox(width: 6),
-            Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
+            Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 22, color: AppColors.accentLight),
           ],
         ),
       ),
+    ),
     );
   }
 }

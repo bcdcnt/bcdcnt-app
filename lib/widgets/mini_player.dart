@@ -1,6 +1,8 @@
 import '../services/imgcdn.dart';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
@@ -28,6 +30,42 @@ void openFullPlayer(PlayerProvider player) {
       ),
     ),
   );
+}
+
+/// Long-press sheet on the mini player: the only way to make the bar go
+/// away once something has played ("Dừng phát").
+Future<void> _showMiniActions(BuildContext context, PlayerProvider player) async {
+  HapticFeedback.mediumImpact();
+  final stop = await showModalBottomSheet<bool>(
+    context: context,
+    useRootNavigator: true,
+    backgroundColor: AppColors.bg,
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            minTileHeight: 56,
+            leading: Icon(Icons.open_in_full_rounded, color: AppColors.textSecondary),
+            title: Text('Mở trình phát', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text))),
+            onTap: () => Navigator.pop(ctx, false),
+          ),
+          ListTile(
+            minTileHeight: 56,
+            leading: Icon(Icons.stop_circle_outlined, color: AppColors.textSecondary),
+            title: Text('Dừng phát', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text))),
+            subtitle: Text('Tắt nhạc và ẩn thanh đang phát', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+            onTap: () => Navigator.pop(ctx, true),
+          ),
+        ]),
+      ),
+    ),
+  );
+  if (stop == true) {
+    player.stop();
+  } else if (stop == false) {
+    openFullPlayer(player);
+  }
 }
 
 /// Marks a subtree whose phone shell already draws the mini player above
@@ -65,8 +103,11 @@ class MiniPlayer extends StatelessWidget {
     final artists = song['artists'] is List ? song['artists'] : (song['artists']?['data'] ?? []);
     final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => s.toString().isNotEmpty && s != 'Đang cập nhật').join(', ');
     final thumb = song['thumbnail']?['url'];
-    final hasNext = player.queue.length > player.currentIndex + 1;
-    final nextTitle = hasNext ? player.queue[player.currentIndex + 1]['title']?.toString() : null;
+    // Repeat-all wraps to the first song, so Next stays enabled at the end.
+    final hasNext = player.hasNext;
+    final q = player.queue;
+    final nextIdx = player.shuffle || q.isEmpty ? null : (player.currentIndex + 1 < q.length ? player.currentIndex + 1 : (hasNext ? 0 : null));
+    final nextTitle = nextIdx != null ? q[nextIdx]['title']?.toString() : null;
     const fg = Colors.white;
 
     return Padding(
@@ -74,12 +115,16 @@ class MiniPlayer extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => openFullPlayer(player),
+        onLongPress: () => _showMiniActions(context, player),
         onVerticalDragEnd: (d) {
           if ((d.primaryVelocity ?? 0) < -250) openFullPlayer(player);
         },
         child: Semantics(
           button: true,
-          label: 'Đang phát ${song['title'] ?? ''}. Chạm để mở trình phát',
+          label: 'Đang phát ${song['title'] ?? ''}. Chạm để mở trình phát, nhấn giữ để dừng phát',
+          customSemanticsActions: {
+            const CustomSemanticsAction(label: 'Dừng phát'): player.stop,
+          },
           child: MediaQuery.withClampedTextScaling(
           maxScaleFactor: 1.3,
           child: Container(

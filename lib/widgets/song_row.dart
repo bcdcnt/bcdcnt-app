@@ -13,7 +13,7 @@ import '../services/player.dart';
 import '../services/auth.dart';
 import '../services/offline_store.dart';
 import 'hover_effects.dart';
-import 'auth_dialogs.dart' show LoginDialog;
+import '../services/friendly_error.dart' show askLogin;
 import 'playlist_dialog.dart';
 import 'synced_video.dart';
 import 'ui.dart' show PillButton;
@@ -231,9 +231,10 @@ class SongRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final id = song['id']?.toString();
-    final current = context.select<PlayerProvider, String?>((p) => p.currentSong?['id']?.toString());
+    // id + kind: tân nhạc 12 and dân ca 12 are different songs.
+    final current = context.select<PlayerProvider, String?>((p) => p.currentSong == null ? null : OfflineStore.keyOf(p.currentSong!));
     final playerPlaying = context.select<PlayerProvider, bool>((p) => p.isPlaying);
-    final playing = isPlaying || (id != null && id == current);
+    final playing = isPlaying || (id != null && OfflineStore.keyOf(song) == current);
     final byline = songByline(song);
     final metric = _metric();
     final sub = [byline, if (metric != null) metric].where((s) => s.isNotEmpty).join(' · ');
@@ -368,10 +369,19 @@ class SongRow extends StatelessWidget {
 /// button on any song row, long-press, or right-click on desktop.
 Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) async {
   final artists = _people(song['artists']);
-  final comps = _people(song['composers']).isNotEmpty ? _people(song['composers']) : _people(song['sheet']?['composers']);
+  final fileType = songKind(song);
+  // Author page by kind, as on the song page: dân ca → soạn giả, thơ → nhà thơ.
+  final comps = fileType == 'poem' && _people(song['poets']).isNotEmpty
+      ? _people(song['poets'])
+      : (_people(song['composers']).isNotEmpty ? _people(song['composers']) : _people(song['sheet']?['composers']));
   final artist = artists.where((a) => a['slug'] != null && a['title'] != 'Đang cập nhật').firstOrNull;
   final composer = comps.where((a) => a['slug'] != null).firstOrNull;
-  final fileType = songKind(song);
+  final (composerRoute, composerRole) = switch (fileType) {
+    'folk' => ('/soan-gia', 'soạn giả'),
+    'poem' => ('/nha-tho', 'nhà thơ'),
+    _ => ('/nhac-si', 'nhạc sĩ'),
+  };
+  final auth = context.read<AuthProvider>();
   final player = context.read<PlayerProvider>();
   final hasAudio = _hasAudio(song);
   final m = Map<String, dynamic>.from(song);
@@ -429,7 +439,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
                     ? item('unsave', Icons.download_done_rounded, 'Xoá khỏi "Đã tải về"')
                     : item('save', Icons.download_for_offline_outlined, 'Tải về để nghe offline'),
               item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
-              if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến nhạc sĩ ${composer['title']}'),
+              if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến $composerRole ${composer['title']}'),
               if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'ca sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
               item('share', Icons.ios_share_rounded, 'Chia sẻ (Zalo, Facebook…)'),
             ],
@@ -447,8 +457,8 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
         player.playSong(m, [m], 'manual');
         break;
       }
-      final q = List<Map<String, dynamic>>.from(player.queue)..removeWhere((s) => s['id'].toString() == m['id'].toString());
-      final at = q.indexWhere((s) => s['id'].toString() == player.currentSong!['id'].toString());
+      final q = List<Map<String, dynamic>>.from(player.queue)..removeWhere((s) => sameSong(s, m) && !sameSong(s, player.currentSong));
+      final at = q.indexWhere((s) => sameSong(s, player.currentSong));
       q.insert(at < 0 ? q.length : at + 1, m);
       player.setQueue(q);
       toast('Sẽ phát "${song['title']}" tiếp theo');
@@ -458,10 +468,14 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
         player.playSong(m, [m], 'manual');
         break;
       }
-      if (!player.queue.any((s) => s['id'].toString() == m['id'].toString())) player.setQueue([...player.queue, m]);
+      if (!player.queue.any((s) => sameSong(s, m))) player.setQueue([...player.queue, m]);
       toast('Đã thêm "${song['title']}" vào danh sách phát');
       break;
     case 'playlist':
+      if (!auth.isAuthenticated) {
+        askLogin(context);
+        break;
+      }
       showDialog(context: context, builder: (_) => PlaylistDialog(songId: song['id'].toString(), type: fileType));
       break;
     case 'save':
@@ -475,7 +489,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
       context.push('/song/${song['id']}', extra: Map<String, dynamic>.from(song));
       break;
     case 'composer':
-      context.push('/nhac-si/${composer!['slug']}');
+      context.push('$composerRoute/${composer!['slug']}');
       break;
     case 'artist':
       if (fileType == 'karaoke' && artist!['id'] != null) {
@@ -500,7 +514,7 @@ Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) asy
   final messenger = ScaffoldMessenger.maybeOf(context);
   final auth = context.read<AuthProvider>();
   if (!auth.isAuthenticated) {
-    showDialog(context: context, builder: (_) => const LoginDialog());
+    askLogin(context);
     return;
   }
   messenger?.showSnackBar(SnackBar(content: Text('Đang tải "${song['title']}"…'), duration: const Duration(seconds: 2)));
@@ -521,7 +535,7 @@ Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) asy
 Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> songs, {String? title}) async {
   final auth = context.read<AuthProvider>();
   if (!auth.isAuthenticated) {
-    showDialog(context: context, builder: (_) => const LoginDialog());
+    askLogin(context);
     return;
   }
   final store = OfflineStore.instance;
@@ -561,7 +575,11 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
           } else {
             failed++;
             // Only network failures count towards "mất mạng".
-            if (err.contains('kiểm tra mạng')) streak++; else streak = 0;
+            if (err.contains('mạng')) {
+              streak++;
+            } else {
+              streak = 0;
+            }
             if (err.contains('quá nhiều') || err.contains('đăng nhập')) { error = err; break; }
             // Three in a row: the network is down, not one bad file.
             if (streak >= 3) { error = 'Mất kết nối mạng, đã tạm dừng'; break; }

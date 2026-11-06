@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/realtime.dart';
+import '../services/notification_route.dart';
 
 /// Compact notifications popover anchored to the header bell. Fetches the
 /// latest 5 unread/read notifications, lets the user mark all as read or
@@ -183,30 +184,25 @@ class _NotifPanelState extends State<_NotifPanel> {
     } catch (_) {}
   }
 
-  String? _objectRoute(String? type, String? id, String? slug) {
-    if (id == null) return null;
-    switch (type) {
-      case 'song': return '/song/$id';
-      case 'folk': return '/song/$id';
-      case 'instrumental': return '/song/$id';
-      case 'poem': return '/song/$id';
-      case 'karaoke': return '/song/$id';
-      case 'artist': return slug != null ? '/nghe-si/$slug' : null;
-      case 'composer': return slug != null ? '/nhac-si/$slug' : null;
-      case 'poet': return slug != null ? '/nha-tho/$slug' : null;
-      case 'recomposer': return slug != null ? '/soan-gia/$slug' : null;
-      case 'discussion': return '/thao-luan/$id';
-      case 'upload': return '/bai-gui/$id';
-      case 'comment': return null;
-      default: return null;
-    }
-  }
-
   void _openItem(Map<String, dynamic> n) {
+    final auth = context.read<AuthProvider>();
+    final router = GoRouter.of(context);
     widget.onClose();
-    final route = _objectRoute(n['object_type']?.toString(), n['object_id']?.toString(), null);
-    if (route != null) context.push(route);
-    else context.push('/thong-bao');
+    // Same mapping as the notifications screen and push taps.
+    final r = notificationRoute(n);
+    if (n['is_read'] != 1 && n['is_read'] != true && n['code'] != null) {
+      auth.authedMutate(r'mutation($code: String!) { markAsRead(code: $code) }', {'code': n['code']})
+          .then((_) {
+            auth.decrementUnread();
+            if (mounted) setState(() => n['is_read'] = 1);
+          })
+          .catchError((_) {});
+    }
+    if (r != null) {
+      router.push(r.path, extra: r.extra);
+    } else {
+      router.push('/thong-bao');
+    }
   }
 
   String _timeago(String? ts) {

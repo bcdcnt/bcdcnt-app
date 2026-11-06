@@ -8,10 +8,10 @@ import 'package:flutter_html/flutter_html.dart';
 import '../services/share.dart';
 import '../constants/theme.dart';
 import '../widgets/ui.dart';
-import '../widgets/auth_dialogs.dart';
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
@@ -90,9 +90,12 @@ class _SectionState {
   final int total;
   final String sort;
   final bool loading;
-  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false});
+  /// Last request failed: show a retry instead of fetching again by itself
+  /// (offline, the lazy tab fetch otherwise looped forever).
+  final bool failed;
+  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false, this.failed = false});
 
-  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading}) =>
+  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading, bool? failed}) =>
       _SectionState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -100,7 +103,14 @@ class _SectionState {
         total: total ?? this.total,
         sort: sort ?? this.sort,
         loading: loading ?? this.loading,
+        failed: failed ?? this.failed,
       );
+
+  /// Appends a page without repeating rows already shown.
+  List<dynamic> appended(List<dynamic> more) {
+    final seen = items.whereType<Map>().map((e) => e['id']?.toString()).toSet();
+    return [...items, ...more.where((e) => e is! Map || seen.add(e['id']?.toString()))];
+  }
 }
 
 const _sortOptions = [
@@ -121,6 +131,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   final Map<String, _SectionState> _media = {};
   bool _loading = true;
   bool _bioExpanded = false;
+  // Latest request per section: a response for an older sort/page that
+  // lands late is dropped instead of overwriting the newer list.
+  final Map<String, int> _reqIds = {};
+  int _fetchReq = 0;
 
   _TypeConfig get _cfg => _config[widget.type]!;
 
@@ -152,7 +166,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (personId == null) return;
     final prev = _media[type] ?? const _SectionState();
     if (prev.loading) return;
-    setState(() { _media[type] = prev.copyWith(loading: true); });
+    setState(() { _media[type] = prev.copyWith(loading: true, failed: false); });
     try {
       // Field set varies per media type — match the document_archive_screen
       // shape so the existing image/audio/video/news renderers + lightbox
@@ -187,14 +201,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       final newItems = (raw?['data'] ?? []) as List;
       setState(() {
         _media[type] = _SectionState(
-          items: page == 1 ? newItems : [...prev.items, ...newItems],
+          items: page == 1 ? newItems : prev.appended(newItems),
           currentPage: raw?['paginatorInfo']?['currentPage'] ?? page,
           lastPage: raw?['paginatorInfo']?['lastPage'] ?? 1,
           total: raw?['paginatorInfo']?['total'] ?? prev.total,
         );
       });
     } catch (_) {
-      if (mounted) setState(() { _media[type] = prev.copyWith(loading: false); });
+      if (mounted) setState(() { _media[type] = prev.copyWith(loading: false, failed: true); });
     }
   }
 
@@ -208,18 +222,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final mediaCountsQuery = _mediaSecs.map((m) =>
       '${m.key}Docs: documents(first: 1, page: 1, where: {column: "type", value: "${m.key}"}) { paginatorInfo { total } }'
     ).join('\n');
-    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads loves(first: 500) { data { user_id } paginatorInfo { total } } $sectionsQuery $mediaCountsQuery } }';
+    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads loves(first: 1) { paginatorInfo { total } } $sectionsQuery $mediaCountsQuery } }';
+    final req = ++_fetchReq;
     try {
       final data = await ApiClient.query(q, {'slug': widget.slug});
       final p = data[_cfg.queryName];
-      if (!mounted) return;
+      if (req != _fetchReq || !mounted) return;
       if (p == null) { setState(() => _loading = false); return; }
       setState(() {
         _person = Map<String, dynamic>.from(p);
-        final lovers = ((p['loves']?['data'] ?? []) as List).whereType<Map>();
-        final me = context.read<AuthProvider>().user?['id']?.toString();
-        _following = me != null && lovers.any((l) => l['user_id']?.toString() == me);
-        _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? lovers.length;
+        _following = false;
+        _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
         for (final c in _cfg.sections) {
           final raw = p[c.key];
           _sections[c.key] = _SectionState(
@@ -238,9 +251,26 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _loading = false;
       });
       logActivity(context.read<AuthProvider>(), 'view', _cfg.queryName, p['id']);
+      _fetchFollowing(p['id']);
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _failed = true; });
+      if (req == _fetchReq && mounted) setState(() { _loading = false; _failed = true; });
     }
+  }
+
+  /// Whether I follow this person, asked directly (a user_id filter)
+  /// instead of scanning the first 500 followers.
+  Future<void> _fetchFollowing(dynamic personId) async {
+    final me = int.tryParse('${context.read<AuthProvider>().user?['id'] ?? ''}');
+    if (me == null || personId == null) return;
+    final queryById = '${_cfg.queryName}ByID';
+    try {
+      final d = await ApiClient.query(
+        'query(\$id: ID!) { $queryById(id: \$id) { loves(first: 1, where: {column: "user_id", value: $me}) { paginatorInfo { total } } } }',
+        {'id': personId.toString()},
+      );
+      final n = ((d[queryById]?['loves']?['paginatorInfo']?['total'] ?? 0) as num).toInt();
+      if (mounted && !_followBusy && _person?['id']?.toString() == personId.toString()) setState(() => _following = n > 0);
+    } catch (_) {}
   }
 
   bool _failed = false;
@@ -252,20 +282,23 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final prev = _sections[key]!;
     final useSort = sort ?? prev.sort;
     final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$3;
+    final req = (_reqIds[key] ?? 0) + 1;
+    _reqIds[key] = req;
     setState(() {
-      _sections[key] = prev.copyWith(loading: true, sort: useSort);
+      // A new sort starts from a clean list so old rows don't flash.
+      _sections[key] = prev.copyWith(loading: true, sort: useSort, failed: false, items: useSort != prev.sort ? const [] : null);
     });
     try {
       final queryById = '${_cfg.queryName}ByID';
       final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: 10, page: \$page, orderBy: [{ column: "$sortCol", order: DESC }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
       final data = await ApiClient.query(q, {'id': personId, 'page': page});
       final raw = data[queryById]?[key];
-      if (!mounted) return;
+      if (req != _reqIds[key] || !mounted) return;
       final newItems = (raw?['data'] ?? []) as List;
       setState(() {
         _sections[key] = _SectionState(
           // page=1 is either initial sort/refresh — replace. page>1 — append.
-          items: page == 1 ? newItems : [...prev.items, ...newItems],
+          items: page == 1 ? newItems : prev.appended(newItems),
           total: raw?['paginatorInfo']?['total'] ?? prev.total,
           currentPage: raw?['paginatorInfo']?['currentPage'] ?? page,
           lastPage: raw?['paginatorInfo']?['lastPage'] ?? prev.lastPage,
@@ -274,15 +307,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         );
       });
     } catch (_) {
-      if (mounted) setState(() {
-        _sections[key] = prev.copyWith(loading: false, sort: useSort);
+      if (req == _reqIds[key] && mounted) setState(() {
+        _sections[key] = prev.copyWith(loading: false, sort: useSort, failed: true, items: useSort != prev.sort ? const [] : null);
       });
     }
   }
 
   void _loadMore(String key) {
     final s = _sections[key]!;
-    if (s.loading || s.currentPage >= s.lastPage) return;
+    if (s.loading || s.failed || s.currentPage >= s.lastPage) return;
     _fetchPage(key, s.currentPage + 1);
   }
 
@@ -374,7 +407,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _toggleFollow() async {
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) {
-      showDialog(context: context, builder: (_) => const LoginDialog());
+      await askLogin(context);
       return;
     }
     if (_followBusy || _person == null) return;
@@ -393,12 +426,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đang theo dõi ${_person!['title']} — bạn sẽ được báo khi có bài mới'), duration: const Duration(seconds: 3)));
         PushService.instance.maybeAsk(context, reason: 'Nhận thông báo khi ${_person!['title']} có bài mới.');
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
           _following = !next;
           _followers = (_followers + (next ? -1 : 1)).clamp(0, 1 << 30);
         });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${next ? 'Chưa theo dõi được' : 'Chưa bỏ theo dõi được'}. ${friendlyError(e)}'), backgroundColor: AppColors.error));
       }
     } finally {
       if (mounted) setState(() => _followBusy = false);
@@ -498,7 +532,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final state = _media[cfg.key]!;
     // Lazy fetch on first reveal — schedule outside build to avoid setState
     // during build.
-    if (state.items.isEmpty && !state.loading && state.total > 0) {
+    if (state.items.isEmpty && !state.loading && !state.failed && state.total > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _fetchMedia(cfg.key);
       });
@@ -507,13 +541,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (state.loading && state.items.isEmpty) {
       return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
+    if (state.failed && state.items.isEmpty) {
+      return Center(child: SingleChildScrollView(child: OfflineBlock(onRetry: () => _fetchMedia(cfg.key))));
+    }
     if (state.items.isEmpty) {
-      return Center(child: Text('Chưa có ${cfg.label.toLowerCase()}', style: body(TextStyle(color: AppColors.textMuted))));
+      return Center(child: Text('Chưa có ${cfg.label.toLowerCase()}', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted))));
     }
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
         if (n.metrics.axis != Axis.vertical) return false;
-        if (!state.loading && hasMore && n.metrics.pixels > n.metrics.maxScrollExtent - 400) {
+        if (!state.loading && !state.failed && hasMore && n.metrics.pixels > n.metrics.maxScrollExtent - 400) {
           _fetchMedia(cfg.key, page: state.currentPage + 1);
         }
         return false;
@@ -524,9 +561,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         children: [
           _buildMediaContent(cfg, state.items),
           if (state.loading) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+          if (state.failed && !state.loading) Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: PillButton(label: 'Chưa tải được · Thử lại', icon: Icons.refresh_rounded, primary: false, onTap: () => _fetchMedia(cfg.key, page: state.currentPage + 1))),
+          ),
           if (!hasMore && state.items.isNotEmpty) Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+            child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)))),
           ),
         ],
       ),
@@ -958,10 +999,18 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             if (state.loading) {
               return Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
             }
+            if (state.failed) {
+              return state.items.isEmpty
+                  ? OfflineBlock(onRetry: () => _fetchPage(cfg.key, 1))
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Center(child: PillButton(label: 'Chưa tải được · Thử lại', icon: Icons.refresh_rounded, primary: false, onTap: () => _fetchPage(cfg.key, state.currentPage + 1))),
+                    );
+            }
             if (!hasMore && state.items.isNotEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)))),
               );
             }
             return const SizedBox(height: 16);
@@ -974,7 +1023,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             builder: (rowCtx) => SongRow(
               song: sg,
               metricKey: state.sort == 'newest' ? 'time' : state.sort,
-              isPlaying: rowCtx.select<PlayerProvider, String?>((pl) => pl.currentSong?['id']?.toString()) == sg['id']?.toString(),
+              // Same id *and* kind: song 12 and folk 12 are different rows.
+              isPlaying: rowCtx.select<PlayerProvider, bool>((pl) => sameSong(pl.currentSong, sg)),
               onTap: () => playOrOpen(context, sg, queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
             ),
           ));
@@ -999,7 +1049,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   Widget _buildBioTab(Map<String, dynamic> p, bool hasPlayer) {
     final bio = p['content'];
-    final hasBio = bio != null && (bio as String).replaceAll(RegExp(r'<[^>]+>'), '').trim().isNotEmpty;
+    final bioPlain = bio == null ? '' : (bio as String).replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'&nbsp;|\s+'), ' ').trim();
+    final hasBio = bioPlain.isNotEmpty;
+    // Only a long bio gets folded behind "Xem thêm"; short ones show whole.
+    final longBio = bioPlain.length > 420;
+    final bioCollapsed = longBio && !_bioExpanded;
     return ListView(
       key: const PageStorageKey('person-bio'),
       padding: EdgeInsets.fromLTRB(20, 12, 20, hasPlayer ? 100 : 24),
@@ -1012,28 +1066,42 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: _bioExpanded ? double.infinity : 200),
-                  child: SingleChildScrollView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    child: Html(
-                      data: bio,
-                      style: {'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(14), lineHeight: const LineHeight(1.8), color: AppColors.textSecondary)},
+                  constraints: BoxConstraints(maxHeight: bioCollapsed ? 260 : double.infinity),
+                  child: ShaderMask(
+                    // Fade the cut-off edge so it reads as "there's more".
+                    shaderCallback: (r) => LinearGradient(
+                      begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: const [0.75, 1],
+                      colors: [Colors.white, bioCollapsed ? Colors.transparent : Colors.white],
+                    ).createShader(r),
+                    blendMode: BlendMode.dstIn,
+                    child: SingleChildScrollView(
+                      physics: const NeverScrollableScrollPhysics(),
+                      child: Html(
+                        data: bio,
+                        style: {'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(16), lineHeight: const LineHeight(1.65), color: AppColors.text)},
+                      ),
                     ),
                   ),
                 ),
-                InkWell(
-                  onTap: () => setState(() => _bioExpanded = !_bioExpanded),
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(_bioExpanded ? 'Thu gọn' : 'Xem thêm', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                        Icon(_bioExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 18, color: AppColors.accentLight),
-                      ],
+                if (longBio)
+                  Semantics(
+                    button: true,
+                    child: InkWell(
+                      onTap: () => setState(() => _bioExpanded = !_bioExpanded),
+                      borderRadius: BorderRadius.circular(10),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(_bioExpanded ? 'Thu gọn' : 'Xem thêm', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                            const SizedBox(width: 4),
+                            Icon(_bioExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 22, color: AppColors.accentLight),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1041,11 +1109,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         ] else
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: Text('Chưa có tiểu sử', style: body(TextStyle(color: AppColors.textMuted)))),
+            child: Center(child: Text('Chưa có tiểu sử', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
           ),
         CommentSection(type: _cfg.queryName, id: p['id'].toString()),
       ],
     );
+  }
+
+  String _initial(Object? title) {
+    final t = (title ?? '').toString().trim();
+    return t.isEmpty ? '?' : t.characters.first.toUpperCase();
   }
 
   Widget _initialsFallback(Map<String, dynamic> p) {
@@ -1053,7 +1126,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       color: AppColors.surfaceLight,
       alignment: Alignment.center,
       child: Text(
-        (p['title'] ?? '?').toString().substring(0, 1).toUpperCase(),
+        _initial(p['title']),
         style: display(const TextStyle(fontSize: 42, color: Colors.white70, fontWeight: FontWeight.w800)),
       ),
     );

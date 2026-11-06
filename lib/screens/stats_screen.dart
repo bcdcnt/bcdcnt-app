@@ -1,7 +1,9 @@
 import '../services/imgcdn.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../services/friendly_error.dart' show askLogin;
+import '../widgets/empty_state.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -29,6 +31,7 @@ class _StatsScreenState extends State<StatsScreen> {
 
   Map<String, dynamic> _data = {};
   bool _loading = true;
+  bool _error = false;
   // Real top-by-play-count from the listen_events log (server resolver
   // userTopListens). RecentListen table is per-song dedup so aggregating
   // it client-side gives recency, not play count. Streak still derives
@@ -71,6 +74,7 @@ class _StatsScreenState extends State<StatsScreen> {
     final auth = context.read<AuthProvider>();
     final uid = auth.user?['id'];
     if (uid == null) { setState(() => _loading = false); return; }
+    if (_error) setState(() { _error = false; _loading = true; });
     try {
       // 5 queries in 1 round-trip via aliases — user profile + recent
       // listens (for streak only) + 3 top-listens (song/artist/composer).
@@ -115,7 +119,7 @@ class _StatsScreenState extends State<StatsScreen> {
         _streakDays = _calcStreak(recents);
         _loading = false;
       });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _error = true; }); }
   }
 
   // Consecutive listening days starting today (or yesterday if no plays
@@ -180,6 +184,10 @@ class _StatsScreenState extends State<StatsScreen> {
     final uploadsTotal = _intOf(_data['uploads']?['paginatorInfo']?['total']);
     final totalListen = _intOf(_data['listen']);
     final maxListen = _categories.map((c) => _intOf(_data[c.$1])).fold(1, (a, b) => a > b ? a : b);
+    final auth = context.watch<AuthProvider>();
+    // Stat card height follows the text-size setting: label + number lines.
+    final ts = MediaQuery.textScalerOf(context);
+    final statExtent = (24 + ts.scale(13) * 1.35 + 2 + ts.scale(22) * 1.25 + 4).clamp(64.0, 180.0);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -193,7 +201,11 @@ class _StatsScreenState extends State<StatsScreen> {
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           if (_loading)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accentFg)))
+          else if (!auth.isAuthenticated)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: EmptyState(icon: Icons.insights_rounded, title: 'Vui lòng đăng nhập', subtitle: 'Đăng nhập để xem điểm và thống kê nghe của bạn.', ctaLabel: 'Đăng nhập', onCta: () => askLogin(context))))
+          else if (_error)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: OfflineBlock(onRetry: _fetch)))
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -202,13 +214,16 @@ class _StatsScreenState extends State<StatsScreen> {
                 // Each card gets its own soft-tint gradient + colored icon
                 // chip so the strip feels like a hero banner, not 4
                 // identical surface squares (Apple Music / Wrapped vibe).
-                GridView.count(
+                GridView(
                   shrinkWrap: true,
+                  padding: EdgeInsets.zero,
                   physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 10,
-                  mainAxisSpacing: 10,
-                  childAspectRatio: 3.0,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    mainAxisExtent: statExtent,
+                  ),
                   children: [
                     _statCard('Lượt xem', _intOf(_data['views']), Icons.visibility_outlined, const Color(0xFF2C5F8D)),
                     _statCard('Bình luận', commentsTotal, Icons.chat_bubble_outline, const Color(0xFF2F7D5C)),
@@ -230,7 +245,7 @@ class _StatsScreenState extends State<StatsScreen> {
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text('$_streakDays ngày liên tục', style: display(const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white))),
-                          Text('Tiếp tục nghe để giữ chuỗi', style: body(const TextStyle(fontSize: 12, color: Colors.white70))),
+                          Text('Tiếp tục nghe để giữ chuỗi', style: body(const TextStyle(fontSize: 14, color: Colors.white))),
                         ]),
                       ),
                     ]),
@@ -243,11 +258,11 @@ class _StatsScreenState extends State<StatsScreen> {
                   decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      Icon(Icons.headphones, size: 16, color: AppColors.accentLight),
+                      Icon(Icons.headphones, size: 18, color: AppColors.accentFg),
                       const SizedBox(width: 6),
-                      Text('Tổng nghe', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                      Text('Tổng nghe', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
                       const Spacer(),
-                      Text(_formatInt(totalListen), style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                      Text(_formatInt(totalListen), style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
                     ]),
                     const SizedBox(height: 14),
                     ..._categories.map((c) {
@@ -257,8 +272,8 @@ class _StatsScreenState extends State<StatsScreen> {
                         padding: const EdgeInsets.only(bottom: 12),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Row(children: [
-                            Expanded(child: Text(c.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-                            Text(_formatInt(v), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text))),
+                            Expanded(child: Text(c.$2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+                            Text(_formatInt(v), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                           ]),
                           const SizedBox(height: 6),
                           ClipRRect(
@@ -334,9 +349,9 @@ class _StatsScreenState extends State<StatsScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.3))),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600, letterSpacing: 0.3))),
             const SizedBox(height: 2),
-            Text(_formatInt(value), style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
+            Text(_formatInt(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
           ]),
         ),
       ]),
@@ -345,9 +360,9 @@ class _StatsScreenState extends State<StatsScreen> {
 
   Widget _sectionTitle(String label, IconData icon) {
     return Row(children: [
-      Icon(icon, size: 16, color: AppColors.accentLight),
+      Icon(icon, size: 18, color: AppColors.accentFg),
       const SizedBox(width: 8),
-      Text(label, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+      Expanded(child: Text(label, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text)))),
     ]);
   }
 
@@ -361,7 +376,7 @@ class _StatsScreenState extends State<StatsScreen> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Row(children: [
-              SizedBox(width: 22, child: Text('${i + 1}', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: i < 3 ? AppColors.accentLight : AppColors.textMuted)))),
+              SizedBox(width: 22, child: Text('${i + 1}', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i < 3 ? AppColors.accentFg : AppColors.textMuted)))),
               const SizedBox(width: 8),
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
@@ -370,9 +385,9 @@ class _StatsScreenState extends State<StatsScreen> {
                     : Container(width: 40, height: 40, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 18, color: AppColors.textMuted)),
               ),
               const SizedBox(width: 10),
-              Expanded(child: Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)))),
+              Expanded(child: Text(r.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)))),
               const SizedBox(width: 8),
-              Text('${r.count} lượt', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+              Text('${r.count} lượt', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
             ]),
           ),
         );
@@ -381,8 +396,9 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _topPersonRow(List<_TopRow> rows) {
+    final ts = MediaQuery.textScalerOf(context);
     return SizedBox(
-      height: 140,
+      height: 80 + 6 + ts.scale(14) * 1.35 + ts.scale(13) * 1.35 + 12,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: rows.length,
@@ -411,8 +427,8 @@ class _StatsScreenState extends State<StatsScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
-                Text('${r.count} lượt', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                Text(r.title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text))),
+                Text('${r.count} lượt', maxLines: 1, style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
               ]),
             ),
           );

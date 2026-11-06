@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -24,6 +24,7 @@ class FolkIndexScreen extends StatefulWidget {
 
 class _FolkIndexScreenState extends State<FolkIndexScreen> {
   bool _loading = true;
+  bool _failed = false;
   List _melodies = [];
   List _folkCats = [];
   String _query = '';
@@ -35,10 +36,33 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
   @override
   void dispose() { _searchCtl.dispose(); super.dispose(); }
 
+  /// Lower-cases and strips Vietnamese diacritics (đ → d) so "cheo" finds
+  /// "Chèo" and "ly" finds "Lý".
+  static String _fold(String s) {
+    const groups = {
+      'a': 'àáạảãâầấậẩẫăằắặẳẵ',
+      'e': 'èéẹẻẽêềếệểễ',
+      'i': 'ìíịỉĩ',
+      'o': 'òóọỏõôồốộổỗơờớợởỡ',
+      'u': 'ùúụủũưừứựửữ',
+      'y': 'ỳýỵỷỹ',
+      'd': 'đ',
+    };
+    final buf = StringBuffer();
+    for (final ch in s.toLowerCase().split('')) {
+      var out = ch;
+      for (final g in groups.entries) {
+        if (g.value.contains(ch)) { out = g.key; break; }
+      }
+      buf.write(out);
+    }
+    return buf.toString();
+  }
+
   bool _matches(String? title) {
     if (_query.isEmpty) return true;
     if (title == null) return false;
-    return title.toLowerCase().contains(_query);
+    return _fold(title).contains(_fold(_query));
   }
 
   @override
@@ -48,6 +72,7 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
   }
 
   Future<void> _fetch() async {
+    if (!_loading || _failed) setState(() { _loading = true; _failed = false; });
     try {
       // Fetch only what the active mode needs — saves a round-trip on the
       // dedicated single-list pages.
@@ -65,15 +90,15 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
         _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _failed = true; });
     }
   }
 
   String get _appBarTitle {
     switch (widget.mode) {
-      case FolkIndexMode.melody: return 'LÀN ĐIỆU DÂN CA';
-      case FolkIndexMode.fcat: return 'THỂ LOẠI DÂN CA';
-      case FolkIndexMode.both: return 'DÂN CA';
+      case FolkIndexMode.melody: return 'Làn điệu dân ca';
+      case FolkIndexMode.fcat: return 'Thể loại dân ca';
+      case FolkIndexMode.both: return 'Dân ca';
     }
   }
 
@@ -90,6 +115,8 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
       body: Stack(children: [
         if (_loading)
           Center(child: CircularProgressIndicator(color: AppColors.accent))
+        else if (_failed)
+          ListView(children: [OfflineBlock(onRetry: _fetch)])
         else
           ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
@@ -106,15 +133,16 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
                 child: TextField(
                   controller: _searchCtl,
                   onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-                  style: body(TextStyle(fontSize: 14, color: AppColors.text)),
+                  style: body(TextStyle(fontSize: 16, color: AppColors.text)),
                   decoration: InputDecoration(
                     isDense: true,
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     hintText: 'Lọc theo tên...',
-                    hintStyle: body(TextStyle(fontSize: 14, color: AppColors.textMuted)),
+                    hintStyle: body(TextStyle(fontSize: 16, color: AppColors.textMuted)),
                     prefixIcon: Icon(Icons.search, size: 18, color: AppColors.textMuted),
                     suffixIcon: _query.isEmpty ? null : IconButton(
+                      tooltip: 'Xoá',
                       icon: Icon(Icons.close, size: 18, color: AppColors.textMuted),
                       onPressed: () { _searchCtl.clear(); setState(() => _query = ''); },
                     ),
@@ -151,7 +179,7 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
                 if (widgets.isEmpty && _query.isNotEmpty) {
                   widgets.add(Padding(
                     padding: const EdgeInsets.symmetric(vertical: 40),
-                    child: Center(child: Text('Không có kết quả cho "${_searchCtl.text}"', style: body(TextStyle(color: AppColors.textMuted)))),
+                    child: Center(child: Text('Không có kết quả cho "${_searchCtl.text}"', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
                   ));
                 }
                 return widgets;
@@ -171,17 +199,23 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border),
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          // 13 + ~20 text + 13 + border ≈ 48pt tap target.
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Text(label, style: body(TextStyle(fontSize: 15, color: AppColors.text, fontWeight: FontWeight.w500))),
         ),
-        child: Text(label, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
       ),
     );
   }

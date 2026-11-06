@@ -1,9 +1,8 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -55,6 +54,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _failed = false;
+  /// The load-more in flight, shared by scroll and the lightbox so the same
+  /// page is never requested (and appended) twice.
+  Future<List<dynamic>>? _moreInFlight;
 
   _Cfg get _cf => _cfg[widget.type]!;
 
@@ -80,8 +83,17 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
     }
   }
 
-  Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+  /// Loads [page]; returns the items it actually added. Throws on failure
+  /// only when [rethrowErrors] (the lightbox retries on its next swipe).
+  Future<List<dynamic>> _fetch(int page, {bool rethrowErrors = false}) {
+    if (page > 1) {
+      return _moreInFlight ??= _doFetch(page, rethrowErrors: rethrowErrors).whenComplete(() => _moreInFlight = null);
+    }
+    return _doFetch(page, rethrowErrors: rethrowErrors);
+  }
+
+  Future<List<dynamic>> _doFetch(int page, {bool rethrowErrors = false}) async {
+    setState(() { _failed = false; if (page == 1) { _loading = true; } else { _loadingMore = true; } });
 
     String fields;
     switch (widget.type) {
@@ -109,17 +121,27 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
       final raw = data['documents'];
       final list = (raw?['data'] ?? []) as List;
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (!mounted) return const [];
+      final seen = page == 1 ? <String>{} : _items.map((d) => '${d['id']}').toSet();
+      final fresh = list.where((d) => seen.add('${d['id']}')).toList();
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) { _items = fresh; } else { _items.addAll(fresh); }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
         _loading = false;
         _loadingMore = false;
       });
+      return fresh;
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+      if (mounted) {
+        setState(() { _loading = false; _loadingMore = false; _failed = page == 1 || _items.isEmpty; });
+        if (page > 1 && !rethrowErrors) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải thêm được. Kiểm tra mạng rồi thử lại.')));
+        }
+      }
+      if (rethrowErrors) rethrow;
+      return const [];
     }
   }
 
@@ -139,12 +161,15 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
     return s.length <= maxLen ? s : '${s.substring(0, maxLen)}…';
   }
 
+  /// For the lightbox: the next page's new items. A failure throws (the
+  /// lightbox keeps paging enabled and retries) instead of returning an
+  /// already-seen page that would switch its paging off for good.
   Future<List<dynamic>> _loadMoreForLightbox() async {
     if (_page >= _lastPage) return [];
-    await _fetch(_page + 1);
-    // Return only the freshly added tail
-    final start = ((_page - 1) * _perPage).clamp(0, _items.length);
-    return _items.sublist(start);
+    final fresh = await _fetch(_page + 1, rethrowErrors: true);
+    // Every item of that page was a duplicate: try the following one.
+    if (fresh.isEmpty && _page < _lastPage) return _fetch(_page + 1, rethrowErrors: true);
+    return fresh;
   }
 
   void _openLightbox(int index) {
@@ -185,9 +210,8 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                sliver: SliverList(delegate: SliverChildListDelegate([
-                  // Hero
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                sliver: SliverToBoxAdapter(child:
                   Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
@@ -218,30 +242,21 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  if (_loading && _items.isEmpty)
-                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-                  else if (_items.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 60),
-                      child: Column(
-                        children: [
-                          Icon(_cf.icon, size: 48, color: AppColors.textMuted),
-                          const SizedBox(height: 12),
-                          Text('Chưa có tư liệu nào', style: body(TextStyle(color: AppColors.textMuted))),
-                        ],
-                      ),
-                    )
-                  else
-                    _content(),
-
-                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
-
-                  SizedBox(height: player.currentSong != null ? 90 : 20),
-                ])),
+                  )
+                ),
               ),
+              if (_loading && _items.isEmpty)
+                SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent))))
+              else if (_failed && _items.isEmpty)
+                SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
+              else if (_items.isEmpty)
+                SliverToBoxAdapter(child: EmptyBlock(icon: _cf.icon, title: 'Chưa có tư liệu nào'))
+              else
+                SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 20), sliver: _content()),
+              SliverToBoxAdapter(child: Column(children: [
+                if (_loadingMore) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                SizedBox(height: player.currentSong != null ? 114 : 44),
+              ])),
             ],
           ),
           if (player.currentSong != null)
@@ -261,9 +276,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
   }
 
   Widget _imageGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return SliverGrid.builder(
       itemCount: _items.length,
       // Responsive: more columns on wider windows so each tile shrinks
       // instead of leaving wide gaps between rows.
@@ -273,13 +286,20 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
       itemBuilder: (ctx, i) {
         final d = _items[i];
         final thumb = d['thumbnail']?['url'];
-        return InkWell(
-          onTap: () => _openLightbox(i),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: thumb != null
-                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
-                : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
+        final title = (d['title'] ?? '').toString();
+        return Semantics(
+          button: true,
+          image: true,
+          label: title.isEmpty ? 'Ảnh tư liệu ${i + 1}' : 'Ảnh: $title',
+          excludeSemantics: true,
+          child: InkWell(
+            onTap: () => _openLightbox(i),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: thumb != null
+                  ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surfaceLight))
+                  : Container(color: AppColors.surfaceLight, child: Icon(Icons.image, color: AppColors.textMuted)),
+            ),
           ),
         );
       },
@@ -287,9 +307,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
   }
 
   Widget _audioList() {
-    return Column(
-      children: _items.asMap().entries.map((e) {
-        final i = e.key; final d = e.value;
+    return SliverList.builder(
+      itemCount: _items.length,
+      itemBuilder: (_, i) {
+        final d = _items[i];
         return InkWell(
           onTap: () => _openLightbox(i),
           child: Container(
@@ -303,7 +324,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
             child: Row(
               children: [
                 Container(
-                  width: 40, height: 40,
+                  width: 44, height: 44,
                   decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                   child: const Icon(Icons.play_arrow, color: Colors.white),
                 ),
@@ -313,32 +334,32 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
+                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text))),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.graphic_eq, size: 18, color: AppColors.textMuted),
+                Icon(Icons.graphic_eq, size: 20, color: AppColors.textMuted),
               ],
             ),
           ),
         );
-      }).toList(),
+      },
     );
   }
 
   Widget _videoGrid() {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return SliverGrid.builder(
       itemCount: _items.length,
       // Responsive: video tiles around 280px wide max so we get 2 cols on
       // mobile but 4-5 cols on a desktop window without huge whitespace.
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 320, crossAxisSpacing: 10, mainAxisSpacing: 14, childAspectRatio: 1.05,
+      // Taller tiles at large text so 2-line titles (14pt) aren't clipped.
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: 320, crossAxisSpacing: 10, mainAxisSpacing: 14,
+        childAspectRatio: 1.05 / MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.6),
       ),
       itemBuilder: (ctx, i) {
         final d = _items[i];
@@ -377,7 +398,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.35))),
+                  child: Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.35))),
                 ),
               ),
             ],
@@ -388,9 +409,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
   }
 
   Widget _articleList() {
-    return Column(
-      children: _items.asMap().entries.map((e) {
-        final i = e.key; final d = e.value;
+    return SliverList.builder(
+      itemCount: _items.length,
+      itemBuilder: (_, i) {
+        final d = _items[i];
         final excerpt = _plainExcerpt(d['content']);
         final thumb = d['thumbnail']?['url'];
         return InkWell(
@@ -414,14 +436,14 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                      Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                       if (excerpt.isNotEmpty) Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4))),
+                        child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4))),
                       ),
                       if (d['uploader']?['username'] != null) Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+                        child: Text(d['uploader']['username'], style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                       ),
                     ],
                   ),
@@ -430,7 +452,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
             ),
           ),
         );
-      }).toList(),
+      },
     );
   }
 }

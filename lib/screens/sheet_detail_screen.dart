@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../services/imgcdn.dart';
+import '../widgets/ui.dart' show goBack, OfflineBlock;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -25,11 +26,13 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
   List<Map<String, dynamic>> _songs = [];
   List<String> _images = [];
   bool _loading = true;
+  bool _failed = false;
 
   @override
   void initState() { super.initState(); _fetch(); }
 
   Future<void> _fetch() async {
+    if (_failed) setState(() { _failed = false; _loading = true; });
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         sheet(id: $id) {
@@ -65,7 +68,44 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
         _loading = false;
       });
       logActivity(context.read<AuthProvider>(), 'view', 'sheet', sh['id']);
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
+  }
+
+  AppBar _plainAppBar() => AppBar(
+        backgroundColor: AppColors.bg,
+        title: const Text('Bản nhạc'),
+        centerTitle: true,
+        leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+      );
+
+  /// "Sáng tác: A, B (1965)" with each name tappable to its person page.
+  Widget _creditLine(String label, List people, String routePrefix, {String suffix = ''}) {
+    final style = body(TextStyle(fontSize: 16, color: AppColors.textSecondary));
+    final linkStyle = body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.accentLight));
+    final children = <Widget>[Text('$label: ', style: style)];
+    for (int i = 0; i < people.length; i++) {
+      final p = people[i] as Map;
+      final slug = p['slug']?.toString() ?? '';
+      final name = p['title']?.toString() ?? '';
+      children.add(Semantics(
+        button: slug.isNotEmpty,
+        label: name,
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: slug.isEmpty ? null : () => context.push('$routePrefix$slug'),
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Align(widthFactor: 1, child: Text(name + (i < people.length - 1 ? ',' : ''), style: slug.isEmpty ? style : linkStyle)),
+            ),
+          ),
+        ),
+      ));
+    }
+    if (suffix.isNotEmpty) children.add(Text(' $suffix', style: style));
+    return Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 4, children: children);
   }
 
   String _formatInt(int n) {
@@ -79,12 +119,15 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_loading && _sheet == null) {
-      return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Scaffold(backgroundColor: AppColors.bg, appBar: _plainAppBar(), body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+    }
+    if (_failed && _sheet == null) {
+      return Scaffold(backgroundColor: AppColors.bg, appBar: _plainAppBar(), body: ListView(children: [OfflineBlock(onRetry: _fetch)]));
     }
     if (_sheet == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        appBar: _plainAppBar(),
         body: Center(child: Text('Không tìm thấy bản nhạc', style: AppText.bodyText)),
       );
     }
@@ -110,20 +153,20 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
             sliver: SliverList(delegate: SliverChildListDelegate([
               Text(sheet['title'] ?? '', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
               const SizedBox(height: 8),
-              if (composers.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('Sáng tác: ${composers.map((c) => c['title']).join(', ')}${sheet['year'] != null && sheet['year'].toString().isNotEmpty ? ' (${sheet['year']})' : ''}', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary)))),
-              if (poets.isNotEmpty) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text('${(sheet['lyric_type']?.toString().isNotEmpty == true) ? sheet['lyric_type'] : 'Thơ'}: ${poets.map((p) => p['title']).join(', ')}', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary)))),
+              if (composers.isNotEmpty) _creditLine('Sáng tác', composers, '/nhac-si/', suffix: sheet['year'] != null && sheet['year'].toString().isNotEmpty ? '(${sheet['year']})' : ''),
+              if (poets.isNotEmpty) _creditLine((sheet['lyric_type']?.toString().isNotEmpty == true) ? sheet['lyric_type'].toString() : 'Thơ', poets, '/nha-tho/'),
               if (uploader?['username'] != null) Padding(padding: const EdgeInsets.only(top: 4), child: Row(children: [
-                CircleAvatar(radius: 9, backgroundColor: AppColors.surfaceLight, backgroundImage: uploader['avatar']?['url'] != null ? CachedNetworkImageProvider(uploader['avatar']['url']) : null),
+                CircleAvatar(radius: 11, backgroundColor: AppColors.surfaceLight, backgroundImage: uploader['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg(uploader['avatar']['url'].toString(), 96)) : null),
                 const SizedBox(width: 6),
-                Text(uploader['username'], style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                Text(uploader['username'], style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
               ])),
 
               if (_images.isNotEmpty) ...[
                 const SizedBox(height: 18),
                 Row(children: [
-                  Icon(Icons.image_outlined, size: 14, color: AppColors.textSecondary),
+                  Icon(Icons.image_outlined, size: 18, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text('Bản nhạc (${_images.length})', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Text('Bản nhạc (${_images.length})', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ]),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -132,12 +175,16 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
                     scrollDirection: Axis.horizontal,
                     itemCount: _images.length,
                     separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemBuilder: (ctx, i) => InkWell(
+                    itemBuilder: (ctx, i) => Semantics(
+                      button: true,
+                      label: 'Xem bản nhạc trang ${i + 1}',
+                      child: InkWell(
                       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: _images, initialIndex: i))),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: CachedNetworkImage(imageUrl: _images[i], width: 130, height: 180, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 130, height: 180, color: AppColors.surfaceLight, child: Icon(Icons.broken_image, color: AppColors.textMuted))),
+                        child: CachedNetworkImage(imageUrl: cdnImg(_images[i], 320), width: 130, height: 180, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(width: 130, height: 180, color: AppColors.surfaceLight, child: Icon(Icons.broken_image, color: AppColors.textMuted))),
                       ),
+                    ),
                     ),
                   ),
                 ),
@@ -145,19 +192,23 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
 
               if (tags.isNotEmpty) ...[
                 const SizedBox(height: 18),
-                Wrap(spacing: 6, runSpacing: 6, children: tags.map((t) => InkWell(
+                Wrap(spacing: 8, runSpacing: 8, children: tags.map((t) => Semantics(
+                  button: true,
+                  label: 'Tag ${t['name']}',
+                  excludeSemantics: true,
+                  child: InkWell(
                   onTap: () => context.push('/tag/${t['slug']}'),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)), child: Text('#${t['name']}', style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary)))),
-                )).toList()),
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)), child: Text('#${t['name']}', style: body(TextStyle(fontSize: 15, color: AppColors.text)))),
+                ))).toList()),
               ],
 
               if (_songs.isNotEmpty) ...[
                 const SizedBox(height: 22),
                 Row(children: [
-                  Icon(Icons.queue_music, size: 14, color: AppColors.textSecondary),
+                  Icon(Icons.queue_music, size: 18, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
-                  Text('Bản thu (${_formatInt(_songs.length)})', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Text('Bản thu (${_formatInt(_songs.length)})', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text))),
                 ]),
                 const SizedBox(height: 8),
                 ..._songs.asMap().entries.map((e) => SongRow(song: e.value, index: e.key, showIndex: true, queue: asSongList(_songs))),

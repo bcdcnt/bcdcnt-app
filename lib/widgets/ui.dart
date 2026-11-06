@@ -211,11 +211,14 @@ class BrandChip extends StatelessWidget {
     // Selected = brand wine (black chips were the heaviest mark on screen).
     final bg = selected ? (AppColors.isLight ? AppColors.wine : AppColors.accent) : (soft ? AppColors.accentSoft : AppColors.surface);
     final fg = selected ? Colors.white : (soft ? AppColors.accentLight : AppColors.textSecondary);
-    return Material(
+    return Semantics(
+      button: onTap != null,
+      selected: selected,
+      child: Material(
       color: bg,
-      borderRadius: BorderRadius.circular(19),
+      borderRadius: BorderRadius.circular(22),
       child: InkWell(
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(22),
         onTap: onTap == null
             ? null
             : () {
@@ -223,17 +226,19 @@ class BrandChip extends StatelessWidget {
                 onTap!();
               },
         child: Container(
-          constraints: const BoxConstraints(minHeight: 38),
+          // 44pt: Apple's minimum touch target; these are the main filters.
+          constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
-              Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: fg))),
+              Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: fg))),
             ],
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -248,7 +253,7 @@ class ChipStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: 20 + MediaQuery.textScalerOf(context).scale(18),
+        height: 24 + MediaQuery.textScalerOf(context).scale(20),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: padding,
@@ -275,24 +280,30 @@ class Segmented extends StatelessWidget {
           children: [
             for (var i = 0; i < labels.length; i++)
               Expanded(
-                child: GestureDetector(
+                child: Semantics(
+                  button: true,
+                  selected: i == selected,
+                  child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     if (i == selected) return;
                     HapticFeedback.selectionClick();
                     onSelect(i);
                   },
+                  // Min height, not fixed: labels must not clip at large text.
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
-                    height: 40,
+                    constraints: const BoxConstraints(minHeight: 44),
+                    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: i == selected ? AppColors.bg : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
                       boxShadow: i == selected ? [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 4, offset: const Offset(0, 1))] : null,
                     ),
-                    child: Text(labels[i], style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
+                    child: Text(labels[i], textAlign: TextAlign.center, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
                   ),
+                ),
                 ),
               ),
           ],
@@ -586,7 +597,12 @@ class RailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SizedBox(
         width: width,
-        child: GestureDetector(
+        // One VoiceOver stop per card ("Tên bài, ca sĩ, nút") instead of loose text.
+        child: Semantics(
+          button: onTap != null,
+          label: [title, if (subtitle != null && subtitle!.isNotEmpty) subtitle].join(', '),
+          excludeSemantics: true,
+          child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap == null
               ? null
@@ -608,6 +624,7 @@ class RailCard extends StatelessWidget {
             ],
           ),
         ),
+        ),
       );
 }
 
@@ -620,7 +637,7 @@ class Rail extends StatelessWidget {
   /// Part of [height] taken by text under the card; it grows with the
   /// "Cỡ chữ" setting so captions never clip at Lớn / Rất lớn.
   final double textHeight;
-  const Rail({super.key, required this.height, required this.count, required this.builder, this.gap = 12, this.textHeight = 40});
+  const Rail({super.key, required this.height, required this.count, required this.builder, this.gap = 12, this.textHeight = 60});
 
   @override
   Widget build(BuildContext context) => SizedBox(

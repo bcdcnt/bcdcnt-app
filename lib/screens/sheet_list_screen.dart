@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -19,18 +19,24 @@ class _SheetListScreenState extends State<SheetListScreen> {
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1, _total = 0;
   bool _loading = true, _loadingMore = false;
+  bool _failed = false, _moreFailed = false;
+  int _reqId = 0;
 
   @override
   void initState() { super.initState(); _scrollCtl.addListener(_onScroll); _fetch(1); }
   @override
   void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _moreFailed || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final req = ++_reqId;
+    setState(() {
+      if (page == 1) { _loading = true; _failed = false; } else { _loadingMore = true; }
+      _moreFailed = false;
+    });
     try {
       final data = await ApiClient.query(r'''query($page: Int, $where: WhereConditions) {
         sheets(first: 20, page: $page, where: $where, orderBy: [{column: "id", order: DESC}]) {
@@ -41,15 +47,26 @@ class _SheetListScreenState extends State<SheetListScreen> {
       final raw = data['sheets'];
       final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != _reqId || !mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) {
+          _items = list;
+        } else {
+          final seen = _items.map((e) => e['id']?.toString()).toSet();
+          _items.addAll(list.where((e) => !seen.contains(e['id']?.toString())));
+        }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
         _loading = false; _loadingMore = false;
       });
-    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+    } catch (_) {
+      if (req != _reqId || !mounted) return;
+      setState(() {
+        if (page == 1) { _failed = true; } else { _moreFailed = true; }
+        _loading = false; _loadingMore = false;
+      });
+    }
   }
 
   String _formatInt(int n) {
@@ -89,7 +106,7 @@ class _SheetListScreenState extends State<SheetListScreen> {
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('Bản nhạc', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                     const SizedBox(height: 4),
-                    Text(_total > 0 ? '${_formatInt(_total)} bản nhạc' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                    Text(_total > 0 ? '${_formatInt(_total)} bản nhạc' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                   ])),
                 ]),
               ),
@@ -98,6 +115,10 @@ class _SheetListScreenState extends State<SheetListScreen> {
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_failed && _items.isEmpty)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
+          else if (_items.isEmpty)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bản nhạc', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
           else
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -116,13 +137,13 @@ class _SheetListScreenState extends State<SheetListScreen> {
                         Container(width: 38, height: 38, decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)), child: Icon(Icons.music_note_outlined, color: AppColors.accentLight, size: 18)),
                         const SizedBox(width: 12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                          Text(s['title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                          Text(s['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
                           const SizedBox(height: 2),
                           Row(children: [
-                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                            if (composers.isNotEmpty) Flexible(child: Text(composers.map((c) => c['title']).join(', '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary)))),
                             if (s['year'] != null && s['year'].toString().isNotEmpty) ...[
                               if (composers.isNotEmpty) const SizedBox(width: 6),
-                              Text('(${s['year']})', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                              Text('(${s['year']})', style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
                             ],
                           ]),
                         ])),
@@ -136,6 +157,7 @@ class _SheetListScreenState extends State<SheetListScreen> {
             ),
           SliverToBoxAdapter(child: Column(children: [
             if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

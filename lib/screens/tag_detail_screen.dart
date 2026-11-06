@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +22,8 @@ class TagDetailScreen extends StatefulWidget {
 
 class _TagDetailScreenState extends State<TagDetailScreen> {
   Map<String, dynamic>? _tag;
+  bool _tagLoading = true;
+  bool _tagFailed = false;
   String _activeType = 'song';
   // Per-type state: items, page, lastPage, total, loading
   final Map<String, _TabState> _tabs = {
@@ -54,13 +56,14 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
 
   void _onScroll() {
     final tab = _tabs[_activeType]!;
-    if (tab.loading || tab.page >= tab.lastPage) return;
+    if (tab.loading || tab.failed || tab.page >= tab.lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) {
       _fetchPage(_activeType, tab.page + 1);
     }
   }
 
   Future<void> _fetchTag() async {
+    if (!_tagLoading || _tagFailed) setState(() { _tagLoading = true; _tagFailed = false; });
     try {
       final data = await ApiClient.query(
         r'query($slug: String!) { tag(slug: $slug) { id name slug users { id username avatar { url } } } }',
@@ -69,16 +72,16 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
       final t = data['tag'];
       if (!mounted) return;
       if (t == null) {
-        setState(() => _tag = null);
+        setState(() { _tag = null; _tagLoading = false; });
         return;
       }
-      setState(() => _tag = Map<String, dynamic>.from(t));
+      setState(() { _tag = Map<String, dynamic>.from(t); _tagLoading = false; });
       logActivity(context.read<AuthProvider>(), 'view', 'tag', t['id']);
       // Prefetch counts for all tabs in one round-trip so the tab labels
       // show totals immediately (not just after the user clicks them).
       _prefetchCounts();
       _fetchPage('song', 1);
-    } catch (_) { if (mounted) setState(() => _tag = null); }
+    } catch (_) { if (mounted) setState(() { _tag = null; _tagLoading = false; _tagFailed = true; }); }
   }
 
   Future<void> _prefetchCounts() async {
@@ -136,7 +139,8 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
     final tag = _tag;
     if (tag == null) return;
     final st = _tabs[type]!;
-    setState(() => st.loading = true);
+    final req = ++st.reqId;
+    setState(() { st.loading = true; st.failed = false; });
     final qmap = {
       'song': r'query($tag: String!, $page: Int) { songsByTag(first: 20, page: $page, tag: $tag, orderBy: [{column: "views", order: DESC}]) { data { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } } paginatorInfo { currentPage lastPage total } } }',
       'instrumental': r'query($tag: String!, $page: Int) { instrumentalsByTag(first: 20, page: $page, tag: $tag, orderBy: [{column: "views", order: DESC}]) { data { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } } paginatorInfo { currentPage lastPage total } } }',
@@ -155,16 +159,22 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
         return m;
       }).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != st.reqId || !mounted) return;
       setState(() {
-        if (page == 1) st.items = items; else st.items.addAll(items);
+        if (page == 1) {
+          st.items = items;
+        } else {
+          final seen = st.items.map((e) => e['id']?.toString()).toSet();
+          st.items.addAll(items.where((e) => !seen.contains(e['id']?.toString())));
+        }
         st.page = pi['currentPage'] ?? page;
         st.lastPage = pi['lastPage'] ?? 1;
         st.total = pi['total'] ?? 0;
         st.loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => st.loading = false);
+      if (req != st.reqId || !mounted) return;
+      setState(() { st.loading = false; st.failed = true; });
     }
   }
 
@@ -174,6 +184,17 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
     final st = _tabs[t]!;
     if (st.items.isEmpty && !st.loading) _fetchPage(t, 1);
   }
+
+  Widget _stateScaffold(Widget child) => Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(
+          backgroundColor: AppColors.bg,
+          title: const Text('Tag'),
+          centerTitle: true,
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+        ),
+        body: child,
+      );
 
   String _formatInt(int n) {
     final s = n.abs().toString();
@@ -189,7 +210,9 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_tag == null) {
-      return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      if (_tagLoading) return _stateScaffold(Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      if (_tagFailed) return _stateScaffold(ListView(children: [OfflineBlock(onRetry: _fetchTag)]));
+      return _stateScaffold(Center(child: Text('Không tìm thấy tag này', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
     }
     final st = _tabs[_activeType]!;
     final activeLabel = _tabConfig.firstWhere((t) => t.$1 == _activeType).$2;
@@ -223,7 +246,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('#${_tag!['name']}', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3))),
                       const SizedBox(height: 4),
-                      Text('Bài hát có tag này', style: body(const TextStyle(fontSize: 12, color: Colors.white70))),
+                      Text('Bài hát có tag này', style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                     ])),
                   ]),
                 ),
@@ -236,7 +259,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                 Container(
                   decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
                   child: SizedBox(
-                    height: 38,
+                    height: 48,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: _tabConfig.length,
@@ -248,15 +271,16 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                         return InkWell(
                           onTap: active ? null : () => _setType(t.$1),
                           child: Container(
+                            alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
                               border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
                             ),
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text(t.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+                              Text(t.$2, style: body(TextStyle(fontSize: 15, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
                               if (total > 0) ...[
                                 const SizedBox(width: 6),
-                                Text('$total', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
+                                Text('$total', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
                               ],
                             ]),
                           ),
@@ -268,7 +292,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                 const SizedBox(height: 14),
                 Row(children: [
                   Expanded(
-                    child: Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                    child: Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
                   ),
                   if (st.items.isNotEmpty)
                     PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
@@ -278,8 +302,10 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
             ),
             if (st.loading && st.items.isEmpty)
               SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            else if (st.failed && st.items.isEmpty)
+              SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetchPage(_activeType, 1)))
             else if (st.items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -293,6 +319,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
               ),
             SliverToBoxAdapter(child: Column(children: [
               if (st.loading && st.items.isNotEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+              if (st.failed && st.items.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetchPage(_activeType, st.page + 1)))),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ],
@@ -310,6 +337,8 @@ class _TabState {
   int lastPage = 1;
   int total = 0;
   bool loading = false;
+  bool failed = false;
+  int reqId = 0;
 }
 
 /// "Xây dựng tag" — overlapping avatars of users who tagged content with
@@ -324,7 +353,7 @@ class _ContributorsStrip extends StatelessWidget {
     final shown = users.take(maxShown).toList();
     final extra = users.length - shown.length;
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-      Text('Xây dựng tag', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.5))),
+      Text('Xây dựng tag', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary, letterSpacing: 0.5))),
       const SizedBox(width: 12),
       Expanded(
         child: SizedBox(

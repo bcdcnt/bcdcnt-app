@@ -15,8 +15,10 @@ class ProfileScreen extends StatelessWidget {
 
   void _toast(BuildContext context, String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: body(const TextStyle(color: Colors.white))),
-      backgroundColor: AppColors.surface,
+      // Theme snackbar colours (dark bg + white text). The old surface bg
+      // made the white text invisible on the light theme.
+      content: Text(msg, style: body(const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600))),
+      backgroundColor: const Color(0xFF161112),
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
@@ -37,6 +39,15 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    // Legacy screen: phones use the Thư viện tab (profile + "của tôi" merged
+    // there in 2026-11). Send anyone landing on /profile from a phone there.
+    final phone = MediaQuery.sizeOf(context).width < 900;
+    if (phone) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) context.go('/library');
+      });
+      return const SizedBox.shrink();
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
@@ -54,11 +65,9 @@ class ProfileScreen extends StatelessWidget {
           // "Gửi bài" — hide for users without the upload permission. The
           // backend rejects them anyway; the menu item only invites a dead
           // click otherwise.
-          if (auth.hasPermission('upload'))
-            _menuItem(context, Icons.upload_outlined, 'Gửi bài', null, onTap: () {
-              _toast(context, 'Tính năng gửi bài đang được phát triển');
-            }),
-          _menuItem(context, Icons.description_outlined, 'Bài tôi gửi', '/bai-gui-cua-toi'),
+          // ("Gửi bài" removed: there is no in-app upload flow yet, the item
+          // only led to a "đang được phát triển" dead end.)
+          _menuItem(context, Icons.description_outlined, 'Bài gửi', '/bai-gui-cua-toi'),
           _menuItem(context, Icons.access_time, 'Nghe gần đây', '/nghe-gan-day'),
           _menuItem(context, Icons.favorite_outline, 'Yêu thích', '/yeu-thich'),
           _menuItem(context, Icons.queue_music_outlined, 'Playlist của tôi', '/playlist-cua-toi'),
@@ -75,8 +84,9 @@ class ProfileScreen extends StatelessWidget {
           const SizedBox(height: 18),
           _menuItem(context, Icons.palette_outlined, 'Phối màu', null,
               onTap: () => context.push('/cai-dat', extra: 'theme')),
-          _menuItem(context, Icons.keyboard_outlined, 'Phím tắt', null,
-              onTap: () => context.push('/cai-dat', extra: 'shortcuts')),
+          if (!phone)
+            _menuItem(context, Icons.keyboard_outlined, 'Phím tắt', null,
+                onTap: () => context.push('/cai-dat', extra: 'shortcuts')),
           const SizedBox(height: 14),
           _menuItem(context, Icons.notifications_outlined, 'Thông báo', '/thong-bao', requireAuth: true),
           _menuItem(context, Icons.favorite_outline, 'Yêu thích', '/yeu-thich', requireAuth: true),

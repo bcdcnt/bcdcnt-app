@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SkeletonSongRow;
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/friendly_error.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -50,6 +50,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   int _lastPage = 1;
   String _sort = 'views';
   bool _loading = true;
+  bool _failed = false;
+  int _reqId = 0;
+  final _scrollCtl = ScrollController();
 
   @override
   void initState() {
@@ -58,10 +61,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   @override
+  void dispose() {
+    _scrollCtl.dispose();
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(CategoryDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.slug != widget.slug) {
-      setState(() { _items = []; _total = 0; _page = 1; _lastPage = 1; _sort = 'views'; _loading = true; });
+      setState(() { _items = []; _total = 0; _page = 1; _lastPage = 1; _sort = 'views'; _loading = true; _failed = false; });
       _fetch(1);
     }
   }
@@ -70,8 +79,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final cfg = _cfg;
     if (cfg == null) { setState(() => _loading = false); return; }
     final useSort = sort ?? _sort;
+    final prevSort = _sort;
     final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$3;
-    setState(() { _sort = useSort; _loading = true; });
+    final req = ++_reqId;
+    setState(() { _sort = useSort; _loading = true; _failed = false; });
 
     final artistNested = cfg.artistField == 'users'
         ? 'users(first: 5) { data { id username } }'
@@ -92,7 +103,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         return m;
       }).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != _reqId || !mounted) return;
       setState(() {
         _items = items;
         _total = pi['total'] ?? 0;
@@ -100,12 +111,30 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         _lastPage = pi['lastPage'] ?? 1;
         _loading = false;
       });
-    } catch (_) {
-      if (mounted) setState(() { _loading = false; _failed = true; });
+      // New page / sort: start reading from the top, not where the old
+      // list's pager button was.
+      if (_scrollCtl.hasClients && _scrollCtl.offset > 0) {
+        _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      }
+    } catch (e) {
+      if (req != _reqId || !mounted) return;
+      final hadItems = _items.isNotEmpty;
+      setState(() {
+        _loading = false;
+        if (hadItems) {
+          _sort = prevSort; // keep the tab matching the list still shown
+        } else {
+          _failed = true;
+        }
+      });
+      if (hadItems) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(friendlyError(e)),
+          action: SnackBarAction(label: 'Thử lại', onPressed: () => _fetch(page, sort: useSort)),
+        ));
+      }
     }
   }
-
-  bool _failed = false;
 
   String _formatInt(int n) {
     final s = n.abs().toString();
@@ -148,6 +177,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       body: Stack(
         children: [
           CustomScrollView(
+            controller: _scrollCtl,
             slivers: [
               SliverAppBar(
                 pinned: true,
@@ -185,8 +215,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                 Text(cfg.name, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _total > 0 ? '${_formatInt(_total)} bài' : 'Đang tải...',
-                                  style: body(const TextStyle(fontSize: 13, color: Colors.white70)),
+                                  _total > 0 ? '${_formatInt(_total)} bài' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có bài')),
+                                  style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                                 ),
                               ],
                             ),
@@ -212,7 +242,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     Container(
                       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
                       child: SizedBox(
-                        height: 38,
+                        height: 48,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           itemCount: _sortOptions.length,
@@ -223,11 +253,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                             return InkWell(
                               onTap: active ? null : () => _fetch(1, sort: opt.$1),
                               child: Container(
+                                alignment: Alignment.center,
                                 padding: const EdgeInsets.symmetric(vertical: 8),
                                 decoration: BoxDecoration(
                                   border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
                                 ),
-                                child: Text(opt.$2, style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
+                                child: Text(opt.$2, style: body(TextStyle(fontSize: 15, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
                               ),
                             );
                           },
@@ -240,9 +271,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     if (_loading && _items.isEmpty)
                       for (var i = 0; i < 6; i++) const SkeletonSongRow()
                     else if (_failed && _items.isEmpty)
-                      OfflineBlock(onRetry: () { setState(() { _loading = true; _failed = false; }); _fetch(1); })
+                      OfflineBlock(onRetry: () => _fetch(1))
                     else if (_items.isEmpty)
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(color: AppColors.textMuted)))))
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
                     else
                       ..._items.asMap().entries.map((e) {
                         final song = Map<String, dynamic>.from(e.value as Map);
@@ -301,7 +332,7 @@ class _Pager extends StatelessWidget {
     int prev = 0;
     for (final p in ordered) {
       if (prev != 0 && p - prev > 1) {
-        children.add(Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(color: AppColors.textMuted))));
+        children.add(Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(fontSize: 16, color: AppColors.textMuted))));
       }
       children.add(_PageBtn(label: '$p', enabled: p != currentPage && !loading, active: p == currentPage, onTap: () => onGoto(p)));
       prev = p;
@@ -323,13 +354,20 @@ class _PageBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = active ? AppColors.accent : AppColors.surfaceLight;
     final fg = active ? Colors.white : (enabled ? AppColors.text : AppColors.textMuted);
-    return Material(
+    final semLabel = icon == Icons.chevron_left ? 'Trang trước' : icon == Icons.chevron_right ? 'Trang sau' : 'Trang $label';
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: active,
+      label: semLabel,
+      excludeSemantics: true,
+      child: Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          width: 34, height: 34,
+          width: 48, height: 48,
           decoration: BoxDecoration(
             color: bg,
             borderRadius: BorderRadius.circular(8),
@@ -337,10 +375,11 @@ class _PageBtn extends StatelessWidget {
           ),
           child: Center(
             child: icon != null
-                ? Icon(icon, size: 16, color: fg)
-                : Text(label!, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg))),
+                ? Icon(icon, size: 24, color: fg)
+                : Text(label!, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: fg))),
           ),
         ),
+      ),
       ),
     );
   }

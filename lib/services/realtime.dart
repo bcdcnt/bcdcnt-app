@@ -202,7 +202,7 @@ class RealtimeService {
           if (auth.token != null) 'Authorization': 'Bearer ${auth.token}',
         },
         body: jsonEncode({'query': query, 'variables': variables}),
-      );
+      ).timeout(const Duration(seconds: 20));
       if (res.statusCode != 200) return null;
       final json = jsonDecode(res.body) as Map<String, dynamic>;
       final channel = json['extensions']?['lighthouse_subscriptions']?['channel']?.toString();
@@ -219,7 +219,7 @@ class RealtimeService {
           if (auth.token != null) 'Authorization': 'Bearer ${auth.token}',
         },
         body: jsonEncode({'socket_id': _socketId, 'channel_name': privateChannel}),
-      );
+      ).timeout(const Duration(seconds: 20));
       if (authResp.statusCode != 200) return null;
       final authSig = (jsonDecode(authResp.body) as Map<String, dynamic>)['auth']?.toString();
       if (authSig == null) return null;

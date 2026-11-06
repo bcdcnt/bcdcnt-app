@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton;
+import '../widgets/ui.dart' show goBack, PillButton, EmptyBlock, OfflineBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
@@ -30,15 +29,17 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _failed = false;
 
   String get _field => widget.kind == UserListKind.favorites ? 'loves' : 'recentListens';
   String get _title => widget.kind == UserListKind.favorites ? 'Yêu thích' : 'Nghe gần đây';
   IconData get _icon => widget.kind == UserListKind.favorites ? Icons.favorite : Icons.access_time;
 
-  @override
   AuthProvider? _authRef;
   bool _didInitialFetch = false;
+  String? _fetchedFor;
 
+  @override
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
@@ -54,10 +55,15 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
   }
 
   void _initialFetch() {
-    if (_didInitialFetch || !mounted) return;
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (auth.loading) return;            // still restoring — wait for next notify
+    final uid = auth.user?['id']?.toString();
+    // Re-fetch after logging in from the guest prompt (or switching account).
+    if (_didInitialFetch && uid == _fetchedFor) return;
     _didInitialFetch = true;
+    _fetchedFor = uid;
+    if (_items.isNotEmpty) setState(() { _items = []; _total = 0; _page = 1; _lastPage = 1; });
     _fetch(1);
   }
 
@@ -87,7 +93,8 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
     if (userId == null) { setState(() => _loading = false); return; }
 
     setState(() {
-      if (page == 1) _loading = true; else _loadingMore = true;
+      _failed = false;
+      if (page == 1) { _loading = true; } else { _loadingMore = true; }
     });
 
     final q = '''query(\$id: ID!, \$first: Int!, \$page: Int) {
@@ -131,7 +138,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
         fresh.add(m);
       }
 
-      if (!mounted) return;
+      if (!mounted || userId != context.read<AuthProvider>().user?['id']?.toString()) return;
       setState(() {
         if (page == 1) _items = fresh; else _items.addAll(fresh);
         _page = pi['currentPage'] ?? page;
@@ -140,8 +147,10 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
         _loading = false;
         _loadingMore = false;
       });
-    } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _loadingMore = false; _failed = page == 1; });
+      if (page > 1) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e, fallback: 'Chưa tải thêm được, vui lòng thử lại.'))));
     }
   }
 
@@ -176,7 +185,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
     final auth = context.watch<AuthProvider>();
     final player = context.watch<PlayerProvider>();
     if (!auth.isAuthenticated) {
-      return _scaffoldEmpty('Vui lòng đăng nhập để xem $_title');
+      return _scaffoldGuest();
     }
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -252,6 +261,8 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                   // List / loader / empty
                   if (_loading && _items.isEmpty)
                     Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                  else if (_failed && _items.isEmpty)
+                    OfflineBlock(onRetry: () => _fetch(1))
                   else if (_items.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),
@@ -261,7 +272,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             widget.kind == UserListKind.favorites ? 'Bạn chưa yêu thích bài nào' : 'Chưa có lịch sử nghe',
-                            style: body(TextStyle(color: AppColors.textMuted)),
+                            style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)),
                           ),
                         ],
                       ),
@@ -291,9 +302,17 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
     );
   }
 
-  Widget _scaffoldEmpty(String msg) => Scaffold(
+  Widget _scaffoldGuest() => Scaffold(
     backgroundColor: AppColors.bg,
-    appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-    body: Center(child: Text(msg, style: AppText.bodyText)),
+    appBar: AppBar(title: Text(_title), centerTitle: true, leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+    body: Center(child: SingleChildScrollView(child: EmptyBlock(
+      icon: _icon,
+      title: 'Đăng nhập để xem $_title',
+      message: widget.kind == UserListKind.favorites
+          ? 'Bài bạn yêu thích được lưu theo tài khoản, mở trên máy nào cũng thấy.'
+          : 'Những bài bạn đã nghe được lưu theo tài khoản.',
+      action: 'Đăng nhập',
+      onAction: () => askLogin(context),
+    ))),
   );
 }

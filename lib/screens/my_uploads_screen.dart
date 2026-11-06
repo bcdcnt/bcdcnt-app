@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, NetImage;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import '../services/player.dart';
-import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/empty_state.dart';
 
+/// Bài gửi: every upload the member sent — approved, waiting or rejected —
+/// so a pending or refused submission never just "disappears".
 class MyUploadsScreen extends StatefulWidget {
   const MyUploadsScreen({super.key});
 
@@ -26,6 +27,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _error = false;
 
   AuthProvider? _authRef;
   bool _didInitialFetch = false;
@@ -61,7 +63,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _error || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
@@ -70,56 +72,43 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
     if (!auth.isAuthenticated) { setState(() => _loading = false); return; }
     final userId = auth.user?['id']?.toString();
     if (userId == null) { setState(() => _loading = false); return; }
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    setState(() {
+      _error = false;
+      if (page == 1) { _loading = true; } else { _loadingMore = true; }
+    });
     try {
       final data = await auth.authedQuery(r'''query($id: ID!, $first: Int!, $page: Int) {
         user(id: $id) {
-          uploads(first: $first, page: $page, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) {
+          uploads(first: $first, page: $page, orderBy: [{column: "id", order: DESC}]) {
             data {
-              id
-              object {
-                __typename id title slug
-                ... on Song { views thumbnail { url } play_type file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-                ... on Folk { views thumbnail { url } play_type file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-                ... on Instrumental { views thumbnail { url } play_type file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-                ... on Poem { views thumbnail { url } play_type file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-                ... on Karaoke { views thumbnail { url } play_type file { audio_url video_url duration } users(first: 3) { data { id username avatar { url } } } }
-              }
+              id title type status reason created_at
+              thumbnail { url }
+              object { __typename ... on Song { title thumbnail { url } } ... on Folk { title thumbnail { url } } ... on Instrumental { title thumbnail { url } } ... on Poem { title thumbnail { url } } ... on Karaoke { title thumbnail { url } } }
             }
             paginatorInfo { total currentPage lastPage }
           }
         }
       }''', {'id': userId, 'first': _perPage, 'page': page});
       final raw = data['user']?['uploads'];
-      final list = ((raw?['data'] ?? []) as List);
+      final list = ((raw?['data'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      const tnMap = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
-      final fresh = <Map<String, dynamic>>[];
       final seen = {if (page > 1) ..._items.map((s) => s['id'].toString())};
-      for (final entry in list) {
-        final obj = entry['object'];
-        if (obj == null) continue;
-        final m = Map<String, dynamic>.from(obj as Map);
-        final id = m['id'].toString();
-        if (seen.contains(id)) continue;
-        seen.add(id);
-        if (m['users']?['data'] != null && m['artists'] == null) {
-          m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
-        }
-        m['file_type'] = tnMap[m['__typename']?.toString()] ?? 'song';
-        fresh.add(m);
-      }
+      final fresh = [for (final u in list) if (seen.add(u['id'].toString())) u];
       if (!mounted) return;
       setState(() {
-        if (page == 1) _items = fresh; else _items.addAll(fresh);
+        if (page == 1) { _items = fresh; } else { _items.addAll(fresh); }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
         _loading = false;
         _loadingMore = false;
       });
-    } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _loadingMore = false; _error = page == 1 || _items.isEmpty; });
+      if (page > 1) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      }
     }
   }
 
@@ -140,74 +129,152 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-        body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
+        appBar: AppBar(title: const Text('Bài gửi'), leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        body: Center(
+          child: auth.loading
+              ? CircularProgressIndicator(color: AppColors.accentFg)
+              : EmptyState(icon: Icons.upload_outlined, title: 'Vui lòng đăng nhập', subtitle: 'Đăng nhập để xem bài bạn đã gửi.', ctaLabel: 'Đăng nhập', onCta: () => askLogin(context)),
+        ),
       );
     }
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(
-          controller: _scrollCtl,
-          slivers: [
-            SliverAppBar(
-              pinned: true,
-              backgroundColor: AppColors.bg,
-              title: Text('Bài tôi gửi'),
-              centerTitle: true,
-              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-              sliver: SliverList(delegate: SliverChildListDelegate([
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    boxShadow: [BoxShadow(color: const Color(0xFFF57C00).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
-                  ),
-                  child: Row(children: [
-                    Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.upload_outlined, color: Colors.white, size: 28)),
-                    const SizedBox(width: 14),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Bài tôi gửi', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
-                      const SizedBox(height: 4),
-                      Text(_total > 0 ? '${_formatInt(_total)} bài đã duyệt' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
-                    ])),
-                  ]),
-                ),
-                const SizedBox(height: 16),
-              ])),
-            ),
-            if (_loading && _items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-            else if (_items.isEmpty)
-              const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
-                icon: Icons.upload_outlined,
-                title: 'Chưa có bài gửi',
-                subtitle: 'Bài bạn gửi đóng góp cho thư viện sẽ xuất hiện tại đây.',
-              ))
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                  (ctx, i) {
-                    final song = _items[i];
-                    return SongRow(song: song, index: i, showIndex: true, queue: asSongList(_items));
-                  },
-                  childCount: _items.length,
-                )),
+        RefreshIndicator(
+          color: AppColors.accentFg,
+          onRefresh: () => _fetch(1),
+          child: CustomScrollView(
+            controller: _scrollCtl,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: AppColors.bg,
+                title: const Text('Bài gửi'),
+                centerTitle: true,
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
-            SliverToBoxAdapter(child: Column(children: [
-              if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
-              SizedBox(height: player.currentSong != null ? 90 : 20),
-            ])),
-          ],
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                sliver: SliverToBoxAdapter(
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    ),
+                    child: Row(children: [
+                      Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.upload_outlined, color: Colors.white, size: 28)),
+                      const SizedBox(width: 14),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Bài gửi của tôi', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
+                        const SizedBox(height: 4),
+                        Text(_total > 0 ? '${_formatInt(_total)} bài đã gửi' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 15, color: Colors.white))),
+                      ])),
+                    ]),
+                  ),
+                ),
+              ),
+              if (_loading && _items.isEmpty)
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accentFg)))
+              else if (_error)
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: OfflineBlock(onRetry: () => _fetch(1))))
+              else if (_items.isEmpty)
+                const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
+                  icon: Icons.upload_outlined,
+                  title: 'Chưa có bài gửi',
+                  subtitle: 'Bài bạn gửi đóng góp cho thư viện sẽ xuất hiện tại đây.',
+                ))
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                    (ctx, i) => _UploadRow(upload: _items[i]),
+                    childCount: _items.length,
+                  )),
+                ),
+              SliverToBoxAdapter(child: Column(children: [
+                if (_loadingMore) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accentFg, strokeWidth: 2))),
+                SizedBox(height: player.currentSong != null ? 90 : 20),
+              ])),
+            ],
+          ),
         ),
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
+    );
+  }
+}
+
+class _UploadRow extends StatelessWidget {
+  final Map<String, dynamic> upload;
+  const _UploadRow({required this.upload});
+
+  static String _date(String? s) {
+    final d = DateTime.tryParse(s ?? '');
+    if (d == null) return '';
+    return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final status = (upload['status'] ?? 'pending').toString();
+    final (String label, Color color, IconData icon) = switch (status) {
+      'approved' => ('Đã duyệt', AppColors.successText, Icons.check_circle_outline),
+      'rejected' => ('Bị từ chối', AppColors.errorText, Icons.cancel_outlined),
+      _ => ('Chờ duyệt', AppColors.warningText, Icons.access_time),
+    };
+    final obj = upload['object'] is Map ? upload['object'] as Map : null;
+    final title = ((upload['title'] ?? '').toString().trim().isNotEmpty ? upload['title'] : (obj?['title'] ?? 'Bài gửi #${upload['id']}')).toString();
+    final thumb = (upload['thumbnail']?['url'] ?? obj?['thumbnail']?['url'])?.toString();
+    final reason = (upload['reason'] ?? '').toString().trim();
+    final date = _date(upload['created_at']?.toString());
+
+    return Semantics(
+      button: true,
+      label: '$title, $label',
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => context.push('/bai-gui/${upload['id']}'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: thumb != null
+                  ? NetImage(url: thumb, width: 52, height: 52)
+                  : Container(width: 52, height: 52, color: AppColors.surfaceLight, child: Icon(Icons.music_note_rounded, color: AppColors.textMuted)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
+                const SizedBox(height: 6),
+                Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(icon, size: 15, color: color),
+                      const SizedBox(width: 4),
+                      Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color))),
+                    ]),
+                  ),
+                  if (date.isNotEmpty) Text(date, style: AppText.caption),
+                ]),
+                if (status == 'rejected' && reason.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text('Lý do: $reason', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
+                  ),
+              ]),
+            ),
+            Padding(padding: const EdgeInsets.only(top: 14), child: Icon(Icons.chevron_right_rounded, color: AppColors.textMuted)),
+          ]),
+        ),
+      ),
     );
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -20,14 +21,34 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1;
-  bool _loading = true, _loadingMore = false;
+  bool _loading = true, _loadingMore = false, _error = false;
+  AuthProvider? _authRef;
+  bool _didInitialFetch = false;
 
   @override
-  void initState() { super.initState(); _scrollCtl.addListener(_onScroll); WidgetsBinding.instance.addPostFrameCallback((_) => _fetch(1)); }
+  void initState() {
+    super.initState();
+    _scrollCtl.addListener(_onScroll);
+    // Wait for auth to finish restoring the session before the first fetch
+    // (a cold start / deep link would otherwise show "chưa có" for members).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _authRef = context.read<AuthProvider>();
+      _authRef!.addListener(_initialFetch);
+      _initialFetch();
+    });
+  }
+
+  void _initialFetch() {
+    if (_didInitialFetch || !mounted) return;
+    if (context.read<AuthProvider>().loading) return;
+    _didInitialFetch = true;
+    _fetch(1);
+  }
+
   @override
-  void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
+  void dispose() { _authRef?.removeListener(_initialFetch); _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _error || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
@@ -35,7 +56,7 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
     final auth = context.read<AuthProvider>();
     final uid = auth.user?['id'];
     if (uid == null) { setState(() => _loading = false); return; }
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    setState(() { _error = false; if (page == 1) { _loading = true; } else { _loadingMore = true; } });
     try {
       final data = await ApiClient.query(r'''query($id: ID!, $first: Int!, $page: Int) {
         user(id: $id) {
@@ -64,12 +85,16 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
       final pi = c?['paginatorInfo'] ?? {};
       if (!mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) { _items = list; } else { _items.addAll(list); }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _loading = false; _loadingMore = false;
       });
-    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _loading = false; _loadingMore = false; _error = page == 1 || _items.isEmpty; });
+      if (page > 1) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+    }
   }
 
   String _stripHtml(String s) => s.replaceAll(RegExp(r'<[^>]*>'), '').trim();
@@ -88,6 +113,7 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final auth = context.watch<AuthProvider>();
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -100,7 +126,11 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           if (_loading && _items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accentFg)))
+          else if (!auth.isAuthenticated)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: EmptyState(icon: Icons.lock_outline, title: 'Vui lòng đăng nhập', ctaLabel: 'Đăng nhập', onCta: () => askLogin(context))))
+          else if (_error)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: OfflineBlock(onRetry: () => _fetch(1))))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.chat_bubble_outline,
@@ -124,11 +154,11 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
                       decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         if (obj?['title'] != null)
-                          Text(obj!['title'], maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                          Text(obj!['title'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
                         const SizedBox(height: 4),
-                        Text(_stripHtml(c['content'] ?? ''), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5))),
+                        Text(_stripHtml(c['content'] ?? ''), maxLines: 4, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, color: AppColors.text, height: 1.5))),
                         const SizedBox(height: 6),
-                        Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                        Text(timeago(c['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                       ]),
                     ),
                   );
@@ -137,7 +167,7 @@ class _MyCommentsScreenState extends State<MyCommentsScreen> {
               )),
             ),
           SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+            if (_loadingMore) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accentFg, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
         ]),

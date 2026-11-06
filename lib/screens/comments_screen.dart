@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
+import 'package:provider/provider.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
 import '../widgets/song_row.dart' show playOrOpen;
 import '../widgets/ui.dart';
 import '../main.dart' show TabReselect;
@@ -24,7 +26,7 @@ const _objFields = '''
           ... on Discussion { id title slug }
           ... on Playlist { id title slug thumbnail { url } }
           ... on Page { id title slug }
-          ... on Upload { id title slug }
+          ... on Upload { id title slug status result user_id }
           ... on Ticket { id title slug }
           ... on Role { id name slug alias }''';
 
@@ -35,7 +37,7 @@ const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
     }
   }''';
 
-const _featuredQuery = 'query { featuredComments(limit: 30) { id snippet likes created_at username user_avatar song_id song_title song_slug song_image audio_url file_type } }';
+const _featuredQuery = 'query { featuredComments(limit: 30) { id snippet likes created_at user_id username user_avatar song_id song_title song_slug song_image audio_url file_type } }';
 
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
@@ -98,7 +100,8 @@ class _CommentsFeedState extends State<CommentsFeed> {
   }
 
   void _onReselect() {
-    if (TabReselect.tick.value.$1 == 2 && _scrollCtl.hasClients) {
+    // Only the Cộng đồng pane on screen (IndexedStack mutes hidden ones).
+    if (TabReselect.tick.value.$1 == 2 && _scrollCtl.hasClients && TickerMode.valuesOf(context).enabled) {
       _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
     }
   }
@@ -117,7 +120,12 @@ class _CommentsFeedState extends State<CommentsFeed> {
 
   int _gen = 0;
 
-  Future<void> _fetch(int page) async {
+  /// [chain] counts automatic follow-up loads: the client-side filter can
+  /// leave a page (nearly) empty, so we pull a few more pages until there's
+  /// enough to read instead of showing "Chưa có bình luận".
+  static const _minVisible = 8, _maxChain = 3;
+
+  Future<void> _fetch(int page, {int chain = 0}) async {
     final filter = _filter;
     // A page-1 load (filter change, pull-to-refresh) supersedes any
     // load-more still in flight, so old pages can't be appended to it.
@@ -143,7 +151,7 @@ class _CommentsFeedState extends State<CommentsFeed> {
             'text': m['snippet'],
             'likes': m['likes'],
             'created_at': m['created_at'],
-            'user': {'username': m['username'], 'avatar': {'url': m['user_avatar']}},
+            'user': {'id': m['user_id'], 'username': m['username'], 'avatar': {'url': m['user_avatar']}},
             'object': {
               '__typename': 'Song',
               'id': m['song_id'],
@@ -200,18 +208,32 @@ class _CommentsFeedState extends State<CommentsFeed> {
         _loading = false;
         _loadingMore = false;
       });
+      final added = page == 1 ? _items.length : list.length;
+      if (filter != 0 && added < _minVisible && newPage < newLast && chain < _maxChain) {
+        _fetch(newPage + 1, chain: chain + 1);
+      }
     } catch (_) {
       if (mounted && filter == _filter && gen == _gen) setState(() { _loading = false; _loadingMore = false; _failed = _items.isEmpty; });
     }
   }
 
-  void _openObject(Map<String, dynamic> obj) {
+  void _openObject(Map<String, dynamic> obj, {String? commentId}) {
     final tn = obj['__typename']?.toString();
     final id = obj['id']?.toString();
     final slug = obj['slug']?.toString();
     if (id == null) return;
     if (_fileTypes.containsKey(tn)) {
-      context.push('/song/$id', extra: {...obj, 'file_type': obj['file_type'] ?? _fileTypes[tn]});
+      // From a comment: land on the song's comments, that comment lit up.
+      context.push(commentId != null ? '/song/$id?binh-luan=1' : '/song/$id', extra: {
+        ...obj,
+        'file_type': obj['file_type'] ?? _fileTypes[tn],
+        'highlightCommentId': ?commentId,
+      });
+      return;
+    }
+    if (tn == 'Upload') {
+      final r = context.read<AuthProvider>().uploadRoute(obj);
+      if (r != null) context.push(r.path, extra: r.extra);
       return;
     }
     switch (tn) {
@@ -224,7 +246,6 @@ class _CommentsFeedState extends State<CommentsFeed> {
       case 'Discussion': context.push('/thao-luan/$id'); break;
       case 'Playlist': context.push('/playlist/$id'); break;
       case 'Page': context.push('/p/$slug'); break;
-      case 'Upload': context.push('/bai-gui/$id'); break;
       case 'Ticket': context.push('/ho-tro/$id'); break;
       case 'Role': launchUrl(Uri.parse('$siteUrl/nhom/${obj['alias'] ?? slug}'), mode: LaunchMode.externalApplication); break;
     }
@@ -284,10 +305,13 @@ class _CommentsFeedState extends State<CommentsFeed> {
               ),
             ),
           ),
-          if (_loading && _items.isEmpty)
+          if ((_loading || _loadingMore) && _items.isEmpty)
             SliverList(delegate: SliverChildBuilderDelegate((_, __) => const _CommentSkeleton(), childCount: 5))
           else if (_failed)
             SliverToBoxAdapter(child: EmptyBlock(icon: Icons.wifi_off_rounded, title: 'Chưa tải được bình luận', message: 'Kiểm tra kết nối mạng rồi thử lại.', action: 'Tải lại', onAction: () => _fetch(1)))
+          else if (_items.isEmpty && _filter != 0 && _page < _lastPage)
+            // Only filtered-out pages so far — there is more further back.
+            SliverToBoxAdapter(child: EmptyBlock(icon: Icons.chat_bubble_outline_rounded, title: 'Chưa có cảm nhận mới', message: 'Các bình luận gần đây chủ yếu là câu ngắn. Xem thêm bình luận cũ hơn?', action: 'Xem thêm', onAction: () => _fetch(_page + 1)))
           else if (_items.isEmpty)
             const SliverToBoxAdapter(child: EmptyBlock(icon: Icons.chat_bubble_outline_rounded, title: 'Chưa có bình luận', message: 'Cảm nhận mới của cộng đồng sẽ hiện ở đây.'))
           else
@@ -338,7 +362,8 @@ class _CommentSkeleton extends StatelessWidget {
 /// to open, play button for songs) and the like count.
 class CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
-  final void Function(Map<String, dynamic>) onOpenObject;
+  /// Opens what the comment is on; [commentId] set = jump to that comment.
+  final void Function(Map<String, dynamic> obj, {String? commentId}) onOpenObject;
   const CommentTile({super.key, required this.comment, required this.onOpenObject});
 
   @override
@@ -351,22 +376,39 @@ class CommentTile extends StatelessWidget {
     final img = (obj?['thumbnail']?['url'] ?? obj?['avatar']?['url'])?.toString();
     final likes = comment['likes'] is num ? (comment['likes'] as num).toInt() : 0;
     final name = (user?['username'] ?? '').toString();
+    final userId = user?['id']?.toString();
+    void openUser() => context.push('/user/$userId');
+    final canOpen = obj != null && (tn != 'Upload' || context.read<AuthProvider>().uploadRoute(obj) != null);
 
-    return Padding(
+    return InkWell(
+      // The whole tile opens the song/page at this comment.
+      onTap: canOpen ? () { HapticFeedback.selectionClick(); onOpenObject(obj, commentId: comment['id']?.toString()); } : null,
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          UserAvatar(url: user?['avatar']?['url']?.toString(), name: name, size: 40),
+          Semantics(
+            button: userId != null,
+            label: userId != null ? 'Trang của $name' : null,
+            excludeSemantics: userId != null,
+            child: GestureDetector(
+              onTap: userId != null ? openUser : null,
+              child: UserAvatar(url: user?['avatar']?['url']?.toString(), name: name, size: 40),
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                  Flexible(child: GestureDetector(
+                    onTap: userId != null ? openUser : null,
+                    child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  )),
                   const SizedBox(width: 8),
-                  Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                  Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 ]),
                 const SizedBox(height: 4),
                 Text(text.length > 320 ? '${text.substring(0, 320)}…' : text, style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
@@ -377,16 +419,16 @@ class CommentTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      onTap: () {
+                      onTap: canOpen ? () {
                         HapticFeedback.selectionClick();
                         onOpenObject(obj);
-                      },
+                      } : null,
                       child: Padding(
                         padding: const EdgeInsets.all(8),
                         child: Row(children: [
                           if (img != null) NetImage(url: img, width: 34, height: 34, radius: 8),
                           if (img != null) const SizedBox(width: 10),
-                          Expanded(child: Text((obj['title'] ?? obj['name'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)))),
+                          Expanded(child: Text((obj['title'] ?? obj['name'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
                           if (isSong && obj['file']?['audio_url'] != null)
                             IconButton(
                               tooltip: 'Nghe',
@@ -394,7 +436,7 @@ class CommentTile extends StatelessWidget {
                               icon: Icon(Icons.play_circle_fill_rounded, color: AppColors.accentLight, size: 30),
                               onPressed: () => playOrOpen(context, {...obj, 'file_type': obj['file_type'] ?? _fileTypes[tn]}, [], 'Cộng đồng'),
                             )
-                          else
+                          else if (canOpen)
                             Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
                         ]),
                       ),
@@ -414,6 +456,8 @@ class CommentTile extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
+

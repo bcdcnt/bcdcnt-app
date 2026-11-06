@@ -1,10 +1,33 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../constants/theme.dart';
 
+/// A GraphQL error from the API. [toString] keeps the historical
+/// `Exception: <message>` shape so existing `.replaceFirst('Exception: ', '')`
+/// call sites and friendlyError() keep working, while [category] / [code]
+/// let callers tell an expired session (`authentication`) apart from a
+/// permission denial (`authorization`).
+class ApiException implements Exception {
+  final String message;
+  final String? category;
+  final String? code;
+  const ApiException(this.message, {this.category, this.code});
+
+  bool get isUnauthenticated =>
+      category == 'authentication' || message.toLowerCase().contains('unauthenticated');
+
+  @override
+  String toString() => 'Exception: $message';
+}
+
 class ApiClient {
+  /// Every HTTP call gives up after this long; the resulting TimeoutException
+  /// is turned into "Mạng chậm quá…" by friendlyError().
+  static const _timeout = Duration(seconds: 20);
+
   /// App version ("1.3.0+8"), set once at startup from package_info.
   static String appVersion = '';
 
@@ -63,7 +86,12 @@ class ApiClient {
     }
     final first = errors.isNotEmpty ? errors[0] : null;
     final msg = (first is Map ? first["message"] : null)?.toString();
-    throw Exception(msg ?? "GraphQL error");
+    final ext = first is Map ? first["extensions"] : null;
+    throw ApiException(
+      msg ?? "GraphQL error",
+      category: (ext is Map ? ext["category"] : null)?.toString(),
+      code: (ext is Map ? ext["code"] : null)?.toString(),
+    );
   }
 
   static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
@@ -78,8 +106,11 @@ class ApiClient {
     });
     http.Response? res;
     try {
-      res = await http.get(uri, headers: _baseHeaders());
+      res = await http.get(uri, headers: _baseHeaders()).timeout(_timeout);
       if (res.statusCode != 200) res = null;
+    } on TimeoutException {
+      // Slow network: a POST retry would only double the wait (40s).
+      rethrow;
     } catch (_) {
       res = null;
     }
@@ -87,7 +118,7 @@ class ApiClient {
       Uri.parse(apiBase),
       headers: _baseHeaders(jsonContent: true),
       body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),
-    );
+    ).timeout(_timeout);
     final json = jsonDecode(res.body);
     if (json['errors'] != null) {
       // Surface the first GraphQL error so failures don't silently render
@@ -102,7 +133,7 @@ class ApiClient {
       Uri.parse(apiBase),
       headers: _baseHeaders(token: token, jsonContent: true),
       body: jsonEncode({'query': q, 'variables': variables}),
-    );
+    ).timeout(_timeout);
     final json = jsonDecode(res.body);
     if (json['errors'] != null) {
       _throwErrors(json['errors'] as List);
@@ -118,7 +149,7 @@ class ApiClient {
       Uri.parse(apiBase),
       headers: _baseHeaders(token: token, jsonContent: true),
       body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),
-    );
+    ).timeout(_timeout);
     final json = jsonDecode(res.body);
     if (json['errors'] != null) {
       _throwErrors(json['errors'] as List);
@@ -167,4 +198,26 @@ String timeago(String? dateStr) {
   if (diff.inDays < 30) return '${diff.inDays} ngày trước';
   if (diff.inDays < 365) return '${diff.inDays ~/ 30} tháng trước';
   return '${diff.inDays ~/ 365} năm trước';
+}
+
+/// In-app route for an approved upload's `result` (the published page URL the
+/// API stores, e.g. "https://bcdcnt.net/bai-hat/ten-bai-123.html").
+/// Returns null when the URL isn't something the app can open.
+({String path, Map<String, dynamic>? extra})? uploadResultRoute(String? result) {
+  if (result == null || result.isEmpty) return null;
+  final uri = Uri.tryParse(result);
+  if (uri == null || uri.pathSegments.length < 2) return null;
+  final prefix = uri.pathSegments.first;
+  final m = RegExp(r'(\d+)(?:\.html)?$').firstMatch(uri.pathSegments[1]);
+  final id = m?.group(1);
+  if (id == null) return null;
+  const songTypes = {'bai-hat': 'song', 'dan-ca': 'folk', 'khi-nhac': 'instrumental', 'tieng-tho': 'poem', 'thanh-vien-hat': 'karaoke'};
+  final fileType = songTypes[prefix];
+  if (fileType != null) return (path: '/song/$id', extra: {'id': id, 'file_type': fileType});
+  return switch (prefix) {
+    'tu-lieu' => (path: '/tu-lieu/chi-tiet/$id', extra: null),
+    'sheet' => (path: '/sheet/$id', extra: null),
+    'thao-luan' => (path: '/thao-luan/$id', extra: null),
+    _ => null,
+  };
 }

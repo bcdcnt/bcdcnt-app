@@ -1,6 +1,8 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, ChipStrip, OfflineBlock;
+import '../services/auth.dart';
+import '../main.dart' show TabReselect;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -54,7 +56,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
   };
   static const _filters = [
     ('all', 'Tất cả'),
-    ('update_lyric', 'Lời'),
+    ('update_lyric', 'Lời bài hát'),
     ('comment', 'Bình luận'),
     ('create_sheet', 'Bản nhạc'),
     ('create_song', 'Tân nhạc'),
@@ -70,17 +72,28 @@ class _ActivityScreenState extends State<ActivityScreen> {
   String _filter = 'all';
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
-  bool _loading = true, _loadingMore = false, _hasNext = false;
+  bool _loading = true, _loadingMore = false, _hasNext = false, _failed = false;
   String _endCursor = '';
+  /// Bumped on every reset load so a slow page for an old filter is dropped.
+  int _gen = 0;
 
   @override
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
+    if (widget.embedded) TabReselect.tick.addListener(_onReselect);
     _fetch(reset: true);
   }
   @override
-  void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
+  void dispose() { TabReselect.tick.removeListener(_onReselect); _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
+
+  /// Cộng đồng tab tapped again while this pane is on screen → back to top.
+  /// (IndexedStack keeps hidden panes laid out, so check visibility.)
+  void _onReselect() {
+    if (TabReselect.tick.value.$1 != 2 || !_scrollCtl.hasClients) return;
+    if (!TickerMode.valuesOf(context).enabled) return;
+    _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+  }
   void _onScroll() {
     if (_loadingMore || _loading || !_hasNext) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(reset: false);
@@ -93,10 +106,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return [f];
   }
 
-  Future<void> _fetch({required bool reset}) async {
-    setState(() { if (reset) { _loading = true; _items = []; _endCursor = ''; } else _loadingMore = true; });
+  Future<void> _fetch({required bool reset, bool keepItems = false}) async {
+    if (reset) _gen++;
+    final gen = _gen;
+    final filter = _filter;
+    setState(() {
+      _failed = false;
+      if (reset) { _loading = true; if (!keepItems) _items = []; _endCursor = ''; } else { _loadingMore = true; }
+    });
     try {
-      final actions = _actionsForFilter(_filter);
+      final actions = _actionsForFilter(filter);
       final actionsStr = actions.map((a) => '"$a"').join(', ');
       final after = reset ? '' : _endCursor;
       final q = '''query {
@@ -113,8 +132,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
               ... on Document { id title slug }
               ... on Sheet { id title slug }
               ... on Discussion { id title slug }
-              ... on Upload { id title type user { id username } }
-              ... on Comment { id commentable_type user { id username } object { __typename ... on Song { id title slug } ... on Folk { id title slug } ... on Instrumental { id title slug } ... on Poem { id title slug } ... on Karaoke { id title slug } ... on Document { id title slug } ... on Discussion { id title slug } } }
+              ... on Upload { id title type status result user { id username } }
+              ... on Comment { id commentable_type user { id username } object { __typename ... on Song { id title slug } ... on Folk { id title slug } ... on Instrumental { id title slug } ... on Poem { id title slug } ... on Karaoke { id title slug } ... on Document { id title slug } ... on Discussion { id title slug } ... on Sheet { id title slug } ... on Upload { id title status result user_id } } }
             }
           } }
           pageInfo { hasNextPage endCursor }
@@ -124,30 +143,47 @@ class _ActivityScreenState extends State<ActivityScreen> {
       final edges = (data['activities']?['edges'] ?? []) as List;
       final nodes = edges.map((e) => Map<String, dynamic>.from(e['node'] as Map)).toList();
       final pi = data['activities']?['pageInfo'] ?? {};
-      if (!mounted) return;
+      // Filter changed / refreshed while waiting → this answer is stale.
+      if (!mounted || gen != _gen || filter != _filter) return;
       setState(() {
-        if (reset) _items = nodes; else _items.addAll(nodes);
+        if (reset) { _items = nodes; } else { _items.addAll(nodes); }
         _hasNext = pi['hasNextPage'] ?? false;
         _endCursor = pi['endCursor'] ?? '';
         _loading = false; _loadingMore = false;
       });
-    } catch (_) { if (mounted) setState(() { _loading = false; _loadingMore = false; }); }
+    } catch (_) {
+      if (!mounted || gen != _gen || filter != _filter) return;
+      setState(() { _loading = false; _loadingMore = false; _failed = reset || _items.isEmpty; });
+      if (!reset && _items.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải thêm được. Kiểm tra mạng rồi thử lại.')));
+      }
+    }
   }
 
-  String? _objectRoute(Map<String, dynamic> obj) {
+  ({String path, Map<String, dynamic>? extra})? _objectRoute(Map<String, dynamic> obj) {
     final type = (obj['__typename'] ?? '').toString().toLowerCase();
-    if (type == 'song' || type == 'folk' || type == 'instrumental' || type == 'poem' || type == 'karaoke') return '/song/${obj['id']}';
-    if (type == 'sheet') return '/sheet/${obj['id']}';
-    if (type == 'document') return '/tu-lieu/chi-tiet/${obj['id']}';
+    final id = obj['id'];
+    if (id == null) return null;
+    if (type == 'song' || type == 'folk' || type == 'instrumental' || type == 'poem' || type == 'karaoke') return (path: '/song/$id', extra: {'id': id, 'file_type': type});
+    if (type == 'sheet') return (path: '/sheet/$id', extra: null);
+    if (type == 'document') return (path: '/tu-lieu/chi-tiet/$id', extra: null);
+    if (type == 'discussion') return (path: '/thao-luan/$id', extra: null);
+    if (type == 'upload') return context.read<AuthProvider>().uploadRoute(obj);
     return null;
   }
 
-  void _openObject(Map<String, dynamic>? obj) {
-    if (obj == null) return;
-    var target = obj;
-    if (obj['__typename'] == 'Comment' && obj['object'] != null) target = Map<String, dynamic>.from(obj['object'] as Map);
-    final r = _objectRoute(target);
-    if (r != null) context.push(r);
+  Map<String, dynamic>? _target(Map<String, dynamic>? obj) {
+    if (obj == null) return null;
+    if (obj['__typename'] == 'Comment') return obj['object'] is Map ? Map<String, dynamic>.from(obj['object'] as Map) : null;
+    return obj;
+  }
+
+  /// Tap handler for an object title, or null when it can't be opened.
+  VoidCallback? _openerFor(Map<String, dynamic>? obj) {
+    final t = _target(obj);
+    final r = t == null ? null : _objectRoute(t);
+    if (r == null) return null;
+    return () => context.push(r.path, extra: r.extra);
   }
 
   List<Object> get _grouped => groupByDay(_items, (a) => a['created_at']);
@@ -158,37 +194,34 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(controller: _scrollCtl, slivers: [
+        RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: () => _fetch(reset: true, keepItems: true),
+          child: CustomScrollView(controller: _scrollCtl, physics: const AlwaysScrollableScrollPhysics(), slivers: [
           if (!widget.embedded)
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg,
               title: const Text('Hoạt động'),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
+              leading: IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
             ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-            sliver: SliverToBoxAdapter(child: Container(
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: _filters.map((f) {
-                  final active = _filter == f.$1;
-                  return InkWell(
-                    onTap: active ? null : () { setState(() => _filter = f.$1); _fetch(reset: true); },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: active ? AppColors.accent : Colors.transparent, width: 2))),
-                      child: Text(f.$2, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: active ? AppColors.text : AppColors.textMuted))),
-                    ),
-                  );
-                }).toList()),
-              ),
+            padding: const EdgeInsets.only(top: 12, bottom: 4),
+            sliver: SliverToBoxAdapter(child: ChipStrip(
+              labels: [for (final f in _filters) f.$2],
+              selected: _filters.indexWhere((f) => f.$1 == _filter),
+              onSelect: (i) {
+                if (_filters[i].$1 == _filter) return;
+                setState(() => _filter = _filters[i].$1);
+                _fetch(reset: true);
+              },
             )),
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_failed && _items.isEmpty)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(reset: true)))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.timeline,
@@ -211,7 +244,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
             if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
-        ]),
+        ])),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
@@ -219,86 +252,92 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   Widget _row(Map<String, dynamic> a) {
     final action = (a['action'] ?? '').toString();
-    final user = a['user'];
     final obj = a['object'] != null ? Map<String, dynamic>.from(a['object'] as Map) : null;
     final iconData = _actionIcons[action] ?? Icons.access_time;
     final actionLabel = _actionLabels[action] ?? action;
     final isComment = obj?['__typename'] == 'Comment';
     final isUpload = obj?['__typename'] == 'Upload';
-    Map<String, dynamic>? innerObj;
-    if (isComment && obj?['object'] != null) innerObj = Map<String, dynamic>.from(obj!['object'] as Map);
+    // Approvals are a BQT decision, not one moderator's: "BQT duyệt bài gửi X của Y".
+    final byBqt = action == 'approve_upload' || action == 'reject_upload';
+    final user = byBqt ? null : a['user'];
+    final innerObj = isComment ? _target(obj) : null;
     final objTitle = (innerObj ?? obj)?['title'];
+    final openObj = _openerFor(obj);
 
-    return Container(
+    final base = body(TextStyle(fontSize: 15, color: AppColors.text, height: 1.5));
+    final muted = body(TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.5));
+    final strong = body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.5));
+    final link = body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: openObj != null ? AppColors.accentLight : AppColors.text, height: 1.5));
+
+    Widget userLink(Map? u, TextStyle style) => InkWell(
+          onTap: u?['id'] != null ? () => context.push('/user/${u!['id']}') : null,
+          child: Text((u?['username'] ?? '').toString(), style: style),
+        );
+    Widget objLink() => InkWell(onTap: openObj, child: Text(objTitle.toString(), style: link));
+
+    return InkWell(
+      // The whole row opens the object (song, discussion…) when it can.
+      onTap: openObj,
+      child: Container(
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
       decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Avatar
         InkWell(
           onTap: user?['id'] != null ? () => context.push('/user/${user['id']}') : null,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(22),
           child: Container(
-            width: 36, height: 36,
+            width: 40, height: 40,
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
             child: ClipOval(
-              child: user?['avatar']?['url'] != null
-                  ? CachedNetworkImage(imageUrl: cdnImg((user['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconData, color: AppColors.accentLight, size: 16))
-                  : Icon(iconData, color: AppColors.accentLight, size: 16),
+              child: byBqt
+                  ? Icon(Icons.verified_user_outlined, color: AppColors.accentLight, size: 20)
+                  : user?['avatar']?['url'] != null
+                      ? CachedNetworkImage(imageUrl: cdnImg((user['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(iconData, color: AppColors.accentLight, size: 18))
+                      : Icon(iconData, color: AppColors.accentLight, size: 18),
             ),
           ),
         ),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           DefaultTextStyle(
-            style: body(TextStyle(fontSize: 13, color: AppColors.text, height: 1.5)),
+            style: base,
             child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-              if (user != null)
-                InkWell(
-                  onTap: () => context.push('/user/${user['id']}'),
-                  child: Text(user['username'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                ),
+              if (byBqt) Text('BQT', style: strong)
+              else if (user != null) userLink(user, strong),
               const Text(' '),
-              Text(actionLabel, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+              Text(actionLabel, style: muted),
               if (isComment && obj != null && obj['user']?['username'] != null) ...[
-                Text(' của ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                InkWell(
-                  onTap: () => context.push('/user/${obj['user']['id']}'),
-                  child: Text(obj['user']['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
-                ),
+                Text(' của ', style: muted),
+                userLink(obj['user'], strong),
               ],
-              if (isUpload && obj != null && obj['user']?['username'] != null) ...[
+              if (isUpload && obj != null) ...[
                 if (objTitle != null) ...[
                   const Text(' '),
-                  InkWell(
-                    onTap: () => _openObject(obj),
-                    child: Text(objTitle.toString(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                  ),
+                  objLink(),
                 ],
-                Text(' của ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                InkWell(
-                  onTap: () => context.push('/user/${obj['user']['id']}'),
-                  child: Text(obj['user']['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text))),
-                ),
+                if (obj['user']?['username'] != null) ...[
+                  Text(' của ', style: muted),
+                  userLink(obj['user'], strong),
+                ],
               ],
               if (objTitle != null && !isUpload) ...[
-                Text(isComment || action == 'comment' || action == 'love_comment' ? ' trong ' : ' ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                InkWell(
-                  onTap: () => _openObject(obj),
-                  child: Text(objTitle.toString(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
-                ),
+                Text(isComment || action == 'comment' || action == 'love_comment' ? ' trong ' : ' ', style: muted),
+                objLink(),
               ],
             ]),
           ),
           const SizedBox(height: 4),
-          Text(timeago(a['created_at']), style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+          Text(timeago(a['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
         ])),
         const SizedBox(width: 8),
         Container(
-          width: 26, height: 26, margin: const EdgeInsets.only(top: 2),
+          width: 28, height: 28, margin: const EdgeInsets.only(top: 2),
           decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)),
-          child: Icon(iconData, size: 14, color: AppColors.accentLight),
+          child: Icon(iconData, size: 16, color: AppColors.accentLight),
         ),
       ]),
+      ),
     );
   }
 }
@@ -313,7 +352,7 @@ class _DayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
       child: Text(
         label.toUpperCase(),
-        style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+        style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
       ),
     );
   }

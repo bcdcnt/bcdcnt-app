@@ -14,7 +14,8 @@ class AppColors {
   static Color accentSoft = const Color(0xFFF8EDED);
   static Color text = const Color(0xFF161112);
   static Color textSecondary = const Color(0xFF4F4547);
-  static Color textMuted = const Color(0xFF73686A);
+  // #665C5E: 5.3:1 on surfaceLight (the old #73686A was 4.45:1).
+  static Color textMuted = const Color(0xFF665C5E);
   static Color border = const Color(0xFFECE4E4);
   static Color borderSubtle = const Color(0xFFF3EEEE);
 
@@ -23,6 +24,16 @@ class AppColors {
   /// exposed on white, so callers scale their shadow alpha by [shadowMul].
   static bool isLight = true;
   static double get shadowMul => isLight ? 0.32 : 1.0;
+
+  /// Accent for text/icons/switch tracks drawn ON the background. The dark
+  /// theme's `accent` (#8E1F1F) is only 2.2:1 on its near-black bg, so use
+  /// the light accent there (10:1). Fills behind white text keep `accent`.
+  static Color get accentFg => isLight ? accent : accentLight;
+
+  /// Status text colours, ≥4.5:1 on surface/surfaceLight in both themes.
+  static Color get errorText => isLight ? const Color(0xFFA32020) : const Color(0xFFFF8A80);
+  static Color get warningText => isLight ? const Color(0xFF8A5A00) : const Color(0xFFFFC870);
+  static Color get successText => isLight ? const Color(0xFF1A6B3C) : const Color(0xFF7FD69F);
 
   /// Theme-aware decorative glow. Use instead of inline `BoxShadow(...)` for
   /// card/header halos so they soften automatically on the light theme.
@@ -71,9 +82,9 @@ TextStyle brand([TextStyle? style]) => (style ?? const TextStyle()).copyWith(fon
 ///   sectionTitle  17   — list section labels
 ///   emphasized    15   — highlighted body
 ///   title         16   — list item titles
-///   bodyText      14   — body copy
-///   meta          13   — metadata rows
-///   caption       12   — caption / overline / timestamp
+///   bodyText      16   — body copy
+///   meta          14   — metadata rows
+///   caption       13   — caption / overline / timestamp
 class AppText {
   static TextStyle get hero => display(TextStyle(fontSize: 30, fontWeight: FontWeight.w800, height: 1.12, color: AppColors.text));
   static TextStyle get displayLarge => display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text));
@@ -81,9 +92,9 @@ class AppText {
   static TextStyle get sectionTitle => display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text));
   static TextStyle get emphasized => body(TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: AppColors.text));
   static TextStyle get title => body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text));
-  static TextStyle get bodyText => body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textSecondary));
-  static TextStyle get meta => body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
-  static TextStyle get caption => body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+  static TextStyle get bodyText => body(TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: AppColors.textSecondary));
+  static TextStyle get meta => body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+  static TextStyle get caption => body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
   /// Small uppercase label ("GỢI Ý HÔM NAY", "LỜI 1 & 3").
   static TextStyle get eyebrow => body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.9, color: AppColors.accentLight));
 }

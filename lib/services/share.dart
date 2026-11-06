@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../constants/theme.dart';
+import 'player.dart' show songKind;
 
 /// Opens the phone's share sheet (Zalo, Facebook, Messenger, SMS…) with a
 /// ready-written message; members mostly pass songs on through Zalo groups,
@@ -18,6 +19,21 @@ Future<void> shareText(BuildContext context, {required String text, String? subj
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã sao chép để dán vào Zalo, Facebook…')));
     }
   }
+}
+
+const _kindPrefix = {
+  'song': 'bai-hat',
+  'folk': 'dan-ca',
+  'poem': 'tieng-tho',
+  'karaoke': 'thanh-vien-hat',
+  'instrumental': 'khi-nhac',
+};
+
+/// Web path of a song by its kind (`/dan-ca/slug-id` for folk…): ids
+/// repeat across kinds, so a /bai-hat link to a folk song opens another song.
+String songWebPath(Map song, [String? kind]) {
+  final k = kind ?? songKind(song);
+  return '/${_kindPrefix[k] ?? 'bai-hat'}/${song['slug']}-${song['id']}';
 }
 
 String _names(dynamic list) {
@@ -55,12 +71,12 @@ String? firstLyricLine(Object? html) {
 /// "🎵 Bài ca cho em — Phan Nhân (1981)\nTrình bày: Tô Thanh Phương\n<link>"
 /// [hook] (a lyric line or a member's memory) is what makes people tap it
 /// inside a Zalo group, so it goes right under the title.
-String songShareText(Map song, {String? hook}) {
+String songShareText(Map song, {String? hook, String? kind}) {
   final title = (song['title'] ?? '').toString();
   final composers = _names(song['sheet']?['composers'] ?? song['composers']);
   final year = (song['sheet']?['year'] ?? song['year'])?.toString();
   final artists = _names(song['artists']);
-  final url = '$siteUrl/bai-hat/${song['slug']}-${song['id']}';
+  final url = '$siteUrl${songWebPath(song, kind)}';
   final head = StringBuffer('🎵 $title');
   if (composers.isNotEmpty) head.write(' — $composers');
   if (year != null && year.isNotEmpty && year != '0') head.write(' ($year)');

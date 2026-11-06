@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_html/flutter_html.dart';
-import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
@@ -17,9 +16,20 @@ class StaticPageScreen extends StatefulWidget {
   State<StaticPageScreen> createState() => _StaticPageScreenState();
 }
 
+/// Known page titles so the app bar is not blank while the page loads.
+const _kKnownTitles = {
+  'gioi-thieu': 'Giới thiệu',
+  'yeu-cau': 'Yêu cầu',
+  'dieu-khoan': 'Chính sách & điều khoản',
+  'lien-he': 'Liên hệ',
+  'tieu-chi': 'Tiêu chí',
+  'faq': 'Hỏi đáp',
+};
+
 class _StaticPageScreenState extends State<StaticPageScreen> {
   Map<String, dynamic>? _page;
   bool _loading = true;
+  bool _error = false;
 
   @override
   void initState() {
@@ -28,6 +38,7 @@ class _StaticPageScreenState extends State<StaticPageScreen> {
   }
 
   Future<void> _fetch() async {
+    if (_error || !_loading) setState(() { _loading = true; _error = false; });
     try {
       final data = await ApiClient.query(
         r'query($slug: Mixed) { pages(first: 1, where: { column: "slug", value: $slug }) { data { id title slug content } } }',
@@ -39,7 +50,7 @@ class _StaticPageScreenState extends State<StaticPageScreen> {
         _page = list.isNotEmpty ? Map<String, dynamic>.from(list.first as Map) : null;
         _loading = false;
       });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _error = true; }); }
   }
 
   @override
@@ -52,14 +63,16 @@ class _StaticPageScreenState extends State<StaticPageScreen> {
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg,
-            title: Text((_page?['title'] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis),
+            title: Text((_page?['title'] ?? _kKnownTitles[widget.slug] ?? '').toString(), maxLines: 1, overflow: TextOverflow.ellipsis),
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           if (_loading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+          else if (_error)
+            SliverFillRemaining(hasScrollBody: false, child: Center(child: OfflineBlock(onRetry: _fetch)))
           else if (_page == null)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Không tìm thấy trang', style: AppText.bodyText)))
+            const SliverFillRemaining(hasScrollBody: false, child: Center(child: EmptyBlock(icon: Icons.article_outlined, title: 'Không tìm thấy trang', message: 'Trang này không còn hoặc đã đổi địa chỉ.')))
           else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -69,13 +82,13 @@ class _StaticPageScreenState extends State<StaticPageScreen> {
                 Html(
                   data: _page!['content'] ?? '',
                   style: {
-                    'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(14), lineHeight: const LineHeight(1.7), color: AppColors.textSecondary, fontFamily: body().fontFamily),
+                    'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(16), lineHeight: const LineHeight(1.7), color: AppColors.textSecondary, fontFamily: body().fontFamily),
                     'h1, h2, h3': Style(color: AppColors.text, fontFamily: display().fontFamily),
                     'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
                     'p': Style(margin: Margins.only(bottom: 10)),
                     'img': Style(width: Width(100, Unit.percent)),
                   },
-                  onLinkTap: (url, _, __) {
+                  onLinkTap: (url, _, _) {
                     if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                   },
                 ),

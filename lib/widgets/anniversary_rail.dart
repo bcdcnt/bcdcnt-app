@@ -128,7 +128,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const SectionTitle('Ngày này năm xưa', action: null),
         SizedBox(
-          height: 28 + scale.scale(74),
+          height: 28 + scale.scale(82),
           child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 20), children: const [
             Skeleton(width: 272, height: 102, radius: 20),
             SizedBox(width: 12),
@@ -141,7 +141,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SectionTitle('Ngày này năm xưa', action: null),
       SizedBox(
-        height: 28 + scale.scale(74),
+        height: 28 + scale.scale(82),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -206,11 +206,11 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
+                  Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
                   const SizedBox(height: 2),
                   Text('${a.role} $name', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
                   const SizedBox(height: 2),
-                  Text('$years · $origin', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
+                  Text('$years · $origin', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
                 ]),
               ),
             ]),

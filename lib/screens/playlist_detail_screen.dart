@@ -30,6 +30,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   List<Map<String, dynamic>> _items = [];
   List<Map<String, dynamic>> _related = [];
   bool _loading = true;
+  bool _failed = false;
+  /// Real number of songs in the playlist (the list itself is capped at 200).
+  int _itemTotal = 0;
 
   @override
   void initState() {
@@ -38,7 +41,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   }
 
   Future<void> _fetch() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _failed = false; });
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         playlist(id: $id) {
@@ -75,17 +78,17 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       }
       if (!mounted) return;
       final plMap = Map<String, dynamic>.from(pl);
+      final rawTotal = pl['items']?['paginatorInfo']?['total'];
       setState(() {
         _playlist = plMap;
         _items = items;
+        _itemTotal = rawTotal is int && rawTotal > items.length ? rawTotal : items.length;
         _loading = false;
       });
       logActivity(context.read<AuthProvider>(), 'view', 'playlist', plMap['id']);
       _fetchRelated(plMap);
     } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
   }
-
-  bool _failed = false;
 
   Future<void> _fetchRelated(Map<String, dynamic> pl) async {
     try {
@@ -166,10 +169,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     if (_playlist == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        appBar: AppBar(backgroundColor: AppColors.bg, title: const Text('Playlist'), centerTitle: true, leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(
           child: _failed
-              ? OfflineBlock(onRetry: () { setState(() { _loading = true; _failed = false; }); _fetch(); })
+              ? OfflineBlock(onRetry: _fetch)
               : const EmptyBlock(icon: Icons.queue_music_rounded, title: 'Không tìm thấy playlist', message: 'Playlist có thể đã bị xoá hoặc để riêng tư.'),
         ),
       );
@@ -181,10 +184,11 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     // Apple Music-style scale-up: bigger artwork + display type on desktop.
     final thumbSize = isDesktop ? 200.0 : 120.0;
     final titleSize = isDesktop ? 32.0 : 19.0;
-    final usernameSize = isDesktop ? 14.0 : 12.0;
+    const usernameSize = 15.0;
     // Tier-3 (golden ratio anchored on 32 → 14 → 11). Mobile shrinks one
     // notch since the hero is narrower.
-    final metaSize = isDesktop ? 14.0 : 11.0;
+    // Floor of 14 on mobile for older readers.
+    const metaSize = 14.0;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -226,7 +230,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                           Text(
                             'Playlist',
                             style: body(TextStyle(
-                              fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w700,
+                              fontSize: 13, letterSpacing: 1.2, fontWeight: FontWeight.w700,
                               color: AppColors.textMuted,
                             )),
                           ),
@@ -251,7 +255,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             ]),
                           ),
                           const SizedBox(height: 6),
-                          Text('${_formatInt(_items.length)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textMuted))),
+                          Text('${_formatInt(_itemTotal)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textSecondary))),
                         ],
                       ),
                     ),
@@ -262,7 +266,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   child: Html(
                     data: pl['description'],
                     style: {
-                      'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(13), lineHeight: const LineHeight(1.6), color: AppColors.textSecondary, fontFamily: body().fontFamily),
+                      'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(16), lineHeight: const LineHeight(1.6), color: AppColors.text, fontFamily: body().fontFamily),
                       'p': Style(margin: Margins.only(bottom: 8)),
                       'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
                       'br': Style(margin: Margins.zero),
@@ -288,7 +292,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               ])),
             ),
             if (_items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Playlist trống', style: body(TextStyle(color: AppColors.textMuted)))))
+              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Playlist trống', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
             else
               SliverPadding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -339,16 +343,16 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   // Mobile (or no related): keep the original stacked flow.
                   if (_related.isNotEmpty) ...[
                     Row(children: [
-                      Icon((pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? Icons.event_outlined : Icons.queue_music_outlined, size: 14, color: AppColors.textSecondary),
+                      Icon((pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? Icons.event_outlined : Icons.queue_music_outlined, size: 18, color: AppColors.textSecondary),
                       const SizedBox(width: 6),
                       Text(
                         (pl['event_date'] != null && pl['event_date'].toString().isNotEmpty) ? 'Playlist sự kiện khác' : 'Playlist khác',
-                        style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
                       ),
                     ]),
                     const SizedBox(height: 10),
                     SizedBox(
-                      height: 200,
+                      height: 220,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
                         itemCount: _related.length,
@@ -374,30 +378,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
-    );
-  }
-}
-
-class _RelatedGrid extends StatelessWidget {
-  final List _items;
-  final String Function(dynamic) formatEventDate;
-  const _RelatedGrid({required List items, required this.formatEventDate}) : _items = items;
-
-  @override
-  Widget build(BuildContext context) {
-    final w = MediaQuery.of(context).size.width;
-    final cols = w >= 1280 ? 5 : (w >= 1100 ? 4 : 3);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _items.length.clamp(0, cols * 2),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: cols,
-        mainAxisSpacing: 18,
-        crossAxisSpacing: 14,
-        childAspectRatio: 0.72,
-      ),
-      itemBuilder: (_, i) => _RelatedCard(item: _items[i], formatEventDate: formatEventDate),
     );
   }
 }
@@ -432,12 +412,12 @@ class _RelatedCardCompact extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+                Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
                 const SizedBox(height: 3),
                 if (ev != null && ev.toString().isNotEmpty)
-                  Text(formatEventDate(ev), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+                  Text(formatEventDate(ev), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
                 else if (total > 0)
-                  Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                  Text('$total bài', style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
               ],
             ),
           ),
@@ -477,12 +457,12 @@ class _RelatedCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 6),
-            Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
+            Text(item['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.3))),
             const SizedBox(height: 2),
             if (ev != null && ev.toString().isNotEmpty)
-              Text(formatEventDate(ev), style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
+              Text(formatEventDate(ev), maxLines: 1, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
             else if (total > 0)
-              Text('$total bài', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted))),
+              Text('$total bài', maxLines: 1, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
           ],
         ),
       ),

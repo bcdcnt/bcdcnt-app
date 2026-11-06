@@ -2,22 +2,18 @@ import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_html/flutter_html.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/services.dart' show Clipboard;
 import 'package:http/http.dart' as http;
 import 'package:pasteboard/pasteboard.dart';
 import '../constants/theme.dart';
-import 'auth_dialogs.dart' show LoginDialog;
 import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow;
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import 'comment_actions.dart';
 import 'comment_media.dart';
 import 'quill_comment_input.dart';
@@ -33,7 +29,9 @@ class CommentSection extends StatefulWidget {
   final String? highlightCommentId;
   /// A comment action changed the page itself (lyric, recording, picture…).
   final VoidCallback? onPageChanged;
-  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged});
+  /// Locked discussion: comments stay readable, the composer is replaced by a note.
+  final bool readOnly;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -214,6 +212,26 @@ class _CommentSectionState extends State<CommentSection> {
 
   final _composerKey = GlobalKey();
 
+  /// "No comments yet" in words that fit the page it sits on.
+  String get _emptyText {
+    switch (widget.type) {
+      case 'song': case 'folk': case 'instrumental': case 'poem': case 'karaoke':
+        return 'Hãy là người đầu tiên chia sẻ cảm nghĩ hay kỷ niệm với bài hát này.';
+      case 'artist': case 'composer': case 'poet': case 'recomposer':
+        return 'Chưa có bình luận. Hãy chia sẻ cảm nghĩ hay kỷ niệm của bạn về người này.';
+      case 'ticket':
+        return 'Chưa có trao đổi nào. Bạn có thể viết thêm thông tin ở đây.';
+      case 'playlist':
+        return 'Chưa có bình luận. Hãy là người đầu tiên chia sẻ cảm nghĩ về playlist này.';
+      case 'document':
+        return 'Chưa có bình luận. Hãy là người đầu tiên chia sẻ cảm nghĩ về tư liệu này.';
+      case 'discussion':
+        return 'Chưa có ai trả lời. Hãy là người đầu tiên góp ý kiến.';
+      default:
+        return 'Chưa có bình luận. Hãy là người đầu tiên chia sẻ cảm nghĩ.';
+    }
+  }
+
   String get _entityField {
     // Person types use {type}ByID(id:); others use {type}(id:)
     const personTypes = {'artist', 'composer', 'poet', 'recomposer'};
@@ -224,13 +242,18 @@ class _CommentSectionState extends State<CommentSection> {
     if (page == 1) setState(() => _loading = true); else setState(() => _loadingMore = true);
     try {
       final field = _entityField;
+      // Count comes from paginatorInfo.total; "did I like it" from a
+      // user_id-filtered alias, so it is right even past the first rows.
+      final meId = int.tryParse('${context.read<AuthProvider>().user?['id'] ?? ''}');
+      final myLove = meId == null ? '' : 'myLove: loves(first: 1, where: {column: "user_id", value: $meId}) { paginatorInfo { total } }';
       final query = '''query(\$val: ID!, \$page: Int) {
         $field(id: \$val) {
           comments(first: 10, page: \$page, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
             data {
               id content created_at nickname is_request request_status processRequestUser { id username }
               user { id username avatar { url } roles { name alias display_in_comment group_type userRolePivot { custom_title } } }
-              loves(first: 50) { data { user_id } paginatorInfo { total } }
+              loves(first: 1) { paginatorInfo { total } }
+              $myLove
             }
             paginatorInfo { currentPage lastPage total }
           }
@@ -251,7 +274,12 @@ class _CommentSectionState extends State<CommentSection> {
         if (page == 1) {
           _comments = items.map((e) => Map<String, dynamic>.from(e)).toList();
         } else {
-          _comments.addAll(items.map((e) => Map<String, dynamic>.from(e)));
+          // A new comment posted meanwhile shifts the pages: skip rows
+          // we already show so nobody sees the same comment twice.
+          final seen = _comments.map((c) => c['id']?.toString()).toSet();
+          _comments.addAll(items
+              .map((e) => Map<String, dynamic>.from(e))
+              .where((c) => seen.add(c['id']?.toString())));
         }
         _total = pi?['total'] ?? 0;
         _hasMore = (pi?['currentPage'] ?? 0) < (pi?['lastPage'] ?? 0);
@@ -282,10 +310,14 @@ class _CommentSectionState extends State<CommentSection> {
   Future<void> _hydrateHighlight() async {
     final targetId = widget.highlightCommentId;
     if (targetId == null) return;
+    // Bounded walk: stop on a failed page (offline would otherwise re-ask
+    // the same page in a tight loop) and after ~10 pages.
+    var tries = 0;
     while (mounted) {
       final found = _comments.any((c) => c['id']?.toString() == targetId);
       if (found) break;
-      if (!_hasMore) return;
+      if (!_hasMore || _loadError || tries >= 10) { _searchingHighlight = false; return; }
+      tries++;
       await _fetchComments(_page + 1);
     }
     if (!mounted) return;
@@ -369,9 +401,9 @@ class _CommentSectionState extends State<CommentSection> {
       // Insert at the active Quill editor's cursor. Edit mode →
       // that comment's edit editor; otherwise → the main input.
       final target = _editQuillCtl ?? _quillCtl;
-      target.insertImageUrl(finalUrl!);
+      target.insertImageUrl(finalUrl);
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải ảnh: $e'), backgroundColor: AppColors.error));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không tải được ảnh lên. ${friendlyError(e)}'), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _uploadingImage = false);
   }
@@ -384,35 +416,16 @@ class _CommentSectionState extends State<CommentSection> {
       final bytes = await Pasteboard.image;
       if (bytes == null || bytes.isEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Clipboard không có ảnh'), backgroundColor: AppColors.surfaceLight),
+          SnackBar(content: const Text('Chưa có ảnh nào được sao chép để dán'), backgroundColor: AppColors.surfaceLight),
         );
         return;
       }
       await _uploadImageBytes(bytes, 'pasted-${DateTime.now().millisecondsSinceEpoch}.png', 'png');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Lỗi dán ảnh: $e'), backgroundColor: AppColors.error),
+        SnackBar(content: Text('Không dán được ảnh. ${friendlyError(e)}'), backgroundColor: AppColors.error),
       );
     }
-  }
-
-  /// Handle Cmd/Ctrl+V on the comment input. The default TextField
-  /// paste flow on desktop runs through Shortcuts/Actions — so a
-  /// Focus.onKeyEvent listener never sees the keystroke. Binding the
-  /// shortcut via `CallbackShortcuts` consumes the event entirely;
-  /// we therefore re-implement the text-paste path manually here,
-  /// alongside the image upload.
-  Future<void> _handlePasteIntent() async {
-    // 1. Check clipboard for an image first. macOS screenshots,
-    //    in-browser image copies, etc. surface here.
-    try {
-      final bytes = await Pasteboard.image;
-      if (bytes != null && bytes.isNotEmpty && mounted) {
-        unawaited(_uploadImageBytes(bytes, 'pasted-${DateTime.now().millisecondsSinceEpoch}.png', 'png'));
-      }
-    } catch (_) {}
-    // Quill handles text paste through its own clipboard manager;
-    // no manual insert needed here.
   }
 
   String _mimeFromExt(String? ext) {
@@ -511,7 +524,7 @@ class _CommentSectionState extends State<CommentSection> {
         }
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi tải ${isAudio ? "audio" : "video"}: $e'), backgroundColor: AppColors.error));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không tải được ${isAudio ? "bản ghi âm" : "video"} lên. ${friendlyError(e)}'), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() {
       if (isAudio) { _uploadingAudio = false; } else { _uploadingVideo = false; }
@@ -543,28 +556,28 @@ class _CommentSectionState extends State<CommentSection> {
       },
       itemBuilder: (_) => [
         _attachItem('image', Icons.image_outlined, 'Ảnh'),
-        _attachItem('paste', Icons.content_paste_go_outlined, 'Dán ảnh từ clipboard'),
-        _attachItem('audio', Icons.audiotrack_outlined, 'Audio'),
+        _attachItem('paste', Icons.content_paste_go_outlined, 'Dán ảnh'),
+        _attachItem('audio', Icons.audiotrack_outlined, 'Ghi âm / bài hát'),
         _attachItem('video', Icons.videocam_outlined, 'Video'),
       ],
       icon: busy
-          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
-          : Icon(Icons.attach_file, size: 18, color: AppColors.textSecondary),
+          ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
+          : Icon(Icons.attach_file, size: 24, color: AppColors.textSecondary),
       padding: EdgeInsets.zero,
-      iconSize: 18,
-      splashRadius: 18,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      iconSize: 24,
+      splashRadius: 24,
+      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
     );
   }
 
   PopupMenuItem<String> _attachItem(String value, IconData icon, String label) {
     return PopupMenuItem<String>(
       value: value,
-      height: 36,
+      height: 48,
       child: Row(children: [
-        Icon(icon, size: 16, color: AppColors.textSecondary),
-        const SizedBox(width: 10),
-        Text(label, style: TextStyle(fontSize: 13, color: AppColors.text)),
+        Icon(icon, size: 22, color: AppColors.textSecondary),
+        const SizedBox(width: 12),
+        Text(label, style: TextStyle(fontSize: 15, color: AppColors.text)),
       ]),
     );
   }
@@ -580,33 +593,38 @@ class _CommentSectionState extends State<CommentSection> {
   }) {
     final chips = <Widget>[];
     for (var i = 0; i < audios.length; i++) {
-      chips.add(_mediaChip(label: 'Audio ${i + 1}', icon: Icons.audiotrack, onRemove: () => onRemoveAudio(i)));
+      chips.add(_mediaChip(label: 'Ghi âm ${i + 1}', icon: Icons.audiotrack, onRemove: () => onRemoveAudio(i)));
     }
     for (var i = 0; i < videos.length; i++) {
       chips.add(_mediaChip(label: 'Video ${i + 1}', icon: Icons.videocam, onRemove: () => onRemoveVideo(i)));
     }
     return Padding(
       padding: const EdgeInsets.only(top: 6, left: 36),
-      child: Wrap(spacing: 6, runSpacing: 6, children: chips),
+      child: Wrap(spacing: 8, runSpacing: 8, children: chips),
     );
   }
 
   Widget _mediaChip({required String label, required IconData icon, required VoidCallback onRemove}) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+      padding: const EdgeInsets.only(left: 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: AppColors.border),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 14, color: AppColors.textSecondary),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 12, color: AppColors.text)),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: onRemove,
-          child: Icon(Icons.close, size: 14, color: AppColors.textMuted),
+        Icon(icon, size: 18, color: AppColors.textSecondary),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(fontSize: 15, color: AppColors.text)),
+        Semantics(
+          button: true,
+          label: 'Bỏ $label',
+          excludeSemantics: true,
+          child: InkWell(
+            onTap: onRemove,
+            customBorder: const CircleBorder(),
+            child: SizedBox(width: 48, height: 48, child: Icon(Icons.close, size: 20, color: AppColors.textMuted)),
+          ),
         ),
       ]),
     );
@@ -637,19 +655,37 @@ class _CommentSectionState extends State<CommentSection> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+          SnackBar(content: Text('Chưa đăng được bình luận. ${friendlyError(e)}'), backgroundColor: AppColors.error),
         );
       }
     }
     if (mounted) setState(() => _submitting = false);
   }
 
+  final Set<String> _lovingIds = {};
+
+  /// Applies a like/unlike to one comment row locally.
+  void _setLoved(String commentId, bool loved) {
+    final idx = _comments.indexWhere((c) => c['id'].toString() == commentId);
+    if (idx < 0) return;
+    final c = _comments[idx];
+    final total = ((c['loves']?['paginatorInfo']?['total'] ?? 0) as num).toInt() + (loved ? 1 : -1);
+    _comments[idx] = {
+      ...c,
+      'loves': {'paginatorInfo': {'total': total < 0 ? 0 : total}},
+      'myLove': {'paginatorInfo': {'total': loved ? 1 : 0}},
+    };
+  }
+
   Future<void> _love(String commentId, bool isLoved) async {
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đăng nhập để thích bình luận')));
+      await askLogin(context);
       return;
     }
+    // One request per comment at a time: a double tap must not race.
+    if (!_lovingIds.add(commentId)) return;
+    setState(() => _setLoved(commentId, !isLoved));
     try {
       // Same mutation as the web (there is no loveComment/unloveComment).
       await auth.authedMutate(
@@ -658,27 +694,16 @@ class _CommentSectionState extends State<CommentSection> {
             : r'''mutation($id: ID!) { love(lovable_id: $id, lovable_type: "comment") { id } }''',
         {'id': commentId},
       );
-      if (!mounted) return;
-    setState(() {
-        final idx = _comments.indexWhere((c) => c['id'].toString() == commentId);
-        if (idx >= 0) {
-          final c = _comments[idx];
-          final loves = List<Map<String, dynamic>>.from((c['loves']?['data'] ?? []) as List);
-          final userId = auth.user?['id'];
-          if (isLoved) {
-            loves.removeWhere((l) => l['user_id'].toString() == userId.toString());
-          } else {
-            loves.add({'user_id': userId});
-          }
-          final total = (c['loves']?['paginatorInfo']?['total'] ?? 0) + (isLoved ? -1 : 1);
-          _comments[idx] = {
-            ...c,
-            'loves': {'data': loves, 'paginatorInfo': {'total': total < 0 ? 0 : total}},
-          };
-        }
-      });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không thích được: ${e.toString().replaceFirst('Exception: ', '')}'), backgroundColor: AppColors.error));
+      if (mounted) {
+        setState(() => _setLoved(commentId, isLoved));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${isLoved ? 'Chưa bỏ thích được' : 'Chưa thích được'}. ${friendlyError(e)}'),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    } finally {
+      _lovingIds.remove(commentId);
     }
   }
 
@@ -775,52 +800,9 @@ class _CommentSectionState extends State<CommentSection> {
         _editAttachedVideos.clear();
       });
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi sửa: $e'), backgroundColor: AppColors.error));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Chưa lưu được. ${friendlyError(e)}'), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _savingEdit = false);
-  }
-
-  Future<void> _confirmDelete(Map<String, dynamic> c) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: Text('Xoá bình luận', style: display(TextStyle(color: AppColors.text))),
-        content: Text('Bạn có chắc muốn xoá bình luận này?', style: body(TextStyle(color: AppColors.textSecondary))),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Xoá', style: TextStyle(color: AppColors.error))),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      final auth = context.read<AuthProvider>();
-      await auth.authedMutate(
-        r'mutation($id: ID!) { deleteComment(id: $id) { id } }',
-        {'id': c['id'].toString()},
-      );
-      if (!mounted) return;
-      setState(() {
-        _comments.removeWhere((x) => x['id'].toString() == c['id'].toString());
-        if (_total > 0) _total--;
-      });
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi xoá: $e'), backgroundColor: AppColors.error));
-    }
-  }
-
-  /// HTML → plain text that round-trips with `_submit` / `_saveEdit`:
-  /// each `<p>` becomes its own paragraph, `<br>` becomes a single
-  /// newline. So a comment saved as `<p>a<br>b</p><p>c</p>` reloads
-  /// as "a\nb\n\nc" — exactly what the user originally typed.
-  String _htmlToPlainText(String html) {
-    var s = html;
-    s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n');
-    s = s.replaceAll(RegExp(r'</p>\s*<p[^>]*>', caseSensitive: false), '\n\n');
-    s = s.replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '');
-    s = s.replaceAll(RegExp(r'<[^>]+>'), '');
-    return s.trim();
   }
 
   @override
@@ -845,7 +827,9 @@ class _CommentSectionState extends State<CommentSection> {
         const SizedBox(height: 16),
 
         // Input
-        if (auth.isAuthenticated)
+        if (widget.readOnly)
+          Text('Chủ đề đã khoá, không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))
+        else if (auth.isAuthenticated)
           Container(
             padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
             decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.borderSubtle)),
@@ -929,20 +913,20 @@ class _CommentSectionState extends State<CommentSection> {
                       ElevatedButton.icon(
                         onPressed: _submitting ? null : _submit,
                         icon: _submitting
-                            ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.send, size: 14),
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.send, size: 18),
                         // Nhãn cố định "Đăng" để nút không phình khi đang gửi.
-                        label: const Text('Đăng', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                        label: const Text('Đăng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.accent,
                           foregroundColor: Colors.white,
                           disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
                           disabledForegroundColor: Colors.white,
                           elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          minimumSize: const Size(0, 34),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          minimumSize: const Size(64, 48),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                         ),
                       ),
                     ]),
@@ -954,8 +938,8 @@ class _CommentSectionState extends State<CommentSection> {
                     if ((_uploadingAudio || _uploadingVideo) && _editingId == null) Padding(
                       padding: const EdgeInsets.only(top: 4, left: 36),
                       child: Text(
-                        _uploadingAudio ? 'Đang chuyển audio...' : 'Đang chuyển video...',
-                        style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                        _uploadingAudio ? 'Đang tải bản ghi âm lên...' : 'Đang tải video lên...',
+                        style: TextStyle(fontSize: 14, color: AppColors.textMuted),
                       ),
                     ),
                   ]),
@@ -970,7 +954,7 @@ class _CommentSectionState extends State<CommentSection> {
               label: 'Đăng nhập để bình luận',
               icon: Icons.login_rounded,
               primary: false,
-              onTap: () => showDialog(context: context, builder: (_) => const LoginDialog()),
+              onTap: () => askLogin(context),
             ),
           ),
 
@@ -983,14 +967,13 @@ class _CommentSectionState extends State<CommentSection> {
         else if (_comments.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text('Hãy là người đầu tiên chia sẻ cảm nghĩ hay kỷ niệm với bài hát này.', style: AppText.bodyText),
+            child: Text(_emptyText, style: body(TextStyle(fontSize: 16, height: 1.5, color: AppColors.textSecondary))),
           )
         else ...[
           ..._comments.map((c) {
             final user = c['user'] ?? {};
-            final loves = (c['loves']?['data'] ?? []) as List;
-            final loveCount = c['loves']?['paginatorInfo']?['total'] ?? 0;
-            final isLoved = userId != null && loves.any((l) => l['user_id'].toString() == userId.toString());
+            final loveCount = ((c['loves']?['paginatorInfo']?['total'] ?? 0) as num).toInt();
+            final isLoved = userId != null && ((c['myLove']?['paginatorInfo']?['total'] ?? 0) as num) > 0;
             final roles = ((user['roles'] ?? []) as List).where((r) => r != null && r['display_in_comment'] == true).toList();
             final content = (c['content'] ?? '').toString();
             final isHighlight = widget.highlightCommentId != null && c['id']?.toString() == widget.highlightCommentId;
@@ -1082,8 +1065,8 @@ class _CommentSectionState extends State<CommentSection> {
                               SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight)),
                               const SizedBox(width: 8),
                               Text(
-                                _uploadingAudio ? 'Đang chuyển audio...' : _uploadingVideo ? 'Đang chuyển video...' : 'Đang tải ảnh lên...',
-                                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                                _uploadingAudio ? 'Đang tải bản ghi âm lên...' : _uploadingVideo ? 'Đang tải video lên...' : 'Đang tải ảnh lên...',
+                                style: TextStyle(fontSize: 14, color: AppColors.textMuted),
                               ),
                             ]),
                           ),
@@ -1094,21 +1077,22 @@ class _CommentSectionState extends State<CommentSection> {
                               style: TextButton.styleFrom(
                                 backgroundColor: AppColors.accent,
                                 foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                                minimumSize: const Size(0, 30),
+                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                                minimumSize: const Size(64, 48),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
                               ),
-                              child: Text(_savingEdit ? 'Đang lưu…' : 'Lưu', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                              child: Text(_savingEdit ? 'Đang lưu…' : 'Lưu', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
                             ),
                             const SizedBox(width: 8),
                             TextButton(
                               onPressed: _savingEdit ? null : _cancelEdit,
                               style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                minimumSize: const Size(0, 30),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                minimumSize: const Size(64, 48),
                                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               ),
-                              child: Text('Huỷ', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                              child: Text('Huỷ', style: TextStyle(fontSize: 16, color: AppColors.textSecondary)),
                             ),
                             const Spacer(),
                             _attachMenuButton(),
@@ -1206,69 +1190,6 @@ class _CommentSectionState extends State<CommentSection> {
             ),
         ],
       ],
-    );
-  }
-}
-
-/// Sentinel that triggers `onReach` when it scrolls into the viewport of
-/// the nearest enclosing Scrollable. Used at the tail of a paginated list
-/// to enable infinite scroll without an explicit "Load more" button.
-class _LoadMoreSentinel extends StatefulWidget {
-  final bool loading;
-  final VoidCallback onReach;
-  const _LoadMoreSentinel({required this.loading, required this.onReach});
-
-  @override
-  State<_LoadMoreSentinel> createState() => _LoadMoreSentinelState();
-}
-
-class _LoadMoreSentinelState extends State<_LoadMoreSentinel> {
-  ScrollPosition? _position;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final scrollable = Scrollable.maybeOf(context);
-    final newPos = scrollable?.position;
-    if (newPos != _position) {
-      _position?.removeListener(_check);
-      _position = newPos;
-      _position?.addListener(_check);
-      // Initial check in case the sentinel is already visible without
-      // scrolling (short list).
-      WidgetsBinding.instance.addPostFrameCallback((_) => _check());
-    }
-  }
-
-  @override
-  void dispose() {
-    _position?.removeListener(_check);
-    super.dispose();
-  }
-
-  void _check() {
-    if (!mounted || widget.loading) return;
-    final box = context.findRenderObject();
-    if (box is! RenderBox || _position == null) return;
-    final viewport = RenderAbstractViewport.maybeOf(box);
-    if (viewport == null) return;
-    final reveal = viewport.getOffsetToReveal(box, 0.0).offset;
-    // Trigger when sentinel's position is within ~300px of the current
-    // viewport so we prefetch before the user hits the bottom.
-    if (reveal - _position!.pixels < 300) {
-      widget.onReach();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: widget.loading
-            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
-            : const SizedBox(width: 1, height: 1),
-      ),
     );
   }
 }

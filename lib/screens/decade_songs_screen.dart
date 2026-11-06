@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock;
 import 'package:provider/provider.dart';
-import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
@@ -25,6 +24,9 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _failed = false;
+  bool _moreFailed = false;
+  int _reqId = 0;
 
   @override
   void initState() {
@@ -41,12 +43,16 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _moreFailed || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
   Future<void> _fetch(int page) async {
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    final req = ++_reqId;
+    setState(() {
+      if (page == 1) { _loading = true; _failed = false; } else { _loadingMore = true; }
+      _moreFailed = false;
+    });
     final d = widget.decade;
     final q = '''query(\$page: Int, \$where: WhereConditions) {
       songs(first: $_perPage, page: \$page, orderBy: [{column: "views", order: DESC}], where: \$where) {
@@ -65,9 +71,14 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
       final raw = data['songs'];
       final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final pi = raw?['paginatorInfo'] ?? {};
-      if (!mounted) return;
+      if (req != _reqId || !mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) {
+          _items = list;
+        } else {
+          final seen = _items.map((e) => e['id']?.toString()).toSet();
+          _items.addAll(list.where((e) => !seen.contains(e['id']?.toString())));
+        }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
@@ -75,7 +86,12 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
         _loadingMore = false;
       });
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; });
+      if (req != _reqId || !mounted) return;
+      setState(() {
+        if (page == 1) { _failed = true; } else { _moreFailed = true; }
+        _loading = false;
+        _loadingMore = false;
+      });
     }
   }
 
@@ -147,7 +163,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
                             children: [
                               Text('Thập niên ${widget.decade}', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_total > 0 ? '${_formatInt(_total)} bài hát' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 13, color: Colors.white70))),
+                              Text(_total > 0 ? '${_formatInt(_total)} bài hát' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -166,8 +182,10 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
               ),
               if (_loading && _items.isEmpty)
                 SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+              else if (_failed && _items.isEmpty)
+                SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
               else if (_items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(color: AppColors.textMuted)))))
+                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -184,6 +202,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> {
               SliverToBoxAdapter(
                 child: Column(children: [
                   if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),

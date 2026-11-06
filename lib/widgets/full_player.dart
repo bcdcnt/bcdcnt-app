@@ -11,6 +11,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'share_card.dart' show showSongShareSheet;
+import '../services/friendly_error.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:go_router/go_router.dart';
 import 'package:palette_generator/palette_generator.dart';
@@ -21,7 +23,7 @@ import '../services/player.dart';
 import '../services/auth.dart';
 import 'hover_effects.dart';
 import 'ui.dart' show UserAvatar;
-import 'song_row.dart' show GeneratedCover;
+import 'song_row.dart' show GeneratedCover, saveForOffline;
 import 'brand_logo.dart';
 import 'synced_video.dart';
 import 'lyrics_text.dart';
@@ -83,8 +85,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   bool _liked = false;
   List<dynamic> _lovers = [];
   bool _downloading = false;
-  bool _loversFetchedForId = false;
   String? _songLyrics;
+  // "kind-id" of the song the lyrics/likes/credits below belong to. A
+  // response for any other key arrived after the user skipped: dropped.
   String? _lyricsFetchedForId;
   // Composer + poet credits, fetched alongside the lyrics. Traditional
   // music on BCĐCNT often hangs on the songwriter / poet identity, so
@@ -109,6 +112,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   bool _lyricsAutoScroll = true;
 
   bool get _isDesktopOS => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
+  bool get _isPhoneOS => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
   Future<void> _toggleFullScreen() async {
     if (!_isDesktopOS) return;
@@ -161,7 +165,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 32))..repeat();
+    // Started by build() only for the desktop layout; the phone layout has
+    // no disc, and a running controller would tick 60fps for nothing.
+    _rotation = AnimationController(vsync: this, duration: const Duration(seconds: 32));
     // Khôi phục cỡ chữ lời đã lưu (đồng bộ trải nghiệm với web).
     SharedPreferences.getInstance().then((p) {
       final v = p.getDouble('lyrics_scale');
@@ -175,6 +181,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       if (!mounted) return;
       _playerRef = context.read<PlayerProvider>();
       _playerRef!.setFullPlayerOpen(true);
+      // Phones have no mute button here (volume keys do that job), so a
+      // mute left from an older build must not leave the song silent.
+      if (_isPhoneOS) _playerRef!.ensureUnmuted();
     });
     if (_isDesktopOS) {
       windowManager.addListener(this);
@@ -759,7 +768,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 ),
                 btn(
                   icon: _downloading ? Icons.hourglass_empty : Icons.download_outlined,
-                  tooltip: _downloading ? 'Đang tải...' : 'Tải xuống',
+                  tooltip: _downloading ? 'Đang tải...' : 'Tải về',
                   onTap: () => _handleDownload(song),
                 ),
               ],
@@ -771,12 +780,28 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   String _songType(Map<String, dynamic> song) => songKind(song);
+  String _songKey(Map song) => '${songKind(song)}-${song['id']}';
 
   Future<void> _fetchLovesAndLyrics(Map<String, dynamic> song) async {
     final id = song['id'].toString();
-    if (_loversFetchedForId == false || (song['id'].toString() != (_lyricsFetchedForId ?? ''))) {
-      _lyricsFetchedForId = id;
-      final type = _songType(song);
+    final type = _songType(song);
+    final key = _songKey(song);
+    if (_lyricsFetchedForId != key) {
+      _lyricsFetchedForId = key;
+      // Clear the previous song's data at once: otherwise its lyrics, heart
+      // and credits stay on screen under the new title until (or if) the
+      // new request answers.
+      if (mounted) {
+        setState(() {
+          _liked = false;
+          _lovers = [];
+          _songLyrics = null;
+          _composers = [];
+          _poets = [];
+          _recomposers = [];
+          _creditArtists = [];
+        });
+      }
       // Composers + poets are first-class metadata for traditional
       // music; fetched alongside lyrics so the player can show
       // "Sáng tác: X · Thơ: Y" right under the title.
@@ -817,7 +842,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 .map((u) => <String, dynamic>{'id': u['id'], 'title': u['username'], 'username': u['username'], 'avatar': u['avatar']})
                 .toList()
             : people('artists');
-        if (!mounted) return;
+        if (!mounted || _lyricsFetchedForId != key) return;
         setState(() {
           _lovers = lovesData;
           _songLyrics = obj?['content'];
@@ -829,17 +854,17 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           if (userId != null) {
             _liked = lovesData.any((l) => l['user_id'].toString() == userId.toString());
           }
-          _loversFetchedForId = true;
         });
       } catch (_) {}
-      _fetchStory(type, id);
+      if (mounted && _lyricsFetchedForId == key) _fetchStory(type, id, key);
     }
   }
 
   /// Story / year / best comment for the phone player's cards. Separate
   /// from the main fetch: not every song type has every field, and a
   /// failure here must not cost the lyrics.
-  Future<void> _fetchStory(String type, String id) async {
+  Future<void> _fetchStory(String type, String id, String key) async {
+    if (!mounted) return;
     setState(() {
       _story = null;
       _year = null;
@@ -853,7 +878,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         {'id': id},
       );
       final o = d[type];
-      if (!mounted || o == null || _lyricsFetchedForId != id) return;
+      if (!mounted || o == null || _lyricsFetchedForId != key) return;
       String clean(dynamic h) => (h ?? '').toString()
           .replaceAll(RegExp(r'<br\s*/?>|</p>', caseSensitive: false), '\n')
           .replaceAll(RegExp(r'<[^>]+>'), '')
@@ -874,9 +899,14 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
 
   Future<void> _handleLove(Map<String, dynamic> song) async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isAuthenticated) return;
+    if (!auth.isAuthenticated) {
+      askLogin(context);
+      return;
+    }
     final type = _songType(song);
+    final key = _songKey(song);
     final newLiked = !_liked;
+    final prevLovers = _lovers;
     setState(() {
       _liked = newLiked;
       final user = auth.user;
@@ -893,12 +923,30 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ? 'mutation(\$id: ID!) { love(lovable_id: \$id, lovable_type: "$type") { id } }'
           : 'mutation(\$id: ID!) { unlove(lovable_id: \$id, lovable_type: "$type") { id } }';
       await auth.authedMutate(mutation, {'id': song['id'].toString()});
-    } catch (_) {
-      setState(() => _liked = !newLiked);
+    } catch (e) {
+      if (!mounted) return;
+      // Only undo if the user is still on that song; the heart now shows
+      // another song's state.
+      if (_lyricsFetchedForId == key) {
+        setState(() {
+          _liked = !newLiked;
+          _lovers = prevLovers;
+        });
+      }
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+        content: Text(friendlyError(e, fallback: newLiked ? 'Chưa thích được bài này, vui lòng thử lại.' : 'Chưa bỏ thích được, vui lòng thử lại.')),
+        backgroundColor: AppColors.error,
+      ));
     }
   }
 
   Future<void> _handleDownload(Map<String, dynamic> song) async {
+    // Phones: save inside the app ("Đã tải về") — opening the mp3 in Safari
+    // left older users on a bare audio page with no way back.
+    if (!kIsWeb && !_isDesktopOS) {
+      await saveForOffline(context, song);
+      return;
+    }
     if (_downloading) return;
     setState(() => _downloading = true);
     final auth = context.read<AuthProvider>();
@@ -920,25 +968,17 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bạn đã tải quá nhiều'), backgroundColor: AppColors.error));
       }
     } catch (e) {
-      // Strip the "Exception: " prefix Dart prepends to thrown
-      // strings so the user sees the clean Vietnamese message from
-      // the GraphQL error.
-      final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      // friendlyError keeps the server's Vietnamese message ("Vui lòng
+      // đăng nhập để tải") and hides raw network exceptions.
+      final msg = friendlyError(e);
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.error));
     }
     if (mounted) setState(() => _downloading = false);
   }
 
-  Future<void> _handleShare(Map<String, dynamic> song) async {
-    final slug = song['slug'] ?? '';
-    final id = song['id'];
-    final url = slug.isNotEmpty ? '$siteUrl/bai-hat/$slug-$id' : '$siteUrl/bai-hat/$id';
-    final artistNames = ((song['artists']?['data'] ?? song['artists'] ?? []) as List).map((a) => a['title'] ?? '').join(', ');
-    final subject = artistNames.isNotEmpty ? '${song['title']} - $artistNames' : song['title'];
-    try {
-      await launchUrl(Uri.parse('mailto:?subject=${Uri.encodeComponent(subject ?? '')}&body=${Uri.encodeComponent(url)}'));
-    } catch (_) {}
-  }
+  /// Same share sheet as the song page (Zalo, Facebook, picture card…)
+  /// instead of an empty mail draft.
+  Future<void> _handleShare(Map<String, dynamic> song) => showSongShareSheet(context, song);
 
   void _showMoreSheet(BuildContext ctx, Map<String, dynamic> song, PlayerProvider player) {
     final speedLabel = '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x';
@@ -968,7 +1008,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ),
           ListTile(
             leading: Icon(_downloading ? Icons.hourglass_empty : Icons.download_outlined, color: _PC.textSecondary),
-            title: Text(_downloading ? 'Đang tải...' : 'Tải xuống', style: body(TextStyle(color: _PC.text))),
+            title: Text(_downloading ? 'Đang tải...' : 'Tải về', style: body(TextStyle(color: _PC.text))),
             onTap: () { Navigator.pop(sheetCtx); _handleDownload(song); },
           ),
           Divider(height: 1, color: _PC.borderSubtle),
@@ -981,6 +1021,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             ))),
             onTap: () { Navigator.pop(sheetCtx); _showSpeedSheet(); },
           ),
+          // Phones and the web use the device's own volume keys.
+          if (_isDesktopOS)
           ListTile(
             leading: Icon(player.muted ? Icons.volume_off : Icons.volume_up, color: _PC.textSecondary),
             title: Text(player.muted ? 'Bật âm thanh' : 'Tắt âm thanh', style: body(TextStyle(color: _PC.text))),
@@ -1001,6 +1043,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   )
                 : null,
             onTap: () { Navigator.pop(sheetCtx); _showSleepSheet(); },
+          ),
+          // Visible way to stop for good (the mini player's long-press is hidden).
+          ListTile(
+            leading: Icon(Icons.stop_circle_outlined, color: _PC.textSecondary),
+            title: Text('Dừng phát', style: body(TextStyle(color: _PC.text))),
+            onTap: () {
+              Navigator.pop(sheetCtx);
+              player.stop();
+              Navigator.of(context).maybePop();
+            },
           ),
           const SizedBox(height: 8),
         ]),
@@ -1106,7 +1158,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     if (song == null) return const SizedBox.shrink();
 
     // Fetch lovers & lyrics lazily
-    if (_lyricsFetchedForId != song['id'].toString()) {
+    if (_lyricsFetchedForId != _songKey(song)) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLovesAndLyrics(song));
     }
     // Re-extract artwork accent when the thumbnail URL changes.
@@ -1115,11 +1167,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       WidgetsBinding.instance.addPostFrameCallback((_) => _maybeExtractAccent(_thumbForAccent));
     }
 
-    if (player.isPlaying && !_rotation.isAnimating) {
-      _rotation.repeat();
-    } else if (!player.isPlaying && _rotation.isAnimating) {
-      _rotation.stop();
-    }
 
     final artists = (song['artists'] is List
         ? song['artists']
@@ -1128,6 +1175,13 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final isInstrumental = songKind(song) == 'instrumental';
     final screen = MediaQuery.of(context).size;
     final narrow = screen.width < 600; // mobile/cửa sổ hẹp → rút gọn 1 dòng
+    // The spinning disc only exists in the desktop layout.
+    final spin = player.isPlaying && !(narrow && !_isFullScreen);
+    if (spin && !_rotation.isAnimating) {
+      _rotation.repeat();
+    } else if (!spin && _rotation.isAnimating) {
+      _rotation.stop();
+    }
     // Use the shortest viewport dimension so the vinyl stays a circle on
     // wide-screen desktop (where width × 0.72 would overflow the height,
     // clipping the disc into an ellipse-looking slice).
@@ -1380,14 +1434,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                               ),
-                              child: ValueListenableBuilder<Duration>(
-                                valueListenable: player.positionNotifier,
-                                builder: (context, pos, _) => Slider(
-                                  value: pos.inMilliseconds.toDouble().clamp(0, player.duration.inMilliseconds.toDouble()),
-                                  max: player.duration.inMilliseconds.toDouble() > 0 ? player.duration.inMilliseconds.toDouble() : 1,
-                                  onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
-                                ),
-                              ),
+                              child: _SeekSlider(player: player),
                             ),
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1509,17 +1556,32 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     physics: const BouncingScrollPhysics(),
                     slivers: [
                       SliverToBoxAdapter(
-                        child: SizedBox(
+                        // The first screen is a fixed-height page; at the
+                        // largest system text its chrome would overflow, so
+                        // cap scaling there (like the mini player). Lyrics
+                        // and cards below keep the full text size.
+                        child: MediaQuery.withClampedTextScaling(
+                          maxScaleFactor: 1.4,
+                          child: SizedBox(
                           height: pageH - 24,
                           child: Column(
                             children: [
                               _mobileHeader(player, song),
-                              const Spacer(),
-                              if (isVideoSong(song))
-                                _mobileVideo(player, song, box.maxWidth - 32)
-                              else
-                                _mobileArtwork(thumb, art, player.isPlaying, song),
-                              const Spacer(),
+                              // Cover takes whatever height the text leaves,
+                              // so a long title or big text shrinks the
+                              // picture instead of pushing buttons off-screen.
+                              Expanded(
+                                child: LayoutBuilder(
+                                  builder: (context, area) {
+                                    final room = math.max(area.maxHeight - 24, 80.0);
+                                    return Center(
+                                      child: isVideoSong(song)
+                                          ? _mobileVideo(player, song, math.min(box.maxWidth - 32, room * 16 / 9))
+                                          : _mobileArtwork(thumb, math.min(art, room), player.isPlaying, song),
+                                    );
+                                  },
+                                ),
+                              ),
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 28),
                                 child: Row(
@@ -1600,6 +1662,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               const SizedBox(height: 22),
                             ],
                           ),
+                        ),
                         ),
                       ),
                       if (hasLyrics)
@@ -1823,13 +1886,16 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
 
   Widget _mobileHeader(PlayerProvider player, Map<String, dynamic> song) {
     final label = player.sourceLabel;
-    return SizedBox(
-      height: 56,
+    // Min height, not fixed: two text lines at large system text must push
+    // the header taller rather than overflow.
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56),
       child: Row(
         children: [
           IconButton(tooltip: 'Thu nhỏ', iconSize: 32, icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text('ĐANG PHÁT TỪ', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF)))),
@@ -1850,40 +1916,32 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   }
 
   Widget _mobileScrubber(PlayerProvider player) {
-    final total = player.duration;
+    // Bigger, brighter times than desktop: read at arm's length.
+    final timeStyle = body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xE6FFFFFF), fontFeatures: [FontFeature.tabularFigures()]));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: ValueListenableBuilder<Duration>(
-        valueListenable: player.positionNotifier,
-        builder: (context, pos, _) => Column(
-          children: [
-            SliderTheme(
-              data: SliderThemeData(
-                activeTrackColor: Colors.white,
-                inactiveTrackColor: const Color(0x33FFFFFF),
-                thumbColor: Colors.white,
-                overlayColor: Colors.white.withValues(alpha: 0.15),
-                trackHeight: 5,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
-              ),
-              child: Slider(
-                value: pos.inMilliseconds.toDouble().clamp(0, total.inMilliseconds.toDouble()),
-                max: total.inMilliseconds > 0 ? total.inMilliseconds.toDouble() : 1,
-                onChanged: (v) => player.seek(Duration(milliseconds: v.toInt())),
-              ),
+      child: SliderTheme(
+        data: SliderThemeData(
+          activeTrackColor: Colors.white,
+          inactiveTrackColor: const Color(0x33FFFFFF),
+          thumbColor: Colors.white,
+          overlayColor: Colors.white.withValues(alpha: 0.15),
+          trackHeight: 5,
+          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+          overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
+        ),
+        child: _SeekSlider(
+          player: player,
+          timeBuilder: (pos, total) => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(_fmt(pos), style: timeStyle),
+                Text(_fmt(total), style: timeStyle),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(_fmt(pos), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xA6FFFFFF), fontFeatures: [FontFeature.tabularFigures()]))),
-                  Text(_fmt(total), style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xA6FFFFFF), fontFeatures: [FontFeature.tabularFigures()]))),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -2338,6 +2396,53 @@ class _FadeChrome extends StatelessWidget {
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOut,
       child: IgnorePointer(ignoring: !visible, child: child),
+    );
+  }
+}
+
+/// Seek bar that follows playback but, while the finger is down, follows the
+/// finger instead and seeks once on release. Seeking on every drag update
+/// restarted buffering dozens of times per gesture and made the thumb jump
+/// back under the finger.
+class _SeekSlider extends StatefulWidget {
+  final PlayerProvider player;
+  /// Optional time labels under the bar; gets the dragged position while
+  /// dragging so the user sees where they will land.
+  final Widget Function(Duration pos, Duration total)? timeBuilder;
+  const _SeekSlider({required this.player, this.timeBuilder});
+
+  @override
+  State<_SeekSlider> createState() => _SeekSliderState();
+}
+
+class _SeekSliderState extends State<_SeekSlider> {
+  double? _dragMs;
+
+  @override
+  Widget build(BuildContext context) {
+    final player = widget.player;
+    return ValueListenableBuilder<Duration>(
+      valueListenable: player.positionNotifier,
+      builder: (context, pos, _) {
+        final total = player.duration;
+        final maxMs = total.inMilliseconds > 0 ? total.inMilliseconds.toDouble() : 1.0;
+        final value = (_dragMs ?? pos.inMilliseconds.toDouble()).clamp(0.0, maxMs);
+        final slider = Slider(
+          value: value,
+          max: maxMs,
+          onChangeStart: (v) => setState(() => _dragMs = v),
+          onChanged: (v) => setState(() => _dragMs = v),
+          onChangeEnd: (v) {
+            setState(() => _dragMs = null);
+            player.seek(Duration(milliseconds: v.toInt()));
+          },
+        );
+        if (widget.timeBuilder == null) return slider;
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          slider,
+          widget.timeBuilder!(Duration(milliseconds: value.toInt()), total),
+        ]);
+      },
     );
   }
 }

@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'player.dart' show songKind;
 import 'api.dart';
 import 'auth.dart';
+import 'friendly_error.dart';
 
 /// "Đã tải về": songs saved inside the app for listening without network.
 ///
@@ -19,7 +20,9 @@ class OfflineStore extends ChangeNotifier {
   static final OfflineStore instance = OfflineStore._();
 
   Directory? _dir;
-  // key ("song-123") → song map with 'local_path', 'size', 'saved_at'.
+  // key ("song-123") → song map with 'local_file', 'size', 'saved_at'.
+  // Only the file name is stored: iOS moves the app container on every
+  // update, so an absolute path saved last week points nowhere today.
   final Map<String, Map<String, dynamic>> _items = {};
   // key → 0..1 while downloading.
   final Map<String, double> _progress = {};
@@ -37,10 +40,27 @@ class OfflineStore extends ChangeNotifier {
 
   /// Local file for a saved song, or null.
   String? localPath(Map song) {
-    final m = _items[keyOf(song)];
-    final p = m?['local_path']?.toString();
+    final p = _pathOf(_items[keyOf(song)]);
     if (p == null) return null;
     return File(p).existsSync() ? p : null;
+  }
+
+  /// Absolute path rebuilt from the current downloads folder. Needs [_dir],
+  /// which load() sets before any item exists.
+  String? _pathOf(Map? m) {
+    final name = m?['local_file']?.toString();
+    if (name == null || name.isEmpty || _dir == null) return null;
+    return '${_dir!.path}/$name';
+  }
+
+  /// File name of an entry; entries saved by older builds only have an
+  /// absolute 'local_path' whose base name is still valid.
+  static String? _fileNameOf(Map m) {
+    final name = m['local_file']?.toString();
+    if (name != null && name.isNotEmpty) return name;
+    final old = m['local_path']?.toString();
+    if (old == null || old.isEmpty) return null;
+    return old.split(RegExp(r'[/\\]')).last;
   }
 
   Future<File> get _index async => File('${(await _folder).path}/index.json');
@@ -61,14 +81,26 @@ class OfflineStore extends ChangeNotifier {
 
   Future<void> _doLoad() async {
     try {
+      final dir = await _folder;
       final f = await _index;
       if (await f.exists()) {
         final data = jsonDecode(await f.readAsString());
+        var migrated = false;
         if (data is Map) {
           data.forEach((k, v) {
-            if (v is Map && File(v['local_path']?.toString() ?? '').existsSync()) _items[k.toString()] = Map<String, dynamic>.from(v);
+            if (v is! Map) return;
+            final name = _fileNameOf(v);
+            if (name == null || !File('${dir.path}/$name').existsSync()) return;
+            final m = Map<String, dynamic>.from(v);
+            if (m.containsKey('local_path')) {
+              m.remove('local_path');
+              migrated = true;
+            }
+            m['local_file'] = name;
+            _items[k.toString()] = m;
           });
         }
+        if (migrated) await _save();
       }
     } catch (_) {}
     notifyListeners();
@@ -133,6 +165,9 @@ class OfflineStore extends ChangeNotifier {
         }
         await sink.close();
         sink = null;
+        // A dropped connection can end the stream early without an error;
+        // a half file would play a few seconds then stop.
+        if (total > 0 && got != total) return 'Tải chưa xong, kiểm tra mạng rồi thử lại';
       } finally {
         await sink?.close();
         client.close();
@@ -146,7 +181,7 @@ class OfflineStore extends ChangeNotifier {
       if (keep['sheet'] is Map) keep['sheet'] = {'year': keep['sheet']['year'], 'composers': keep['sheet']['composers']};
       keep
         ..['file_type'] = songKind(song)
-        ..['local_path'] = file.path
+        ..['local_file'] = '$key.mp3'
         ..['size'] = got
         ..['saved_at'] = DateTime.now().toIso8601String();
       _items[key] = keep;
@@ -154,10 +189,9 @@ class OfflineStore extends ChangeNotifier {
       return null;
     } catch (e) {
       // Server messages ("Vui lòng đăng nhập để tải", "Không có file") are
-      // clearer than a generic network hint.
-      final msg = e.toString().replaceFirst(RegExp(r'^(Exception|GraphqlException): ?'), '');
-      if (e is! SocketException && e is! TimeoutException && e is! http.ClientException && msg.isNotEmpty && msg.length < 120) return msg;
-      return 'Không tải được, kiểm tra mạng rồi thử lại';
+      // clearer than a generic network hint; friendlyError keeps those.
+      if (e is SocketException || e is TimeoutException || e is http.ClientException) return 'Không tải được, kiểm tra mạng rồi thử lại';
+      return friendlyError(e, fallback: 'Không tải được, vui lòng thử lại');
     } finally {
       _progress.remove(key);
       if (tmp != null && await tmp.exists()) {
@@ -169,7 +203,7 @@ class OfflineStore extends ChangeNotifier {
 
   Future<void> remove(Map song) async {
     final m = _items.remove(keyOf(song));
-    final p = m?['local_path']?.toString();
+    final p = _pathOf(m);
     if (p != null) {
       try { await File(p).delete(); } catch (_) {}
     }
@@ -179,7 +213,9 @@ class OfflineStore extends ChangeNotifier {
 
   Future<void> clear() async {
     for (final m in _items.values.toList()) {
-      try { await File(m['local_path'].toString()).delete(); } catch (_) {}
+      final p = _pathOf(m);
+      if (p == null) continue;
+      try { await File(p).delete(); } catch (_) {}
     }
     _items.clear();
     await _save();

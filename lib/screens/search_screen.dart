@@ -101,7 +101,7 @@ class _SearchScreenState extends State<SearchScreen> {
     // Move-to-front + dedupe + cap at 10. Mirrors how Spotify / browsers
     // surface "recent" — most-recent-first, no repeats.
     final next = [query, ..._localRecent.where((r) => r.toLowerCase() != query.toLowerCase())].take(10).toList();
-    setState(() => _localRecent = next);
+    if (mounted) setState(() => _localRecent = next);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_localRecentKey, next);
@@ -173,7 +173,8 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce?.cancel();
     setState(() => _query = v);
     if (v.trim().isEmpty) {
-      setState(() { _groups = []; _loading = false; });
+      _searchSeq++; // a search still in flight must not refill the cleared box
+      setState(() { _groups = []; _loading = false; _searchFailed = false; });
       return;
     }
     // 200ms feels noticeably snappier than 400ms — autocomplete-grade
@@ -181,8 +182,14 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounce = Timer(const Duration(milliseconds: 200), () => _runSearch(v.trim()));
   }
 
+  // Each search gets a number; only the latest one may write results.
+  // Typing "bac", "bac ho" fires two requests and the slower first one
+  // used to land last and replace the right results.
+  int _searchSeq = 0;
+
   Future<void> _runSearch(String q) async {
     if (q.isEmpty) return;
+    final seq = ++_searchSeq;
     setState(() => _loading = true);
     try {
       final limit = _filter == 'all' ? 5 : 50;
@@ -195,6 +202,7 @@ class _SearchScreenState extends State<SearchScreen> {
             : r'query($q: String!, $limit: Int, $type: String!) { search(q: $q, limit: $limit, type: $type) }',
         byLyric ? {'q': q, 'limit': 30} : {'q': q, 'limit': limit, 'type': _filter},
       );
+      if (seq != _searchSeq) return;
       final raw = (data['search'] ?? []) as List;
       final filtered = raw.where((g) => (g['hits'] as List?)?.isNotEmpty ?? false).toList();
       if (byLyric) {
@@ -213,12 +221,12 @@ class _SearchScreenState extends State<SearchScreen> {
           if (hits.isNotEmpty) filtered.add({'type': 'lyric', 'name': 'Lời bài hát', 'hits': hits});
         } catch (_) {}
       }
-      if (!mounted) return;
-      setState(() { _groups = filtered; _loading = false; });
-      _trackKeyword(q);
-      _searchFailed = false;
+      if (!mounted || seq != _searchSeq) return;
+      // Recent keywords are recorded on submit / result tap, not here: a
+      // debounce fires on half-typed words ("bá", "bác h").
+      setState(() { _groups = filtered; _loading = false; _searchFailed = false; });
     } catch (_) {
-      if (mounted) setState(() { _groups = []; _loading = false; _searchFailed = true; });
+      if (mounted && seq == _searchSeq) setState(() { _groups = []; _loading = false; _searchFailed = true; });
     }
   }
 
@@ -245,12 +253,18 @@ class _SearchScreenState extends State<SearchScreen> {
     return out;
   }
 
+  String? _trackedQuery;
+
   Future<void> _trackKeyword(String q) async {
+    q = q.trim();
+    // Several result taps for one search record it once.
+    if (q.isEmpty || q == _trackedQuery) return;
+    _trackedQuery = q;
     // Always remember locally — works for both authed and unauthed. The
     // server-side recent (below) is the cross-device version for authed
     // users; both lists merge in the empty state UI.
-    await _saveLocalRecent(q);
     final auth = context.read<AuthProvider>();
+    await _saveLocalRecent(q);
     if (!auth.isAuthenticated) return;
     try {
       await auth.authedMutate(r'mutation($q: String!) { addRecentSearch(q: $q) { id } }', {'q': q});
@@ -283,6 +297,8 @@ class _SearchScreenState extends State<SearchScreen> {
     _ctrl.text = kw;
     _onChanged(kw);
     _focus.unfocus();
+    // Picking a chip is a deliberate search, like pressing Search.
+    _trackKeyword(kw);
   }
 
   void _openHit(Map<String, dynamic> hit) {
@@ -329,6 +345,7 @@ class _SearchScreenState extends State<SearchScreen> {
         break;
       default: break;
     }
+    _trackKeyword(_query);
     _trackHit(t, id);
   }
 
@@ -428,7 +445,10 @@ class _SearchScreenState extends State<SearchScreen> {
                           child: TextField(
                             controller: _ctrl,
                             focusNode: _focus,
-                            autofocus: widget.initialQuery != null,
+                            // With a query the user came for the results; the
+                            // keyboard would cover them.
+                            // The tab doubles as the browse page: no keyboard popping over it.
+                            autofocus: false,
                             textInputAction: TextInputAction.search,
                             style: body(TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600)),
                             decoration: InputDecoration(
@@ -442,7 +462,11 @@ class _SearchScreenState extends State<SearchScreen> {
                               _focus.unfocus();
                               setState(() {});
                             },
-                            onSubmitted: (v) => _runSearch(v.trim()),
+                            onSubmitted: (v) {
+                              _debounce?.cancel();
+                              _runSearch(v.trim());
+                              _trackKeyword(v);
+                            },
                             onChanged: _onChanged,
                           ),
                         ),
@@ -596,7 +620,7 @@ class _SearchScreenState extends State<SearchScreen> {
       return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
     if (_groups.isEmpty && _searchFailed) {
-      return ListView(children: [OfflineBlock(onRetry: () { setState(() => _loading = true); _runSearch(_query); })]);
+      return ListView(children: [OfflineBlock(onRetry: () => _runSearch(_query.trim()))]);
     }
     if (_groups.isEmpty) {
       // No results — surface trending keywords as alternatives so the
@@ -647,7 +671,7 @@ class _SearchScreenState extends State<SearchScreen> {
         if (idx == 0) {
           return Padding(
             padding: const EdgeInsets.only(bottom: 14),
-            child: Text('Tìm thấy $totalHits kết quả', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+            child: Text('Tìm thấy $totalHits kết quả', style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
           );
         }
         if (topHit != null && idx == 1) {
@@ -668,25 +692,29 @@ class _SearchScreenState extends State<SearchScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
+              padding: const EdgeInsets.fromLTRB(2, 10, 0, 2),
               child: Row(
                 children: [
                   Expanded(
                     child: Text(
                       label.toUpperCase(),
-                      style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.5)),
+                      style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.2)),
                     ),
                   ),
                   if (_filter == 'all' && type != null && type.isNotEmpty)
                     InkWell(
                       onTap: () => _setFilter(type),
                       borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                        child: Row(children: [
-                          Text('Xem tất cả', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                          Icon(Icons.chevron_right, size: 13, color: AppColors.textMuted),
-                        ]),
+                      // 48pt target; the text itself is small.
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Text('Xem tất cả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                            Icon(Icons.chevron_right, size: 18, color: AppColors.accentLight),
+                          ]),
+                        ),
                       ),
                     ),
                 ],

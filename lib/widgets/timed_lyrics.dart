@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:provider/provider.dart';
-import 'package:just_audio/just_audio.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 
@@ -118,21 +118,42 @@ class TimedLyrics extends StatefulWidget {
 }
 
 class _TimedLyricsState extends State<TimedLyrics> {
-  late final List<_LrcLine>? _lines = _parseLrc(widget.raw);
+  List<_LrcLine>? _lines;
   final ScrollController _scroll = ScrollController();
   int _activeIndex = -1;
   StreamSubscription<Duration>? _posSub;
-  // Average per-line height — used to compute scroll target. Refined on
-  // first layout via a key on the active line, but a sensible default keeps
-  // initial jumps reasonable.
-  double get _lineHeight => widget.large ? 72 : 36;
+  // One key per line so auto-scroll uses the real laid-out position: at
+  // large system text a line wraps to 2–3 rows and any fixed per-line
+  // height estimate drifts further off with every line.
+  List<GlobalKey> _keys = const [];
 
   @override
   void initState() {
     super.initState();
-    if (_lines == null) return;
-    final player = context.read<PlayerProvider>();
-    _posSub = player.audioPlayer.positionStream.listen(_onTick);
+    _parse();
+  }
+
+  @override
+  void didUpdateWidget(TimedLyrics old) {
+    super.didUpdateWidget(old);
+    // The full player keeps this widget alive across songs; without a
+    // re-parse the previous song's lyrics would stay on screen.
+    if (old.raw != widget.raw) {
+      _parse();
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    }
+  }
+
+  void _parse() {
+    _lines = _parseLrc(widget.raw);
+    _activeIndex = -1;
+    _keys = List.generate(_lines?.length ?? 0, (_) => GlobalKey());
+    if (_lines == null) {
+      _posSub?.cancel();
+      _posSub = null;
+    } else {
+      _posSub ??= context.read<PlayerProvider>().audioPlayer.positionStream.listen(_onTick);
+    }
   }
 
   @override
@@ -149,20 +170,28 @@ class _TimedLyricsState extends State<TimedLyrics> {
     for (var i = 0; i < lines.length; i++) {
       final t = lines[i].time;
       if (t == null) continue;
-      if (t <= pos) idx = i; else break;
+      if (t > pos) break;
+      idx = i;
     }
     if (idx != _activeIndex) {
       setState(() => _activeIndex = idx);
-      if (widget.autoScroll) _scrollToActive();
+      // After the frame, so the active line's new (bigger) size is laid out.
+      if (widget.autoScroll) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToActive());
     }
   }
 
   void _scrollToActive() {
-    if (!_scroll.hasClients || _activeIndex < 0) return;
-    final viewport = _scroll.position.viewportDimension;
-    final target = (_activeIndex * _lineHeight) - (viewport / 2) + (_lineHeight / 2);
-    final clamped = target.clamp(0.0, _scroll.position.maxScrollExtent);
-    _scroll.animateTo(clamped, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+    if (!mounted || _activeIndex < 0 || _activeIndex >= _keys.length) return;
+    final box = _keys[_activeIndex].currentContext?.findRenderObject();
+    if (box == null || !_scroll.hasClients) return;
+    // Only this list scrolls. Scrollable.ensureVisible would also scroll
+    // every scrollable above it — on the phone player that dragged the whole
+    // page down to the lyrics card on each new line.
+    final viewport = RenderAbstractViewport.maybeOf(box);
+    if (viewport == null) return;
+    final target = viewport.getOffsetToReveal(box, 0.4).offset;
+    final pos = _scroll.position;
+    _scroll.animateTo(target.clamp(pos.minScrollExtent, pos.maxScrollExtent), duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
   }
 
   void _seekTo(Duration t) {
@@ -174,43 +203,49 @@ class _TimedLyricsState extends State<TimedLyrics> {
     final lines = _lines;
     if (lines == null) return widget.fallback;
     return LayoutBuilder(builder: (ctx, c) {
-      return ListView.builder(
+      // A Column (not ListView.builder) so every line is laid out and its
+      // offset known; lyrics are at most a few hundred short lines.
+      return SingleChildScrollView(
         controller: _scroll,
         padding: EdgeInsets.symmetric(vertical: c.maxHeight * 0.45),
-        itemCount: lines.length,
-        itemBuilder: (_, i) {
-          final l = lines[i];
-          final active = i == _activeIndex;
-          // Distance-based fade for non-active lines, à la Apple Music.
-          final dist = (_activeIndex < 0) ? 1.0 : ((i - _activeIndex).abs().clamp(0, 4) / 4);
-          final on = widget.activeColor ?? AppColors.text;
-          final off = widget.fadeColor ?? AppColors.textMuted;
-          final color = active ? on : Color.lerp(on, off, 0.3 + dist * 0.7) ?? off;
-          // Scale up for the fullscreen "karaoke" variant — larger active
-          // line + more breathing room between lines so the focal text
-          // reads at viewing distance (Apple Music / Spotify pattern).
-          final fontSize = (widget.large
-              ? (active ? 38.0 : 24.0)
-              : (active ? 20.0 : 16.0)) * widget.fontScale;
-          final fontWeight = active ? FontWeight.w800 : FontWeight.w500;
-          final entry = Padding(
-            padding: EdgeInsets.symmetric(vertical: widget.large ? 12 : 6, horizontal: 16),
-            child: AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 220),
-              style: body(TextStyle(
-                fontSize: fontSize, fontWeight: fontWeight, color: color, height: 1.35,
-                letterSpacing: widget.large ? -0.3 : 0,
-              )),
-              child: Text(l.text, textAlign: widget.textAlign),
-            ),
-          );
-          if (l.time == null) return entry;
-          return InkWell(
-            onTap: () => _seekTo(l.time!),
-            child: entry,
-          );
-        },
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [for (var i = 0; i < lines.length; i++) _line(lines[i], i)],
+        ),
       );
     });
+  }
+
+  Widget _line(_LrcLine l, int i) {
+    final active = i == _activeIndex;
+    // Distance-based fade for non-active lines, à la Apple Music.
+    final dist = (_activeIndex < 0) ? 1.0 : ((i - _activeIndex).abs().clamp(0, 4) / 4);
+    final on = widget.activeColor ?? AppColors.text;
+    final off = widget.fadeColor ?? AppColors.textMuted;
+    final color = active ? on : Color.lerp(on, off, 0.3 + dist * 0.7) ?? off;
+    // Scale up for the fullscreen "karaoke" variant — larger active
+    // line + more breathing room between lines so the focal text
+    // reads at viewing distance (Apple Music / Spotify pattern).
+    final fontSize = (widget.large
+        ? (active ? 38.0 : 24.0)
+        : (active ? 20.0 : 16.0)) * widget.fontScale;
+    final fontWeight = active ? FontWeight.w800 : FontWeight.w500;
+    final entry = Padding(
+      key: _keys[i],
+      padding: EdgeInsets.symmetric(vertical: widget.large ? 12 : 6, horizontal: 16),
+      child: AnimatedDefaultTextStyle(
+        duration: const Duration(milliseconds: 220),
+        style: body(TextStyle(
+          fontSize: fontSize, fontWeight: fontWeight, color: color, height: 1.35,
+          letterSpacing: widget.large ? -0.3 : 0,
+        )),
+        child: Text(l.text, textAlign: widget.textAlign),
+      ),
+    );
+    if (l.time == null) return entry;
+    return InkWell(
+      onTap: () => _seekTo(l.time!),
+      child: entry,
+    );
   }
 }

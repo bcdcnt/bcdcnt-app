@@ -1,12 +1,11 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack;
+import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import '../services/api.dart';
 import '../services/auth.dart';
 import '../widgets/empty_state.dart';
 import '../services/player.dart';
@@ -28,6 +27,8 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
   int _total = 0;
   bool _loading = true;
   bool _loadingMore = false;
+  bool _error = false;
+  bool _creating = false;
 
   AuthProvider? _authRef;
   bool _didInitialFetch = false;
@@ -63,7 +64,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
   }
 
   void _onScroll() {
-    if (_loadingMore || _loading) return;
+    if (_loadingMore || _loading || _error) return;
     if (_page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 400) {
       _fetch(_page + 1);
@@ -77,7 +78,8 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
       return;
     }
     setState(() {
-      if (page == 1) _loading = true; else _loadingMore = true;
+      _error = false;
+      if (page == 1) { _loading = true; } else { _loadingMore = true; }
     });
 
     const q = r'''query($first: Int!, $page: Int) {
@@ -98,7 +100,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
       final pi = raw?['paginatorInfo'] ?? {};
       if (!mounted) return;
       setState(() {
-        if (page == 1) _items = list; else _items.addAll(list);
+        if (page == 1) { _items = list; } else { _items.addAll(list); }
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _total = pi['total'] ?? _total;
@@ -107,12 +109,67 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
       });
     } catch (e) {
       if (mounted) {
-        setState(() { _loading = false; _loadingMore = false; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Lỗi tải playlist: $e', style: const TextStyle(color: Colors.white)),
-          backgroundColor: AppColors.error,
-        ));
+        setState(() { _loading = false; _loadingMore = false; _error = page == 1 || _items.isEmpty; });
+        if (page > 1) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+        }
       }
+    }
+  }
+
+  /// "+ Tạo playlist": ask for a name, create it, then open it.
+  Future<void> _create() async {
+    if (_creating) return;
+    final ctl = TextEditingController();
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Tạo playlist mới', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          textInputAction: TextInputAction.done,
+          style: body(TextStyle(fontSize: 17, color: AppColors.text)),
+          decoration: InputDecoration(
+            labelText: 'Tên playlist',
+            labelStyle: body(TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Huỷ', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+            child: Text('Tạo', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+          ),
+        ],
+      ),
+    );
+    // Not disposed here: the dialog's exit animation may still read it.
+    if (title == null || title.isEmpty || !mounted) return;
+    setState(() => _creating = true);
+    try {
+      final data = await context.read<AuthProvider>().authedMutate(
+        r'''mutation($title: String!) { createPlaylist(input: {title: $title}) { id } }''',
+        {'title': title},
+      );
+      final id = data['createPlaylist']?['id']?.toString();
+      if (!mounted) return;
+      setState(() => _creating = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã tạo playlist "$title"')));
+      _fetch(1);
+      if (id != null) context.push('/playlist/$id');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _creating = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e))));
     }
   }
 
@@ -133,8 +190,12 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-        body: Center(child: Text('Vui lòng đăng nhập', style: AppText.bodyText)),
+        appBar: AppBar(title: const Text('Playlist của tôi'), leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        body: Center(
+          child: auth.loading
+              ? CircularProgressIndicator(color: AppColors.accentFg)
+              : EmptyState(icon: Icons.queue_music, title: 'Vui lòng đăng nhập', subtitle: 'Đăng nhập để tạo và nghe playlist của bạn.', ctaLabel: 'Đăng nhập', onCta: () => askLogin(context)),
+        ),
       );
     }
     return Scaffold(
@@ -150,6 +211,16 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                 title: Text('Playlist của tôi'),
                 centerTitle: true,
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+                actions: [
+                  IconButton(
+                    tooltip: 'Tạo playlist',
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    onPressed: _creating ? null : _create,
+                    icon: _creating
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg))
+                        : Icon(Icons.add_rounded, size: 28, color: AppColors.text),
+                  ),
+                ],
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -178,7 +249,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                               const SizedBox(height: 4),
                               Text(
                                 _total > 0 ? '${_formatInt(_total)} playlist' : (_loading ? 'Đang tải...' : 'Chưa có playlist'),
-                                style: body(const TextStyle(fontSize: 13, color: Colors.white70)),
+                                style: body(const TextStyle(fontSize: 15, color: Colors.white)),
                               ),
                             ],
                           ),
@@ -189,12 +260,16 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                   const SizedBox(height: 20),
 
                   if (_loading && _items.isEmpty)
-                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                    Padding(padding: const EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accentFg)))
+                  else if (_error)
+                    OfflineBlock(onRetry: () => _fetch(1))
                   else if (_items.isEmpty)
-                    const EmptyState(
+                    EmptyState(
                       icon: Icons.queue_music,
                       title: 'Chưa có playlist',
-                      subtitle: 'Tạo playlist mới hoặc thêm bài hát vào playlist từ trang chi tiết.',
+                      subtitle: 'Tạo playlist mới, hoặc bấm ⋮ ở một bài hát rồi chọn "Thêm vào playlist".',
+                      ctaLabel: '+ Tạo playlist',
+                      onCta: _creating ? null : _create,
                     )
                   else
                     ..._items.map((pl) {
@@ -225,9 +300,9 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
                                     const SizedBox(height: 4),
-                                    Text('$total bài', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+                                    Text('$total bài', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
                                   ],
                                 ),
                               ),
@@ -238,7 +313,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                       );
                     }),
 
-                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                  if (_loadingMore) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accentFg, strokeWidth: 2))),
 
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ])),

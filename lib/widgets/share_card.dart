@@ -12,9 +12,9 @@ import 'ui.dart';
 /// Share a song as a picture: cover, a lyric line or member memory, title
 /// and credits on the brand card. Members forward pictures in Zalo groups far
 /// more than links, and the card carries the site's name with it.
-Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) async {
+Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, String? kind}) async {
   final key = GlobalKey();
-  final text = songShareText(song, hook: hook);
+  final text = songShareText(song, hook: hook, kind: kind);
   var busy = false;
   await showModalBottomSheet<void>(
     context: context,
@@ -69,7 +69,7 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
                     image: true,
                     label: 'Ảnh chia sẻ bài ${song['title'] ?? ''}',
                     excludeSemantics: true,
-                    child: RepaintBoundary(key: key, child: _Card(song: song, hook: hook ?? firstLyricLine(song['content']))),
+                    child: RepaintBoundary(key: key, child: _Card(song: song, kind: kind, hook: hook ?? firstLyricLine(song['content']))),
                   ),
                 ),
               ),
@@ -97,7 +97,8 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
 class _Card extends StatelessWidget {
   final Map song;
   final String? hook;
-  const _Card({required this.song, this.hook});
+  final String? kind;
+  const _Card({required this.song, this.hook, this.kind});
 
   String _names(dynamic list) {
     final raw = list is Map ? list['data'] : list;
@@ -152,7 +153,7 @@ class _Card extends StatelessWidget {
             const Spacer(),
             // Zalo often strips the message text: the picture itself says
             // where to find the song.
-            Flexible(child: Text('bcdcnt.net/bai-hat/${song['slug']}-${song['id']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: paper)))),
+            Flexible(child: Text('bcdcnt.net${songWebPath(song, kind)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: paper)))),
           ]),
         ]),
       ),

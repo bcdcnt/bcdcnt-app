@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/friendly_error.dart';
 import '../constants/theme.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
@@ -16,7 +18,7 @@ const _categories = ['Lỗi kỹ thuật', 'Tài khoản', 'Bản quyền / gỡ
 (String, Color) _status(dynamic s) {
   final v = (s ?? '').toString().toLowerCase();
   if (v == 'closed' || v == 'processed') return ('Đã xử lý', AppColors.success);
-  if (v == 'processing') return ('Đang xử lý', const Color(0xFFB7791F));
+  if (v == 'processing') return ('Đang xử lý', const Color(0xFF8A5A00)); // white text ≥4.5:1
   return ('Đang chờ', AppColors.wine);
 }
 
@@ -31,7 +33,7 @@ String _date(dynamic iso) {
 Widget _statusChip((String, Color) st) => Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(color: st.$2, borderRadius: BorderRadius.circular(20)),
-      child: Text(st.$1, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white))),
+      child: Text(st.$1, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white))),
     );
 
 /// "Góp ý & hỗ trợ" (/ho-tro): private requests to BQT via the ticket API —
@@ -49,9 +51,14 @@ class _SupportScreenState extends State<SupportScreen> {
   String _category = 'Góp ý riêng';
   List<Map<String, dynamic>> _tickets = [];
   bool _loading = true;
+  bool _loadFailed = false;
   bool _sending = false;
   String? _error;
   String? _loadedFor;
+
+  /// Public contact for guests / when the app can't reach the ticket API
+  /// (same address the FAQ gives).
+  static const _contactEmail = 'contact@bcdcnt.net';
 
   @override
   void dispose() {
@@ -61,7 +68,7 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   Future<void> _load(AuthProvider auth) async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _loadFailed = false; });
     try {
       final d = await auth.authedQuery('{ me { tickets(first: 50, orderBy: [{column: "id", order: DESC}]) { data { id title category status created_at } } } }', null);
       if (!mounted) return;
@@ -70,9 +77,33 @@ class _SupportScreenState extends State<SupportScreen> {
         _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _loadFailed = true; });
     }
   }
+
+  Widget _contactCard() => Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => launchUrl(Uri.parse('mailto:$_contactEmail?subject=${Uri.encodeComponent('Góp ý BCĐCNT')}')),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(children: [
+              Icon(Icons.mail_outline_rounded, color: AppColors.accentFg),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Hoặc gửi email cho BQT', style: AppText.title),
+                  const SizedBox(height: 2),
+                  Text(_contactEmail, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
+                ]),
+              ),
+              Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+            ]),
+          ),
+        ),
+      );
 
   Future<void> _submit(AuthProvider auth) async {
     final title = _title.text.trim();
@@ -101,7 +132,7 @@ class _SupportScreenState extends State<SupportScreen> {
       if (mounted && id != null) context.push('/ho-tro/$id');
       if (mounted) PushService.instance.maybeAsk(context, reason: 'Biết ngay khi BQT trả lời yêu cầu hỗ trợ của bạn.');
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      if (mounted) setState(() => _error = friendlyError(e));
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -146,24 +177,26 @@ class _SupportScreenState extends State<SupportScreen> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(children: [
-                    Icon(Icons.help_outline_rounded, color: AppColors.accentLight),
+                    Icon(Icons.help_outline_rounded, color: AppColors.accentFg),
                     const SizedBox(width: 10),
-                    Expanded(child: Text('Nhiều thắc mắc đã có lời giải sẵn — xem Câu hỏi thường gặp trước khi gửi.', style: body(TextStyle(fontSize: 14, height: 1.45, fontWeight: FontWeight.w600, color: AppColors.text)))),
-                    Icon(Icons.chevron_right_rounded, color: AppColors.accentLight),
+                    Expanded(child: Text('Nhiều thắc mắc đã có lời giải sẵn — xem Câu hỏi thường gặp trước khi gửi.', style: body(TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w600, color: AppColors.text)))),
+                    Icon(Icons.chevron_right_rounded, color: AppColors.accentFg),
                   ]),
                 ),
               ),
             ),
             const SizedBox(height: 22),
-            if (uid == null)
+            if (uid == null) ...[
               EmptyBlock(
                 icon: Icons.support_agent_rounded,
                 title: 'Đăng nhập để gửi',
                 message: 'Cần đăng nhập để BQT trả lời đúng cho bạn.',
                 action: 'Đăng nhập',
                 onAction: () => showDialog(context: context, builder: (_) => const LoginDialog()),
-              )
-            else ...[
+              ),
+              const SizedBox(height: 8),
+              _contactCard(),
+            ] else ...[
               Text('Chủ đề', style: AppText.title),
               const SizedBox(height: 10),
               Wrap(
@@ -177,13 +210,22 @@ class _SupportScreenState extends State<SupportScreen> {
               TextField(controller: _content, minLines: 5, maxLines: 12, style: body(TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w500, color: AppColors.text)), decoration: _input('Nội dung chi tiết…')),
               if (_error != null) ...[
                 const SizedBox(height: 10),
-                Text(_error!, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.error))),
+                Text(_error!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.errorText))),
               ],
               const SizedBox(height: 14),
               PillButton(label: 'Gửi cho BQT', icon: Icons.send_rounded, loading: _sending, onTap: _sending ? null : () => _submit(auth)),
               SectionTitle('Yêu cầu đã gửi', action: null, padding: const EdgeInsets.fromLTRB(0, 32, 0, 6)),
               if (_loading)
                 for (var i = 0; i < 3; i++) const Padding(padding: EdgeInsets.only(bottom: 10), child: Skeleton(height: 64, radius: 16))
+              else if (_loadFailed)
+                Row(children: [
+                  Expanded(child: Text('Chưa tải được các yêu cầu đã gửi. Kiểm tra mạng.', style: AppText.bodyText)),
+                  TextButton(
+                    style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+                    onPressed: () => _load(auth),
+                    child: Text('Tải lại', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  ),
+                ])
               else if (_tickets.isEmpty)
                 Text('Bạn chưa gửi yêu cầu nào.', style: AppText.bodyText)
               else
@@ -206,7 +248,7 @@ class _SupportScreenState extends State<SupportScreen> {
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text((t['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
                                 const SizedBox(height: 3),
-                                Text([_cat(t['category']), _date(t['created_at'])].where((s) => s != null && s.toString().isNotEmpty).join(' · '), style: AppText.meta),
+                                Text([_cat(t['category']), _date(t['created_at'])].where((s) => s.isNotEmpty).join(' · '), style: AppText.meta),
                               ]),
                             ),
                             const SizedBox(width: 10),
@@ -245,8 +287,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  bool _netError = false;
+
   Future<void> _load() async {
     final auth = context.read<AuthProvider>();
+    if (!_loading) setState(() { _loading = true; _netError = false; _error = null; });
     try {
       final d = await auth.authedQuery(r'query($id: ID!) { ticket(id: $id) { id title content category status created_at author { username } } }', {'id': widget.id});
       if (!mounted) return;
@@ -256,7 +301,14 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         if (_t == null) _error = 'Không tìm thấy yêu cầu';
       });
     } catch (e) {
-      if (mounted) setState(() { _loading = false; _error = 'Bạn không xem được yêu cầu này'; });
+      if (!mounted) return;
+      final msg = friendlyError(e);
+      setState(() {
+        _loading = false;
+        // Network trouble gets a retry; a permission error is final.
+        _netError = msg.contains('mạng');
+        _error = _netError ? msg : 'Bạn không xem được yêu cầu này';
+      });
     }
   }
 
@@ -268,7 +320,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       appBar: const SubPageBar(title: 'Yêu cầu hỗ trợ'),
       body: Stack(children: [
         if (_loading)
-          const Center(child: CircularProgressIndicator())
+          Center(child: CircularProgressIndicator(color: AppColors.accentFg))
+        else if (t == null && _netError)
+          ListView(children: [OfflineBlock(onRetry: _load)])
         else if (t == null)
           ListView(children: [EmptyBlock(icon: Icons.lock_outline_rounded, title: _error ?? 'Không tìm thấy yêu cầu')])
         else
@@ -278,7 +332,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               Row(children: [
                 _statusChip(_status(t['status'])),
                 const SizedBox(width: 10),
-                Expanded(child: Text([_cat(t['category']), _date(t['created_at'])].where((s) => s != null && s.toString().isNotEmpty).join(' · '), style: AppText.meta)),
+                Expanded(child: Text([_cat(t['category']), _date(t['created_at'])].where((s) => s.isNotEmpty).join(' · '), style: AppText.meta)),
               ]),
               const SizedBox(height: 12),
               Text((t['title'] ?? '').toString(), style: display(TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w800, color: AppColors.text))),

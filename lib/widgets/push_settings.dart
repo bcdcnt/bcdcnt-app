@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/push.dart';
+import '../services/friendly_error.dart';
 
 /// Cài đặt → Thông báo điện thoại: system permission, "Bài hát của ngày"
 /// (guests too), and for members one switch per kind + quiet hours
@@ -18,6 +19,7 @@ class PushSettings extends StatefulWidget {
 
 class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver {
   AuthorizationStatus? _status;
+  bool _statusLoaded = false; // false until the first status() returns
   bool _daily = true;
   Map<String, dynamic>? _prefs; // null until loaded (or API not ready yet)
   bool _prefsFailed = false;
@@ -50,8 +52,19 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   }
 
   Future<void> _loadStatus() async {
-    final s = await PushService.instance.status();
-    if (mounted) setState(() => _status = s);
+    AuthorizationStatus? s;
+    try {
+      s = await PushService.instance.status();
+    } catch (_) {}
+    if (mounted) setState(() { _status = s; _statusLoaded = true; });
+  }
+
+  /// push_prefs hours may arrive as int, double or string — never crash.
+  static int? _int(Object? v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
   }
 
   Future<void> _load() async {
@@ -81,7 +94,7 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
     } catch (e) {
       if (mounted) {
         setState(() => _prefs = before);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không lưu được: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Không lưu được: ${friendlyError(e)}')));
       }
     }
   }
@@ -101,7 +114,9 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final quietOn = _prefs != null && _prefs!['quiet_start'] != null && _prefs!['quiet_end'] != null;
+    final quietStart = _int(_prefs?['quiet_start']);
+    final quietEnd = _int(_prefs?['quiet_end']);
+    final quietOn = quietStart != null && quietEnd != null;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _permissionCard(),
       const SizedBox(height: 8),
@@ -111,29 +126,39 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
       }),
       if (auth.isAuthenticated) ...[
         if (_prefs == null && !_prefsFailed)
-          const Padding(padding: EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))))
+          Padding(padding: const EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg))))
         else if (_prefs == null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text('Chưa tải được tuỳ chọn thông báo, thử lại sau.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
+            child: Row(children: [
+              Expanded(child: Text('Chưa tải được tuỳ chọn thông báo.', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary)))),
+              TextButton(
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                onPressed: () {
+                  setState(() => _prefsFailed = false);
+                  _load();
+                },
+                child: Text('Thử lại', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+              ),
+            ]),
           )
         else ...[
           for (final k in _kinds) _row(k.$2, k.$3, k.$4, _prefs![k.$1] != false, (v) => _save({k.$1: v})),
           const Divider(height: 20),
-          _row(Icons.bedtime_outlined, 'Giờ yên lặng', quietOn ? 'Không báo từ ${_prefs!['quiet_start']}h đến ${_prefs!['quiet_end']}h' : 'Báo cả ngày lẫn đêm', quietOn,
+          _row(Icons.bedtime_outlined, 'Giờ yên lặng', quietOn ? 'Không báo từ ${quietStart}h đến ${quietEnd}h' : 'Báo cả ngày lẫn đêm', quietOn,
               (v) => _save(v ? {'quiet_start': 22, 'quiet_end': 7} : {'quiet_start': null, 'quiet_end': null})),
           if (quietOn)
             Padding(
               padding: const EdgeInsets.only(left: 30, bottom: 4),
               child: Row(children: [
-                _hourPicker('Từ', _prefs!['quiet_start'] as int, (h) => _save({'quiet_start': h})),
+                _hourPicker('Từ', quietStart.clamp(0, 23), (h) => _save({'quiet_start': h})),
                 const SizedBox(width: 16),
-                _hourPicker('Đến', _prefs!['quiet_end'] as int, (h) => _save({'quiet_end': h})),
+                _hourPicker('Đến', quietEnd.clamp(0, 23), (h) => _save({'quiet_end': h})),
               ]),
             ),
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Text('Thông báo từ BQT luôn được gửi.', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+            child: Text('Thông báo từ BQT luôn được gửi.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
           ),
         ],
       ],
@@ -141,26 +166,31 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   }
 
   Widget _permissionCard() {
+    if (!_statusLoaded) {
+      // Reserve the card's height instead of flashing "chưa sẵn sàng".
+      return Container(height: 64, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)));
+    }
     if (_status == null) {
-      return Text('Thông báo chưa sẵn sàng trên bản cài này.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)));
+      return Text('Thông báo chưa sẵn sàng trên bản cài này.', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary)));
     }
     final on = _allowed;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: on ? AppColors.surface : AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
-        Icon(on ? Icons.notifications_active_rounded : Icons.notifications_off_outlined, color: on ? AppColors.textSecondary : AppColors.accent),
+        Icon(on ? Icons.notifications_active_rounded : Icons.notifications_off_outlined, color: on ? AppColors.textSecondary : AppColors.accentFg),
         const SizedBox(width: 12),
         Expanded(
           child: Text(
             on ? 'Thông báo đang bật' : (_status == AuthorizationStatus.denied ? 'Thông báo đang tắt trong cài đặt máy' : 'Thông báo chưa bật'),
-            style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+            style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
           ),
         ),
         if (!on)
           TextButton(
             onPressed: _enable,
-            child: Text(_status == AuthorizationStatus.denied ? 'Mở cài đặt' : 'Bật', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accent))),
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            child: Text(_status == AuthorizationStatus.denied ? 'Mở cài đặt' : 'Bật', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
           ),
       ]),
     );
@@ -176,21 +206,22 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
             const SizedBox(width: 12),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.text))),
-                Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                Text(title, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text))),
+                Padding(padding: const EdgeInsets.only(top: 2), child: Text(subtitle, style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)))),
               ]),
             ),
-            Switch(value: value, onChanged: onChanged, activeColor: AppColors.accent),
+            Switch(value: value, onChanged: onChanged, activeThumbColor: Colors.white, activeTrackColor: AppColors.isLight ? AppColors.accent : AppColors.accentLight),
           ]),
         ),
       );
 
   Widget _hourPicker(String label, int value, ValueChanged<int> onChanged) => Row(mainAxisSize: MainAxisSize.min, children: [
-        Text('$label ', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+        Text('$label ', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary))),
         DropdownButton<int>(
           value: value,
           underline: const SizedBox.shrink(),
-          items: [for (var h = 0; h < 24; h++) DropdownMenuItem(value: h, child: Text('${h}h', style: body(TextStyle(fontSize: 14, color: AppColors.text))))],
+          itemHeight: 48,
+          items: [for (var h = 0; h < 24; h++) DropdownMenuItem(value: h, child: Text('${h}h', style: body(TextStyle(fontSize: 16, color: AppColors.text))))],
           onChanged: (h) => h == null ? null : onChanged(h),
         ),
       ]);

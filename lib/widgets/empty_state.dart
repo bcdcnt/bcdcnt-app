@@ -3,7 +3,8 @@ import '../constants/theme.dart';
 
 /// Standard empty-state placeholder used across list screens. Centred
 /// glyph + title + optional subtitle + optional CTA. Replaces the bare
-/// "Chưa có ..." Text we used inline in many spots.
+/// "Chưa có ..." Text we used inline in many spots. Use [EmptyState.retry]
+/// for a failed load so the listener always has a way forward.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -19,6 +20,16 @@ class EmptyState extends StatelessWidget {
     this.ctaLabel,
     this.onCta,
   });
+
+  /// Load-failed variant: offline glyph + "Tải lại" button.
+  const EmptyState.retry({
+    super.key,
+    required VoidCallback onRetry,
+    this.title = 'Chưa tải được nội dung',
+    this.subtitle = 'Kiểm tra kết nối mạng rồi thử lại.',
+  })  : icon = Icons.wifi_off_rounded,
+        ctaLabel = 'Tải lại',
+        onCta = onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -41,14 +52,14 @@ class EmptyState extends StatelessWidget {
           Text(
             title,
             textAlign: TextAlign.center,
-            style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+            style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 6),
             Text(
               subtitle!,
               textAlign: TextAlign.center,
-              style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+              style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.5)),
             ),
           ],
           if (ctaLabel != null && onCta != null) ...[
@@ -58,10 +69,11 @@ class EmptyState extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.accent,
                 foregroundColor: Colors.white,
+                minimumSize: const Size(48, 48),
                 padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text(ctaLabel!, style: body(const TextStyle(fontWeight: FontWeight.w700))),
+              child: Text(ctaLabel!, style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
             ),
           ],
         ],
