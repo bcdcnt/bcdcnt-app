@@ -157,11 +157,38 @@ class PlayerProvider extends ChangeNotifier {
         _isLoading = loading;
         notifyListeners();
       }
+      // Network dropping mid-song leaves the player buffering forever with
+      // no sound. Give it 20s, then surface the "Thử lại / Bài tiếp" bar.
+      _stallTimer?.cancel();
+      if (loading && state.playing) {
+        _stallTimer = Timer(const Duration(seconds: 20), () {
+          if (_isLoading) _reportPlayError();
+        });
+      }
       if (state.processingState == ProcessingState.completed) {
         _tracker?.endSession(reason: 'completed');
         _onSongEnded();
       }
-    });
+    }, onError: (Object _, StackTrace __) => _reportPlayError());
+    _player.playbackEventStream.listen((_) {}, onError: (Object _, StackTrace __) => _reportPlayError());
+  }
+
+  Timer? _stallTimer;
+
+  void _reportPlayError() {
+    _stallTimer?.cancel();
+    _isLoading = false;
+    playErrorTick.value++;
+    notifyListeners();
+  }
+
+  /// Reload the current song from where it stopped (after a network drop).
+  Future<void> retryCurrent() async {
+    final song = _currentSong;
+    if (song == null) return;
+    final at = _position;
+    await playSong(song, null, 'queue');
+    if (at > const Duration(seconds: 2)) await _player.seek(at);
   }
 
   /// Wire the listen-tracker. Called once from the auth bridge on app
@@ -279,9 +306,7 @@ class PlayerProvider extends ChangeNotifier {
       }
       await _player.play();
     } catch (_) {
-      _isLoading = false;
-      playErrorTick.value++;
-      notifyListeners();
+      _reportPlayError();
     }
     _maybeRefillQueue();
   }

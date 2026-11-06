@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
+import 'song_row.dart' show GeneratedCover;
 import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'full_player.dart';
@@ -97,7 +98,7 @@ class MiniPlayer extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         child: thumb != null
                             ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 144), width: 48, height: 48, memCacheWidth: 144, fit: BoxFit.cover)
-                            : Container(width: 48, height: 48, color: Colors.black26, child: const Icon(Icons.music_note_rounded, size: 20, color: fg)),
+                            : GeneratedCover(title: '${song['title'] ?? ''}', size: 48, radius: 0),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -206,7 +207,7 @@ class _CollapsedMiniPlayerPill extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             child: thumb != null
                 ? CachedNetworkImage(imageUrl: cdnImg((thumb!).toString(), 90), width: 36, height: 36, fit: BoxFit.cover)
-                : Container(width: 36, height: 36, color: AppColors.surfaceLight, child: Icon(Icons.music_note, size: 14, color: AppColors.textMuted)),
+                : GeneratedCover(title: '${song['title'] ?? ''}', size: 36, radius: 0),
           ),
         ),
         const SizedBox(width: 6),

@@ -49,8 +49,10 @@ class _RankingScreenState extends State<RankingScreen> {
     _fetchListen();
   }
 
+  bool _failed = false;
+
   Future<void> _fetchListen() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _failed = false; });
     try {
       const q = r'''query($period: String, $type: String!) {
         statisticListen(first: 10, page: 1, period: $period, type: $type) {
@@ -86,7 +88,7 @@ class _RankingScreenState extends State<RankingScreen> {
       }).toList();
       if (!mounted) return;
       setState(() { _songs = list; _loading = false; });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
   }
 
   @override
@@ -120,6 +122,8 @@ class _RankingScreenState extends State<RankingScreen> {
             const SizedBox(height: 18),
             if (_loading)
               for (var i = 0; i < 8; i++) const SkeletonSongRow()
+            else if (_failed && _songs.isEmpty)
+              OfflineBlock(onRetry: _fetchListen)
             else if (_songs.isEmpty)
               const EmptyBlock(icon: Icons.leaderboard_outlined, title: 'Chưa có dữ liệu', message: 'Chưa có lượt nghe trong khoảng thời gian này.')
             else ...[
@@ -291,7 +295,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         CustomScrollView(controller: _scrollCtl, slivers: [
           SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+            backgroundColor: AppColors.bg,
             title: Text(title),
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),

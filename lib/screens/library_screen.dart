@@ -166,7 +166,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             if (_following.isNotEmpty) ...[
               SectionTitle('Đang theo dõi', action: null),
               Rail(
-                height: 128,
+                height: 136,
                 gap: 14,
                 count: _following.length,
                 builder: (_, i) {
@@ -174,7 +174,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   return PersonBubble(
                     name: (p['title'] ?? '').toString(),
                     image: p['avatar']?['url']?.toString(),
-                    tint: false,
+                    tint: true,
                     onTap: () => context.push('${_personRoutes[p['type']]}${p['slug']}'),
                   );
                 },

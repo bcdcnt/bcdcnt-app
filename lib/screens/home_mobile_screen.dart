@@ -496,17 +496,19 @@ class _PickCarouselState extends State<_PickCarousel> {
     return Column(
       children: [
         SizedBox(
-          height: 236,
+          height: 156 + MediaQuery.textScalerOf(context).scale(80),
           child: PageView.builder(
             controller: _ctrl,
-            padEnds: false,
+            // Centred slides: every card sits on the same margin, not just
+            // the first one.
+            padEnds: true,
             itemCount: picks.length,
             onPageChanged: (i) => setState(() => _index = i),
             itemBuilder: (_, i) {
               final s = picks[i];
               final comp = (s['sheet']?['composers']?['data'] as List?)?.whereType<Map>().map((c) => c['title']).join(', ') ?? '';
               return Padding(
-                padding: EdgeInsets.only(left: i == 0 ? 20 : 6, right: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: GestureDetector(
                   onTap: () => playOrOpen(context, s, picks, 'Gợi ý hôm nay'),
                   child: ClipRRect(
@@ -540,7 +542,7 @@ class _PickCarouselState extends State<_PickCarousel> {
                                     if (comp.isNotEmpty)
                                       Text(comp.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w700, color: Color(0xD9FFFFFF)))),
                                     const SizedBox(height: 4),
-                                    Text(s['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 22, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                                    Text(noOrphan('${s['title'] ?? ''}'), maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 22, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
                                     const SizedBox(height: 3),
                                     Text(songByline(s), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xD9FFFFFF)))),
                                   ],

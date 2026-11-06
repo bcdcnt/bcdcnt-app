@@ -151,7 +151,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
           slivers: [
             SliverAppBar(
               pinned: true,
-              backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+              backgroundColor: AppColors.bg,
               title: Text('Bài tôi gửi'),
               centerTitle: true,
               leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),

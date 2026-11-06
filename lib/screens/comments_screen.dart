@@ -6,6 +6,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../widgets/song_row.dart' show playOrOpen;
 import '../widgets/ui.dart';
+import '../main.dart' show TabReselect;
 
 const _objFields = '''
           __typename
@@ -89,11 +90,19 @@ class _CommentsFeedState extends State<CommentsFeed> {
   void initState() {
     super.initState();
     _scrollCtl.addListener(_onScroll);
+    TabReselect.tick.addListener(_onReselect);
     _fetch(1);
+  }
+
+  void _onReselect() {
+    if (TabReselect.tick.value.$1 == 2 && _scrollCtl.hasClients) {
+      _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+    }
   }
 
   @override
   void dispose() {
+    TabReselect.tick.removeListener(_onReselect);
     _scrollCtl.dispose();
     super.dispose();
   }

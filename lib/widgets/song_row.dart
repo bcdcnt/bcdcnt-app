@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../services/share.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
@@ -234,7 +235,13 @@ class SongRow extends StatelessWidget {
     final sub = [byline, if (metric != null) metric].where((s) => s.isNotEmpty).join(' · ');
     final hi = AppColors.accentLight;
 
-    return HoverHighlight(
+    return Semantics(
+      // VoiceOver/TalkBack read the row as one item instead of title,
+      // byline and a nameless button separately.
+      label: [song['title'] ?? '', sub, if (playing) 'đang phát'].where((e) => '$e'.isNotEmpty).join(', '),
+      hint: 'Chạm để nghe, nhấn giữ để xem thêm',
+      button: true,
+      child: HoverHighlight(
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
         onSecondaryTapDown: (d) => showSongActions(context, song),
@@ -257,7 +264,7 @@ class SongRow extends StatelessWidget {
                 children: [
                   if (showIndex) ...[
                     SizedBox(
-                      width: 30,
+                      width: 40,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -267,7 +274,7 @@ class SongRow extends StatelessWidget {
                             style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: hi, fontFeatures: const [FontFeature.tabularFigures()])),
                           ),
                           if (chartNew)
-                            Text('MỚI', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.success)))
+                            Text('MỚI', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1F7A45))))
                           else if (prevRank != null && prevRank != (index ?? 0) + 1)
                             Builder(builder: (_) {
                               final move = prevRank! - ((index ?? 0) + 1);
@@ -279,7 +286,7 @@ class SongRow extends StatelessWidget {
                                   '${move > 0 ? '▲' : '▼'}${move.abs() > 99 ? '99+' : move.abs()}',
                                   maxLines: 1,
                                   softWrap: false,
-                                  style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: move > 0 ? AppColors.success : AppColors.error)),
+                                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: move > 0 ? const Color(0xFF1F7A45) : AppColors.error)),
                                 ),
                               );
                             }),
@@ -306,7 +313,9 @@ class SongRow extends StatelessWidget {
                               child: Text(
                                 song['title'] ?? '',
                                 style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: playing ? hi : AppColors.text)),
-                                maxLines: 1,
+                                // Large text: let long titles wrap rather than
+                                // cut to "Bài ca cho…".
+                                maxLines: MediaQuery.textScalerOf(context).scale(10) > 11 ? 2 : 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -320,7 +329,7 @@ class SongRow extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Tuỳ chọn',
+                    tooltip: 'Tuỳ chọn cho ${song['title'] ?? 'bài hát'}',
                     onPressed: () => showSongActions(context, song),
                     icon: Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 22),
                   ),
@@ -330,6 +339,7 @@ class SongRow extends StatelessWidget {
           ),
         ),
       ),
+    ),
     );
   }
 }
@@ -401,7 +411,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
               item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
               if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến nhạc sĩ ${composer['title']}'),
               if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'ca sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
-              item('share', Icons.ios_share_rounded, 'Sao chép liên kết'),
+              item('share', Icons.ios_share_rounded, 'Chia sẻ (Zalo, Facebook…)'),
             ],
           ),
         ),
@@ -455,9 +465,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
       }
       break;
     case 'share':
-      final url = '$siteUrl/bai-hat/${song['slug']}-${song['id']}';
-      await Clipboard.setData(ClipboardData(text: url));
-      toast('Đã sao chép liên kết bài hát');
+      if (context.mounted) await shareText(context, text: songShareText(song), subject: song['title']?.toString());
       break;
   }
 }

@@ -288,7 +288,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         CustomScrollView(slivers: [
           SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+            backgroundColor: AppColors.bg,
+            surfaceTintColor: Colors.transparent,
             title: Text('Cài đặt'),
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
@@ -446,7 +447,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.accent,
+            activeThumbColor: Colors.white,
+            activeTrackColor: AppColors.accent,
+            inactiveThumbColor: AppColors.textMuted,
+            inactiveTrackColor: AppColors.border,
           ),
         ]),
       ),
@@ -468,22 +472,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+        Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
         TextField(
           controller: ctl,
           keyboardType: keyboardType,
           obscureText: obscure,
-          style: body(TextStyle(fontSize: 14, color: AppColors.text)),
+          style: body(TextStyle(fontSize: 15, color: AppColors.text)),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: body(TextStyle(color: AppColors.textMuted)),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             filled: true,
-            fillColor: AppColors.surfaceLight,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.accent)),
+            fillColor: AppColors.bg,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.textMuted.withValues(alpha: 0.45), width: 1.5)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.textMuted.withValues(alpha: 0.45), width: 1.5)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.accent, width: 2)),
           ),
         ),
       ]),
@@ -523,6 +527,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Section list — single source of truth shared by both layouts. Keeping
   /// it here means the body widget can be a dumb consumer.
   List<_SettingsSectionDef> _sectionDefs() {
+    final defs = _allSectionDefs();
+    if (MediaQuery.sizeOf(context).width >= 900) return defs;
+    // Phones: what older listeners actually look for (text size, theme,
+    // notifications) comes first; keyboard shortcuts are desktop-only.
+    const first = ['theme', 'push'];
+    return [
+      for (final id in first) ...defs.where((d) => d.id == id),
+      ...defs.where((d) => !first.contains(d.id) && d.id != 'shortcuts'),
+    ];
+  }
+
+  List<_SettingsSectionDef> _allSectionDefs() {
     return [
       _SettingsSectionDef(
         id: 'images',
@@ -542,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             value: _notificationSound,
             onChanged: (_) => _toggleNotificationSound(),
           ),
-          _toggleRow(
+          if (MediaQuery.sizeOf(context).width >= 900) _toggleRow(
             icon: Icons.chat_bubble_outline,
             title: 'Sidebar bình luận',
             subtitle: 'Hiện sidebar bình luận trên desktop',

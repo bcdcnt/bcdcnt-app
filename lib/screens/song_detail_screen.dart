@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
+import '../services/share.dart';
 import '../constants/theme.dart';
 import '../widgets/ui.dart';
 import '../widgets/lyrics_text.dart';
@@ -555,15 +556,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   Future<void> _share() async {
     if (_song == null) return;
-    final slug = _song!['slug'];
-    final id = _song!['id'];
-    final url = '$siteUrl/bai-hat/$slug-$id';
-    try {
-      await Clipboard.setData(ClipboardData(text: url));
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép link: $url'), backgroundColor: AppColors.success, duration: const Duration(seconds: 2)));
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(url)));
-    }
+    await shareText(context, text: songShareText(_song!), subject: _song!['title']?.toString());
   }
 
   void _showLoversSheet(List loves) {
@@ -850,7 +843,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         addSep();
         segs.add(TextSpan(text: 'Sáng tác ', style: muted));
         segs.addAll(_linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')));
-        if (year != null) segs.add(TextSpan(text: ' ($year)', style: muted));
+        if (year != null && isDesktop) segs.add(TextSpan(text: ' ($year)', style: muted));
       }
       // Folk extras
       final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
@@ -879,6 +872,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         creditsRow = Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: RichText(
+        textScaler: MediaQuery.textScalerOf(context),
             text: TextSpan(
               style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.6)),
               children: segs,
@@ -997,7 +991,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               // Apple Music album pages.
               SliverAppBar(
                 pinned: true,
-                backgroundColor: AppColors.bg.withValues(alpha: 0.92),
+                backgroundColor: AppColors.bg,
                 titleSpacing: 0,
                 title: AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
@@ -1124,8 +1118,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: PillButton(
-                            label: 'Tương tự',
-                            icon: Icons.shuffle_rounded,
+                            label: 'Bài tương tự',
+                            icon: Icons.queue_music_rounded,
                             primary: false,
                             onTap: _suggestions.isEmpty ? null : () => _playList(_suggestions),
                           ),
@@ -1149,8 +1143,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                                 : (prog != null ? null : () => saveForOffline(context, typed)),
                           );
                         })),
-                        Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Lưu', onTap: _openPlaylistDialog)),
-                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.history_rounded, label: 'Bản thu', onTap: _openFileHistory)),
+                        Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Playlist', onTap: _openPlaylistDialog)),
+                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.library_music_outlined, label: 'Bản thu', onTap: _openFileHistory)),
                         Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: 'Chia sẻ', onTap: _share)),
                       ]),
                       if (mobileTags != null) ...[const SizedBox(height: 18), mobileTags],
@@ -1546,6 +1540,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
+        textScaler: MediaQuery.textScalerOf(context),
         text: TextSpan(children: [
           TextSpan(text: '$label: ', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
           ...valueSpans,
@@ -1680,10 +1675,11 @@ class _MetaLine extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: RichText(
+        textScaler: MediaQuery.textScalerOf(context),
         text: TextSpan(
-          style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),
+          style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.5)),
           children: [
-            TextSpan(text: '$label: '),
+            TextSpan(text: '$label '),
             ...children,
           ],
         ),
@@ -1967,6 +1963,7 @@ class _DesktopHero extends StatelessWidget {
                 // disambiguators like "(bản 1)" sit beside the title rather
                 // than claiming a full 20px line of their own.
                 RichText(
+        textScaler: MediaQuery.textScalerOf(context),
                   maxLines: 2, overflow: TextOverflow.ellipsis,
                   text: TextSpan(
                     style: display(TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),

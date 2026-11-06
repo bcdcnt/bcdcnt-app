@@ -2,6 +2,7 @@ import '../services/imgcdn.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 
 // Shared building blocks of the 2026-11 brand redesign (white + #711313 +
@@ -49,10 +50,14 @@ class NetImage extends StatelessWidget {
             height: height,
             fit: BoxFit.cover,
             memCacheWidth: width != null && width!.isFinite ? (width! * 3).round() : 900,
+            // Tint only the loaded photo: tinting the grey placeholder or the
+            // initials fallback turned them into blank pink discs.
+            imageBuilder: tint
+                ? (_, provider) => BrandTint(child: Image(image: provider, width: width, height: height, fit: BoxFit.cover))
+                : null,
             placeholder: (_, __) => ph,
             errorWidget: (_, __, ___) => fallback ?? ph,
           );
-    img = BrandTint(enabled: tint && url != null, child: img);
     if (circle) return ClipOval(child: img);
     if (radius > 0) return ClipRRect(borderRadius: BorderRadius.circular(radius), child: img);
     return img;
@@ -221,7 +226,7 @@ class ChipStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: 38,
+        height: 20 + MediaQuery.textScalerOf(context).scale(18),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: padding,
@@ -479,6 +484,32 @@ class EmptyBlock extends StatelessWidget {
       );
 }
 
+/// The one "no network" message every screen shows when a fetch fails,
+/// so an empty list is never mistaken for "there are no songs".
+class OfflineBlock extends StatelessWidget {
+  final VoidCallback onRetry;
+  const OfflineBlock({super.key, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) => EmptyBlock(
+        icon: Icons.wifi_off_rounded,
+        title: 'Chưa tải được nội dung',
+        message: 'Kiểm tra kết nối mạng rồi thử lại. Các bài đã tải về vẫn nghe được.',
+        action: 'Tải lại',
+        onAction: onRetry,
+      );
+}
+
+/// Glue the last two words of a short headline with a no-break space so a
+/// wrapped title never leaves one word alone on its line
+/// ("Đất nước anh hùng / ca" → "Đất nước anh / hùng ca").
+String noOrphan(String s) {
+  final t = s.trim();
+  final i = t.lastIndexOf(' ');
+  if (i <= 0 || t.length - i > 14 || t.split(' ').length < 3) return t;
+  return '${t.substring(0, i)}\u00A0${t.substring(i + 1)}';
+}
+
 /// Square-ish media card used in horizontal rails (cover + 2-line title +
 /// subtitle). [cover] is the artwork widget.
 class RailCard extends StatelessWidget {
@@ -506,7 +537,7 @@ class RailCard extends StatelessWidget {
             children: [
               ClipRRect(borderRadius: BorderRadius.circular(18), child: SizedBox(width: width, height: coverHeight, child: cover)),
               const SizedBox(height: 10),
-              Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
+              Text(noOrphan(title), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
               if (subtitle != null && subtitle!.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -524,11 +555,14 @@ class Rail extends StatelessWidget {
   final int count;
   final IndexedWidgetBuilder builder;
   final double gap;
-  const Rail({super.key, required this.height, required this.count, required this.builder, this.gap = 12});
+  /// Part of [height] taken by text under the card; it grows with the
+  /// "Cỡ chữ" setting so captions never clip at Lớn / Rất lớn.
+  final double textHeight;
+  const Rail({super.key, required this.height, required this.count, required this.builder, this.gap = 12, this.textHeight = 40});
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        height: height,
+        height: height - textHeight + MediaQuery.textScalerOf(context).scale(textHeight),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -680,7 +714,13 @@ class SubPageBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) => AppBar(
         toolbarHeight: 52,
         backgroundColor: AppColors.bg,
-        leading: Navigator.of(context).canPop() ? IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => Navigator.of(context).maybePop()) : null,
+        // Opened from a notification or link there is nothing to pop to;
+        // keep the arrow and take the user home instead of stranding them.
+        leading: IconButton(
+          tooltip: 'Quay lại',
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).canPop() ? Navigator.of(context).maybePop() : GoRouter.of(context).go('/'),
+        ),
         title: Text(title),
         actions: [...actions, const SizedBox(width: 6)],
       );

@@ -1697,7 +1697,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   Widget _card({required String title, String? trailing, required Widget child, VoidCallback? onTap}) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         child: Material(
-          color: const Color(0x12FFFFFF),
+          color: const Color(0x1FE0AEAC),
           borderRadius: BorderRadius.circular(24),
           child: InkWell(
             borderRadius: BorderRadius.circular(24),
@@ -1709,7 +1709,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 children: [
                   Row(children: [
                     Expanded(child: Text(title.toUpperCase(), style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0x99FFFFFF))))),
-                    if (trailing != null) Flexible(child: Text(trailing.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0x99FFFFFF))))),
+                    if (trailing != null) Padding(padding: const EdgeInsets.only(left: 12), child: Text(trailing.toUpperCase(), maxLines: 1, style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0x99FFFFFF))))),
                   ]),
                   const SizedBox(height: 12),
                   child,
@@ -1832,7 +1832,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('ĐANG PHÁT TỪ', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.9, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF)))),
+                Text('ĐANG PHÁT TỪ', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF)))),
                 Text(
                   label != null && label.isNotEmpty ? label : 'BCĐCNT',
                   textAlign: TextAlign.center,
@@ -2078,8 +2078,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// ("LỜI 1 & 3", "ĐIỆP KHÚC") instead of showing as raw text.
   Widget _buildFlowingLyrics() => LyricsText(
         html: _songLyrics ?? '',
-        fontSize: 21,
-        weight: FontWeight.w700,
+        fontSize: 19,
+        weight: FontWeight.w600,
         color: const Color(0xEBFFFFFF),
         labelColor: const Color(0x8CFFFFFF),
       );

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
+import '../services/share.dart';
 import '../constants/theme.dart';
 import '../widgets/ui.dart';
 import '../widgets/auth_dialogs.dart';
@@ -405,10 +406,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _share() async {
     if (_person == null) return;
     final url = '$siteUrl${_cfg.routePrefix}${_person!['slug']}';
-    try {
-      await Clipboard.setData(ClipboardData(text: url));
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã sao chép link: $url'), backgroundColor: AppColors.success, duration: const Duration(seconds: 2)));
-    } catch (_) {}
+    await shareText(context, text: '🎵 ${_person!['title']} — các bài hát trên Bài ca đi cùng năm tháng: $url', subject: _person!['title']?.toString());
   }
 
   @override
@@ -454,7 +452,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 if (MediaQuery.sizeOf(context).width >= 900)
                   SliverAppBar(
                     pinned: true,
-                    backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+                    backgroundColor: AppColors.bg,
                     leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
                     title: Text(_cfg.label),
                     centerTitle: true,
@@ -887,7 +885,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   Icon(_following ? Icons.check_rounded : Icons.person_add_alt_1_rounded, size: 20, color: _following ? AppColors.accentLight : AppColors.text),
                   const SizedBox(width: 8),
                   Text(
-                    [_following ? 'Đang theo dõi' : 'Theo dõi', if (_followers > 0) '$_followers người'].join(' · '),
+                    [_following ? 'Đang theo dõi' : 'Theo dõi', if (_followers >= 20) '$_followers người'].join(' · '),
                     style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _following ? AppColors.accentLight : AppColors.text)),
                   ),
                 ]),
@@ -959,35 +957,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   Widget _buildSortBar(String key, _SectionState state) {
+    final selected = _sortOptions.indexWhere((o) => o.$1 == state.sort);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Container(
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-        child: SizedBox(
-        height: 36,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: _sortOptions.length,
-          separatorBuilder: (_, _) => const SizedBox(width: 16),
-          itemBuilder: (_, i) {
-            final opt = _sortOptions[i];
-            final active = state.sort == opt.$1;
-            return InkWell(
-              onTap: active ? null : () => _fetchPage(key, 1, sort: opt.$1),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
-                ),
-                child: Text(
-                  opt.$2,
-                  style: body(TextStyle(fontSize: 13, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary)),
-                ),
-              ),
-            );
-          },
-        ),
-        ),
+      child: ChipStrip(
+        labels: const ['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất'],
+        selected: selected < 0 ? 0 : selected,
+        padding: EdgeInsets.zero,
+        onSelect: (i) {
+          if (_sortOptions[i].$1 != state.sort) _fetchPage(key, 1, sort: _sortOptions[i].$1);
+        },
       ),
     );
   }
@@ -1099,6 +1078,7 @@ class _StatInline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return RichText(
+        textScaler: MediaQuery.textScalerOf(context),
       text: TextSpan(
         children: [
           TextSpan(text: value, style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),

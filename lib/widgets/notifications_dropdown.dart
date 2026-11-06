@@ -338,6 +338,7 @@ class _NotifRow extends StatelessWidget {
               // Prefix sender username (bold) before raw content — mirrors
               // web's NotificationClient row: "<username> <content>".
               RichText(
+        textScaler: MediaQuery.textScalerOf(context),
                 maxLines: 3, overflow: TextOverflow.ellipsis,
                 text: TextSpan(
                   style: body(TextStyle(fontSize: 12, color: AppColors.text, height: 1.4, fontWeight: unread ? FontWeight.w600 : FontWeight.w500)),

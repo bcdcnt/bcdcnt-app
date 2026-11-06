@@ -8,6 +8,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
+import '../main.dart' show TabReselect;
 import '../widgets/voice_search_sheet.dart';
 
 class SearchScreen extends StatefulWidget {
@@ -54,9 +55,23 @@ class _SearchScreenState extends State<SearchScreen> {
     ('user', 'Thành viên', null),
   ];
 
+  final _browseScroll = ScrollController();
+
+  // Tapping "Khám phá" again: back to the top of the browse grid, or put
+  // the cursor in the search box when already there.
+  void _onReselect() {
+    if (TabReselect.tick.value.$1 != 1) return;
+    if (_browseScroll.hasClients && _browseScroll.offset > 0) {
+      _browseScroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOutCubic);
+    } else {
+      _focus.requestFocus();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    TabReselect.tick.addListener(_onReselect);
     _loadLocalRecent();
     // Pre-fill from initialQuery (e.g. trending chip click) so the user
     // lands on results instead of an empty input.
@@ -103,6 +118,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    TabReselect.tick.removeListener(_onReselect);
+    _browseScroll.dispose();
     _ctrl.dispose();
     _focus.dispose();
     _debounce?.cancel();
@@ -478,14 +495,33 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  List<Map<String, dynamic>> _dedupedRecent() {
+    String norm(Object? v) => (v ?? '').toString().trim().toLowerCase();
+    final objTitles = {
+      for (final r in _recent)
+        if (r['object'] is Map) norm((r['object'] as Map)['title']),
+    };
+    final seen = <String>{};
+    return [
+      for (final r in _recent.whereType<Map>().map((e) => Map<String, dynamic>.from(e)))
+        if (r['object'] is Map
+            ? seen.add('o:${(r['object'] as Map)['__typename']}:${(r['object'] as Map)['id']}')
+            : (!objTitles.contains(norm(r['q'])) && seen.add('q:${norm(r['q'])}')))
+          r,
+    ];
+  }
+
   Widget _buildEmpty(bool authed) {
     final serverRecent = authed && _recentLoaded && _recent.isNotEmpty;
     return ListView(
+      controller: _browseScroll,
       padding: const EdgeInsets.only(bottom: 32),
       children: [
         if (serverRecent) ...[
           SectionTitle('Tìm gần đây', action: 'Xoá', onAction: _clearAllRecent, padding: const EdgeInsets.fromLTRB(20, 20, 12, 6)),
-          ..._recent.take(5).map((r) {
+          // A search that ended in a click is logged twice (the typed words,
+          // then the song opened); show the song once, not both.
+          ..._dedupedRecent().take(5).map((r) {
             final q = r['q']?.toString();
             final obj = r['object'];
             if (obj != null) {

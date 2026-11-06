@@ -89,7 +89,7 @@ const List<AppPalette> kAppPalettes = [
 ];
 
 /// Text-size preference ("Cỡ chữ" in Cài đặt).
-const Map<String, double> kTextScales = {'vua': 1.0, 'lon': 1.12, 'ratlon': 1.25};
+const Map<String, double> kTextScales = {'vua': 1.0, 'lon': 1.18, 'ratlon': 1.35};
 const Map<String, String> kTextScaleLabels = {'vua': 'Vừa', 'lon': 'Lớn', 'ratlon': 'Rất lớn'};
 
 /// App-wide theme switcher. Persists the user's pick — 'sang', 'toi' or

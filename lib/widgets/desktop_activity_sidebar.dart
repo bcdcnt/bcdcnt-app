@@ -230,6 +230,7 @@ class _ActivityTile extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             RichText(
+        textScaler: MediaQuery.textScalerOf(context),
               maxLines: 3, overflow: TextOverflow.ellipsis,
               text: TextSpan(
                 style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4)),

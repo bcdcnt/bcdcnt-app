@@ -560,10 +560,34 @@ class _MobileShellState extends State<_MobileShell> {
     if (!mounted) return;
     final player = _player!;
     final hasNext = player.queue.length > player.currentIndex + 1;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: const Text('Không phát được bài này'),
-      duration: const Duration(seconds: 4),
-      action: hasNext ? SnackBarAction(label: 'Bài tiếp', textColor: const Color(0xFFE0AEAC), onPressed: player.playNext) : null,
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    // Stays until dismissed: an older listener who looked away still needs
+    // to know why the music stopped and what to do about it.
+    messenger.showSnackBar(SnackBar(
+      duration: const Duration(days: 1),
+      showCloseIcon: true,
+      closeIconColor: Colors.white70,
+      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Không phát được bài này', style: TextStyle(fontWeight: FontWeight.w700)),
+        const Text('Có thể mạng đang yếu hoặc mất kết nối.', style: TextStyle(fontSize: 13, color: Colors.white70)),
+        const SizedBox(height: 6),
+        Row(children: [
+          TextButton(
+            onPressed: () { messenger.hideCurrentSnackBar(); player.retryCurrent(); },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(64, 40)),
+            child: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+          if (hasNext) ...[
+            const SizedBox(width: 16),
+            TextButton(
+              onPressed: () { messenger.hideCurrentSnackBar(); player.playNext(); },
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(64, 40)),
+              child: const Text('Bài tiếp', style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ]),
+      ]),
     ));
   }
 

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import '../widgets/ui.dart' show SkeletonSongRow, OfflineBlock;
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
@@ -24,7 +25,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1;
-  bool _loading = true, _loadingMore = false;
+  bool _loading = true, _loadingMore = false, _failed = false;
 
   AuthProvider? _authRef;
   bool _didInitialFetch = false;
@@ -70,7 +71,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _fetch(int page) async {
     final auth = context.read<AuthProvider>();
     if (auth.token == null) { setState(() => _loading = false); return; }
-    setState(() { if (page == 1) _loading = true; else _loadingMore = true; });
+    setState(() { _failed = false; if (page == 1) _loading = true; else _loadingMore = true; });
     try {
       final data = await auth.authedQuery(r'''query($first: Int!, $page: Int) {
         me {
@@ -92,11 +93,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       });
     } catch (e) {
       if (mounted) {
-        setState(() { _loading = false; _loadingMore = false; });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Lỗi tải thông báo: $e', style: const TextStyle(color: Colors.white)),
-          backgroundColor: AppColors.error,
-        ));
+        setState(() { _loading = false; _loadingMore = false; _failed = page == 1; });
+        if (page > 1) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải thêm được thông báo. Kiểm tra mạng rồi kéo lại.')));
+        }
       }
     }
   }
@@ -140,7 +140,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         CustomScrollView(controller: _scrollCtl, slivers: [
           SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg.withValues(alpha: 0.88),
+            backgroundColor: AppColors.bg,
             title: Text('Thông báo'),
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
@@ -150,7 +150,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ],
           ),
           if (_loading && _items.isEmpty)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              sliver: SliverList(delegate: SliverChildBuilderDelegate((_, __) => const SkeletonSongRow(), childCount: 8)),
+            )
+          else if (_failed && _items.isEmpty)
+            SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
           else if (_items.isEmpty)
             const SliverFillRemaining(hasScrollBody: false, child: EmptyState(
               icon: Icons.notifications_none,
@@ -208,7 +213,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            RichText(text: TextSpan(children: [
+            RichText(textScaler: MediaQuery.textScalerOf(context), text: TextSpan(children: [
               if (sender?['username'] != null)
                 TextSpan(text: '${sender!['username']} ', style: body(TextStyle(fontSize: 13, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
               TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
