@@ -411,7 +411,7 @@ final _router = GoRouter(
               songId: s.pathParameters['id']!,
               initialSong: extra,
               highlightCommentId: hi,
-              scrollToComments: extra?['scrollToComments'] == true,
+              scrollToComments: s.uri.queryParameters['binh-luan'] == '1',
             );
           },
         ),
@@ -702,9 +702,9 @@ class _MobileShellState extends State<_MobileShell> {
                             if (!onTab) {
                               // One-shot hints (scroll to comments, highlight) must not replay.
                               final extra = here.extra is Map
-                                  ? (Map<String, dynamic>.from(here.extra as Map)..remove('scrollToComments')..remove('highlightCommentId'))
+                                  ? (Map<String, dynamic>.from(here.extra as Map)..remove('highlightCommentId'))
                                   : here.extra;
-                              _lastPage[_activeTab] = (here.uri.toString(), extra);
+                              _lastPage[_activeTab] = (here.uri.replace(queryParameters: Map.of(here.uri.queryParameters)..remove('binh-luan')).toString().replaceAll(RegExp(r'\?$'), ''), extra);
                             } else {
                               _lastPage.remove(_activeTab);
                             }

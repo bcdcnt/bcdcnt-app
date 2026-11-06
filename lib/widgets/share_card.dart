@@ -18,6 +18,8 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
   var busy = false;
   await showModalBottomSheet<void>(
     context: context,
+    useRootNavigator: true,
+    useSafeArea: true,
     isScrollControlled: true,
     backgroundColor: AppColors.bg,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -28,6 +30,7 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
           final boundary = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
           final image = await boundary.toImage(pixelRatio: 3.4);
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          image.dispose();
           final dir = await getTemporaryDirectory();
           final file = File('${dir.path}/bcdcnt-${song['id']}.png');
           await file.writeAsBytes(bytes!.buffer.asUint8List());
@@ -59,7 +62,12 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
                 // The card is rendered at a fixed scale so the saved
                 // picture looks the same whatever the reader's text size.
                 child: MediaQuery.withNoTextScaling(
-                  child: RepaintBoundary(key: key, child: _Card(song: song, hook: hook ?? firstLyricLine(song['content']))),
+                  child: Semantics(
+                    image: true,
+                    label: 'Ảnh chia sẻ bài ${song['title'] ?? ''}',
+                    excludeSemantics: true,
+                    child: RepaintBoundary(key: key, child: _Card(song: song, hook: hook ?? firstLyricLine(song['content']))),
+                  ),
                 ),
               ),
             ),
@@ -76,7 +84,6 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
               },
             ),
             // Room for the mini player, which floats above sheets.
-            const SizedBox(height: 84),
           ]),
         ),
       );
@@ -130,7 +137,7 @@ class _Card extends StatelessWidget {
           ]),
           const Spacer(),
           if (hook != null && hook!.isNotEmpty)
-            Text('“$hook”', maxLines: 5, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 19, height: 1.45, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600, color: Colors.white))),
+            Text('“${hook!.split('\n').take(3).map(noOrphan).join('\n')}”', maxLines: 5, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: hook!.length > 90 ? 15.5 : 17.5, height: 1.45, fontStyle: FontStyle.italic, fontWeight: FontWeight.w600, color: Colors.white))),
           const Spacer(),
           if (artists.isNotEmpty) Text('Trình bày: $artists', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: paper))),
           const SizedBox(height: 12),
@@ -138,8 +145,11 @@ class _Card extends StatelessWidget {
           const SizedBox(height: 12),
           Row(children: [
             const BrandLogo(height: 22, onDark: true),
+            const SizedBox(width: 12),
             const Spacer(),
-            Text('bcdcnt.net', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: paper))),
+            // Zalo often strips the message text: the picture itself says
+            // where to find the song.
+            Flexible(child: Text('bcdcnt.net/bai-hat/${song['slug']}-${song['id']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: paper)))),
           ]),
         ]),
       ),

@@ -540,17 +540,23 @@ void goBack(BuildContext context) {
 class BleedRow extends StatelessWidget {
   final Widget Function(EdgeInsets padding) builder;
   final double inset;
-  const BleedRow({super.key, required this.builder, this.inset = 20});
+  final double height;
+  const BleedRow({super.key, required this.builder, required this.height, this.inset = 20});
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-        builder: (_, c) => Transform.translate(
-          offset: Offset(-inset, 0),
-          child: SizedBox(
-            width: c.maxWidth + inset * 2,
-            child: builder(EdgeInsets.symmetric(horizontal: inset)),
-          ),
+  // A fixed height: an OverflowBox inside a Column would otherwise take
+  // infinite height and blank out the rest of the page.
+  Widget build(BuildContext context) => SizedBox(
+        height: height,
+        child: LayoutBuilder(
+        builder: (_, c) => OverflowBox(
+          // Wider than the parent on purpose; OverflowBox keeps it centred,
+          // so it reaches both screen edges.
+          minWidth: c.maxWidth + inset * 2,
+          maxWidth: c.maxWidth + inset * 2,
+          child: builder(EdgeInsets.symmetric(horizontal: inset)),
         ),
+      ),
       );
 }
 

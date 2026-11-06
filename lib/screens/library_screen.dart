@@ -82,10 +82,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
         _playlists = ((d['myPlaylists']?['data'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
         _loadingPlaylists = false;
       });
+      _playlistsFailed = false;
     } catch (_) {
-      if (mounted) setState(() => _loadingPlaylists = false);
+      if (mounted) setState(() { _loadingPlaylists = false; _playlistsFailed = true; });
     }
   }
+
+  bool _playlistsFailed = false;
 
   Future<void> _fetchFollowing(AuthProvider auth, String uid) async {
     // `myFollowing` (API 2026-11): people this member ♥'d on person pages.
@@ -156,6 +159,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
             SectionTitle('Playlist của tôi', action: 'Tất cả', onAction: () => context.push('/playlist-cua-toi')),
             if (_loadingPlaylists)
               for (var i = 0; i < 3; i++) const SkeletonSongRow()
+            else if (_playlistsFailed && _playlists.isEmpty)
+              // A failed load must not read as "you have no playlists".
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(children: [
+                  Expanded(child: Text('Chưa tải được playlist của bạn. Kiểm tra mạng.', style: AppText.bodyText)),
+                  TextButton(
+                    onPressed: () { final a = context.read<AuthProvider>(); _fetchPlaylists(a); },
+                    style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+                    child: Text('Tải lại', style: body(TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                  ),
+                ]),
+              )
             else if (_playlists.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),

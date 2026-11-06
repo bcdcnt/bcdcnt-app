@@ -177,6 +177,8 @@ class _CommentsFeedState extends State<CommentsFeed> {
             final liked = ((m['likes'] as num?) ?? 0) > 0;
             if (!liked && t.length < 40) return false;
             if (!liked && RegExp(r'(bị lỗi|không nghe được|ko nghe được|không phát|mất tiếng|lỗi rồi)').hasMatch(low)) return false;
+            // Pasted video titles / links ("… | TOPiano", "youtu.be/…").
+            if (!liked && RegExp(r'(https?://|youtu|\| ?\w+$|sheet music|=\)\)\))').hasMatch(low)) return false;
           }
           return true;
         }).toList();

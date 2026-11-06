@@ -80,7 +80,7 @@ class _OnboardingState extends State<_Onboarding> {
                 _step(
                   icon: Icons.touch_app_rounded,
                   title: 'Chạm vào bài là nghe',
-                  text: 'Chạm vào tên bài hát để nghe ngay. Thanh màu đỏ ở dưới màn hình là bài đang phát: chạm vào để xem lời, chỉnh bài, hẹn giờ tắt.\n\nNút ⋮ cạnh mỗi bài để thêm vào playlist, tải về, chia sẻ.',
+                  text: 'Chạm vào tên bài hát để nghe ngay. Thanh màu đỏ ở dưới màn hình là bài đang phát: chạm vào để xem lời, chỉnh bài, hẹn giờ tắt.\n\nNút ⋮ cạnh mỗi bài để thêm vào playlist, tải về, chia sẻ. Bài đã tải về nằm ở Thư viện → Đã tải về, nghe được cả khi không có mạng.',
                 ),
                 _step(
                   icon: Icons.favorite_rounded,

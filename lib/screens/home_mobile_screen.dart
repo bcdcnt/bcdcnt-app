@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -152,6 +153,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _recent = [];
   List<Map<String, dynamic>> _forYou = [];
+  List<Map<String, dynamic>> _fromFollowed = [];
   int _cat = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
   AuthProvider? _auth;
@@ -232,11 +234,12 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (uid == _recentFor) return;
     _recentFor = uid;
     if (uid == null) {
-      setState(() { _recent = []; _forYou = []; });
+      setState(() { _recent = []; _forYou = []; _fromFollowed = []; });
       return;
     }
     _fetchRecent(auth, uid);
     _fetchForYou(auth, uid);
+    _fetchFromFollowed(auth);
   }
 
   Future<void> _fetchRecent(AuthProvider auth, String uid) async {
@@ -282,6 +285,37 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         });
       }
       if (mounted) setState(() => _forYou = out);
+    } catch (_) {}
+  }
+
+  /// "Bài mới của người bạn theo dõi": newest songs of the composers and
+  /// singers the member ♥'d, from the last 6 months. Gives following a
+  /// payoff on the home page (and a reason to come back).
+  Future<void> _fetchFromFollowed(AuthProvider auth) async {
+    try {
+      final f = await auth.authedQuery('query { myFollowing(first: 12) { id slug object_type } }', null);
+      final people = _maps(f['myFollowing']).where((p) => p['object_type'] == 'composer' || p['object_type'] == 'artist').take(10).toList();
+      if (people.isEmpty) return;
+      const fields = 'id title slug subtitle created_at views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } } sheet { year composers(first: 2) { data { id slug title } } }';
+      final parts = [
+        for (var i = 0; i < people.length; i++)
+          'p$i: ${people[i]['object_type']}(slug: ${jsonEncode(people[i]['slug'])}) { title songs(first: 4, orderBy: [{column: "id", order: DESC}]) { data { $fields } } }',
+      ];
+      final d = await ApiClient.query('query { ${parts.join(' ')} }');
+      final cutoff = DateTime.now().subtract(const Duration(days: 180));
+      final seen = <String>{};
+      final out = <Map<String, dynamic>>[];
+      for (var i = 0; i < people.length; i++) {
+        final who = d['p$i']?['title']?.toString();
+        for (final sg in _maps(d['p$i']?['songs']?['data'])) {
+          final at = DateTime.tryParse('${sg['created_at']}'.replaceFirst(' ', 'T'));
+          if (at == null || at.isBefore(cutoff) || !seen.add('${sg['id']}')) continue;
+          if (sg['file']?['audio_url'] == null && sg['file']?['video_url'] == null) continue;
+          out.add({...sg, 'file_type': 'song', 'followedName': who});
+        }
+      }
+      out.sort((a, b) => '${b['created_at']}'.compareTo('${a['created_at']}'));
+      if (mounted) setState(() => _fromFollowed = out.take(12).toList());
     } catch (_) {}
   }
 
@@ -365,7 +399,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(occasion.$1, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                              Text(noOrphan(occasion.$1), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                               const SizedBox(height: 2),
                               Text('Nghe bài hát cho ngày này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                             ]),
@@ -384,13 +418,14 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 action: 'Tải lại',
                 onAction: _fetch,
               ),
+            // Birthdays / anniversaries first: the same story the daily push
+            // tells, so a push about Lê Dung lands on Lê Dung.
+            const AnniversaryRail(),
             const SizedBox(height: 18),
             if (_loading)
               const Skeleton(height: 236, radius: 24, margin: EdgeInsets.symmetric(horizontal: 20))
             else if (_picks.isNotEmpty)
               _PickCarousel(picks: _picks),
-
-            const AnniversaryRail(),
 
             if (_recent.isNotEmpty) ...[
               SectionTitle('Nghe tiếp', action: 'Lịch sử', onAction: () => context.push('/nghe-gan-day')),
@@ -429,6 +464,23 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                     title: s['title']?.toString() ?? '',
                     subtitle: songByline(s),
                     onTap: () => playOrOpen(context, s, _forYou, 'Dành cho bạn'),
+                  );
+                },
+              ),
+            ],
+
+            if (_fromFollowed.isNotEmpty) ...[
+              SectionTitle('Bài mới của người bạn theo dõi', action: null),
+              Rail(
+                height: 226,
+                count: _fromFollowed.length,
+                builder: (_, i) {
+                  final s = _fromFollowed[i];
+                  return RailCard(
+                    cover: SongCover(song: s, size: 148, radius: 0),
+                    title: s['title']?.toString() ?? '',
+                    subtitle: songByline(s),
+                    onTap: () => playOrOpen(context, s, _fromFollowed, 'Bài mới của người bạn theo dõi'),
                   );
                 },
               ),

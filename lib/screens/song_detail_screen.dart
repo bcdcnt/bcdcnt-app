@@ -950,7 +950,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           ],
         ),
     ];
-    final mobileTags = tags.isEmpty ? null : BleedRow(builder: (pad) => SizedBox(
+    final mobileTags = tags.isEmpty ? null : BleedRow(height: 20 + MediaQuery.textScalerOf(context).scale(18), builder: (pad) => SizedBox(
       height: 20 + MediaQuery.textScalerOf(context).scale(18),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,

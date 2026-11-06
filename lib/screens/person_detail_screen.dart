@@ -871,33 +871,52 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          // One row of controls: play, shuffle, follow (was three stacked
+          // rows pushing the songs below the fold).
           Row(
             children: [
               Expanded(child: PillButton(label: 'Phát tất cả', icon: Icons.play_arrow_rounded, onTap: canPlay ? () => _playSection(first, shuffle: false) : null)),
               const SizedBox(width: 10),
-              Expanded(child: PillButton(label: 'Ngẫu nhiên', icon: Icons.shuffle_rounded, primary: false, onTap: canPlay ? () => _playSection(first, shuffle: true) : null)),
+              Semantics(
+                button: true,
+                label: 'Phát ngẫu nhiên',
+                excludeSemantics: true,
+                child: Material(
+                  color: AppColors.surface,
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: canPlay ? () => _playSection(first, shuffle: true) : null,
+                    child: SizedBox(width: 50, height: 50, child: Icon(Icons.shuffle_rounded, size: 22, color: AppColors.text)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Material(
+                color: _following ? AppColors.accentSoft : AppColors.surface,
+                shape: const StadiumBorder(),
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: _toggleFollow,
+                  child: Container(
+                    height: 50,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    alignment: Alignment.center,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(_following ? Icons.check_rounded : Icons.person_add_alt_1_rounded, size: 20, color: _following ? AppColors.accentLight : AppColors.text),
+                      const SizedBox(width: 6),
+                      Text(_following ? 'Đã theo dõi' : 'Theo dõi', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _following ? AppColors.accentLight : AppColors.text))),
+                    ]),
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          Material(
-            color: _following ? AppColors.accentSoft : Colors.transparent,
-            shape: StadiumBorder(side: BorderSide(color: _following ? Colors.transparent : AppColors.border, width: 1.5)),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: _toggleFollow,
-              child: SizedBox(
-                height: 46,
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(_following ? Icons.check_rounded : Icons.person_add_alt_1_rounded, size: 20, color: _following ? AppColors.accentLight : AppColors.text),
-                  const SizedBox(width: 8),
-                  Text(
-                    [_following ? 'Đang theo dõi' : 'Theo dõi', if (_followers >= 20) '$_followers người'].join(' · '),
-                    style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _following ? AppColors.accentLight : AppColors.text)),
-                  ),
-                ]),
-              ),
+          if (_followers >= 20)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text('$_followers người đang theo dõi', textAlign: TextAlign.right, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
             ),
-          ),
         ],
       ),
     );
@@ -929,7 +948,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       },
       child: ListView.builder(
         key: PageStorageKey('person-${cfg.key}'),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+        // No side padding on the list: the sort chips run edge to edge,
+        // rows add their own 20px.
+        padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
         itemCount: state.items.length + 2, // [sort bar, ...items, footer]
         itemBuilder: (ctx, i) {
           if (i == 0) return _buildSortBar(cfg.key, state);
@@ -949,14 +970,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           final sg = Map<String, dynamic>.from(s as Map);
           sg['file_type'] = cfg.fileType;
           final queue = state.items.whereType<Map>().map((x) => {...Map<String, dynamic>.from(x), 'file_type': cfg.fileType}).toList();
-          return Builder(
+          return Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Builder(
             builder: (rowCtx) => SongRow(
               song: sg,
               metricKey: state.sort == 'newest' ? 'time' : state.sort,
               isPlaying: rowCtx.select<PlayerProvider, String?>((pl) => pl.currentSong?['id']?.toString()) == sg['id']?.toString(),
               onTap: () => playOrOpen(context, sg, queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
             ),
-          );
+          ));
         },
       ),
     );
@@ -966,14 +987,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final selected = _sortOptions.indexWhere((o) => o.$1 == state.sort);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: BleedRow(builder: (pad) => ChipStrip(
+      child: ChipStrip(
         labels: const ['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất'],
         selected: selected < 0 ? 0 : selected,
-        padding: pad,
         onSelect: (i) {
           if (_sortOptions[i].$1 != state.sort) _fetchPage(key, 1, sort: _sortOptions[i].$1);
         },
-      )),
+      ),
     );
   }
 

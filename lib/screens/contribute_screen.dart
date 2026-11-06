@@ -130,7 +130,7 @@ class _ContributeScreenState extends State<ContributeScreen> {
   Widget _row(Map<String, dynamic> s) {
     final missing = _missing(s);
     return InkWell(
-      onTap: () => context.push('/song/${s['id']}', extra: {...s, 'scrollToComments': true}),
+      onTap: () => context.push('/song/${s['id']}?binh-luan=1', extra: s),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
