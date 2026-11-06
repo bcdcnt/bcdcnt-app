@@ -245,7 +245,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                   if (_items.isNotEmpty)
                     Padding(
                     padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: 'Tải cả danh sách về máy', primary: false)),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: 'Tải tất cả về máy', primary: false)),
                   ),
                   const SizedBox(height: 8),
 

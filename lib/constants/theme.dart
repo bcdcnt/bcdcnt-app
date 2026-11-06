@@ -42,7 +42,7 @@ class AppColors {
   static const night = Color(0xFF0E0A0A);
   static const gold = Color(0xFFC9A96E);
   static const error = Color(0xFFD23B3B);
-  static const success = Color(0xFF2E8B57);
+  static const success = Color(0xFF1F7A45);
 }
 
 // Font helpers. Everything is Montserrat (see pubspec `fonts:`); display()

@@ -102,7 +102,7 @@ class SectionTitle extends StatelessWidget {
             if (onAction != null && action != null)
               TextButton(
                 onPressed: onAction,
-                style: TextButton.styleFrom(minimumSize: const Size(44, 44), padding: const EdgeInsets.symmetric(horizontal: 8), foregroundColor: AppColors.accentLight),
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.symmetric(horizontal: 8), foregroundColor: AppColors.accentLight),
                 child: Text(action!, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
               ),
           ],
@@ -120,7 +120,7 @@ class PageTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 12, 0),
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
         child: Row(
           children: [
             if (leading != null) ...[leading!, const SizedBox(width: 12)],
@@ -155,9 +155,10 @@ class RoundIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Tooltip(
         message: tooltip,
+        excludeFromSemantics: true,
         child: Semantics(
           button: true,
-          label: tooltip,
+          label: dot ? '$tooltip, có mục mới' : tooltip,
           child: Material(
             color: background ?? AppColors.surface,
             shape: const CircleBorder(),
@@ -170,8 +171,8 @@ class RoundIcon extends StatelessWidget {
                       onTap!();
                     },
               child: SizedBox(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -207,8 +208,9 @@ class BrandChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = selected ? AppColors.text : (soft ? AppColors.accentSoft : AppColors.surface);
-    final fg = selected ? AppColors.bg : (soft ? AppColors.accentLight : AppColors.textSecondary);
+    // Selected = brand wine (black chips were the heaviest mark on screen).
+    final bg = selected ? (AppColors.isLight ? AppColors.wine : AppColors.accent) : (soft ? AppColors.accentSoft : AppColors.surface);
+    final fg = selected ? Colors.white : (soft ? AppColors.accentLight : AppColors.textSecondary);
     return Material(
       color: bg,
       borderRadius: BorderRadius.circular(19),

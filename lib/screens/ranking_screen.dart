@@ -133,7 +133,7 @@ class _RankingScreenState extends State<RankingScreen> {
               ],
               for (var i = _songs.length >= 3 ? 3 : 0; i < _songs.length; i++)
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 6),
+                  padding: const EdgeInsets.only(left: 20, right: 6),
                   child: SongRow(
                     song: queue[i],
                     index: i,

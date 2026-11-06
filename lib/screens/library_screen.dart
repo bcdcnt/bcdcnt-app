@@ -8,6 +8,7 @@ import '../services/offline_store.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/ui.dart';
+import '../widgets/new_documents_rail.dart';
 import '../widgets/listening_profile_card.dart';
 import '../main.dart' show TabReselect;
 
@@ -151,12 +152,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 _Tile(icon: Icons.favorite_rounded, title: 'Yêu thích', subtitle: 'Bài đã thả tim', onTap: () => _open('/yeu-thich')),
                 _Tile(icon: Icons.history_rounded, title: 'Nghe gần đây', subtitle: 'Lịch sử nghe', onTap: () => _open('/nghe-gan-day')),
                 Consumer<OfflineStore>(builder: (_, store, __) => _Tile(icon: Icons.download_for_offline_rounded, title: 'Đã tải về', subtitle: store.items.isEmpty ? 'Nghe không cần mạng' : '${store.items.length} bài · nghe offline', onTap: () => context.push('/da-tai-ve'))),
-                _Tile(icon: Icons.upload_rounded, title: 'Bài gửi', subtitle: 'Bài tôi đã gửi', onTap: () => _open('/bai-gui-cua-toi')),
+                _Tile(icon: Icons.upload_rounded, title: 'Bài gửi', subtitle: 'Bài bạn đã gửi', onTap: () => _open('/bai-gui-cua-toi')),
               ],
             ),
           ),
+          const NewDocumentsRail(),
           if (user != null) ...[
-            SectionTitle('Playlist của tôi', action: 'Tất cả', onAction: () => context.push('/playlist-cua-toi')),
+            SectionTitle('Playlist của tôi', action: 'Xem tất cả', onAction: () => context.push('/playlist-cua-toi')),
             if (_loadingPlaylists)
               for (var i = 0; i < 3; i++) const SkeletonSongRow()
             else if (_playlistsFailed && _playlists.isEmpty)

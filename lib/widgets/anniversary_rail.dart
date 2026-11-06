@@ -123,8 +123,21 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
   @override
   Widget build(BuildContext context) {
     final items = _items;
-    if (items == null || items.isEmpty) return const SizedBox.shrink();
     final scale = MediaQuery.textScalerOf(context);
+    if (items == null) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        const SectionTitle('Ngày này năm xưa', action: null),
+        SizedBox(
+          height: 28 + scale.scale(74),
+          child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 20), children: const [
+            Skeleton(width: 272, height: 102, radius: 20),
+            SizedBox(width: 12),
+            Skeleton(width: 272, height: 102, radius: 20),
+          ]),
+        ),
+      ]);
+    }
+    if (items.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SectionTitle('Ngày này năm xưa', action: null),
       SizedBox(
@@ -160,7 +173,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
             : '${a.years} năm ngày mất';
     final origin = alive
         ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
-        : [if (born != null) '$born', if (died != null) '$died'].join(' – ');
+        : [if (born != null) '$born', if (died != null) '$died'].join('\u2060–\u2060');
     return Semantics(
       button: true,
       excludeSemantics: true,

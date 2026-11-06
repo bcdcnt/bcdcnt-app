@@ -23,7 +23,6 @@ class OfflineStore extends ChangeNotifier {
   final Map<String, Map<String, dynamic>> _items = {};
   // key → 0..1 while downloading.
   final Map<String, double> _progress = {};
-  bool _loaded = false;
 
   static String keyOf(Map song) => '${songKind(song)}-${song['id']}';
 
@@ -54,9 +53,13 @@ class OfflineStore extends ChangeNotifier {
     return _dir = d;
   }
 
-  Future<void> load() async {
-    if (_loaded) return;
-    _loaded = true;
+  Future<void>? _loading;
+
+  /// Callers awaiting load() get the real read, not an early return with an
+  /// empty list (which made "tải cả danh sách" re-download saved songs).
+  Future<void> load() => _loading ??= _doLoad();
+
+  Future<void> _doLoad() async {
     try {
       final f = await _index;
       if (await f.exists()) {
@@ -71,11 +74,18 @@ class OfflineStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _save() async {
-    try {
-      await (await _index).writeAsString(jsonEncode(_items));
-    } catch (_) {}
-  }
+  Future<void> _saveChain = Future.value();
+
+  /// Writes are queued and go through a temp file + rename, so overlapping
+  /// downloads or a crash mid-write can't corrupt the list of saved songs.
+  Future<void> _save() => _saveChain = _saveChain.then((_) async {
+        try {
+          final f = await _index;
+          final tmp = File('${f.path}.tmp');
+          await tmp.writeAsString(jsonEncode(_items), flush: true);
+          await tmp.rename(f.path);
+        } catch (_) {}
+      });
 
   /// Downloads [song] for offline listening. Returns null on success or a
   /// Vietnamese message explaining why it couldn't.
@@ -99,28 +109,34 @@ class OfflineStore extends ChangeNotifier {
       final file = File('${dir.path}/$key.mp3');
       tmp = File('${file.path}.part');
       final client = http.Client();
-      final http.StreamedResponse res;
-      try {
-        res = await client.send(http.Request('GET', Uri.parse(url))).timeout(const Duration(seconds: 30));
-      } catch (_) {
-        client.close();
-        rethrow;
-      }
-      if (res.statusCode != 200) return 'Không tải được file (mã ${res.statusCode})';
-      final total = res.contentLength ?? 0;
+      IOSink? sink;
       var got = 0;
-      final sink = tmp.openWrite();
-      // A stalled stream must not hang a whole "tải cả danh sách" run.
-      await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
-        sink.add(chunk);
-        got += chunk.length;
-        if (total > 0) {
-          _progress[key] = got / total;
-          notifyListeners();
+      try {
+        final res = await client.send(http.Request('GET', Uri.parse(url))).timeout(const Duration(seconds: 30));
+        if (res.statusCode != 200) return 'Không tải được file (mã ${res.statusCode})';
+        final total = res.contentLength ?? 0;
+        sink = tmp.openWrite();
+        var lastPct = -1;
+        // A stalled stream must not hang a whole "tải cả danh sách" run.
+        await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
+          sink.add(chunk);
+          got += chunk.length;
+          if (total > 0) {
+            // Notify per whole percent, not per chunk (hundreds per MP3).
+            final pct = got * 100 ~/ total;
+            if (pct != lastPct) {
+              lastPct = pct;
+              _progress[key] = got / total;
+              notifyListeners();
+            }
+          }
         }
+        await sink.close();
+        sink = null;
+      } finally {
+        await sink?.close();
+        client.close();
       }
-      await sink.close();
-      client.close();
       await tmp.rename(file.path);
 
       // Keep only what lists and the player need (detail maps carry lyrics,
@@ -136,7 +152,11 @@ class OfflineStore extends ChangeNotifier {
       _items[key] = keep;
       await _save();
       return null;
-    } catch (_) {
+    } catch (e) {
+      // Server messages ("Vui lòng đăng nhập để tải", "Không có file") are
+      // clearer than a generic network hint.
+      final msg = e.toString().replaceFirst(RegExp(r'^(Exception|GraphqlException): ?'), '');
+      if (e is! SocketException && e is! TimeoutException && e is! http.ClientException && msg.isNotEmpty && msg.length < 120) return msg;
       return 'Không tải được, kiểm tra mạng rồi thử lại';
     } finally {
       _progress.remove(key);

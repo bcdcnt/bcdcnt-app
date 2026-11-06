@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import '../services/auth.dart';
+import 'package:provider/provider.dart';
 import '../widgets/ui.dart';
 import 'activity_screen.dart';
 import 'comments_screen.dart';
@@ -32,7 +34,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
       child: Column(
         children: [
           PageTitle('Cộng đồng', actions: [
-            RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', onTap: () => context.push('/thong-bao')),
+            RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: ((context.select<AuthProvider, Object?>((a) => a.user?['unread']) as num?) ?? 0) > 0, onTap: () => context.push('/thong-bao')),
           ]),
           const SizedBox(height: 16),
           Segmented(labels: const ['Cảm nhận', 'Thảo luận', 'Hoạt động'], selected: _pane, onSelect: (i) => setState(() => _pane = i)),

@@ -1184,7 +1184,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ]),
                       const SizedBox(height: 16),
                       Row(children: [
-                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
+                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} yêu thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
                         Expanded(child: Builder(builder: (ctx) {
                           // Phones: "Tải về" saves into the app for offline listening.
                           final store = ctx.watch<OfflineStore>();
@@ -2157,7 +2157,7 @@ class _DesktopHero extends StatelessWidget {
                   ),
                   _PrimaryActionPill(
                     icon: isLoved ? Icons.favorite : Icons.favorite_border,
-                    label: loveCount > 0 ? '$loveCount Yêu thích' : 'Yêu thích',
+                    label: loveCount > 0 ? '$loveCount yêu thích' : 'Yêu thích',
                     onTap: onLove,
                     activeAccent: isLoved,
                   ),
@@ -2359,7 +2359,7 @@ class _MobileHeader extends StatelessWidget {
       children: [
         Text([kind, if (year != null) year!].join(' · ').toUpperCase(), style: AppText.eyebrow),
         const SizedBox(height: 4),
-        Text(title, style: display(TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
+        Text(noOrphan(title), style: display(TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
         if (subtitle.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle, style: AppText.meta)),
       ],
     );
@@ -2376,7 +2376,7 @@ class _MobileHeader extends StatelessWidget {
         GestureDetector(
           onTap: onArtworkTap,
           child: DecoratedBox(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: AppColors.glow(AppColors.wine, alpha: 0.5, blur: 30, offset: const Offset(0, 16))),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.45), blurRadius: 20, offset: const Offset(0, 8))]),
             child: SongCover(song: song, size: 136, radius: 20),
           ),
         ),

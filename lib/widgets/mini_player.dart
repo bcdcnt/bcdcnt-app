@@ -70,7 +70,7 @@ class MiniPlayer extends StatelessWidget {
     const fg = Colors.white;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: () => openFullPlayer(player),

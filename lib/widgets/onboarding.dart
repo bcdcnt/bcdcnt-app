@@ -8,19 +8,34 @@ import 'auth_dialogs.dart';
 import 'ui.dart';
 
 const _seenKey = 'onboarding_v1_seen';
+bool _showing = false;
 
 /// Shown once on a phone's first launch: pick a comfortable text size, learn
 /// the two gestures that matter (tap a song, tap the red bar), and why an
 /// account helps. Three short steps, skippable at any point.
 Future<void> maybeShowOnboarding(BuildContext context) async {
+  if (_showing) return;
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool(_seenKey) == true || !context.mounted) return;
+  // Members updating the app already know their way around (wait for the
+  // saved login to be restored before deciding).
+  final auth = context.read<AuthProvider>();
+  for (var i = 0; i < 25 && auth.loading; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  if (!context.mounted) return;
+  if (auth.isAuthenticated) {
+    await prefs.setBool(_seenKey, true);
+    return;
+  }
+  _showing = true;
   final nav = Navigator.of(context, rootNavigator: true);
   final wantsLogin = await nav.push<bool>(
     MaterialPageRoute<bool>(fullscreenDialog: true, builder: (_) => const _Onboarding()),
   );
   // Marked seen only once finished or skipped, so a crash mid-way shows it again.
   await prefs.setBool(_seenKey, true);
+  _showing = false;
   if (wantsLogin == true && nav.mounted) {
     showDialog(context: nav.context, builder: (_) => const LoginDialog());
   }

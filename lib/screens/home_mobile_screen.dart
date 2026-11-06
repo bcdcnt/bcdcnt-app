@@ -193,12 +193,26 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   @override
   void dispose() {
     TabReselect.tick.removeListener(_onReselect);
+    _life.dispose();
     _scroll.dispose();
     _auth?.removeListener(_maybeFetchRecent);
     super.dispose();
   }
 
+  // Home lives for days in the tab stack: rebuild the daily cards when the
+  // date (Vietnam time) changes, and on pull-to-refresh.
+  String get _dayKey {
+    final vn = DateTime.now().toUtc().add(const Duration(hours: 7));
+    return '${vn.year}-${vn.month}-${vn.day}';
+  }
+  int _refreshTick = 0;
+  late final AppLifecycleListener _life = AppLifecycleListener(onResume: () {
+    if (mounted) setState(() {});
+  });
+
   Future<void> _fetch() async {
+    _life; // start listening
+    _refreshTick++; // applied by the setState below
     Future<Map<String, dynamic>> safe(Future<Map<String, dynamic>> f) => f.catchError((_) => <String, dynamic>{});
     final now = DateTime.now();
     final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
@@ -260,7 +274,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     _fetchLoved(auth, uid);
     _fetchRecent(auth, uid);
     _fetchForYou(auth, uid);
-    _fetchFromFollowed(auth);
+    _fetchFromFollowed(auth, uid);
   }
 
   Future<void> _fetchRecent(AuthProvider auth, String uid) async {
@@ -278,13 +292,26 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         m['file_type'] = tn[m['__typename']] ?? 'song';
         out.add(m);
       }
-      if (mounted) setState(() => _recent = out);
+      if (mounted && _recentFor == uid) setState(() => _recent = out);
     } catch (_) {}
   }
 
   /// The occasion's playlist: a dated event playlist BQT set up for that day
   /// if there is one, else the site's themed playlist, else a search.
+  bool _openingOccasion = false;
+
   Future<void> _openOccasion((String, String, int?, String) o) async {
+    // One tap, one page (the lookup takes a moment on slow networks).
+    if (_openingOccasion) return;
+    _openingOccasion = true;
+    try {
+      await _openOccasionInner(o);
+    } finally {
+      _openingOccasion = false;
+    }
+  }
+
+  Future<void> _openOccasionInner((String, String, int?, String) o) async {
     try {
       final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
         'w': {'AND': [
@@ -321,7 +348,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         m['file_type'] = tn[m['__typename']] ?? 'song';
         out.add(m);
       }
-      if (mounted) setState(() => _loved = out);
+      if (mounted && _recentFor == uid) setState(() => _loved = out);
     } catch (_) {}
   }
 
@@ -360,14 +387,14 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           'artists': {'data': m['artists'] ?? []},
         });
       }
-      if (mounted) setState(() => _forYou = out);
+      if (mounted && _recentFor == uid) setState(() => _forYou = out);
     } catch (_) {}
   }
 
   /// "Bài mới của người bạn theo dõi": newest songs of the composers and
   /// singers the member ♥'d, from the last 6 months. Gives following a
   /// payoff on the home page (and a reason to come back).
-  Future<void> _fetchFromFollowed(AuthProvider auth) async {
+  Future<void> _fetchFromFollowed(AuthProvider auth, String uid) async {
     try {
       final f = await auth.authedQuery('query { myFollowing(first: 12) { id slug object_type } }', null);
       final people = _maps(f['myFollowing']).where((p) => p['object_type'] == 'composer' || p['object_type'] == 'artist').take(10).toList();
@@ -392,7 +419,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         }
       }
       out.sort((a, b) => '${b['created_at']}'.compareTo('${a['created_at']}'));
-      if (mounted) setState(() => _fromFollowed = out.take(12).toList());
+      if (mounted && _recentFor == uid) setState(() => _fromFollowed = out.take(12).toList());
     } catch (_) {}
   }
 
@@ -445,7 +472,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 6, 14, 0),
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
               child: Row(
                 children: [
                   const BrandLogo(height: 30),
@@ -481,9 +508,12 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(noOrphan(occasion.$1), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                              Text(occasion.$1.replaceFirst(RegExp(r'^Còn \d+ ngày đến '), ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                               const SizedBox(height: 2),
-                              Text('Nghe các bài hát nhân dịp này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                              Text(
+                                [if (RegExp(r'^Còn (\d+) ngày').hasMatch(occasion.$1)) 'Còn ${RegExp(r'^Còn (\d+) ngày').firstMatch(occasion.$1)!.group(1)} ngày', 'Nghe bài hát ›'].join(' · '),
+                                style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
+                              ),
                             ]),
                           ),
                         ]),
@@ -501,10 +531,10 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 onAction: _fetch,
               ),
             // Daily ritual: today's song (same as the push) + one-tap question.
-            const SongOfDayCard(),
+            SongOfDayCard(key: ValueKey('sotd-$_dayKey-$_refreshTick')),
             // Birthdays / anniversaries first: the same story the daily push
             // tells, so a push about Lê Dung lands on Lê Dung.
-            const AnniversaryRail(),
+            AnniversaryRail(key: ValueKey('anniv-$_dayKey-$_refreshTick')),
             const SizedBox(height: 18),
             if (_loading)
               const Skeleton(height: 236, radius: 24, margin: EdgeInsets.symmetric(horizontal: 20))
@@ -512,7 +542,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
               _PickCarousel(picks: _picks),
 
             if (_recent.isNotEmpty) ...[
-              SectionTitle('Nghe tiếp', action: 'Lịch sử', onAction: () => context.push('/nghe-gan-day')),
+              SectionTitle('Nghe tiếp', action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day')),
               Rail(
                 height: 226,
                 count: _recent.length,
@@ -558,9 +588,9 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                           right: 8,
                           bottom: 8,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.62), borderRadius: BorderRadius.circular(10)),
-                            child: Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, height: 1.25, fontWeight: FontWeight.w700, color: Colors.white))),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(8)),
+                            child: Text(reason.replaceFirst('#', ''), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, height: 1.25, fontWeight: FontWeight.w700, color: Colors.white))),
                           ),
                         ),
                     ]),
@@ -611,7 +641,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             else
               for (var i = 0; i < _weekly.length; i++)
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 6),
+                  padding: const EdgeInsets.only(left: 20, right: 6),
                   child: SongRow(song: _weekly[i], index: i, showIndex: true, queue: _weekly, sourceLabel: 'Nghe nhiều tuần này'),
                 ),
 
@@ -634,11 +664,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             _DecadeGrid(images: [for (final s in _picks.skip(1).take(4)) s['thumbnail']?['url']?.toString()]),
 
             if (_members.isNotEmpty) ...[
-              SectionTitle('Thành viên tiêu biểu', action: 'Bảng vàng', onAction: () => context.push('/bang-xep-hang/cong-hien')),
+              SectionTitle('Thành viên tiêu biểu', action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang/cong-hien')),
               Rail(
-                height: 150,
-                textHeight: 56,
-                gap: 14,
+                height: 124,
+                textHeight: 46,
+                gap: 22,
                 count: _members.length,
                 builder: (_, i) {
                   final m = _members[i];
@@ -650,7 +680,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                     child: GestureDetector(
                       onTap: () => context.push('/user/${m['id']}'),
                       child: SizedBox(
-                        width: 84,
+                        width: 76,
                         child: Column(children: [
                           Stack(clipBehavior: Clip.none, children: [
                             NetImage(url: m['avatar']?['url']?.toString(), width: 76, height: 76, circle: true),
@@ -701,26 +731,6 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
               ),
             ],
 
-            if (_docs.isNotEmpty) ...[
-              SectionTitle('Tư liệu mới', action: 'Kho tư liệu', onAction: () => context.push('/tu-lieu/hinh-anh')),
-              Rail(
-                height: 226,
-                count: _docs.length,
-                builder: (_, i) {
-                  final d = _docs[i];
-                  return RailCard(
-                    width: 220,
-                    coverHeight: 150,
-                    cover: Stack(fit: StackFit.expand, children: [
-                      NetImage(url: d['thumbnail']?['url']?.toString(), tint: true),
-                      Positioned(left: 10, top: 10, child: _Tag(icon: Icons.photo_outlined, label: 'Ảnh')),
-                    ]),
-                    title: d['title']?.toString() ?? '',
-                    onTap: () => context.push('/tu-lieu/chi-tiet/${d['id']}'),
-                  );
-                },
-              ),
-            ],
           ],
         ),
       ),
@@ -762,7 +772,14 @@ class _PickCarousel extends StatefulWidget {
 
 class _PickCarouselState extends State<_PickCarousel> {
   static const _maxSlides = 6;
-  final _ctrl = PageController(viewportFraction: 0.9);
+  // Sized so each card is exactly screen − 40 wide: its edges sit on the
+  // 20pt gutter like every other block (0.9 put them at 26pt).
+  late final PageController _ctrl = PageController(
+    viewportFraction: (() {
+      final w = WidgetsBinding.instance.platformDispatcher.views.first.physicalSize.width / WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+      return w <= 0 ? 0.9 : ((w - 28) / w).clamp(0.8, 0.97);
+    })(),
+  );
   int _index = 0;
   Timer? _timer;
   bool _touched = false;
@@ -774,7 +791,7 @@ class _PickCarouselState extends State<_PickCarousel> {
       // Moving slides under a reader's finger is the worst case for older
       // users: stop for good once they touch it, and never move when the
       // phone asks for reduced motion.
-      if (_touched || (mounted && MediaQuery.of(context).disableAnimations)) return;
+      if (_touched || !mounted || !TickerMode.of(context) || MediaQuery.of(context).disableAnimations || MediaQuery.of(context).accessibleNavigation) return;
       // Count the slides actually shown (build() takes the first 6), else
       // the last slide asks for a page that doesn't exist and stays put.
       final count = widget.picks.length.clamp(0, _maxSlides);
@@ -886,7 +903,7 @@ class _PickCarouselState extends State<_PickCarousel> {
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 width: i == _index ? 18 : 6,
                 height: 6,
-                decoration: BoxDecoration(color: i == _index ? AppColors.wine : AppColors.surfaceLight, borderRadius: BorderRadius.circular(3)),
+                decoration: BoxDecoration(color: i == _index ? AppColors.wine : AppColors.rose.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(3)),
               ),
           ],
         ),
@@ -1022,7 +1039,7 @@ class _QuoteCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('TRONG “${(comment['song_title'] ?? '').toString().toUpperCase()}”', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.eyebrow),
+                Text('Về bài “${comment['song_title'] ?? ''}”', maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.meta.copyWith(color: AppColors.accentLight, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 10),
                 Expanded(
                   child: Text(

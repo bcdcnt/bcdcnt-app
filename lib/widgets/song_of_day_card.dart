@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import 'share_card.dart';
 import 'package:go_router/go_router.dart';
@@ -34,11 +33,19 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
   String? _forUser;
   bool _guestVote = false;
 
+  // Guest answers live only for this app session: on a shared family
+  // tablet the next person to sign in must not "answer" for the last one.
+  static final Map<String, String> _sessionVotes = {};
+  int _loadSeq = 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Reload on login/logout so "your answer" is right.
-    final uid = context.watch<AuthProvider>().user?['id']?.toString();
+    // Reload on login/logout so "your answer" is right; wait for the saved
+    // login to be restored rather than loading once as a guest first.
+    final auth = context.watch<AuthProvider>();
+    if (auth.loading) return;
+    final uid = auth.user?['id']?.toString();
     if (_data == null || uid != _forUser) {
       _forUser = uid;
       _load();
@@ -47,36 +54,35 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
 
   Future<void> _load() async {
     final auth = context.read<AuthProvider>();
+    final seq = ++_loadSeq;
     try {
       final d = auth.isAuthenticated ? await auth.authedQuery(_query, null) : await ApiClient.query(_query);
       final s = d['songOfTheDay'];
-      if (!mounted || s is! Map || s['song'] == null) return;
-      final prefs = await SharedPreferences.getInstance();
-      final pid = s['poll']?['id'];
-      final local = prefs.getString('sotd_vote_$pid');
+      // An older response (e.g. the guest one) must not overwrite a newer one.
+      if (!mounted || seq != _loadSeq || s is! Map || s['song'] == null) return;
+      final pid = '${s['poll']?['id'] ?? ''}';
+      final local = pid.isEmpty ? null : _sessionVotes[pid];
       final server = {for (final id in (s['my_option_ids'] as List? ?? const [])) '$id'};
-      if (!mounted) return;
       setState(() {
         _data = Map<String, dynamic>.from(s);
         _mine = server.isNotEmpty ? server : (local != null ? {local} : {});
         _guestVote = server.isEmpty && local != null && !auth.isAuthenticated;
       });
-      // Answered as a guest, now signed in: send that answer for real.
+      // Answered as a guest a moment ago, now signed in: send it for real.
       if (auth.isAuthenticated && server.isEmpty && local != null) {
-        await prefs.remove('sotd_vote_$pid');
-        _answer(local);
+        _answer(local, fromGuest: pid);
       }
     } catch (_) {}
   }
 
-  Future<void> _answer(String optionId) async {
+  Future<void> _answer(String optionId, {String? fromGuest}) async {
     final auth = context.read<AuthProvider>();
     final poll = _data?['poll'];
+    if (poll?['id'] == null) return;
     if (!auth.isAuthenticated) {
-      // Guests: keep the answer on this phone and show the results at once;
-      // signing in (offered below the results) is what makes it count.
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('sotd_vote_${poll?['id']}', optionId);
+      // Guests: show the results at once; signing in (offered below the
+      // results) is what makes the answer count.
+      _sessionVotes['${poll['id']}'] = optionId;
       if (mounted) setState(() { _mine = {optionId}; _guestVote = true; });
       return;
     }
@@ -88,6 +94,9 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
         {'p': poll['id'], 'o': [optionId]},
       );
       final opts = d['answerPoll']?['options'];
+      if (fromGuest != null) _sessionVotes.remove(fromGuest);
+      // A first answer adds one person; changing an answer doesn't.
+      final firstAnswer = fromGuest != null || _mine.isEmpty;
       if (!mounted) return;
       setState(() {
         _mine = {optionId};
@@ -95,7 +104,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
           _data = {
             ..._data!,
             'poll': {...Map<String, dynamic>.from(poll as Map), 'options': opts},
-            'total_answers': opts.fold<int>(0, (a, o) => a + ((o['total_answer'] as num?)?.toInt() ?? 0)),
+            'total_answers': ((_data!['total_answers'] as num?)?.toInt() ?? 0) + (firstAnswer ? 1 : 0),
           };
         }
       });
@@ -109,7 +118,8 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
   @override
   Widget build(BuildContext context) {
     final d = _data;
-    if (d == null) return const SizedBox.shrink();
+    // Hold the space while loading so the page doesn't jump down later.
+    if (d == null) return const Skeleton(height: 300, radius: 22, margin: EdgeInsets.fromLTRB(20, 20, 20, 0));
     final song = <String, dynamic>{...Map<String, dynamic>.from(d['song'] as Map), 'file_type': 'song'};
     final lead = d['lead']?.toString();
     final poll = d['poll'] as Map?;
@@ -169,7 +179,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
                       customBorder: const StadiumBorder(),
                       onTap: () => _answer('${o['id']}'),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         child: _sending == '${o['id']}'
                             ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent))
                             : Text('${o['name']}', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),

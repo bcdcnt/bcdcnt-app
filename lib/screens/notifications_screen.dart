@@ -43,11 +43,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  String? _fetchedFor;
+
   void _initialFetch() {
-    if (_didInitialFetch || !mounted) return;
+    if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (auth.loading) return;
+    final uid = auth.user?['id']?.toString();
+    // Another account on the same phone must never see the last one's list.
+    if (_didInitialFetch && uid == _fetchedFor) return;
     _didInitialFetch = true;
+    _fetchedFor = uid;
+    setState(() { _items = []; _page = 1; _lastPage = 1; });
+    if (uid == null) return;
     _fetch(1);
     _resetUnread();
   }
@@ -104,14 +112,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _markAllRead() async {
     final auth = context.read<AuthProvider>();
     try { await auth.authedMutate(r'mutation { markAsReadAll }', null); } catch (_) {}
-    setState(() { _items = _items.map((i) { i['is_read'] = 1; return i; }).toList(); });
+    if (mounted) setState(() { _items = _items.map((i) { i['is_read'] = 1; return i; }).toList(); });
   }
 
   Future<void> _markRead(Map<String, dynamic> n) async {
     final auth = context.read<AuthProvider>();
     if (n['code'] == null) return;
     try { await auth.authedMutate(r'mutation($code: String!) { markAsRead(code: $code) }', {'code': n['code']}); } catch (_) {}
-    setState(() { final idx = _items.indexWhere((i) => i['id'] == n['id']); if (idx >= 0) _items[idx]['is_read'] = 1; });
+    if (mounted) setState(() { final idx = _items.indexWhere((i) => i['id'] == n['id']); if (idx >= 0) _items[idx]['is_read'] = 1; });
   }
 
   void _open(Map<String, dynamic> notif) {
@@ -130,7 +138,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final at = <String, int>{};
     for (final n in _items) {
       final day = '${n['created_at'] ?? ''}'.split(' ').first.split('T').first;
-      final groupable = n['action'] != null && n['object_id'] != null && n['sender'] != null;
+      // Likes/votes fold together; replies and mentions carry their own
+      // text, so each stays a row of its own.
+      final act = '${n['action'] ?? ''}'.toLowerCase();
+      final groupable = n['action'] != null && n['object_id'] != null && n['sender'] != null && (act.contains('like') || act.contains('love') || act.contains('poll'));
       final key = '$day|${n['action']}|${n['object_type']}|${n['object_id']}';
       final i = groupable ? at[key] : null;
       if (i == null) {

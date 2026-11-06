@@ -76,7 +76,7 @@ class _ContributeScreenState extends State<ContributeScreen> {
     if (year == null || year == 0) out.add('Năm sáng tác');
     if (artists.isEmpty || artists.any((a) => a.contains('đang cập nhật'))) out.add('Người thể hiện');
     if (s['thumbnail']?['url'] == null) out.add('Ảnh');
-    return out.isEmpty ? ['Thông tin bài hát'] : out;
+    return out.isEmpty ? ['Cần kiểm tra lại'] : out;
   }
 
   @override

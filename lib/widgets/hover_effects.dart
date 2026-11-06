@@ -81,7 +81,7 @@ class _HoverHighlightState extends State<HoverHighlight> {
     // subtle dark scrim instead to keep the hover visible.
     final fill = widget.color ??
         (AppColors.bg.computeLuminance() > 0.5
-            ? Colors.black.withValues(alpha: 0.10)
+            ? AppColors.surfaceHover
             : AppColors.surfaceLight);
     return MouseRegion(
       cursor: SystemMouseCursors.click,

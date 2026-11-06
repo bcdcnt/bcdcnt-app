@@ -282,7 +282,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 if (_items.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items, title: pl['title']?.toString()), icon: Icons.download_for_offline_outlined, label: 'Tải cả playlist về máy', primary: false)),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items, title: pl['title']?.toString()), icon: Icons.download_for_offline_outlined, label: 'Tải tất cả về máy', primary: false)),
                   ),
                 const SizedBox(height: 8),
               ])),

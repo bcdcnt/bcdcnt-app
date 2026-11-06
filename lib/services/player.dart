@@ -161,23 +161,46 @@ class PlayerProvider extends ChangeNotifier {
       // Network dropping mid-song leaves the player buffering forever with
       // no sound. Give it 20s, then surface the "Thử lại / Bài tiếp" bar.
       _stallTimer?.cancel();
-      if (loading && state.playing) {
+      if (state.processingState == ProcessingState.ready) {
+        _readySeen = true;
+        // Playback came back on its own: take the error bar down.
+        if (state.playing) playRecovered.value++;
+      }
+      // Only a stall *after* the song started counts (a slow first load on
+      // 3G is not an error).
+      if (loading && state.playing && _readySeen) {
+        final gen = _loadGen;
         _stallTimer = Timer(const Duration(seconds: 20), () {
-          if (_isLoading) _reportPlayError();
+          if (_isLoading && gen == _loadGen) _reportPlayError();
         });
       }
       if (state.processingState == ProcessingState.completed) {
         _tracker?.endSession(reason: 'completed');
         _onSongEnded();
       }
-    }, onError: (Object _, StackTrace __) => _reportPlayError());
-    _player.playbackEventStream.listen((_) {}, onError: (Object _, StackTrace __) => _reportPlayError());
+    }, onError: (Object e, StackTrace __) => _onStreamError(e));
+    _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace __) => _onStreamError(e));
   }
+
+  void _onStreamError(Object e) {
+    if (e is PlayerInterruptedException) return;
+    _reportPlayError();
+  }
+
+  /// Bumped when playback recovers, so the shell can hide the error bar.
+  final ValueNotifier<int> playRecovered = ValueNotifier(0);
+  // One load = one generation: errors from a load the user already replaced
+  // (tapped another song) are ignored, and each load reports at most once.
+  int _loadGen = 0;
+  int _reportedGen = -1;
+  bool _readySeen = false;
 
   Timer? _stallTimer;
   Duration _lastGoodPosition = Duration.zero;
 
   void _reportPlayError() {
+    if (_reportedGen == _loadGen) return;
+    _reportedGen = _loadGen;
     _stallTimer?.cancel();
     _isLoading = false;
     playErrorTick.value++;
@@ -194,6 +217,8 @@ class PlayerProvider extends ChangeNotifier {
     final url = song['audioUrl'] ?? song['file']?['audio_url'];
     final local = OfflineStore.instance.localPath(song);
     if (url == null && local == null) return;
+    final gen = ++_loadGen;
+    _readySeen = false;
     try {
       if (local != null) {
         await _player.setFilePath(local, initialPosition: at);
@@ -201,9 +226,11 @@ class PlayerProvider extends ChangeNotifier {
         await _player.setUrl(url, initialPosition: at);
       }
       // play() completes only when playback stops; don't wait on it.
-      unawaited(_player.play().catchError((_) => _reportPlayError()));
+      unawaited(_player.play().catchError((Object e) { if (gen == _loadGen) _onStreamError(e); }));
+    } on PlayerInterruptedException {
+      return;
     } catch (_) {
-      _reportPlayError();
+      if (gen == _loadGen) _reportPlayError();
     }
   }
 
@@ -292,7 +319,15 @@ class PlayerProvider extends ChangeNotifier {
     final url = song['audioUrl'] ?? song['file']?['audio_url'];
     // Songs saved in "Đã tải về" play from the phone, with or without network.
     final local = OfflineStore.instance.localPath(song);
-    if (url == null && local == null) return;
+    final gen = ++_loadGen;
+    _readySeen = false;
+    if (url == null && local == null) {
+      // Nothing to play: stop the previous song rather than leave it
+      // playing under the new title, and say so.
+      await _player.stop();
+      _reportPlayError();
+      return;
+    }
 
     // Begin a tracking session before audio loads so we accumulate time
     // from the very first frame. `source=manual` means the user actively
@@ -321,9 +356,14 @@ class PlayerProvider extends ChangeNotifier {
       } else {
         await _player.setUrl(url);
       }
-      await _player.play();
+      if (gen != _loadGen) return;
+      // play() completes only when playback stops: don't await it, or the
+      // queue refill below would wait until the user pauses.
+      unawaited(_player.play().catchError((Object e) { if (gen == _loadGen) _onStreamError(e); }));
+    } on PlayerInterruptedException {
+      return;
     } catch (_) {
-      _reportPlayError();
+      if (gen == _loadGen) _reportPlayError();
     }
     _maybeRefillQueue();
   }
@@ -539,6 +579,7 @@ class PlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _stallTimer?.cancel();
     _player.dispose();
     positionNotifier.dispose();
     super.dispose();

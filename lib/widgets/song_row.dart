@@ -13,6 +13,7 @@ import '../services/player.dart';
 import '../services/auth.dart';
 import '../services/offline_store.dart';
 import 'hover_effects.dart';
+import 'auth_dialogs.dart' show LoginDialog;
 import 'playlist_dialog.dart';
 import 'synced_video.dart';
 import 'ui.dart' show PillButton;
@@ -268,7 +269,7 @@ class SongRow extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 68),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 0, 8),
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
               child: Row(
                 children: [
                   if (showIndex) ...[
@@ -283,7 +284,7 @@ class SongRow extends StatelessWidget {
                             style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: hi, fontFeatures: const [FontFeature.tabularFigures()])),
                           ),
                           if (chartNew)
-                            Text('MỚI', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1F7A45))))
+                            Text('MỚI', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.success)))
                           else if (prevRank != null && prevRank != (index ?? 0) + 1)
                             Builder(builder: (_) {
                               final move = prevRank! - ((index ?? 0) + 1);
@@ -295,7 +296,7 @@ class SongRow extends StatelessWidget {
                                   '${move > 0 ? '▲' : '▼'}${move.abs() > 99 ? '99+' : move.abs()}',
                                   maxLines: 1,
                                   softWrap: false,
-                                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: move > 0 ? const Color(0xFF1F7A45) : AppColors.error)),
+                                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: move > 0 ? AppColors.success : AppColors.error)),
                                 ),
                               );
                             }),
@@ -332,7 +333,17 @@ class SongRow extends StatelessWidget {
                         ),
                         if (sub.isNotEmpty) ...[
                           const SizedBox(height: 3),
-                          Text(sub, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          // The count never gets cut mid-word: the byline
+                          // gives way first, and long bylines drop the count.
+                          Builder(builder: (_) {
+                            final st = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+                            if (metric == null || byline.isEmpty) return Text(sub, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
+                            if (byline.length > 28) return Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
+                            return Row(children: [
+                              Flexible(child: Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                              Text(' · $metric', style: st, maxLines: 1, softWrap: false),
+                            ]);
+                          }),
                         ],
                       ],
                     ),
@@ -488,6 +499,10 @@ List<Map<String, dynamic>> asSongList(dynamic list) =>
 Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
   final auth = context.read<AuthProvider>();
+  if (!auth.isAuthenticated) {
+    showDialog(context: context, builder: (_) => const LoginDialog());
+    return;
+  }
   messenger?.showSnackBar(SnackBar(content: Text('Đang tải "${song['title']}"…'), duration: const Duration(seconds: 2)));
   final err = await OfflineStore.instance.download(song, auth);
   messenger?.hideCurrentSnackBar();
@@ -505,6 +520,10 @@ Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) asy
 /// Stops early when the server says the daily download quota is used up.
 Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> songs, {String? title}) async {
   final auth = context.read<AuthProvider>();
+  if (!auth.isAuthenticated) {
+    showDialog(context: context, builder: (_) => const LoginDialog());
+    return;
+  }
   final store = OfflineStore.instance;
   await store.load();
   final todo = songs.where((s) => (s['file']?['audio_url'] ?? s['audioUrl']) != null && !store.isSaved(s)).toList();
@@ -519,6 +538,9 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
   var running = false;
   await showModalBottomSheet<void>(
     context: context,
+    // Above the tab bar: switching tabs must not tear the sheet down while
+    // downloads keep running.
+    useRootNavigator: true,
     isDismissible: false,
     enableDrag: false,
     backgroundColor: AppColors.bg,
@@ -538,8 +560,9 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
             streak = 0;
           } else {
             failed++;
-            streak++;
-            if (err.contains('quá nhiều')) { error = err; break; }
+            // Only network failures count towards "mất mạng".
+            if (err.contains('kiểm tra mạng')) streak++; else streak = 0;
+            if (err.contains('quá nhiều') || err.contains('đăng nhập')) { error = err; break; }
             // Three in a row: the network is down, not one bad file.
             if (streak >= 3) { error = 'Mất kết nối mạng, đã tạm dừng'; break; }
           }

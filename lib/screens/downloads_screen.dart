@@ -81,7 +81,7 @@ class DownloadsScreen extends StatelessWidget {
                   ),
                   for (final s in items)
                     Padding(
-                      padding: const EdgeInsets.only(left: 16, right: 6),
+                      padding: const EdgeInsets.only(left: 20, right: 6),
                       child: SongRow(song: s, queue: items, sourceLabel: 'Đã tải về', metricKey: 'none'),
                     ),
                 ],

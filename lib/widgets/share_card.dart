@@ -27,6 +27,9 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook}) 
       Future<void> shareImage() async {
         setSheet(() => busy = true);
         try {
+          // Let the cover and logo finish painting before taking the picture.
+          await Future<void>.delayed(const Duration(milliseconds: 250));
+          await WidgetsBinding.instance.endOfFrame;
           final boundary = key.currentContext!.findRenderObject() as RenderRepaintBoundary;
           final image = await boundary.toImage(pixelRatio: 3.4);
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);

@@ -553,6 +553,7 @@ class _MobileShellState extends State<_MobileShell> {
     super.initState();
     _player = context.read<PlayerProvider>();
     _player!.playErrorTick.addListener(_onPlayError);
+    _player!.playRecovered.addListener(_onPlayRecovered);
     // First launch on a phone: 3-step intro (text size, how to play, login).
     // Skipped for scripted screenshot runs.
     if (!kIsWeb && !Platform.environment.containsKey('BCDCNT_SHOT_SIZE')) {
@@ -565,6 +566,8 @@ class _MobileShellState extends State<_MobileShell> {
   @override
   void dispose() {
     _player?.playErrorTick.removeListener(_onPlayError);
+    _player?.playRecovered.removeListener(_onPlayRecovered);
+    goBackFallback = () => '/';
     super.dispose();
   }
 
@@ -581,11 +584,22 @@ class _MobileShellState extends State<_MobileShell> {
         );
     try {
       final cfg = GoRouter.of(context).routerDelegate.currentConfiguration;
-      final pushed = [
-        for (final m in cfg.matches)
-          if (m is ImperativeRouteMatch) clean(m.matches.uri, m.matches.extra),
-      ];
-      if (pushed.isNotEmpty) return pushed;
+      final out = <(String, Object?)>[];
+      // The go()'d base page (e.g. a song opened from a notification),
+      // unless it is the tab root itself.
+      if (_tabPaths[cfg.uri.path] == null) out.add(clean(cfg.uri, cfg.extra));
+      // Pushed pages live inside the ShellRouteMatch, not at the top level.
+      void visit(List<RouteMatchBase> ms) {
+        for (final m in ms) {
+          if (m is ShellRouteMatch) {
+            visit(m.matches);
+          } else if (m is ImperativeRouteMatch) {
+            out.add(clean(m.matches.uri, m.matches.extra));
+          }
+        }
+      }
+      visit(cfg.matches);
+      if (out.isNotEmpty) return out;
     } catch (_) {}
     return [clean(here.uri, here.extra)];
   }
@@ -593,14 +607,18 @@ class _MobileShellState extends State<_MobileShell> {
   void _onPlayError() {
     if (!mounted) return;
     final player = _player!;
-    final hasNext = player.queue.length > player.currentIndex + 1;
-    final missing = player.currentSong?['empty_file'] == 1;
+    final song = player.currentSong;
+    final missing = song?['empty_file'] == 1 || (song != null && (song['audioUrl'] ?? song['file']?['audio_url']) == null && song['file']?['video_url'] == null);
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
-    // Stays until dismissed: an older listener who looked away still needs
-    // to know why the music stopped and what to do about it.
+    final hasPlayer = player.currentSong != null;
+    // Stays until dismissed or until playback recovers (see initState):
+    // an older listener who looked away still needs to know why it stopped.
     messenger.showSnackBar(SnackBar(
       duration: const Duration(days: 1),
+      behavior: SnackBarBehavior.floating,
+      // Above the mini player, not on top of its controls.
+      margin: EdgeInsets.fromLTRB(12, 0, 12, hasPlayer ? 96 : 12),
       showCloseIcon: true,
       closeIconColor: Colors.white70,
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -610,23 +628,29 @@ class _MobileShellState extends State<_MobileShell> {
           style: const TextStyle(fontSize: 13, color: Colors.white70),
         ),
         const SizedBox(height: 6),
-        Row(children: [
-          if (!missing) TextButton(
-            onPressed: () { messenger.hideCurrentSnackBar(); player.retryCurrent(); },
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(72, 48)),
-            child: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.w800)),
-          ),
-          if (hasNext) ...[
-            if (!missing) const SizedBox(width: 16),
+        Wrap(spacing: 16, children: [
+          if (!missing)
             TextButton(
-              onPressed: () { messenger.hideCurrentSnackBar(); player.playNext(); },
+              onPressed: () { messenger.hideCurrentSnackBar(); player.retryCurrent(); },
               style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(72, 48)),
-              child: const Text('Bài tiếp', style: TextStyle(fontWeight: FontWeight.w800)),
+              child: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.w800)),
             ),
-          ],
+          TextButton(
+            // Decided on tap: the queue may have changed since the error.
+            onPressed: () {
+              messenger.hideCurrentSnackBar();
+              if (player.queue.length > player.currentIndex + 1 || player.repeat == PlayerRepeatMode.all) player.playNext();
+            },
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(72, 48)),
+            child: const Text('Bài tiếp', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
         ]),
       ]),
     ));
+  }
+
+  void _onPlayRecovered() {
+    if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
   }
 
   @override
@@ -699,7 +723,8 @@ class _MobileShellState extends State<_MobileShell> {
                       child: Semantics(
                         button: true,
                         selected: i == _activeTab,
-                        label: _tabs[i].$4,
+                        excludeSemantics: true,
+                        label: i == 2 && unread > 0 ? '${_tabs[i].$4}, $unread thông báo mới' : _tabs[i].$4,
                         child: InkResponse(
                           onTap: () {
                             HapticFeedback.selectionClick();
@@ -745,13 +770,13 @@ class _MobileShellState extends State<_MobileShell> {
                                 isLabelVisible: i == 2 && unread > 0,
                                 label: Text(unread > 99 ? '99+' : '$unread'),
                                 backgroundColor: AppColors.accent,
-                                child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted),
+                                child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : AppColors.accentLight) : AppColors.textMuted),
                               ),
                               const SizedBox(height: 4),
                               FittedBox(fit: BoxFit.scaleDown, child: Text(_tabs[i].$4, maxLines: 1, style: body(TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted,
+                                color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : AppColors.accentLight) : AppColors.textMuted,
                               )))),
                             ],
                           ),
