@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
 import '../services/share.dart';
+import '../widgets/share_card.dart';
 import '../constants/theme.dart';
 import '../widgets/ui.dart';
 import '../widgets/lyrics_text.dart';
@@ -577,7 +578,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final memory = _memberStory?['plain']?.toString();
     final hook = firstLyricLine(_song!['content']) ??
         (memory == null ? null : (memory.length > 140 ? '${memory.substring(0, 138)}…' : memory));
-    await shareText(context, text: songShareText(_song!, hook: hook), subject: _song!['title']?.toString());
+    await showSongShareSheet(context, _song!, hook: hook);
   }
 
   void _showLoversSheet(List loves) {
@@ -949,15 +950,16 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           ],
         ),
     ];
-    final mobileTags = tags.isEmpty ? null : SizedBox(
-      height: 38,
+    final mobileTags = tags.isEmpty ? null : BleedRow(builder: (pad) => SizedBox(
+      height: 20 + MediaQuery.textScalerOf(context).scale(18),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        padding: pad,
         itemCount: tags.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (_, i) => BrandChip(label: '#${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
       ),
-    );
+    ));
 
     // Credits kiểu web cho desktop hero: từng dòng "Nhãn: giá trị" đặt GIỮA
     // tiêu đề và stats. Style khớp web: nhãn 13px xám mờ (w500), giá trị 16px

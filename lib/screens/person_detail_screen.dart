@@ -966,14 +966,14 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final selected = _sortOptions.indexWhere((o) => o.$1 == state.sort);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: ChipStrip(
+      child: BleedRow(builder: (pad) => ChipStrip(
         labels: const ['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất'],
         selected: selected < 0 ? 0 : selected,
-        padding: EdgeInsets.zero,
+        padding: pad,
         onSelect: (i) {
           if (_sortOptions[i].$1 != state.sort) _fetchPage(key, 1, sort: _sortOptions[i].$1);
         },
-      ),
+      )),
     );
   }
 

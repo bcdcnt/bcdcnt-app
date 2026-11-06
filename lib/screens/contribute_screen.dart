@@ -140,12 +140,12 @@ class _ContributeScreenState extends State<ContributeScreen> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${s['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
               const SizedBox(height: 6),
-              Wrap(spacing: 6, runSpacing: 6, children: [
+              Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
                 Text('Còn thiếu:', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 for (final m in missing)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)),
                     child: Text(m, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                   ),
               ]),

@@ -807,8 +807,12 @@ class _ThemePicker extends StatelessWidget {
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(18)),
-          child: Text('Xem trước: Nơi anh đến là biển xa, nơi anh tới ngoài đảo xa', style: body(TextStyle(fontSize: 17, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text))),
+          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 1.5)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('XEM TRƯỚC', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+            const SizedBox(height: 6),
+            Text('Nơi anh đến là biển xa, nơi anh tới ngoài đảo xa', style: body(TextStyle(fontSize: 17, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text))),
+          ]),
         ),
       ],
     );

@@ -479,12 +479,12 @@ class _RankingPodium extends StatelessWidget {
             // podium than a letter placeholder.
             final face = ((song['artists']?['data'] as List?) ?? const []).whereType<Map>().map((a) => a['avatar']?['url']?.toString()).firstWhere((u) => u != null && u.isNotEmpty, orElse: () => null);
             if (song['thumbnail']?['url'] == null && face != null) {
-              return NetImage(url: face, width: c.maxWidth, height: c.maxWidth, radius: 18, tint: true);
+              return NetImage(url: face, width: c.maxWidth, height: c.maxWidth, radius: 18);
             }
             return SongCover(song: song, size: c.maxWidth, radius: 18);
           })),
           const SizedBox(height: 6),
-          Text('$rank', style: display(TextStyle(fontSize: rank == 1 ? 40 : 32, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          Text('$rank', style: display(TextStyle(fontSize: rank == 1 ? 48 : 32, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
           const SizedBox(height: 4),
           Text(song['title']?.toString() ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
           const SizedBox(height: 2),
@@ -500,11 +500,11 @@ class _RankingPodium extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Expanded(child: Padding(padding: const EdgeInsets.only(top: 24), child: _card(context, 2))),
+        Expanded(flex: 10, child: Padding(padding: const EdgeInsets.only(top: 36), child: _card(context, 2))),
         const SizedBox(width: 10),
-        Expanded(flex: 1, child: _card(context, 1)),
+        Expanded(flex: 12, child: _card(context, 1)),
         const SizedBox(width: 10),
-        Expanded(child: Padding(padding: const EdgeInsets.only(top: 24), child: _card(context, 3))),
+        Expanded(flex: 10, child: Padding(padding: const EdgeInsets.only(top: 36), child: _card(context, 3))),
       ],
     );
   }

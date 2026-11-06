@@ -144,6 +144,7 @@ class PlayerProvider extends ChangeNotifier {
     // music played. Only progress bars/timestamps listen to [positionNotifier].
     _player.positionStream.listen((pos) {
       _position = pos;
+      if (pos > Duration.zero) _lastGoodPosition = pos;
       positionNotifier.value = pos;
       _tracker?.onTimeUpdate();
     });
@@ -174,6 +175,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Timer? _stallTimer;
+  Duration _lastGoodPosition = Duration.zero;
 
   void _reportPlayError() {
     _stallTimer?.cancel();
@@ -187,7 +189,8 @@ class PlayerProvider extends ChangeNotifier {
   Future<void> retryCurrent() async {
     final song = _currentSong;
     if (song == null) return;
-    final at = _position > const Duration(seconds: 2) ? _position : Duration.zero;
+    // just_audio may already have reset the position after the error.
+    final at = _lastGoodPosition > const Duration(seconds: 2) ? _lastGoodPosition : Duration.zero;
     final url = song['audioUrl'] ?? song['file']?['audio_url'];
     final local = OfflineStore.instance.localPath(song);
     if (url == null && local == null) return;
@@ -274,6 +277,7 @@ class PlayerProvider extends ChangeNotifier {
 
   Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual', String? sourceLabel]) async {
     _currentSong = song;
+    _lastGoodPosition = Duration.zero;
     if (list != null) {
       _queue = list;
       _currentIndex = list.indexWhere((s) => s['id'].toString() == song['id'].toString());

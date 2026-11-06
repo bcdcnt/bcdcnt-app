@@ -6,9 +6,9 @@ class AppColors {
   // a `const Color(...)` literal so the *values* are canonical-cached; only
   // the bindings are non-const. Defaults = the light brand palette.
   static Color bg = const Color(0xFFFFFFFF);
-  static Color surface = const Color(0xFFF6F2F2);
-  static Color surfaceLight = const Color(0xFFEEE7E7);
-  static Color surfaceHover = const Color(0xFFE6DCDC);
+  static Color surface = const Color(0xFFF4F1F0);
+  static Color surfaceLight = const Color(0xFFEDE9E8);
+  static Color surfaceHover = const Color(0xFFE5E0DF);
   static Color accent = const Color(0xFF711313);
   static Color accentLight = const Color(0xFF8E1F1F);
   static Color accentSoft = const Color(0xFFF8EDED);

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SkeletonSongRow;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -101,9 +101,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         _loading = false;
       });
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _failed = true; });
     }
   }
+
+  bool _failed = false;
 
   String _formatInt(int n) {
     final s = n.abs().toString();
@@ -236,7 +238,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
                     // List / loader
                     if (_loading && _items.isEmpty)
-                      Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                      for (var i = 0; i < 6; i++) const SkeletonSongRow()
+                    else if (_failed && _items.isEmpty)
+                      OfflineBlock(onRetry: () { setState(() { _loading = true; _failed = false; }); _fetch(1); })
                     else if (_items.isEmpty)
                       Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(color: AppColors.textMuted)))))
                     else

@@ -32,11 +32,24 @@ String? firstLyricLine(Object? html) {
       .replaceAll(RegExp(r'<br\s*/?>|</p>|</div>', caseSensitive: false), '\n')
       .replaceAll(RegExp(r'<[^>]+>'), '')
       .replaceAll('&nbsp;', ' ');
+  // Short lyric lines ("Nâng phím đàn,") say little alone: take the opening
+  // lines until there is a phrase worth quoting (~45–140 characters).
+  final picked = <String>[];
+  var len = 0;
   for (final raw in text.split('\n')) {
     final l = raw.replaceFirst(RegExp(r'^\s*(\d+[.,)\-]*\s*)+|^\s*(ĐK|Đk|đk|Điệp khúc)\s*[:.]?\s*'), '').trim();
-    if (l.length >= 12 && !l.startsWith('[')) return l.length > 90 ? '${l.substring(0, 88)}…' : l;
+    if (l.length < 4 || l.startsWith('[') || l.startsWith('(')) {
+      if (picked.isNotEmpty) break;
+      continue;
+    }
+    if (picked.isNotEmpty && len + l.length > 140) break;
+    picked.add(l);
+    len += l.length;
+    if (len >= 45 || picked.length >= 4) break;
   }
-  return null;
+  if (picked.isEmpty) return null;
+  final out = picked.join('\n');
+  return out.length > 150 ? '${out.substring(0, 148)}…' : out;
 }
 
 /// "🎵 Bài ca cho em — Phan Nhân (1981)\nTrình bày: Tô Thanh Phương\n<link>"

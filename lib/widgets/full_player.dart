@@ -605,7 +605,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                           child: Text(
                             t.$4!,
                             style: body(TextStyle(
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: FontWeight.w800,
                               color: active ? _PC.wine : _PC.textMuted,
                             )),
@@ -647,7 +647,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
               Text(
                 _formatCompact(count),
                 style: body(TextStyle(
-                  fontSize: 10,
+                  fontSize: 12,
                   fontWeight: FontWeight.w700,
                   color: _liked ? _PC.accent : _PC.textMuted,
                 )),
@@ -709,7 +709,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                   ),
                   constraints: const BoxConstraints(minWidth: 16),
                   alignment: Alignment.center,
-                  child: Text(badge, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, height: 1.2)),
+                  child: Text(badge, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white, height: 1.2)),
                 ),
               ),
             ]),
@@ -1224,7 +1224,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 Text(
                                   'ĐANG PHÁT',
                                   textAlign: TextAlign.center,
-                                  style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: _PC.textMuted)),
+                                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: _PC.textMuted)),
                                 ),
                                 if (player.sourceLabel != null && player.sourceLabel!.isNotEmpty) ...[
                                   const SizedBox(height: 1),
@@ -2105,7 +2105,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                 ? () => _setLyricsScale((_lyricsScale - 0.1).clamp(0.7, 1.6))
                 : null,
           ),
-          Text(scaleLabel, style: body(TextStyle(fontSize: 11, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
+          Text(scaleLabel, style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
           IconButton(
             tooltip: 'Cỡ chữ lớn hơn',
             iconSize: 18,
@@ -2191,7 +2191,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                         child: Center(
                           child: isActive
                               ? Icon(Icons.graphic_eq, size: 14, color: _PC.accentLight)
-                              : Text('${idx + 1}', style: body(TextStyle(fontSize: 11, color: _PC.textMuted, fontWeight: FontWeight.w600))),
+                              : Text('${idx + 1}', style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontWeight: FontWeight.w600))),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -2218,7 +2218,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 artistText,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: body(TextStyle(fontSize: 11, color: isActive ? _PC.accentLight.withValues(alpha: 0.8) : _PC.textSecondary)),
+                                style: body(TextStyle(fontSize: 12, color: isActive ? _PC.accentLight.withValues(alpha: 0.8) : _PC.textSecondary)),
                               ),
                           ],
                         ),
@@ -2312,7 +2312,7 @@ class _RepeatButton extends StatelessWidget {
               if (mode == PlayerRepeatMode.one)
                 Positioned(
                   top: -4, right: -5,
-                  child: Text('1', style: body(TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: _PC.accentLight))),
+                  child: Text('1', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _PC.accentLight))),
                 ),
             ],
           ),

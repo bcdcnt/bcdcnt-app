@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, EmptyBlock;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -82,8 +82,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       });
       logActivity(context.read<AuthProvider>(), 'view', 'playlist', plMap['id']);
       _fetchRelated(plMap);
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+    } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
   }
+
+  bool _failed = false;
 
   Future<void> _fetchRelated(Map<String, dynamic> pl) async {
     try {
@@ -165,7 +167,11 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       return Scaffold(
         backgroundColor: AppColors.bg,
         appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
-        body: Center(child: Text('Không tìm thấy playlist', style: AppText.bodyText)),
+        body: Center(
+          child: _failed
+              ? OfflineBlock(onRetry: () { setState(() { _loading = true; _failed = false; }); _fetch(); })
+              : const EmptyBlock(icon: Icons.queue_music_rounded, title: 'Không tìm thấy playlist', message: 'Playlist có thể đã bị xoá hoặc để riêng tư.'),
+        ),
       );
     }
     final pl = _playlist!;

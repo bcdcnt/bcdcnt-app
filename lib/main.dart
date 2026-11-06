@@ -15,6 +15,7 @@ import 'services/media_session.dart';
 import 'services/realtime.dart';
 import 'services/theme_provider.dart';
 import 'services/offline_store.dart';
+import 'widgets/ui.dart' show goBackFallback;
 import 'widgets/onboarding.dart';
 import 'screens/contribute_screen.dart';
 import 'screens/home_screen.dart';
@@ -621,6 +622,7 @@ class _MobileShellState extends State<_MobileShell> {
     _tabScreens.putIfAbsent(_activeTab, () => _buildTab(_activeTab));
     final child = widget.child;
     final hasPlayer = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
+    goBackFallback = () => _tabs[_activeTab].$1;
     final unreadRaw = context.select<AuthProvider, Object?>((a) => a.user?['unread']);
     final unread = unreadRaw is num ? unreadRaw.toInt() : 0;
 
@@ -668,9 +670,10 @@ class _MobileShellState extends State<_MobileShell> {
             // Tab labels stay readable but capped (as iOS does) so 200% text
             // can't push the icons out of the bar.
             child: MediaQuery.withClampedTextScaling(
-            maxScaleFactor: 1.3,
-            child: SizedBox(
-              height: 60,
+            maxScaleFactor: 1.6,
+            child: Builder(builder: (context) => SizedBox(
+              // Grows with the labels so large text never clips them.
+              height: 42 + MediaQuery.textScalerOf(context).scale(18),
               child: Row(
                 children: [
                   for (var i = 0; i < _tabs.length; i++)
@@ -697,7 +700,11 @@ class _MobileShellState extends State<_MobileShell> {
                             // composer…) and bring the other tab back to
                             // where the user left it.
                             if (!onTab) {
-                              _lastPage[_activeTab] = (here.uri.toString(), here.extra);
+                              // One-shot hints (scroll to comments, highlight) must not replay.
+                              final extra = here.extra is Map
+                                  ? (Map<String, dynamic>.from(here.extra as Map)..remove('scrollToComments')..remove('highlightCommentId'))
+                                  : here.extra;
+                              _lastPage[_activeTab] = (here.uri.toString(), extra);
                             } else {
                               _lastPage.remove(_activeTab);
                             }
@@ -721,11 +728,11 @@ class _MobileShellState extends State<_MobileShell> {
                                 child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted),
                               ),
                               const SizedBox(height: 4),
-                              Text(_tabs[i].$4, style: body(TextStyle(
-                                fontSize: 12,
+                              FittedBox(fit: BoxFit.scaleDown, child: Text(_tabs[i].$4, maxLines: 1, style: body(TextStyle(
+                                fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted,
-                              ))),
+                              )))),
                             ],
                           ),
                         ),
@@ -733,7 +740,7 @@ class _MobileShellState extends State<_MobileShell> {
                     ),
                 ],
               ),
-            ),
+            )),
             )
           ),
         ),

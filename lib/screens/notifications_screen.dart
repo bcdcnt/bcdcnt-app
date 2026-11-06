@@ -164,7 +164,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ))
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
                 (ctx, i) {
                   final entry = _grouped[i];
@@ -240,7 +240,7 @@ class _NotifDayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 18, 8, 6),
+      padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
       child: Text(
         label.toUpperCase(),
         style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),

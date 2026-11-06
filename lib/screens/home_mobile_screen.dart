@@ -360,12 +360,16 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                       onTap: () => context.push('/search', extra: occasion.$2),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.event_rounded, size: 18, color: AppColors.accentLight),
-                          const SizedBox(width: 6),
-                          Flexible(child: Text(occasion.$1, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight)))),
-                          const SizedBox(width: 4),
-                          Text('· Nghe bài hát ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.event_rounded, size: 20, color: AppColors.accentLight)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(occasion.$1, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                              const SizedBox(height: 2),
+                              Text('Nghe bài hát cho ngày này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                            ]),
+                          ),
                         ]),
                       ),
                     ),
@@ -608,7 +612,12 @@ class _PickCarouselState extends State<_PickCarousel> {
               final comp = (s['sheet']?['composers']?['data'] as List?)?.whereType<Map>().map((c) => c['title']).join(', ') ?? '';
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: GestureDetector(
+                child: Semantics(
+                  button: true,
+                  label: 'Gợi ý hôm nay: ${s['title'] ?? ''}${comp.isNotEmpty ? ', $comp' : ''}',
+                  hint: 'Chạm để nghe',
+                  excludeSemantics: true,
+                  child: GestureDetector(
                   onTap: () => playOrOpen(context, s, picks, 'Gợi ý hôm nay'),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
@@ -661,6 +670,7 @@ class _PickCarouselState extends State<_PickCarousel> {
                     ),
                   ),
                 ),
+              ),
               );
             },
           ),

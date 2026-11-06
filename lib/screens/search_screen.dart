@@ -216,10 +216,14 @@ class _SearchScreenState extends State<SearchScreen> {
       if (!mounted) return;
       setState(() { _groups = filtered; _loading = false; });
       _trackKeyword(q);
+      _searchFailed = false;
     } catch (_) {
-      if (mounted) setState(() { _groups = []; _loading = false; });
+      if (mounted) setState(() { _groups = []; _loading = false; _searchFailed = true; });
     }
   }
+
+  // Search failed (network), so "không tìm thấy" would be a lie.
+  bool _searchFailed = false;
 
   /// Lyric matches: one row per song title (several recordings of a song
   /// share the same lyrics) and a clean snippet without verse markers
@@ -559,7 +563,7 @@ class _SearchScreenState extends State<SearchScreen> {
               runSpacing: 8,
               children: [
                 for (final kw in _trending.take(8))
-                  BrandChip(label: kw['name']?.toString() ?? '', soft: true, onTap: () => _useKeyword(kw['name']?.toString() ?? '')),
+                  BrandChip(label: kw['name']?.toString() ?? '', onTap: () => _useKeyword(kw['name']?.toString() ?? '')),
               ],
             ),
           ),
@@ -591,6 +595,9 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_loading && _groups.isEmpty) {
       return Center(child: CircularProgressIndicator(color: AppColors.accent));
     }
+    if (_groups.isEmpty && _searchFailed) {
+      return ListView(children: [OfflineBlock(onRetry: () { setState(() => _loading = true); _runSearch(_query); })]);
+    }
     if (_groups.isEmpty) {
       // No results — surface trending keywords as alternatives so the
       // user has somewhere to go instead of bouncing.
@@ -613,7 +620,7 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: [for (final kw in _trending.take(8)) BrandChip(label: kw['name']?.toString() ?? '', soft: true, onTap: () => _useKeyword(kw['name']?.toString() ?? ''))],
+                children: [for (final kw in _trending.take(8)) BrandChip(label: kw['name']?.toString() ?? '', onTap: () => _useKeyword(kw['name']?.toString() ?? ''))],
               ),
             ),
           ],

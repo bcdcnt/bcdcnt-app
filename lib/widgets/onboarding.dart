@@ -15,10 +15,15 @@ const _seenKey = 'onboarding_v1_seen';
 Future<void> maybeShowOnboarding(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   if (prefs.getBool(_seenKey) == true || !context.mounted) return;
-  await prefs.setBool(_seenKey, true);
-  await Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(fullscreenDialog: true, builder: (_) => const _Onboarding()),
+  final nav = Navigator.of(context, rootNavigator: true);
+  final wantsLogin = await nav.push<bool>(
+    MaterialPageRoute<bool>(fullscreenDialog: true, builder: (_) => const _Onboarding()),
   );
+  // Marked seen only once finished or skipped, so a crash mid-way shows it again.
+  await prefs.setBool(_seenKey, true);
+  if (wantsLogin == true && nav.mounted) {
+    showDialog(context: nav.context, builder: (_) => const LoginDialog());
+  }
 }
 
 class _Onboarding extends StatefulWidget {
@@ -90,17 +95,17 @@ class _OnboardingState extends State<_Onboarding> {
                           child: PillButton(
                             label: 'Đăng nhập',
                             icon: Icons.login_rounded,
-                            onTap: () {
-                              Navigator.of(context).pop();
-                              showDialog(context: context, builder: (_) => const LoginDialog());
-                            },
+                            onTap: () => Navigator.of(context).pop(true),
                           ),
                         ),
                 ),
               ],
             ),
           ),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Semantics(
+            label: 'Bước ${_i + 1} trên 3',
+            excludeSemantics: true,
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             for (var k = 0; k < 3; k++)
               AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
@@ -109,7 +114,7 @@ class _OnboardingState extends State<_Onboarding> {
                 height: 8,
                 decoration: BoxDecoration(color: k == _i ? AppColors.accent : AppColors.border, borderRadius: BorderRadius.circular(4)),
               ),
-          ]),
+          ])),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: SizedBox(
@@ -167,7 +172,7 @@ class _ScalePicker extends StatelessWidget {
                   child: Row(children: [
                     Expanded(
                       child: Text('${e.value}: Bài ca đi cùng năm tháng',
-                          textScaler: TextScaler.linear(MediaQuery.textScalerOf(context).scale(1) / theme.textScale * (kTextScales[e.key] ?? 1)),
+                          textScaler: TextScaler.linear((WidgetsBinding.instance.platformDispatcher.textScaleFactor * (kTextScales[e.key] ?? 1)).clamp(0.9, 2.0)),
                           style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
                     ),
                     if (theme.textScaleKey == e.key) Icon(Icons.check_circle_rounded, color: AppColors.accent),

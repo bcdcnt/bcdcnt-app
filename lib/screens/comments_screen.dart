@@ -167,7 +167,19 @@ class _CommentsFeedState extends State<CommentsFeed> {
           final m = Map<String, dynamic>.from(e);
           m['text'] = _stripHtml(m['content']?.toString());
           return m;
-        }).where((m) => (m['text'] as String).isNotEmpty).toList();
+        }).where((m) {
+          final t = m['text'] as String;
+          if (t.isEmpty) return false;
+          // "Mới nhất" is the first thing newcomers read: skip one-liners
+          // and playback complaints (those belong in Góp ý & hỗ trợ).
+          if (filter == 1) {
+            final low = t.toLowerCase();
+            final liked = ((m['likes'] as num?) ?? 0) > 0;
+            if (!liked && t.length < 40) return false;
+            if (!liked && RegExp(r'(bị lỗi|không nghe được|ko nghe được|không phát|mất tiếng|lỗi rồi)').hasMatch(low)) return false;
+          }
+          return true;
+        }).toList();
         final pi = raw?['paginatorInfo'] ?? {};
         newPage = pi['currentPage'] ?? page;
         newLast = pi['lastPage'] ?? 1;

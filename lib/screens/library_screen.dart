@@ -145,7 +145,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               children: [
-                _Tile(icon: Icons.favorite_rounded, title: 'Yêu thích', subtitle: 'Bài đã thả tim', strong: true, onTap: () => _open('/yeu-thich')),
+                _Tile(icon: Icons.favorite_rounded, title: 'Yêu thích', subtitle: 'Bài đã thả tim', onTap: () => _open('/yeu-thich')),
                 _Tile(icon: Icons.history_rounded, title: 'Nghe gần đây', subtitle: 'Lịch sử nghe', onTap: () => _open('/nghe-gan-day')),
                 Consumer<OfflineStore>(builder: (_, store, __) => _Tile(icon: Icons.download_for_offline_rounded, title: 'Đã tải về', subtitle: store.items.isEmpty ? 'Nghe không cần mạng' : '${store.items.length} bài · nghe offline', onTap: () => context.push('/da-tai-ve'))),
                 _Tile(icon: Icons.upload_rounded, title: 'Bài gửi', subtitle: 'Bài tôi đã gửi', onTap: () => _open('/bai-gui-cua-toi')),

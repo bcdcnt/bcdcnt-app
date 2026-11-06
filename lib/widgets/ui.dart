@@ -51,7 +51,10 @@ class NetImage extends StatelessWidget {
   final bool tint;
   final bool circle;
   final Widget? fallback;
-  const NetImage({super.key, required this.url, this.width, this.height, this.radius = 0, this.tint = false, this.circle = false, this.fallback});
+  /// Read by screen readers; without it the picture is treated as
+  /// decoration (the caption next to it already says what it is).
+  final String? semanticLabel;
+  const NetImage({super.key, required this.url, this.width, this.height, this.radius = 0, this.tint = false, this.circle = false, this.fallback, this.semanticLabel});
 
   @override
   Widget build(BuildContext context) {
@@ -72,9 +75,12 @@ class NetImage extends StatelessWidget {
             placeholder: (_, __) => ph,
             errorWidget: (_, __, ___) => fallback ?? ph,
           );
-    if (circle) return ClipOval(child: img);
-    if (radius > 0) return ClipRRect(borderRadius: BorderRadius.circular(radius), child: img);
-    return img;
+    if (circle) {
+      img = ClipOval(child: img);
+    } else if (radius > 0) {
+      img = ClipRRect(borderRadius: BorderRadius.circular(radius), child: img);
+    }
+    return semanticLabel == null ? ExcludeSemantics(child: img) : Semantics(image: true, label: semanticLabel, child: ExcludeSemantics(child: img));
   }
 }
 
@@ -517,13 +523,35 @@ class OfflineBlock extends StatelessWidget {
 /// Back arrow behaviour for every screen: pop when there is somewhere to go
 /// back to, otherwise (opened from a notification or shared link) go home
 /// instead of doing nothing or closing the app.
+/// Root of the tab the user is in (set by the shell), for [goBack].
+String Function() goBackFallback = () => '/';
+
 void goBack(BuildContext context) {
   final nav = Navigator.of(context);
   if (nav.canPop()) {
     nav.pop();
   } else {
-    GoRouter.of(context).go('/');
+    GoRouter.of(context).go(goBackFallback());
   }
+}
+
+/// Lets a horizontal strip inside a 20px-padded column run to both screen
+/// edges (content still starts on the 20px line), like the other rails.
+class BleedRow extends StatelessWidget {
+  final Widget Function(EdgeInsets padding) builder;
+  final double inset;
+  const BleedRow({super.key, required this.builder, this.inset = 20});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (_, c) => Transform.translate(
+          offset: Offset(-inset, 0),
+          child: SizedBox(
+            width: c.maxWidth + inset * 2,
+            child: builder(EdgeInsets.symmetric(horizontal: inset)),
+          ),
+        ),
+      );
 }
 
 /// Glue the last two words of a short headline with a no-break space so a
@@ -611,7 +639,12 @@ class PersonBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final initial = name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase();
-    return SizedBox(
+    return Semantics(
+      button: onTap != null,
+      label: name,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: SizedBox(
       width: size,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -637,6 +670,7 @@ class PersonBubble extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }

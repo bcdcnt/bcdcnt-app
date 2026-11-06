@@ -59,9 +59,9 @@ const List<AppPalette> kAppPalettes = [
   AppPalette(
     name: 'sang', label: 'Sáng',
     bg: Color(0xFFFFFFFF),
-    surface: Color(0xFFF6F2F2),
-    surfaceLight: Color(0xFFEEE7E7),
-    surfaceHover: Color(0xFFE6DCDC),
+    surface: Color(0xFFF4F1F0),
+    surfaceLight: Color(0xFFEDE9E8),
+    surfaceHover: Color(0xFFE5E0DF),
     accent: Color(0xFF711313),
     accentLight: Color(0xFF8E1F1F),
     accentSoft: Color(0xFFF8EDED),

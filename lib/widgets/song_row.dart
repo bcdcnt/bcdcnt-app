@@ -76,7 +76,7 @@ class GeneratedCover extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('BCĐCNT', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: Color(0xCCFFFFFF)))),
+                Text('BCĐCNT', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: Color(0xCCFFFFFF)))),
                 Text(letter, style: display(TextStyle(fontSize: size * 0.3, fontWeight: FontWeight.w800, color: Colors.white, height: 1))),
               ],
             )
@@ -99,7 +99,7 @@ class SongCover extends StatelessWidget {
     if (thumb == null || thumb.isEmpty) return fallback;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: CachedNetworkImage(
+      child: ExcludeSemantics(child: CachedNetworkImage(
         imageUrl: cdnImgFor(thumb, size),
         width: size,
         height: size,
@@ -107,7 +107,7 @@ class SongCover extends StatelessWidget {
         fit: BoxFit.cover,
         placeholder: (_, __) => Container(width: size, height: size, color: AppColors.surfaceLight),
         errorWidget: (_, __, ___) => fallback,
-      ),
+      )),
     );
   }
 }
