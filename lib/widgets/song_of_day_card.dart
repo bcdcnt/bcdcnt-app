@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
+import 'share_card.dart';
+import 'package:go_router/go_router.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import 'auth_dialogs.dart';
@@ -29,6 +32,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
   Set<String> _mine = {};
   String? _sending;
   String? _forUser;
+  bool _guestVote = false;
 
   @override
   void didChangeDependencies() {
@@ -47,20 +51,35 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
       final d = auth.isAuthenticated ? await auth.authedQuery(_query, null) : await ApiClient.query(_query);
       final s = d['songOfTheDay'];
       if (!mounted || s is! Map || s['song'] == null) return;
+      final prefs = await SharedPreferences.getInstance();
+      final pid = s['poll']?['id'];
+      final local = prefs.getString('sotd_vote_$pid');
+      final server = {for (final id in (s['my_option_ids'] as List? ?? const [])) '$id'};
+      if (!mounted) return;
       setState(() {
         _data = Map<String, dynamic>.from(s);
-        _mine = {for (final id in (s['my_option_ids'] as List? ?? const [])) '$id'};
+        _mine = server.isNotEmpty ? server : (local != null ? {local} : {});
+        _guestVote = server.isEmpty && local != null && !auth.isAuthenticated;
       });
+      // Answered as a guest, now signed in: send that answer for real.
+      if (auth.isAuthenticated && server.isEmpty && local != null) {
+        await prefs.remove('sotd_vote_$pid');
+        _answer(local);
+      }
     } catch (_) {}
   }
 
   Future<void> _answer(String optionId) async {
     final auth = context.read<AuthProvider>();
+    final poll = _data?['poll'];
     if (!auth.isAuthenticated) {
-      showDialog(context: context, builder: (_) => const LoginDialog());
+      // Guests: keep the answer on this phone and show the results at once;
+      // signing in (offered below the results) is what makes it count.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('sotd_vote_${poll?['id']}', optionId);
+      if (mounted) setState(() { _mine = {optionId}; _guestVote = true; });
       return;
     }
-    final poll = _data?['poll'];
     if (poll == null || _sending != null) return;
     setState(() => _sending = optionId);
     try {
@@ -124,7 +143,7 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(noOrphan('${song['title'] ?? ''}'), maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 19, height: 1.2, fontWeight: FontWeight.w800, color: AppColors.text))),
                     const SizedBox(height: 4),
-                    Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                    Text(songByline(song, withComposer: true), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                   ]),
                 ),
                 Container(
@@ -161,7 +180,23 @@ class _SongOfDayCardState extends State<SongOfDayCard> {
             else ...[
               for (final o in options) _ResultBar(name: '${o['name']}', percent: ((o['percent'] as num?) ?? 0).toDouble(), mine: _mine.contains('${o['id']}')),
               const SizedBox(height: 4),
-              Text('$total người đã trả lời · Cảm ơn bạn!', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              Text(_guestVote ? 'Cảm ơn bạn! Đăng nhập để câu trả lời được tính.' : '$total người đã trả lời · Cảm ơn bạn!', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              const SizedBox(height: 12),
+              // Voting is the warm-up: next, tell the memory or pass the song on.
+              Row(children: [
+                Expanded(
+                  child: PillButton(
+                    label: _guestVote ? 'Đăng nhập' : 'Kể kỷ niệm',
+                    icon: _guestVote ? Icons.login_rounded : Icons.edit_note_rounded,
+                    height: 46,
+                    onTap: _guestVote
+                        ? () => showDialog(context: context, builder: (_) => const LoginDialog())
+                        : () => context.push('/song/${song['id']}?binh-luan=1', extra: song),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: PillButton(label: 'Gửi bạn bè', icon: Icons.ios_share_rounded, primary: false, height: 46, onTap: () => showSongShareSheet(context, song))),
+              ]),
             ],
           ],
         ]),

@@ -11,6 +11,7 @@ import '../widgets/brand_logo.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/anniversary_rail.dart';
+import '../services/lunar.dart';
 import '../widgets/song_of_day_card.dart';
 import '../main.dart' show TabReselect;
 
@@ -52,10 +53,10 @@ const _peopleVars = {
 const _itemObj = '... on Song { id thumbnail { url } } ... on Folk { id thumbnail { url } } ... on Instrumental { id thumbnail { url } } ... on Poem { id thumbnail { url } }';
 
 const _belowQuery = '''query(\$plWhere: WhereConditions, \$docWhere: WhereConditions, \$evWhere: WhereConditions) {
-  playlists(first: 8, orderBy: [{column: "id", order: DESC}], where: \$plWhere) {
+  playlists(first: 24, orderBy: [{column: "id", order: DESC}], where: \$plWhere) {
     data { id slug title thumbnail { url } user { id username } items(first: 4) { paginatorInfo { total } data { object { $_itemObj } } } }
   }
-  documents(first: 6, orderBy: [{column: "id", order: DESC}], where: \$docWhere) { data { id slug title thumbnail { url } } }
+  documents(first: 12, orderBy: [{column: "id", order: DESC}], where: \$docWhere) { data { id slug title thumbnail { url } } }
   events: playlists(first: 3, where: \$evWhere) {
     data { id slug title excerpt thumbnail { url } items(first: 4) { paginatorInfo { total } data { object { $_itemObj } } } }
   }
@@ -75,10 +76,10 @@ const _cats = [
 ];
 
 const _decades = [
-  (1950, 'Kháng chiến, hoà bình lập lại'),
-  (1960, 'Xây dựng và chiến đấu'),
+  (1950, 'Hoà bình lập lại'),
+  (1960, 'Chống Mỹ cứu nước'),
   (1970, 'Thống nhất đất nước'),
-  (1980, 'Những năm Đổi mới'),
+  (1980, 'Bao cấp – Đổi mới'),
 ];
 
 const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
@@ -232,8 +233,14 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       bool hasPhoto(Map p) => (p['avatar']?['url']?.toString() ?? '').isNotEmpty;
       _composers = _maps(r[1]['composers']?['data']).where(hasPhoto).take(12).toList();
       _artists = _maps(r[1]['artists']?['data']).where(hasPhoto).take(12).toList();
-      _playlists = _maps(r[2]['playlists']?['data']).where((p) => p['thumbnail']?['url'] != null || _itemThumbs(p).isNotEmpty).toList();
-      _docs = _maps(r[2]['documents']?['data']).where((d) => d['thumbnail']?['url'] != null).toList();
+      // Community playlists worth showing: a real title, a real size.
+      _playlists = _maps(r[2]['playlists']?['data'])
+          .where((p) => p['thumbnail']?['url'] != null || _itemThumbs(p).isNotEmpty)
+          .where((p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0) >= 10 && RegExp(r'[^\d\s]{3,}').hasMatch('${p['title'] ?? ''}'))
+          .toList();
+      // One card per album (several photos of one event share a title).
+      final seenDoc = <String>{};
+      _docs = _maps(r[2]['documents']?['data']).where((d) => d['thumbnail']?['url'] != null && seenDoc.add('${d['title']}'.trim().toLowerCase())).toList();
       _events = _maps(r[2]['events']?['data']);
       _loading = false;
       _failed = r[0].isEmpty && r[1].isEmpty;
@@ -380,6 +387,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           final at = DateTime.tryParse('${sg['created_at']}'.replaceFirst(' ', 'T'));
           if (at == null || at.isBefore(cutoff) || !seen.add('${sg['id']}')) continue;
           if (sg['file']?['audio_url'] == null && sg['file']?['video_url'] == null) continue;
+          if ('${sg['thumbnail']?['url'] ?? ''}'.isEmpty) continue;
           out.add({...sg, 'file_type': 'song', 'followedName': who});
         }
       }
@@ -421,6 +429,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     final occasion = _occasionLine(now);
     final cat = _cats[_cat];
     final latest = _latest[cat.slug];
+    // A song shows up once on the page: personal rails lower down skip
+    // what is already in "Nghe tiếp" / "Bài bạn yêu thích".
+    final seen = <String>{for (final x in [..._recent, ..._loved]) '${x['file_type']}-${x['id']}'};
+    final forYou = [for (final x in _forYou) if (seen.add('${x['file_type']}-${x['id']}')) x];
+    final fromFollowed = [for (final x in _fromFollowed) if (seen.add('${x['file_type']}-${x['id']}')) x];
 
     return ColoredBox(
       color: AppColors.bg,
@@ -453,7 +466,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                       style: display(TextStyle(fontSize: 28, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
                   const SizedBox(height: 6),
                   Text(
-                    '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month}',
+                    '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label}',
                     style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
                   ),
                   // The countdown leads somewhere: songs for that day.
@@ -470,7 +483,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Text(noOrphan(occasion.$1), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                               const SizedBox(height: 2),
-                              Text('Mở playlist cho ngày này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                              Text('Nghe các bài hát nhân dịp này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                             ]),
                           ),
                         ]),
@@ -526,13 +539,13 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
               ),
             ],
 
-            if (_forYou.isNotEmpty) ...[
+            if (forYou.isNotEmpty) ...[
               SectionTitle('Dành cho bạn', action: null),
               Rail(
                 height: 226,
-                count: _forYou.length,
+                count: forYou.length,
                 builder: (_, i) {
-                  final s = _forYou[i];
+                  final s = forYou[i];
                   final reason = s['reason']?.toString() ?? '';
                   return RailCard(
                     // Why it was picked sits on the cover; the singer stays
@@ -553,24 +566,24 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                     ]),
                     title: s['title']?.toString() ?? '',
                     subtitle: songByline(s),
-                    onTap: () => playOrOpen(context, s, _forYou, 'Dành cho bạn'),
+                    onTap: () => playOrOpen(context, s, forYou, 'Dành cho bạn'),
                   );
                 },
               ),
             ],
 
-            if (_fromFollowed.isNotEmpty) ...[
-              SectionTitle('Bài mới của người bạn theo dõi', action: null),
+            if (fromFollowed.isNotEmpty) ...[
+              SectionTitle('Mới từ nghệ sĩ bạn theo dõi', action: null),
               Rail(
                 height: 226,
-                count: _fromFollowed.length,
+                count: fromFollowed.length,
                 builder: (_, i) {
-                  final s = _fromFollowed[i];
+                  final s = fromFollowed[i];
                   return RailCard(
                     cover: SongCover(song: s, size: 148, radius: 0),
                     title: s['title']?.toString() ?? '',
-                    subtitle: songByline(s),
-                    onTap: () => playOrOpen(context, s, _fromFollowed, 'Bài mới của người bạn theo dõi'),
+                    subtitle: s['followedName'] != null ? 'Mới · ${s['followedName']}' : songByline(s),
+                    onTap: () => playOrOpen(context, s, fromFollowed, 'Mới từ nghệ sĩ bạn theo dõi'),
                   );
                 },
               ),
@@ -579,7 +592,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             // Members' memories are what no other music app has — keep them
             // near the top instead of under the decades.
             if (_comments.isNotEmpty) ...[
-              SectionTitle('Cảm nhận hay', action: 'Cộng đồng', onAction: () => context.go('/cong-dong')),
+              SectionTitle('Cảm nhận hay', action: 'Xem thêm', onAction: () => context.go('/cong-dong')),
               Rail(
                 height: 226,
                 count: _comments.length,
@@ -588,11 +601,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             ],
 
             if (_events.isNotEmpty) ...[
-              SectionTitle(_events.first['title']?.toString() ?? 'Theo dịp', action: 'Mở', onAction: () => context.push('/playlist/${_events.first['id']}')),
+              const SectionTitle('Nhân dịp hôm nay', action: null),
               _OccasionCard(playlist: _events.first),
             ],
 
-            SectionTitle('Nghe nhiều tuần này', action: 'BXH', onAction: () => context.push('/bang-xep-hang')),
+            SectionTitle('Nghe nhiều tuần này', action: 'Bảng xếp hạng', onAction: () => context.push('/bang-xep-hang')),
             if (_loading)
               for (var i = 0; i < 5; i++) const SkeletonSongRow()
             else

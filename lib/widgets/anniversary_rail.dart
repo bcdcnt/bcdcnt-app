@@ -144,7 +144,8 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     final p = a.person;
     final name = '${p['title'] ?? ''}';
     final today = a.inDays == 0;
-    final what = a.birth ? 'Ngày sinh' : 'Ngày giỗ';
+    // Solar dates: 'ngày mất', not 'ngày giỗ' (giỗ follows the lunar calendar).
+    final what = a.birth ? 'Ngày sinh' : 'Ngày mất';
     // Say plainly which year it counts from: "Kỷ niệm 75 năm ngày sinh"
     // alone read like an age; living people get their age instead.
     // No death year on record is not proof of life: past ~100 we just
