@@ -758,8 +758,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     try {
       await auth.authedMutate(
         newLiked
-            ? r'''mutation($id: ID!) { love(lovable_id: $id, lovable_type: "song") { id } }'''
-            : r'''mutation($id: ID!) { unlove(lovable_id: $id, lovable_type: "song") { id } }''',
+            // Folk / poem / karaoke pages must like their own record.
+            ? 'mutation(\$id: ID!) { love(lovable_id: \$id, lovable_type: "$_resolvedType") { id } }'
+            : 'mutation(\$id: ID!) { unlove(lovable_id: \$id, lovable_type: "$_resolvedType") { id } }',
         {'id': widget.songId},
       );
     } catch (_) {
@@ -1149,11 +1150,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       if (noMedia)
                         Row(children: [
                           Expanded(
-                            child: PillButton(
-                              label: 'Nghe bài tương tự',
-                              icon: Icons.queue_music_rounded,
-                              onTap: _suggestions.isEmpty ? null : () => _playList(_suggestions),
-                            ),
+                            child: Builder(builder: (_) {
+                              // Other recordings of this very song come first;
+                              // only then fall back to similar songs.
+                              final others = _sameSheet
+                                  .where((x) => x['file_type'] == _resolvedType && x['id'].toString() != widget.songId && (x['file']?['audio_url'] != null || x['file']?['video_url'] != null))
+                                  .map((x) => Map<String, dynamic>.from(x as Map))
+                                  .toList();
+                              return PillButton(
+                                label: others.isNotEmpty ? 'Nghe bản thu khác (${others.length})' : 'Nghe bài tương tự',
+                                icon: Icons.queue_music_rounded,
+                                onTap: others.isNotEmpty ? () => _playList(others) : (_suggestions.isEmpty ? null : () => _playList(_suggestions)),
+                              );
+                            }),
                           ),
                         ])
                       else
@@ -1184,8 +1193,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       ]),
                       const SizedBox(height: 16),
                       Row(children: [
-                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} yêu thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
-                        Expanded(child: Builder(builder: (ctx) {
+                        Expanded(child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: loves.isNotEmpty ? '${loves.length} thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove)),
+                        if (!noMedia) Expanded(child: Builder(builder: (ctx) {
                           // Phones: "Tải về" saves into the app for offline listening.
                           final store = ctx.watch<OfflineStore>();
                           final typed = {...Map<String, dynamic>.from(song), 'file_type': _resolvedType};
@@ -1226,12 +1235,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     // column for vertical reading on small screens.
                     Builder(builder: (ctx) {
                       final leftItems = <Widget>[
-                        ..._buildDescriptionSection(description),
-                        ..._buildStorySection(story),
-                        if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ...(_memberStory != null ? _buildMemberStory() : _buildStoryInvite()),
+                        // Lyrics first (what people come for); the story
+                        // and the invite to share one follow the sheet music.
                         ..._buildLyricsSection(lyrics, isCurrent),
                         ..._buildLyricEditorsRow(),
                         ..._buildSheetSection(isDesktop),
+                        ..._buildDescriptionSection(description),
+                        ..._buildStorySection(story),
+                        if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ...(_memberStory != null ? _buildMemberStory() : _buildStoryInvite()),
                         const SizedBox(height: 28),
                         CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true)),
                       ];
@@ -1330,7 +1341,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       _ExpandCard(
         expanded: _descExpanded,
         onToggle: () => setState(() => _descExpanded = !_descExpanded),
-        child: Html(data: str, style: {'body': Style(color: AppColors.textSecondary, fontSize: FontSize(14), lineHeight: const LineHeight(2), margin: Margins.zero, padding: HtmlPaddings.zero)}),
+        child: Html(data: str, style: {'body': Style(color: AppColors.text, fontSize: FontSize(16), lineHeight: const LineHeight(1.6), margin: Margins.zero, padding: HtmlPaddings.zero)}),
       ),
     ];
   }
@@ -1478,6 +1489,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ),
       _ExpandCard(
         expanded: _lyricsExpanded,
+        moreLabel: 'Xem toàn bộ lời',
         onToggle: () => setState(() => _lyricsExpanded = !_lyricsExpanded),
         // Use the timed scroll viewport only when the lyrics are LRC-tagged
         // (the active line needs a fixed-height frame to centre-scroll).
@@ -1875,16 +1887,38 @@ class _ArtistBanner extends StatelessWidget {
   }
 }
 
-class _ExpandCard extends StatelessWidget {
+class _ExpandCard extends StatefulWidget {
   final Widget child;
   final bool expanded;
   final VoidCallback onToggle;
-  const _ExpandCard({required this.child, required this.expanded, required this.onToggle});
+  /// Button text when collapsed ("Xem toàn bộ lời", "Đọc tiếp").
+  final String moreLabel;
+  const _ExpandCard({required this.child, required this.expanded, required this.onToggle, this.moreLabel = 'Đọc tiếp'});
 
-  // Text sits straight on the page (no grey card); collapsed it shows the
-  // first verses and fades out above "Xem toàn bộ lời".
+  @override
+  State<_ExpandCard> createState() => _ExpandCardState();
+}
+
+class _ExpandCardState extends State<_ExpandCard> {
+  static const _collapsed = 280.0;
+  final _measureKey = GlobalKey();
+  // Short text is shown whole: no fade, no button that hides nothing.
+  bool? _fits;
+
+  void _measure() {
+    final box = _measureKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final fits = box.size.height <= _collapsed + 24;
+    if (fits != _fits && mounted) setState(() => _fits = fits);
+  }
+
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
+    final content = KeyedSubtree(key: _measureKey, child: widget.child);
+    if (_fits == true) return content;
+    // Text sits straight on the page; collapsed it shows the first part and
+    // fades out above the button.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1892,23 +1926,33 @@ class _ExpandCard extends StatelessWidget {
           duration: const Duration(milliseconds: 300),
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: expanded ? double.infinity : 280),
-            child: expanded
-                ? child
+            constraints: BoxConstraints(maxHeight: widget.expanded ? double.infinity : _collapsed),
+            child: widget.expanded
+                ? content
                 : ShaderMask(
                     shaderCallback: (r) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0.7, 1], colors: [Colors.white, Colors.transparent]).createShader(r),
                     blendMode: BlendMode.dstIn,
-                    // Lets the full lyrics lay out at their natural height and
-                    // just clips them (no overflow error) while collapsed.
-                    child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: child),
+                    // Lets the text lay out at its natural height (so it can
+                    // be measured) and just clips it while collapsed.
+                    child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: content),
                   ),
           ),
         ),
         TextButton.icon(
-          onPressed: onToggle,
-          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 44), foregroundColor: AppColors.accentLight),
-          icon: Icon(expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 22),
-          label: Text(expanded ? 'Thu gọn' : 'Xem toàn bộ lời', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          onPressed: () {
+            final wasExpanded = widget.expanded;
+            widget.onToggle();
+            // Collapsing a long text: bring its start back into view.
+            if (wasExpanded) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final ctx = _measureKey.currentContext;
+                if (ctx != null && ctx.mounted) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), alignment: 0.1);
+              });
+            }
+          },
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(48, 48), foregroundColor: AppColors.accentLight),
+          icon: Icon(widget.expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 22),
+          label: Text(widget.expanded ? 'Thu gọn' : widget.moreLabel, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
         ),
       ],
     );

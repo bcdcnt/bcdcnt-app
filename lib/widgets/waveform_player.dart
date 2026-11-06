@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/player.dart';
 import 'package:just_audio/just_audio.dart';
 import '../constants/theme.dart';
 
@@ -90,7 +92,9 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
         _player.pause();
       }
     });
-    _loadUrl();
+    // Load on first tap (or autoPlay): a long comment list must not
+    // pre-buffer every recording.
+    if (widget.autoPlay) _loadUrl();
   }
 
   Future<void> _loadUrl() async {
@@ -113,8 +117,15 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
     return '$m:$s';
   }
 
-  void _toggle() {
-    if (_playing) _player.pause(); else _player.play();
+  Future<void> _toggle() async {
+    if (_playing) {
+      _player.pause();
+      return;
+    }
+    // One sound at a time: pause the song before playing the comment audio.
+    try { context.read<PlayerProvider>().pause(); } catch (_) {}
+    if (!_loaded) await _loadUrl();
+    _player.play();
   }
 
   void _seekAt(Offset local, double width) {

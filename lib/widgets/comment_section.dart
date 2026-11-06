@@ -13,6 +13,8 @@ import 'package:flutter/services.dart' show Clipboard;
 import 'package:http/http.dart' as http;
 import 'package:pasteboard/pasteboard.dart';
 import '../constants/theme.dart';
+import 'auth_dialogs.dart' show LoginDialog;
+import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow;
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
@@ -42,6 +44,7 @@ class _CommentSectionState extends State<CommentSection> {
   int _total = 0;
   int _page = 1;
   bool _hasMore = false;
+  bool _loadError = false;
   bool _loading = true;
   bool _loadingMore = false;
   bool _submitting = false;
@@ -198,6 +201,19 @@ class _CommentSectionState extends State<CommentSection> {
     _clearMention();
   }
 
+  /// "Trả lời": start the composer with @name and bring it into view.
+  void _replyTo(String? username) {
+    if (username == null || username.isEmpty) return;
+    final text = _quillCtl.plainText.trimRight();
+    final mention = '@$username ';
+    if (!text.contains(mention.trim())) _quillCtl.replaceTextAt(0, 0, mention);
+    _quillCtl.requestFocus();
+    final ctx = _composerKey.currentContext;
+    if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), alignment: 0.2);
+  }
+
+  final _composerKey = GlobalKey();
+
   String get _entityField {
     // Person types use {type}ByID(id:); others use {type}(id:)
     const personTypes = {'artist', 'composer', 'poet', 'recomposer'};
@@ -240,8 +256,13 @@ class _CommentSectionState extends State<CommentSection> {
         _total = pi?['total'] ?? 0;
         _hasMore = (pi?['currentPage'] ?? 0) < (pi?['lastPage'] ?? 0);
         _page = page;
+        _loadError = false;
       });
-    } catch (_) {}
+    } catch (_) {
+      // Never retry by itself: offline that became ~5 requests a second.
+      if (mounted) setState(() { _loading = false; _loadingMore = false; _loadError = true; });
+      return;
+    }
     if (!mounted) return;
     setState(() { _loading = false; _loadingMore = false; });
     // Deep-link target — keep paginating until we find it (or run
@@ -251,14 +272,8 @@ class _CommentSectionState extends State<CommentSection> {
       _hydrateHighlight();
       return;
     }
-    // Auto-load remaining pages so the user doesn't have to scroll
-    // all the way down to trigger infinite-scroll. Caps at 50 pages
-    // (~500 comments) so a runaway thread can't burn through requests.
-    if (_hasMore && _page < 50 && widget.highlightCommentId == null) {
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted && _hasMore && !_loadingMore) _fetchComments(_page + 1);
-      });
-    }
+    // No background loading of every page: 10 at a time, more on request
+    // ("Xem thêm bình luận"), per the project's page-based rule.
   }
 
   /// Walks pages until the highlighted comment id surfaces, then
@@ -904,6 +919,7 @@ class _CommentSectionState extends State<CommentSection> {
                       _attachMenuButton(),
                       const SizedBox(width: 2),
                       Expanded(
+                        key: _composerKey,
                         child: QuillCommentInput(
                           controller: _quillCtl,
                           hintText: 'Viết bình luận...',
@@ -948,14 +964,27 @@ class _CommentSectionState extends State<CommentSection> {
             ),
           )
         else
-          Text('Đăng nhập để bình luận', style: AppText.meta),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: PillButton(
+              label: 'Đăng nhập để bình luận',
+              icon: Icons.login_rounded,
+              primary: false,
+              onTap: () => showDialog(context: context, builder: (_) => const LoginDialog()),
+            ),
+          ),
 
         const SizedBox(height: 20),
 
-        if (_loading)
-          Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppColors.accent)))
+        if (_loading && _comments.isEmpty)
+          Column(children: [for (var i = 0; i < 3; i++) const SkeletonSongRow()])
+        else if (_loadError && _comments.isEmpty)
+          OfflineBlock(onRetry: () => _fetchComments(1))
         else if (_comments.isEmpty)
-          Center(child: Padding(padding: const EdgeInsets.all(20), child: Text('Chưa có bình luận nào', style: AppText.bodyText)))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text('Hãy là người đầu tiên chia sẻ cảm nghĩ hay kỷ niệm với bài hát này.', style: AppText.bodyText),
+          )
         else ...[
           ..._comments.map((c) {
             final user = c['user'] ?? {};
@@ -1001,7 +1030,7 @@ class _CommentSectionState extends State<CommentSection> {
                         Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                           InkWell(
                             onTap: user['id'] != null ? () => context.push('/user/${user['id']}') : null,
-                            child: Text(user['username'] ?? c['nickname'] ?? 'Ẩn danh', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                            child: Text(user['username'] ?? c['nickname'] ?? 'Ẩn danh', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
                           ),
                           ...roles.map((r) {
                             final label = r['userRolePivot']?['custom_title'] ?? r['name'] ?? r['alias'] ?? '';
@@ -1014,7 +1043,7 @@ class _CommentSectionState extends State<CommentSection> {
                             return Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-                              child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                              child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                             );
                           }),
                           Text(timeago(c['created_at']), style: AppText.caption),
@@ -1093,19 +1122,44 @@ class _CommentSectionState extends State<CommentSection> {
                         // and the like target wouldn't be the
                         // current text anyway.
                         if (_editingId != c['id']?.toString()) Row(children: [
-                          InkWell(
-                            onTap: () => _love(c['id'].toString(), isLoved),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 14, color: isLoved ? AppColors.error : AppColors.textMuted),
-                                if (loveCount > 0) ...[
-                                  const SizedBox(width: 4),
-                                  Text('$loveCount', style: TextStyle(fontSize: 12, color: isLoved ? AppColors.error : AppColors.textMuted)),
-                                ],
-                              ],
+                          // 48pt targets with words: older readers miss bare
+                          // 14px icons.
+                          Semantics(
+                            button: true,
+                            excludeSemantics: true,
+                            label: '${isLoved ? 'Bỏ thích' : 'Thích'} bình luận${loveCount > 0 ? ', $loveCount lượt thích' : ''}',
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () => _love(c['id'].toString(), isLoved),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 20, color: isLoved ? AppColors.error : AppColors.textMuted),
+                                    const SizedBox(width: 6),
+                                    Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
+                                  ]),
+                                ),
+                              ),
                             ),
                           ),
+                          if (auth.isAuthenticated && widget.type != 'ticket')
+                            InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () => _replyTo(user['username']?.toString() ?? c['nickname']?.toString()),
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(Icons.reply_rounded, size: 20, color: AppColors.textMuted),
+                                    const SizedBox(width: 6),
+                                    Text('Trả lời', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                                  ]),
+                                ),
+                              ),
+                            ),
                           if (requestBadge(c) case final b?) ...[
                             const SizedBox(width: 12),
                             Container(
@@ -1115,21 +1169,19 @@ class _CommentSectionState extends State<CommentSection> {
                                 Icon(Icons.back_hand_outlined, size: 12, color: b.color),
                                 const SizedBox(width: 4),
                                 Text(
-                                  c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} · ${c['processRequestUser']['username']}' : b.label,
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: b.color),
+                                  c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} bởi ${c['processRequestUser']['username']}' : b.label,
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: b.color),
                                 ),
                               ]),
                             ),
                           ],
                           const Spacer(),
                           if (auth.isAuthenticated)
-                            InkWell(
-                              onTap: () => _openActions(c),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                child: Icon(Icons.more_vert_rounded, size: 18, color: AppColors.textMuted),
-                              ),
+                            IconButton(
+                              tooltip: 'Tuỳ chọn bình luận',
+                              onPressed: () => _openActions(c),
+                              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
+                              icon: Icon(Icons.more_vert_rounded, size: 22, color: AppColors.textMuted),
                             ),
                         ]),
                       ],
@@ -1140,11 +1192,17 @@ class _CommentSectionState extends State<CommentSection> {
             );
           }),
           if (_hasMore)
-            _LoadMoreSentinel(
-              loading: _loadingMore,
-              onReach: () {
-                if (!_loadingMore && _hasMore) _fetchComments(_page + 1);
-              },
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: PillButton(
+                  label: _loadError ? 'Chưa tải được · Thử lại' : 'Xem thêm bình luận (${(_total - _comments.length).clamp(0, 1 << 30)})',
+                  loading: _loadingMore,
+                  primary: false,
+                  onTap: _loadingMore ? null : () => _fetchComments(_page + 1),
+                ),
+              ),
             ),
         ],
       ],

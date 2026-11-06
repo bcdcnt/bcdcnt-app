@@ -32,6 +32,8 @@ class LyricsText extends StatelessWidget {
       .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
       .replaceAll(RegExp(r'</p>\s*', caseSensitive: false), '\n\n')
       .replaceAll(RegExp(r'<[^>]+>'), '')
+      // Timed (LRC) lyrics shown as plain text: drop the [mm:ss.xx] marks.
+      .replaceAll(RegExp(r'\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]'), '')
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&amp;', '&')
       .replaceAll('&quot;', '"')

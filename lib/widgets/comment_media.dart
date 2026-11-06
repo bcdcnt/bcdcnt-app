@@ -1,5 +1,7 @@
 import 'playlist_embed.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../services/player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter_html/flutter_html.dart';
@@ -211,9 +213,11 @@ class _CommentMediaState extends State<CommentMedia> {
           'body': Style(
             margin: Margins.zero,
             padding: HtmlPaddings.zero,
-            fontSize: FontSize(13),
-            lineHeight: const LineHeight(1.55),
-            color: AppColors.textSecondary,
+            // Comments are the second thing people read after the lyrics:
+            // full-size body text, not small grey print.
+            fontSize: FontSize(16),
+            lineHeight: const LineHeight(1.5),
+            color: AppColors.text,
             fontFamily: body().fontFamily,
           ),
           'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
@@ -542,12 +546,10 @@ class _VideoCardState extends State<_VideoCard> {
   VideoPlayerController? _videoCtl;
   ChewieController? _chewieCtl;
   bool _failed = false;
+  bool _starting = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _start(); // auto-init: hiện khung player ngay (frame đầu + controls)
-  }
+  // Opened on tap: every video in a long comment list starting its own
+  // player at once was slow and data-hungry.
 
   @override
   void dispose() {
@@ -557,6 +559,9 @@ class _VideoCardState extends State<_VideoCard> {
   }
 
   Future<void> _start() async {
+    if (_starting) return;
+    setState(() => _starting = true);
+    try { context.read<PlayerProvider>().pause(); } catch (_) {}
     try {
       final v = VideoPlayerController.networkUrl(Uri.parse(widget.url));
       await v.initialize();
@@ -565,7 +570,7 @@ class _VideoCardState extends State<_VideoCard> {
         _videoCtl = v;
         _chewieCtl = ChewieController(
           videoPlayerController: v,
-          autoPlay: false,
+          autoPlay: true,
           looping: false,
           aspectRatio: v.value.aspectRatio == 0 ? 16 / 9 : v.value.aspectRatio,
         );
@@ -595,14 +600,23 @@ class _VideoCardState extends State<_VideoCard> {
         ),
       );
     } else {
-      // Đang tải → khung tối + nút play mờ (trông như player sắp hiện).
-      inner = Container(
-        color: Colors.black,
-        alignment: Alignment.center,
-        child: Container(
-          width: 54, height: 38,
-          decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(8)),
-          child: const Icon(Icons.play_arrow, color: Colors.white70, size: 28),
+      // Poster with a play button; the player starts on tap.
+      inner = Semantics(
+        button: true,
+        label: 'Phát video',
+        child: InkWell(
+          onTap: _start,
+          child: Container(
+            color: Colors.black,
+            alignment: Alignment.center,
+            child: _starting
+                ? const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white70))
+                : Container(
+                    width: 64, height: 48,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 34),
+                  ),
+          ),
         ),
       );
     }

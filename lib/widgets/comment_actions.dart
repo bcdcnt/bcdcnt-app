@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
@@ -56,6 +57,9 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
   final isReq = comment['is_request'] == 1 || comment['is_request'] == true;
   bool can(String p) => auth.hasPermission(p);
   final content = (comment['content'] ?? '').toString();
+  // Content-based actions only show when the comment has that content.
+  final hasImg = RegExp(r'<img', caseSensitive: false).hasMatch(content);
+  final hasMedia = RegExp(r'<audio|<video|<oembed|<source', caseSensitive: false).hasMatch(content);
 
   // Each item follows the API's own check (CommentPolicy / @can in
   // schema.graphql), so nothing shows that the server would refuse.
@@ -71,16 +75,17 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
     ],
     if (can('process_ai_request') && isReq) const _A('processAI', 'Xử lý bằng AI', Icons.auto_awesome_rounded, _aiPurple),
     if (isOwn || moderator) const _A('edit', 'Sửa bình luận', Icons.edit_outlined),
-    if (can('manage_sheet')) const _A('createSheet', 'Dùng làm sheet nhạc', Icons.description_outlined),
+    if (can('manage_sheet') && hasImg) const _A('createSheet', 'Dùng làm sheet nhạc', Icons.description_outlined),
     if (can('update_lyric') && const ['song', 'folk', 'poem'].contains(type)) const _A('applyLyric', 'Dùng làm lời bài hát', Icons.subtitles_outlined),
-    if (can('manage_song')) const _A('replaceFile', 'Dùng làm bản thu', Icons.music_note_outlined),
-    if (can('manage_thumbnail')) const _A('replaceImage', 'Dùng làm minh hoạ', Icons.image_outlined),
+    if (can('manage_song') && hasMedia) const _A('replaceFile', 'Dùng làm bản thu', Icons.music_note_outlined),
+    if (can('manage_thumbnail') && hasImg) const _A('replaceImage', 'Dùng làm minh hoạ', Icons.image_outlined),
     if (can('manage_document') && RegExp(r'<img|<oembed', caseSensitive: false).hasMatch(content)) const _A('tagDocument', 'Đặt làm tư liệu ảnh', Icons.photo_library_outlined),
     if (moderator) const _A('move', 'Chuyển bình luận', Icons.open_in_new_rounded),
     if (isOwn || moderator) _A('delete', 'Xoá bình luận', Icons.delete_outline_rounded, AppColors.error),
     if (moderator) _A('hide', 'Ẩn bình luận', Icons.visibility_off_outlined, AppColors.error),
+    // Everyone can copy the text, so ⋮ is never an empty menu.
+    const _A('copy', 'Sao chép nội dung', Icons.copy_rounded),
   ];
-  if (actions.isEmpty) return null;
 
   final picked = await showModalBottomSheet<_A>(
     context: context,
@@ -194,8 +199,20 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
       return await guard<CommentChange?>(() async {
         await auth.authedMutate(r'mutation($id: ID!) { hideComment(id: $id) { id } }', {'id': id});
         toast('Đã ẩn bình luận');
-        return null;
+        return CommentRemoved();
       });
+    case 'copy':
+      final plain = content
+          .replaceAll(RegExp(r'<br\s*/?>|</p>|</div>', caseSensitive: false), '\n')
+          .replaceAll(RegExp(r'<[^>]+>'), '')
+          .replaceAll('&nbsp;', ' ')
+          .replaceAll('&amp;', '&')
+          .replaceAll('&quot;', '"')
+          .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+          .trim();
+      await Clipboard.setData(ClipboardData(text: plain));
+      toast('Đã sao chép bình luận');
+      return null;
   }
   return null;
 }

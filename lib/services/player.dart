@@ -423,6 +423,11 @@ class PlayerProvider extends ChangeNotifier {
     }
   }
 
+  /// Pause if playing (e.g. a voice/audio clip in a comment starts).
+  Future<void> pause() async {
+    if (_isPlaying) await _player.pause();
+  }
+
   Future<void> togglePlay() async {
     if (_player.playing) {
       await _player.pause();
