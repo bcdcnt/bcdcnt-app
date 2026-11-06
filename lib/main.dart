@@ -15,6 +15,7 @@ import 'services/media_session.dart';
 import 'services/realtime.dart';
 import 'services/theme_provider.dart';
 import 'services/offline_store.dart';
+import 'screens/contribute_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/home_mobile_screen.dart';
 import 'screens/search_screen.dart';
@@ -477,6 +478,7 @@ final _router = GoRouter(
         GoRoute(path: '/binh-luan-cua-toi', builder: (c, s) => const MyCommentsScreen()),
         GoRoute(path: '/thao-luan-cua-toi', builder: (c, s) => const MyTopicsScreen()),
         GoRoute(path: '/thong-ke', builder: (c, s) => const StatsScreen()),
+        GoRoute(path: '/gop-tay', builder: (c, s) => const ContributeScreen()),
         GoRoute(path: '/user/:id', builder: (c, s) => UserDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/tu-lieu/chi-tiet/:id', builder: (c, s) => DocumentDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/dien-dan/:id', builder: (c, s) => ForumDetailScreen(id: s.pathParameters['id']!)),

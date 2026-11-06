@@ -13,6 +13,7 @@ import '../services/offline_store.dart';
 import 'hover_effects.dart';
 import 'playlist_dialog.dart';
 import 'synced_video.dart';
+import 'ui.dart' show PillButton;
 
 bool _hasAudio(Map s) => (s['file']?['audio_url'] ?? s['audioUrl']) != null;
 
@@ -483,7 +484,79 @@ Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) asy
   final err = await OfflineStore.instance.download(song, auth);
   messenger?.hideCurrentSnackBar();
   messenger?.showSnackBar(SnackBar(
-    content: Text(err ?? 'Đã tải về máy: nghe được cả khi không có mạng'),
-    duration: const Duration(seconds: 3),
+    content: Text(err ?? 'Đã tải xong "${song['title']}". Nghe được cả khi không có mạng.'),
+    duration: const Duration(seconds: 5),
+    action: err == null && context.mounted
+        ? SnackBarAction(label: 'Mở Đã tải về', textColor: const Color(0xFFE0AEAC), onPressed: () => GoRouter.of(context).push('/da-tai-ve'))
+        : null,
   ));
+}
+
+/// Downloads a whole list (playlist, favourites) for offline listening, one
+/// song at a time, in a sheet that shows "Đang tải 3/20" and can be stopped.
+/// Stops early when the server says the daily download quota is used up.
+Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> songs, {String? title}) async {
+  final auth = context.read<AuthProvider>();
+  final store = OfflineStore.instance;
+  await store.load();
+  final todo = songs.where((s) => (s['file']?['audio_url'] ?? s['audioUrl']) != null && !store.isSaved(s)).toList();
+  if (!context.mounted) return;
+  if (todo.isEmpty) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Các bài trong danh sách đã có trong "Đã tải về".')));
+    return;
+  }
+  var done = 0, failed = 0;
+  var stop = false;
+  String? error;
+  var running = false;
+  await showModalBottomSheet<void>(
+    context: context,
+    isDismissible: false,
+    enableDrag: false,
+    backgroundColor: AppColors.bg,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+      Future<void> run() async {
+        for (final s in todo) {
+          if (stop) break;
+          final err = await store.download(s, auth);
+          if (err == null) {
+            done++;
+          } else {
+            failed++;
+            if (err.contains('quá nhiều')) { error = err; break; }
+          }
+          if (ctx.mounted) setSheet(() {});
+        }
+        if (ctx.mounted) setSheet(() => stop = true);
+      }
+      if (!running) { running = true; run(); }
+      final finished = stop;
+      final total = todo.length;
+      return SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(finished ? 'Đã tải xong' : 'Đang tải về máy', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+            if (title != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+            const SizedBox(height: 18),
+            LinearProgressIndicator(value: total == 0 ? 0 : (done + failed) / total, minHeight: 8, borderRadius: BorderRadius.circular(4), color: AppColors.accent, backgroundColor: AppColors.surfaceLight),
+            const SizedBox(height: 10),
+            Text(
+              [ '$done/$total bài', if (failed > 0) '$failed bài lỗi' ].join(' · '),
+              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
+            ),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('$error. Các bài đã tải vẫn nghe được.', style: body(TextStyle(fontSize: 14, color: AppColors.error)))),
+            if (!finished) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Để màn hình mở cho tới khi tải xong. Nên dùng Wi-Fi.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)))),
+            const SizedBox(height: 20),
+            if (finished)
+              PillButton(label: 'Mở Đã tải về', icon: Icons.download_done_rounded, onTap: () { Navigator.pop(ctx); GoRouter.of(context).push('/da-tai-ve'); })
+            else
+              PillButton(label: 'Dừng tải', primary: false, onTap: () => setSheet(() => stop = true)),
+            if (finished) TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Đóng', style: body(TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary)))),
+          ]),
+        ),
+      );
+    }),
+  );
 }

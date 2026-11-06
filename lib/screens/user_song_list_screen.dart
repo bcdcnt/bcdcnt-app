@@ -262,7 +262,17 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                         ),
                       ],
                     ),
-                  const SizedBox(height: 16),
+                  if (_items.isNotEmpty)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title),
+                        style: TextButton.styleFrom(foregroundColor: AppColors.accentLight, minimumSize: const Size(44, 44)),
+                        icon: const Icon(Icons.download_for_offline_outlined, size: 22),
+                        label: Text('Tải cả danh sách về máy', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
 
                   // List / loader / empty
                   if (_loading && _items.isEmpty)

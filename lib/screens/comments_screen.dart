@@ -77,8 +77,11 @@ class CommentsFeed extends StatefulWidget {
 
 class _CommentsFeedState extends State<CommentsFeed> {
   static const _filters = ['Nổi bật', 'Mới nhất', 'Yêu cầu bổ sung'];
+  // Chip order on screen: what members wrote this week comes first; the
+  // all-time featured essays are one tap away.
+  static const _chipOrder = [1, 0, 2];
   final _scrollCtl = ScrollController();
-  int _filter = 0;
+  int _filter = 1;
   List<Map<String, dynamic>> _items = [];
   int _page = 1;
   int _lastPage = 1;
@@ -211,15 +214,44 @@ class _CommentsFeedState extends State<CommentsFeed> {
         controller: _scrollCtl,
         slivers: [
           if (widget.showTitle) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.only(bottom: 14), child: PageTitle('Bình luận'))),
+          // Invitation to fill gaps in the archive; scrolls away with the feed.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: Material(
+                color: AppColors.accentSoft,
+                borderRadius: BorderRadius.circular(18),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
+                  onTap: () => context.push('/gop-tay'),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
+                    child: Row(children: [
+                      Icon(Icons.volunteer_activism_outlined, color: AppColors.accentLight, size: 28),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('Góp tay cho kho nhạc', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                          const SizedBox(height: 2),
+                          Text('Nhiều bài còn thiếu tác giả, năm sáng tác. Bạn có nhớ?', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textSecondary))),
+                        ]),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.only(top: 14, bottom: 6),
               child: ChipStrip(
-                labels: _filters,
-                selected: _filter,
+                labels: [for (final f in _chipOrder) _filters[f]],
+                selected: _chipOrder.indexOf(_filter),
                 onSelect: (i) {
                   setState(() {
-                    _filter = i;
+                    _filter = _chipOrder[i];
                     _items = [];
                   });
                   _fetch(1);

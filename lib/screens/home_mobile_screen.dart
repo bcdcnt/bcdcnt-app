@@ -9,6 +9,7 @@ import '../services/auth.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
+import '../widgets/anniversary_rail.dart';
 import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
@@ -138,6 +139,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   List<Map<String, dynamic>> _docs = [];
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _recent = [];
+  List<Map<String, dynamic>> _forYou = [];
   int _cat = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
   AuthProvider? _auth;
@@ -218,10 +220,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (uid == _recentFor) return;
     _recentFor = uid;
     if (uid == null) {
-      setState(() => _recent = []);
+      setState(() { _recent = []; _forYou = []; });
       return;
     }
     _fetchRecent(auth, uid);
+    _fetchForYou(auth, uid);
   }
 
   Future<void> _fetchRecent(AuthProvider auth, String uid) async {
@@ -240,6 +243,33 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         out.add(m);
       }
       if (mounted) setState(() => _recent = out);
+    } catch (_) {}
+  }
+
+  /// "Dành cho bạn" — the recommendedSongs resolver the desktop home uses
+  /// (same composer / topic / co-listened as what the member plays).
+  Future<void> _fetchForYou(AuthProvider auth, String uid) async {
+    try {
+      final d = await auth.authedQuery(r'''query($id: ID) { recommendedSongs(user_id: $id, limit: 20) {
+        id title subtitle slug image audio_url video_url play_type file_type reason artists { id title slug }
+      } }''', {'id': uid});
+      final out = <Map<String, dynamic>>[];
+      for (final m in _maps(d['recommendedSongs'])) {
+        if (m['audio_url'] == null && m['video_url'] == null) continue;
+        out.add({
+          'id': m['id'],
+          'title': m['title'],
+          'subtitle': m['subtitle'],
+          'slug': m['slug'],
+          if (m['image'] != null) 'thumbnail': {'url': m['image']},
+          'file': {'audio_url': m['audio_url'], 'video_url': m['video_url']},
+          'play_type': m['play_type'],
+          'file_type': const {'audio': 'song', 'video': 'song'}[m['file_type']] ?? m['file_type'] ?? 'song',
+          'reason': m['reason'],
+          'artists': {'data': m['artists'] ?? []},
+        });
+      }
+      if (mounted) setState(() => _forYou = out);
     } catch (_) {}
   }
 
@@ -331,12 +361,43 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             else if (_picks.isNotEmpty)
               _PickCarousel(picks: _picks),
 
+            const AnniversaryRail(),
+
             if (_recent.isNotEmpty) ...[
               SectionTitle('Nghe tiếp', action: 'Lịch sử', onAction: () => context.push('/nghe-gan-day')),
               Rail(
                 height: 226,
                 count: _recent.length,
                 builder: (_, i) => _songCard(_recent[i], _recent, 'Nghe gần đây'),
+              ),
+            ],
+
+            if (_forYou.isNotEmpty) ...[
+              SectionTitle('Dành cho bạn', action: null),
+              Rail(
+                height: 226,
+                count: _forYou.length,
+                builder: (_, i) {
+                  final s = _forYou[i];
+                  final reason = s['reason']?.toString() ?? '';
+                  return RailCard(
+                    cover: SongCover(song: s, size: 148, radius: 0),
+                    title: s['title']?.toString() ?? '',
+                    subtitle: reason.isNotEmpty ? reason : songByline(s),
+                    onTap: () => playOrOpen(context, s, _forYou, 'Dành cho bạn'),
+                  );
+                },
+              ),
+            ],
+
+            // Members' memories are what no other music app has — keep them
+            // near the top instead of under the decades.
+            if (_comments.isNotEmpty) ...[
+              SectionTitle('Cảm nhận hay', action: 'Cộng đồng', onAction: () => context.go('/cong-dong')),
+              Rail(
+                height: 226,
+                count: _comments.length,
+                builder: (_, i) => _QuoteCard(comment: _comments[i]),
               ),
             ],
 
@@ -372,15 +433,6 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
 
             SectionTitle('Nghe theo thập niên', action: null),
             _DecadeGrid(images: [for (final s in _picks.skip(1).take(4)) s['thumbnail']?['url']?.toString()]),
-
-            if (_comments.isNotEmpty) ...[
-              SectionTitle('Cảm nhận hay', action: 'Cộng đồng', onAction: () => context.go('/cong-dong')),
-              Rail(
-                height: 226,
-                count: _comments.length,
-                builder: (_, i) => _QuoteCard(comment: _comments[i]),
-              ),
-            ],
 
             SectionTitle('Nhạc sĩ', onAction: () => context.push('/nhac-si')),
             _PeopleRail(people: _composers, loading: _loading, route: '/nhac-si/'),

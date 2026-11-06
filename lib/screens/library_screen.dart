@@ -184,6 +184,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ListItem(icon: Icons.chat_bubble_outline_rounded, title: 'Bình luận của tôi', onTap: () => context.push('/binh-luan-cua-toi')),
             ListItem(icon: Icons.forum_outlined, title: 'Chủ đề thảo luận', onTap: () => context.push('/thao-luan-cua-toi')),
             ListItem(icon: Icons.insights_rounded, title: 'Điểm & thống kê nghe', onTap: () => context.push('/thong-ke')),
+            ListItem(icon: Icons.volunteer_activism_outlined, title: 'Góp tay cho kho nhạc', subtitle: 'Bổ sung tác giả, năm sáng tác… được cộng điểm', onTap: () => context.push('/gop-tay')),
             ListItem(icon: Icons.notifications_none_rounded, title: 'Thông báo', trailingText: (user['unread'] ?? 0) > 0 ? '${user['unread']}' : null, onTap: () => context.push('/thong-bao')),
           ],
           const GroupLabel('Khác'),

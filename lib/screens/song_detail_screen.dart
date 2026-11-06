@@ -61,6 +61,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   final ScrollController _scrollCtl = ScrollController();
   bool _descExpanded = false;
   bool _storyExpanded = false;
+  // Best long comment, shown as the song's story while it has none.
+  Map<String, dynamic>? _memberStory;
   bool _lyricsExpanded = false;
   bool _sameSheetExpanded = false;
   bool _karaokeExpanded = false;
@@ -264,6 +266,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
         // These lists append, so a CTV reload (fresh) leaves them as they are.
         if (!fresh) {
+          if (_plainEmpty(normalized['description']) && _plainEmpty(sheet['description'])) _fetchMemberStory(type);
           final artists = (normalized['artists']?['data'] ?? []) as List;
           for (final a in artists) {
             if (a['id'] != null) _fetchArtistSongs(a['id']);
@@ -1171,7 +1174,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       final leftItems = <Widget>[
                         ..._buildDescriptionSection(description),
                         ..._buildStorySection(story),
-                        if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ..._buildStoryInvite(),
+                        if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ...(_memberStory != null ? _buildMemberStory() : _buildStoryInvite()),
                         ..._buildLyricsSection(lyrics, isCurrent),
                         ..._buildLyricEditorsRow(),
                         ..._buildSheetSection(isDesktop),
@@ -1279,6 +1282,87 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 
   final _commentsKey = GlobalKey();
+
+  /// Only ~32 of 14k songs have a written story, but many have a long,
+  /// well-liked comment from someone who remembers the song. Show the best
+  /// one in the story slot (credited) instead of an empty invitation.
+  Future<void> _fetchMemberStory(String type) async {
+    const fields = {'song': 'song', 'folk': 'folk', 'instrumental': 'instrumental', 'poem': 'poem', 'karaoke': 'karaoke'};
+    final field = fields[type];
+    if (field == null) return;
+    try {
+      final d = await ApiClient.query(
+        'query(\$id: ID!) { $field(id: \$id) { comments(first: 15, orderBy: [{column: "likes", order: DESC}]) { data { id content likes created_at user { id username avatar { url } } } } } }',
+        {'id': widget.songId},
+      );
+      String plain(Object? h) => (h ?? '').toString().replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'&nbsp;|\s+'), ' ').trim();
+      final picks = ((d[field]?['comments']?['data'] as List?) ?? const []).whereType<Map>().where((c) {
+        final t = plain(c['content']);
+        // A memory, not a question or a link dump.
+        final low = t.toLowerCase();
+        const asks = ['tìm giúp', 'tìm hộ', 'xin ad', 'nhờ ad', 'admin', 'ad ơi', 'cho hỏi', 'cho em hỏi', 'cho tôi hỏi', 'ai biết', 'xin bài', 'xin lời', 'up giúp', 'link'];
+        return t.length >= 160 && (c['likes'] as num? ?? 0) >= 1 && !t.contains('http') && c['user'] != null && '?'.allMatches(t).length < 2 && !asks.any(low.contains);
+      }).toList();
+      if (picks.isEmpty || !mounted) return;
+      final c = Map<String, dynamic>.from(picks.first);
+      c['plain'] = plain(c['content']);
+      setState(() => _memberStory = c);
+    } catch (_) {}
+  }
+
+  List<Widget> _buildMemberStory() {
+    final c = _memberStory!;
+    final user = c['user'] as Map?;
+    final year = (c['created_at'] ?? '').toString().split('-').first;
+    final text = c['plain'].toString();
+    return [
+      const SizedBox(height: 20),
+      Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('CÂU CHUYỆN TỪ THÀNH VIÊN', style: AppText.eyebrow),
+          const SizedBox(height: 10),
+          Text(
+            '“$text”',
+            maxLines: _storyExpanded ? null : 7,
+            overflow: _storyExpanded ? null : TextOverflow.fade,
+            style: body(TextStyle(fontSize: 16, height: 1.6, fontWeight: FontWeight.w500, fontStyle: FontStyle.italic, color: AppColors.text)),
+          ),
+          if (text.length > 320)
+            TextButton(
+              onPressed: () => setState(() => _storyExpanded = !_storyExpanded),
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 40), foregroundColor: AppColors.accentLight),
+              child: Text(_storyExpanded ? 'Thu gọn' : 'Đọc tiếp', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+            ),
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: user?['id'] == null ? null : () => context.push('/user/${user!['id']}'),
+            child: Row(children: [
+              UserAvatar(url: user?['avatar']?['url']?.toString(), name: '${user?['username'] ?? ''}', size: 32),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  [user?['username'] ?? 'Thành viên', if (year.length == 4) year, if ((c['likes'] ?? 0) > 0) '♥ ${c['likes']}'].join(' · '),
+                  style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () {
+              final ctx = _commentsKey.currentContext;
+              if (ctx != null) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
+            },
+            style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(44, 44), foregroundColor: AppColors.accentLight),
+            icon: const Icon(Icons.edit_note_rounded, size: 22),
+            label: Text('Bạn cũng có kỷ niệm? Chia sẻ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          ),
+        ]),
+      ),
+    ];
+  }
 
   bool _plainEmpty(dynamic html) => html == null || html.toString().replaceAll(RegExp(r'<[^>]+>'), '').trim().isEmpty;
 
