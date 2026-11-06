@@ -11,6 +11,7 @@ import '../widgets/brand_logo.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/anniversary_rail.dart';
+import '../widgets/song_of_day_card.dart';
 import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
@@ -418,6 +419,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 action: 'Tải lại',
                 onAction: _fetch,
               ),
+            // Daily ritual: today's song (same as the push) + one-tap question.
+            const SongOfDayCard(),
             // Birthdays / anniversaries first: the same story the daily push
             // tells, so a push about Lê Dung lands on Lê Dung.
             const AnniversaryRail(),

@@ -568,9 +568,27 @@ class _MobileShellState extends State<_MobileShell> {
     super.dispose();
   }
 
-  /// Last page open inside each tab (location, extra), restored when the
-  /// user comes back to that tab.
-  final Map<int, (String, Object?)> _lastPage = {};
+  /// Pages open inside each tab (location, extra), oldest first, restored
+  /// when the user comes back to that tab.
+  final Map<int, List<(String, Object?)>> _lastPage = {};
+
+  /// The pages pushed on top of the current tab, with one-shot hints
+  /// (scroll to comments, highlight a comment) stripped so they don't replay.
+  List<(String, Object?)> _pageStack(GoRouterState here) {
+    (String, Object?) clean(Uri uri, Object? extra) => (
+          uri.replace(queryParameters: Map.of(uri.queryParameters)..remove('binh-luan')).toString().replaceAll(RegExp(r'\?$'), ''),
+          extra is Map ? (Map<String, dynamic>.from(extra)..remove('highlightCommentId')) : extra,
+        );
+    try {
+      final cfg = GoRouter.of(context).routerDelegate.currentConfiguration;
+      final pushed = [
+        for (final m in cfg.matches)
+          if (m is ImperativeRouteMatch) clean(m.matches.uri, m.matches.extra),
+      ];
+      if (pushed.isNotEmpty) return pushed;
+    } catch (_) {}
+    return [clean(here.uri, here.extra)];
+  }
 
   void _onPlayError() {
     if (!mounted) return;
@@ -700,19 +718,21 @@ class _MobileShellState extends State<_MobileShell> {
                             // composer…) and bring the other tab back to
                             // where the user left it.
                             if (!onTab) {
-                              // One-shot hints (scroll to comments, highlight) must not replay.
-                              final extra = here.extra is Map
-                                  ? (Map<String, dynamic>.from(here.extra as Map)..remove('highlightCommentId'))
-                                  : here.extra;
-                              _lastPage[_activeTab] = (here.uri.replace(queryParameters: Map.of(here.uri.queryParameters)..remove('binh-luan')).toString().replaceAll(RegExp(r'\?$'), ''), extra);
+                              _lastPage[_activeTab] = _pageStack(here);
                             } else {
                               _lastPage.remove(_activeTab);
                             }
                             final back = _lastPage.remove(i);
                             context.go(_tabs[i].$1);
-                            if (back != null) {
+                            if (back != null && back.isNotEmpty) {
+                              // Rebuild the whole trail (composer → song…),
+                              // not just the last page, so Back still works.
                               WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (mounted) GoRouter.of(context).push(back.$1, extra: back.$2);
+                                if (!mounted) return;
+                                final router = GoRouter.of(context);
+                                for (final p in back) {
+                                  router.push(p.$1, extra: p.$2);
+                                }
                               });
                             }
                           },

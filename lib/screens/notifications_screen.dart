@@ -115,12 +115,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _open(Map<String, dynamic> notif) {
-    if (notif['is_read'] != 1 && notif['is_read'] != true) _markRead(notif);
+    // A grouped row marks every notification it stands for as read.
+    for (final m in (notif['_members'] as List<Map<String, dynamic>>? ?? [notif])) {
+      if (m['is_read'] != 1 && m['is_read'] != true) _markRead(m);
+    }
     final r = notificationRoute(notif);
     if (r != null) context.push(r.path, extra: r.extra);
   }
 
-  List<Object> get _grouped => groupByDay(_items, (n) => n['created_at']);
+  /// Same action on the same thing on the same day collapses into one row:
+  /// "Lan và 4 người khác thích bình luận của bạn…" instead of five rows.
+  List<Map<String, dynamic>> get _collapsed {
+    final out = <Map<String, dynamic>>[];
+    final at = <String, int>{};
+    for (final n in _items) {
+      final day = '${n['created_at'] ?? ''}'.split(' ').first.split('T').first;
+      final groupable = n['action'] != null && n['object_id'] != null && n['sender'] != null;
+      final key = '$day|${n['action']}|${n['object_type']}|${n['object_id']}';
+      final i = groupable ? at[key] : null;
+      if (i == null) {
+        final row = <String, dynamic>{...n, '_members': <Map<String, dynamic>>[n], '_senders': <String>{'${n['sender']?['id']}'}};
+        if (groupable) at[key] = out.length;
+        out.add(row);
+        continue;
+      }
+      final row = out[i];
+      (row['_members'] as List<Map<String, dynamic>>).add(n);
+      (row['_senders'] as Set<String>).add('${n['sender']?['id']}');
+      if (n['is_read'] != 1 && n['is_read'] != true) row['is_read'] = 0;
+    }
+    return out;
+  }
+
+  List<Object> get _grouped => groupByDay(_collapsed, (n) => n['created_at']);
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +245,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             RichText(textScaler: MediaQuery.textScalerOf(context), text: TextSpan(children: [
               if (sender?['username'] != null)
                 TextSpan(text: '${sender!['username']} ', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
+              if (((n['_senders'] as Set?)?.length ?? 1) > 1)
+                TextSpan(text: 'và ${(n['_senders'] as Set).length - 1} người khác ', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
               TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
             ])),
             const SizedBox(height: 4),
