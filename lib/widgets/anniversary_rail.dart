@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import 'package:provider/provider.dart';
 import '../services/api.dart';
-import '../services/player.dart';
 import 'ui.dart';
 
 /// "Ngày này năm xưa" — birthdays and death anniversaries of composers and
@@ -116,35 +114,6 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     }
   }
 
-  _Anniv? _busy;
-
-  Future<void> _playTribute(_Anniv a, bool alive) async {
-    final field = a.route == '/nhac-si/' ? 'composer' : 'artist';
-    setState(() => _busy = a);
-    try {
-      final d = await ApiClient.query(
-        'query(\$slug: String!) { $field(slug: \$slug) { songs(first: 30, orderBy: [{column: "views", order: DESC}]) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } sheet { year composers(first: 3) { data { id slug title } } } artists(first: 3) { data { id slug title } } } } } }',
-        {'slug': a.person['slug']},
-      );
-      final songs = ((d[field]?['songs']?['data'] as List?) ?? const [])
-          .whereType<Map>()
-          .map((e) => <String, dynamic>{...Map<String, dynamic>.from(e), 'file_type': 'song'})
-          .where((e) => e['file']?['audio_url'] != null)
-          .toList();
-      if (!mounted) return;
-      if (songs.isEmpty) {
-        context.push('${a.route}${a.person['slug']}');
-        return;
-      }
-      final label = '${alive || a.birth ? '' : 'Tưởng nhớ '}${a.role} ${a.person['title']}';
-      context.read<PlayerProvider>().playSong(songs.first, songs, 'manual', label.trim());
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải được bài hát. Kiểm tra mạng rồi thử lại.')));
-    } finally {
-      if (mounted) setState(() => _busy = null);
-    }
-  }
-
   String _when(_Anniv a) {
     if (a.inDays == 0) return 'Hôm nay';
     if (a.inDays == 1) return 'Ngày mai';
@@ -159,7 +128,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SectionTitle('Ngày này năm xưa', action: null),
       SizedBox(
-        height: 70 + scale.scale(98),
+        height: 28 + scale.scale(74),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -192,8 +161,10 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
         ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
         : [if (born != null) '$born', if (died != null) '$died'].join(' – ');
     return Semantics(
-      container: true,
+      button: true,
+      excludeSemantics: true,
       label: '${_when(a)}, ${a.role} $name, $years, $origin',
+      hint: 'Mở trang ${a.role.toLowerCase()}',
       child: Material(
         color: today ? AppColors.accent : AppColors.surface,
         borderRadius: BorderRadius.circular(20),
@@ -201,21 +172,21 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
           borderRadius: BorderRadius.circular(20),
           onTap: () => context.push('${a.route}${p['slug']}'),
           child: Container(
-            width: 290,
-            padding: const EdgeInsets.all(14),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            width: 272,
+            padding: const EdgeInsets.all(12),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               NetImage(
                 url: p['avatar']?['url']?.toString(),
-                width: 64,
-                height: 64,
+                width: 52,
+                height: 52,
                 circle: true,
                 tint: true,
                 fallback: Container(
-                  width: 64,
-                  height: 64,
+                  width: 52,
+                  height: 52,
                   color: today ? Colors.white24 : AppColors.accentSoft,
                   alignment: Alignment.center,
-                  child: Text(name.isEmpty ? '?' : name.characters.first, style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.accentLight))),
+                  child: Text(name.isEmpty ? '?' : name.characters.first, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.accentLight))),
                 ),
               ),
               const SizedBox(width: 12),
@@ -223,30 +194,9 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                   Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
                   const SizedBox(height: 2),
-                  Text('${a.role} $name', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
-                  const SizedBox(height: 4),
-                  Text(years, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: today ? Colors.white : AppColors.text))),
+                  Text('${a.role} $name', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
                   const SizedBox(height: 2),
-                  Text(origin, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: today ? Colors.white70 : AppColors.textMuted))),
-                  const SizedBox(height: 10),
-                  // The card is about music: one tap plays their best-loved
-                  // songs instead of only opening a biography page.
-                  SizedBox(
-                    height: 40,
-                    child: FilledButton.icon(
-                      onPressed: _busy == a ? null : () => _playTribute(a, alive),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: today ? Colors.white : AppColors.accent,
-                        foregroundColor: today ? AppColors.accent : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14),
-                        shape: const StadiumBorder(),
-                      ),
-                      icon: _busy == a
-                          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: today ? AppColors.accent : Colors.white))
-                          : const Icon(Icons.play_arrow_rounded, size: 20),
-                      label: Text(alive || a.birth ? 'Nghe bài hát' : 'Nghe tưởng nhớ', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
-                    ),
-                  ),
+                  Text('$years · $origin', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
                 ]),
               ),
             ]),

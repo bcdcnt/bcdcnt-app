@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
 import '../constants/theme.dart';
+import '../services/theme_provider.dart';
 
 /// The BCĐCNT logo, vector paths taken straight from the brand guideline
 /// PDF. [full] = cassette mark + "bcdcnt" wordmark + tagline; otherwise the
@@ -21,7 +23,9 @@ class BrandLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = onDark ?? !AppColors.isLight;
+    // Subscribe to the theme: the logo is often built `const`, so reading
+    // the global AppColors alone left it in the old colours after a switch.
+    final dark = onDark ?? (context.select<ThemeProvider, String>((t) => t.name) == 'toi' || !AppColors.isLight);
     final asset = full ? 'assets/logo_full.svg' : 'assets/logo_mark.svg';
     // viewBox aspect ratios: full 312x78, mark 80x78.
     final width = height * (full ? 4.0 : 80 / 78);

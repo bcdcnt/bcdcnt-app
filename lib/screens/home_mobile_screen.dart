@@ -104,19 +104,28 @@ const _occasionQuery = {
   'Ngày thành lập Quân đội': 'bộ đội',
 };
 
-/// (line, search query)
-(String, String)? _occasionLine(DateTime now) {
+/// Site playlists made for an occasion, used when BQT hasn't set up a
+/// dated event playlist for it (playlist.event_start/event_end).
+const _occasionPlaylist = {
+  'Quốc tế Phụ nữ': 27, 'Ngày Phụ nữ Việt Nam': 27, 'Ngày thành lập Đoàn': 1558,
+  'Ngày Giải phóng miền Nam': 40, 'Sinh nhật Bác Hồ': 18, 'Ngày Nhà giáo Việt Nam': 12,
+  'Ngày thành lập Quân đội': 6, 'Quốc khánh': 1, 'Giải phóng Thủ đô': 2,
+};
+
+/// (line, search query, playlist id or null, mm-dd)
+(String, String, int?, String)? _occasionLine(DateTime now) {
   final today = DateTime(now.year, now.month, now.day);
-  (int, String)? best;
+  (int, String, String)? best;
   for (final (d, m, label) in _occasions) {
     var date = DateTime(now.year, m, d);
     if (date.isBefore(today)) date = DateTime(now.year + 1, m, d);
     final days = date.difference(today).inDays;
-    if (days <= 30 && (best == null || days < best.$1)) best = (days, label);
+    final mmdd = '${m.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}';
+    if (days <= 30 && (best == null || days < best.$1)) best = (days, label, mmdd);
   }
   if (best == null) return null;
   final line = best.$1 == 0 ? 'Hôm nay là ${best.$2}' : 'Còn ${best.$1} ngày đến ${best.$2}';
-  return (line, _occasionQuery[best.$2] ?? best.$2);
+  return (line, _occasionQuery[best.$2] ?? best.$2, _occasionPlaylist[best.$2], best.$3);
 }
 
 String _greeting(DateTime now) {
@@ -155,6 +164,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   List<Map<String, dynamic>> _recent = [];
   List<Map<String, dynamic>> _forYou = [];
   List<Map<String, dynamic>> _fromFollowed = [];
+  List<Map<String, dynamic>> _loved = [];
+  List<Map<String, dynamic>> _members = [];
   int _cat = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
   AuthProvider? _auth;
@@ -207,6 +218,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     ]);
     _latest.clear();
     _fetchLatest(_cats[_cat]);
+    _fetchMembers();
     if (!mounted) return;
     setState(() {
       _picks = _maps(r[0]['stickySongs']?['data']).where((s) => s['thumbnail']?['url'] != null).toList();
@@ -235,9 +247,10 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (uid == _recentFor) return;
     _recentFor = uid;
     if (uid == null) {
-      setState(() { _recent = []; _forYou = []; _fromFollowed = []; });
+      setState(() { _recent = []; _forYou = []; _fromFollowed = []; _loved = []; });
       return;
     }
+    _fetchLoved(auth, uid);
     _fetchRecent(auth, uid);
     _fetchForYou(auth, uid);
     _fetchFromFollowed(auth);
@@ -262,6 +275,59 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     } catch (_) {}
   }
 
+  /// The occasion's playlist: a dated event playlist BQT set up for that day
+  /// if there is one, else the site's themed playlist, else a search.
+  Future<void> _openOccasion((String, String, int?, String) o) async {
+    try {
+      final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
+        'w': {'AND': [
+          {'column': 'is_system', 'value': '1'},
+          {'column': 'is_public', 'value': '1'},
+          {'column': 'event_start', 'operator': 'LTE', 'value': o.$4},
+          {'column': 'event_end', 'operator': 'GTE', 'value': o.$4},
+        ]},
+      });
+      final id = (d['playlists']?['data'] as List?)?.firstOrNull?['id'];
+      if (!mounted) return;
+      if (id != null) { context.push('/playlist/$id'); return; }
+    } catch (_) {}
+    if (!mounted) return;
+    if (o.$3 != null) {
+      context.push('/playlist/${o.$3}');
+    } else {
+      context.push('/search', extra: o.$2);
+    }
+  }
+
+  /// The member's ♥ songs: what people replay most, one tap from home.
+  Future<void> _fetchLoved(AuthProvider auth, String uid) async {
+    const f = 'id title slug subtitle play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } }';
+    try {
+      final d = await auth.authedQuery('''query(\$id: ID!) { user(id: \$id) { loves(first: 15, orderBy: [{column: "id", order: DESC}]) { data { object { __typename ... on Song { $f } ... on Folk { $f } ... on Instrumental { $f } ... on Poem { $f } } } } } }''', {'id': uid});
+      const tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
+      final out = <Map<String, dynamic>>[];
+      for (final e in _maps(d['user']?['loves']?['data'])) {
+        final o = e['object'];
+        if (o is! Map) continue;
+        final m = Map<String, dynamic>.from(o);
+        if (m['file']?['audio_url'] == null && m['file']?['video_url'] == null) continue;
+        m['file_type'] = tn[m['__typename']] ?? 'song';
+        out.add(m);
+      }
+      if (mounted) setState(() => _loved = out);
+    } catch (_) {}
+  }
+
+  /// "Thành viên tiêu biểu": the members who gave most to the archive
+  /// (points from approved uploads, stories, lyrics…), with their photos.
+  Future<void> _fetchMembers() async {
+    try {
+      final d = await ApiClient.query('query { topMember(field: "point", first: 20) { data { id username point avatar { url } } } }');
+      final list = _maps(d['topMember']?['data']).where((m) => '${m['avatar']?['url'] ?? ''}'.isNotEmpty).take(12).toList();
+      if (mounted) setState(() => _members = list);
+    } catch (_) {}
+  }
+
   /// "Dành cho bạn" — the recommendedSongs resolver the desktop home uses
   /// (same composer / topic / co-listened as what the member plays).
   Future<void> _fetchForYou(AuthProvider auth, String uid) async {
@@ -272,6 +338,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       final out = <Map<String, dynamic>>[];
       for (final m in _maps(d['recommendedSongs'])) {
         if (m['audio_url'] == null && m['video_url'] == null) continue;
+        // Picture-led rail: songs without artwork read as gaps here.
+        if ('${m['image'] ?? ''}'.isEmpty) continue;
         out.add({
           'id': m['id'],
           'title': m['title'],
@@ -392,7 +460,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                   if (occasion != null)
                     InkWell(
                       borderRadius: BorderRadius.circular(8),
-                      onTap: () => context.push('/search', extra: occasion.$2),
+                      onTap: () => _openOccasion(occasion),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 6),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -402,7 +470,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                               Text(noOrphan(occasion.$1), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
                               const SizedBox(height: 2),
-                              Text('Nghe bài hát cho ngày này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                              Text('Mở playlist cho ngày này ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
                             ]),
                           ),
                         ]),
@@ -436,6 +504,25 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 height: 226,
                 count: _recent.length,
                 builder: (_, i) => _songCard(_recent[i], _recent, 'Nghe gần đây'),
+              ),
+            ],
+
+            if (_loved.isNotEmpty) ...[
+              SectionTitle('Bài bạn yêu thích', action: 'Phát tất cả', onAction: () => playOrOpen(context, _loved.first, _loved, 'Bài yêu thích')),
+              Rail(
+                height: 226,
+                count: _loved.length + 1,
+                builder: (_, i) {
+                  if (i == _loved.length) {
+                    return RailCard(
+                      cover: Container(color: AppColors.accentSoft, alignment: Alignment.center, child: Icon(Icons.favorite_rounded, size: 44, color: AppColors.accentLight)),
+                      title: 'Xem tất cả',
+                      subtitle: 'Bài đã thả tim',
+                      onTap: () => context.push('/yeu-thich'),
+                    );
+                  }
+                  return _songCard(_loved[i], _loved, 'Bài yêu thích');
+                },
               ),
             ],
 
@@ -532,6 +619,51 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
 
             SectionTitle('Nghe theo thập niên', action: null),
             _DecadeGrid(images: [for (final s in _picks.skip(1).take(4)) s['thumbnail']?['url']?.toString()]),
+
+            if (_members.isNotEmpty) ...[
+              SectionTitle('Thành viên tiêu biểu', action: 'Bảng vàng', onAction: () => context.push('/bang-xep-hang/cong-hien')),
+              Rail(
+                height: 150,
+                textHeight: 56,
+                gap: 14,
+                count: _members.length,
+                builder: (_, i) {
+                  final m = _members[i];
+                  final pts = (m['point'] as num?)?.toInt() ?? 0;
+                  return Semantics(
+                    button: true,
+                    excludeSemantics: true,
+                    label: 'Thành viên ${m['username']}, hạng ${i + 1}, ${formatViews(pts)} điểm',
+                    child: GestureDetector(
+                      onTap: () => context.push('/user/${m['id']}'),
+                      child: SizedBox(
+                        width: 84,
+                        child: Column(children: [
+                          Stack(clipBehavior: Clip.none, children: [
+                            NetImage(url: m['avatar']?['url']?.toString(), width: 76, height: 76, circle: true),
+                            if (i < 3)
+                              Positioned(
+                                right: -2,
+                                bottom: -2,
+                                child: Container(
+                                  width: 26,
+                                  height: 26,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(color: const [Color(0xFFC9A227), Color(0xFF9EA3A8), Color(0xFFB0703C)][i], shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2)),
+                                  child: Text('${i + 1}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white))),
+                                ),
+                              ),
+                          ]),
+                          const SizedBox(height: 8),
+                          Text('${m['username']}', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                          Text('${formatViews(pts)} điểm', maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                        ]),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
 
             SectionTitle('Nhạc sĩ', onAction: () => context.push('/nhac-si')),
             _PeopleRail(people: _composers, loading: _loading, route: '/nhac-si/'),

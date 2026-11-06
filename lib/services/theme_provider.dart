@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -130,7 +132,9 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.setBool('app_theme_brand_migrated', true);
       await prefs.remove(_prefsKey);
     }
-    final saved = prefs.getString(_prefsKey);
+    // Screenshot hook (desktop debug runs): BCDCNT_THEME=toi|sang.
+    final forced = (!kIsWeb && (Platform.isMacOS || Platform.isLinux || Platform.isWindows)) ? Platform.environment['BCDCNT_THEME'] : null;
+    final saved = forced ?? prefs.getString(_prefsKey);
     _mode = (saved == 'toi' || saved == 'system') ? saved! : 'sang';
     _scale = kTextScales.containsKey(prefs.getString(_scaleKey)) ? prefs.getString(_scaleKey)! : 'vua';
     _palette = _resolve(_mode);
