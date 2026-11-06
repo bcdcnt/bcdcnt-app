@@ -183,12 +183,25 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   /// Reload the current song from where it stopped (after a network drop).
+  /// Same listen session (no second play counted), resumes at the spot.
   Future<void> retryCurrent() async {
     final song = _currentSong;
     if (song == null) return;
-    final at = _position;
-    await playSong(song, null, 'queue');
-    if (at > const Duration(seconds: 2)) await _player.seek(at);
+    final at = _position > const Duration(seconds: 2) ? _position : Duration.zero;
+    final url = song['audioUrl'] ?? song['file']?['audio_url'];
+    final local = OfflineStore.instance.localPath(song);
+    if (url == null && local == null) return;
+    try {
+      if (local != null) {
+        await _player.setFilePath(local, initialPosition: at);
+      } else {
+        await _player.setUrl(url, initialPosition: at);
+      }
+      // play() completes only when playback stops; don't wait on it.
+      unawaited(_player.play().catchError((_) => _reportPlayError()));
+    } catch (_) {
+      _reportPlayError();
+    }
   }
 
   /// Wire the listen-tracker. Called once from the auth bridge on app

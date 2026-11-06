@@ -26,9 +26,6 @@ class _ContributeScreenState extends State<ContributeScreen> {
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(() {
-      if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 500) _load();
-    });
     _load();
   }
 
@@ -112,6 +109,16 @@ class _ContributeScreenState extends State<ContributeScreen> {
               for (var i = 0; i < (_items.isEmpty ? 6 : 2); i++) const SkeletonSongRow()
             else if (_failed && _items.isEmpty)
               OfflineBlock(onRetry: () => _load(reset: true))
+            else if (_page < _lastPage)
+              // A button, not endless scrolling: older members keep their place.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: PillButton(
+                  label: _failed ? 'Chưa tải được — thử lại' : 'Xem thêm bài',
+                  primary: false,
+                  onTap: _load,
+                ),
+              )
             else if (_items.isEmpty)
               const EmptyBlock(icon: Icons.volunteer_activism_outlined, title: 'Không còn bài nào thiếu', message: 'Cảm ơn các thành viên đã góp tay!'),
           ],
@@ -123,7 +130,7 @@ class _ContributeScreenState extends State<ContributeScreen> {
   Widget _row(Map<String, dynamic> s) {
     final missing = _missing(s);
     return InkWell(
-      onTap: () => context.push('/song/${s['id']}', extra: s),
+      onTap: () => context.push('/song/${s['id']}', extra: {...s, 'scrollToComments': true}),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

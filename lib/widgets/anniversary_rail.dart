@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import 'package:provider/provider.dart';
 import '../services/api.dart';
+import '../services/player.dart';
 import 'ui.dart';
 
 /// "Ngày này năm xưa" — birthdays and death anniversaries of composers and
@@ -33,21 +35,36 @@ class _Anniv {
 class _AnniversaryRailState extends State<AnniversaryRail> {
   List<_Anniv>? _items;
 
+  late DateTime _loadedDay;
+  late final AppLifecycleListener _life;
+
   @override
   void initState() {
     super.initState();
     _load();
+    // Home stays alive in the tab stack: refresh "Hôm nay" after midnight.
+    _life = AppLifecycleListener(onResume: () {
+      final now = DateTime.now();
+      if (now.day != _loadedDay.day || now.month != _loadedDay.month) _load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _life.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
     final today = DateTime.now();
+    _loadedDay = today;
     final start = DateTime(today.year, today.month, today.day);
     final end = start.add(Duration(days: widget.window));
     final months = {start.month, end.month};
     final mVals = [for (final m in months) ...['$m', m.toString().padLeft(2, '0')]];
     const f = 'id title slug views dob mob yob dod mod yod avatar { url }';
     String q(String type, String col) =>
-        '$type$col: $type(first: 60, where: {AND: [{column: "$col", operator: IN, value: \$m}]}, orderBy: [{column: "views", order: DESC}]) { data { $f } }';
+        '$type$col: $type(first: 100, where: {AND: [{column: "$col", operator: IN, value: \$m}]}, orderBy: [{column: "views", order: DESC}]) { data { $f } }';
     try {
       final d = await ApiClient.query(
         'query(\$m: Mixed) { ${q('composers', 'mob')} ${q('composers', 'mod')} ${q('artists', 'mob')} ${q('artists', 'mod')} }',
@@ -69,6 +86,9 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
           // Try this year's date, and next year's when the week crosses New Year.
           for (final y in [start.year, start.year + 1]) {
             final date = DateTime(y, month, day);
+            // 29/2 in a non-leap year (or a typo like 31/11) rolls into the
+            // next month: skip instead of showing the wrong day.
+            if (date.month != month) break;
             final diff = date.difference(start).inDays;
             if (diff < 0 || date.isAfter(end)) continue;
             if (!seen.add('$route${p['id']}$birth')) break;
@@ -96,6 +116,35 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     }
   }
 
+  _Anniv? _busy;
+
+  Future<void> _playTribute(_Anniv a, bool alive) async {
+    final field = a.route == '/nhac-si/' ? 'composer' : 'artist';
+    setState(() => _busy = a);
+    try {
+      final d = await ApiClient.query(
+        'query(\$slug: String!) { $field(slug: \$slug) { songs(first: 30, orderBy: [{column: "views", order: DESC}]) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } sheet { year composers(first: 3) { data { id slug title } } } artists(first: 3) { data { id slug title } } } } } }',
+        {'slug': a.person['slug']},
+      );
+      final songs = ((d[field]?['songs']?['data'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => <String, dynamic>{...Map<String, dynamic>.from(e), 'file_type': 'song'})
+          .where((e) => e['file']?['audio_url'] != null)
+          .toList();
+      if (!mounted) return;
+      if (songs.isEmpty) {
+        context.push('${a.route}${a.person['slug']}');
+        return;
+      }
+      final label = '${alive || a.birth ? '' : 'Tưởng nhớ '}${a.role} ${a.person['title']}';
+      context.read<PlayerProvider>().playSong(songs.first, songs, 'manual', label.trim());
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải được bài hát. Kiểm tra mạng rồi thử lại.')));
+    } finally {
+      if (mounted) setState(() => _busy = null);
+    }
+  }
+
   String _when(_Anniv a) {
     if (a.inDays == 0) return 'Hôm nay';
     if (a.inDays == 1) return 'Ngày mai';
@@ -110,7 +159,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SectionTitle('Ngày này năm xưa', action: null),
       SizedBox(
-        height: 32 + scale.scale(98),
+        height: 70 + scale.scale(98),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -129,7 +178,9 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     final what = a.birth ? 'Ngày sinh' : 'Ngày giỗ';
     // Say plainly which year it counts from: "Kỷ niệm 75 năm ngày sinh"
     // alone read like an age; living people get their age instead.
-    final alive = '${p['yod'] ?? ''}'.trim().isEmpty || '${p['yod']}' == '0';
+    // No death year on record is not proof of life: past ~100 we just
+    // don't know, so fall back to "X năm ngày sinh".
+    final alive = ('${p['yod'] ?? ''}'.trim().isEmpty || '${p['yod']}' == '0') && a.years < 100;
     final born = int.tryParse('${p['yob']}'.trim());
     final died = int.tryParse('${p['yod']}'.trim());
     final years = a.years <= 0
@@ -141,8 +192,8 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
         ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
         : [if (born != null) '$born', if (died != null) '$died'].join(' – ');
     return Semantics(
-      button: true,
-      label: '${_when(a)}, ${a.role} $name, $years',
+      container: true,
+      label: '${_when(a)}, ${a.role} $name, $years, $origin',
       child: Material(
         color: today ? AppColors.accent : AppColors.surface,
         borderRadius: BorderRadius.circular(20),
@@ -177,6 +228,25 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
                   Text(years, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: today ? Colors.white : AppColors.text))),
                   const SizedBox(height: 2),
                   Text(origin, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: today ? Colors.white70 : AppColors.textMuted))),
+                  const SizedBox(height: 10),
+                  // The card is about music: one tap plays their best-loved
+                  // songs instead of only opening a biography page.
+                  SizedBox(
+                    height: 40,
+                    child: FilledButton.icon(
+                      onPressed: _busy == a ? null : () => _playTribute(a, alive),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: today ? Colors.white : AppColors.accent,
+                        foregroundColor: today ? AppColors.accent : Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        shape: const StadiumBorder(),
+                      ),
+                      icon: _busy == a
+                          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: today ? AppColors.accent : Colors.white))
+                          : const Icon(Icons.play_arrow_rounded, size: 20),
+                      label: Text(alive || a.birth ? 'Nghe bài hát' : 'Nghe tưởng nhớ', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+                    ),
+                  ),
                 ]),
               ),
             ]),

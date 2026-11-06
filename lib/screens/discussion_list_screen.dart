@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -63,7 +64,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               backgroundColor: AppColors.bg,
               title: const Text('Thảo luận'),
               centerTitle: true,
-              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => context.pop()),
+              leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
             ),
           if (_loading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))

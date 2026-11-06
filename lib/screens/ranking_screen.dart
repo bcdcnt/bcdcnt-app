@@ -60,10 +60,10 @@ class _RankingScreenState extends State<RankingScreen> {
             total
             prev_rank
             object {
-              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } sheet { composers(first: 5) { data { id slug title } } } }
-              ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
-              ... on Instrumental { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
-              ... on Poem { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug } } }
+              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } sheet { composers(first: 5) { data { id slug title } } } }
+              ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
+              ... on Instrumental { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
+              ... on Poem { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
             }
           }
         }
@@ -298,7 +298,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             backgroundColor: AppColors.bg,
             title: Text(title),
             centerTitle: true,
-            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
@@ -386,7 +386,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: medal, width: 2),
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                 ),
                 padding: const EdgeInsets.all(2),
                 child: ClipOval(
@@ -436,7 +436,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
           const SizedBox(width: 10),
           Container(
             width: 40, height: 40,
-            decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+            decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
             child: ClipOval(
               child: item['avatar'] != null
                   ? CachedNetworkImage(imageUrl: cdnImg((item['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 18))
@@ -474,15 +474,21 @@ class _RankingPodium extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(aspectRatio: 1, child: LayoutBuilder(builder: (_, c) => SongCover(song: song, size: c.maxWidth, radius: 18))),
+          AspectRatio(aspectRatio: 1, child: LayoutBuilder(builder: (_, c) {
+            // No song artwork: the singer's photo reads far better on the
+            // podium than a letter placeholder.
+            final face = ((song['artists']?['data'] as List?) ?? const []).whereType<Map>().map((a) => a['avatar']?['url']?.toString()).firstWhere((u) => u != null && u.isNotEmpty, orElse: () => null);
+            if (song['thumbnail']?['url'] == null && face != null) {
+              return NetImage(url: face, width: c.maxWidth, height: c.maxWidth, radius: 18, tint: true);
+            }
+            return SongCover(song: song, size: c.maxWidth, radius: 18);
+          })),
           const SizedBox(height: 6),
           Text('$rank', style: display(TextStyle(fontSize: rank == 1 ? 40 : 32, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
           const SizedBox(height: 4),
-          SizedBox(
-            height: 36,
-            child: Text(song['title']?.toString() ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
-          ),
-          Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: AppText.caption),
+          Text(song['title']?.toString() ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
+          const SizedBox(height: 2),
+          Text(songByline(song).isEmpty ? ' ' : songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
         ],
       ),
     );

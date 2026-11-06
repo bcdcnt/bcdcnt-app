@@ -26,8 +26,23 @@ String _names(dynamic list) {
   return raw.whereType<Map>().map((e) => (e['title'] ?? e['username'] ?? '').toString()).where((s) => s.isNotEmpty).take(3).join(', ');
 }
 
+/// First sung line of the lyrics (skips verse markers like "1." / "ĐK:").
+String? firstLyricLine(Object? html) {
+  final text = (html ?? '').toString()
+      .replaceAll(RegExp(r'<br\s*/?>|</p>|</div>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '')
+      .replaceAll('&nbsp;', ' ');
+  for (final raw in text.split('\n')) {
+    final l = raw.replaceFirst(RegExp(r'^\s*(\d+[.,)\-]*\s*)+|^\s*(ĐK|Đk|đk|Điệp khúc)\s*[:.]?\s*'), '').trim();
+    if (l.length >= 12 && !l.startsWith('[')) return l.length > 90 ? '${l.substring(0, 88)}…' : l;
+  }
+  return null;
+}
+
 /// "🎵 Bài ca cho em — Phan Nhân (1981)\nTrình bày: Tô Thanh Phương\n<link>"
-String songShareText(Map song) {
+/// [hook] (a lyric line or a member's memory) is what makes people tap it
+/// inside a Zalo group, so it goes right under the title.
+String songShareText(Map song, {String? hook}) {
   final title = (song['title'] ?? '').toString();
   final composers = _names(song['sheet']?['composers'] ?? song['composers']);
   final year = (song['sheet']?['year'] ?? song['year'])?.toString();
@@ -36,8 +51,10 @@ String songShareText(Map song) {
   final head = StringBuffer('🎵 $title');
   if (composers.isNotEmpty) head.write(' — $composers');
   if (year != null && year.isNotEmpty && year != '0') head.write(' ($year)');
+  final h = hook ?? firstLyricLine(song['content']);
   return [
     head.toString(),
+    if (h != null && h.isNotEmpty) '“$h”',
     if (artists.isNotEmpty) 'Trình bày: $artists',
     'Nghe trên Bài ca đi cùng năm tháng: $url',
   ].join('\n');

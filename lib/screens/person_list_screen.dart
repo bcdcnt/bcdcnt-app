@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -213,7 +214,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                 backgroundColor: AppColors.bg,
                 title: Text(_label),
                 centerTitle: true,
-                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -301,7 +302,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                                 width: 80, height: 80,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                                 ),
                                 child: ClipOval(
                                   child: avatar != null

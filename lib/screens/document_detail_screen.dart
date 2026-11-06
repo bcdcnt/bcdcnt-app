@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack;
 import 'package:provider/provider.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -124,7 +125,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
     if (_doc == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: Text('Không tìm thấy tư liệu', style: AppText.bodyText)),
       );
     }
@@ -141,7 +142,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
             backgroundColor: AppColors.bg,
             title: Text(typeLabel),
             centerTitle: true,
-            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),

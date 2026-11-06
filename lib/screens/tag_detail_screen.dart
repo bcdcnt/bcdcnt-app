@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack, PillButton;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -204,7 +205,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
               backgroundColor: AppColors.bg,
               title: Text('Tag'),
               centerTitle: true,
-              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
             ),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -270,18 +271,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                     child: Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
                   ),
                   if (st.items.isNotEmpty)
-                    ElevatedButton.icon(
-                      onPressed: _playAll,
-                      icon: const Icon(Icons.play_arrow, size: 18),
-                      label: const Text('Phát tất cả'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.accent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                        textStyle: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
+                    PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
                 ]),
                 const SizedBox(height: 8),
               ])),

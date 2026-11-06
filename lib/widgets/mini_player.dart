@@ -80,6 +80,8 @@ class MiniPlayer extends StatelessWidget {
         child: Semantics(
           button: true,
           label: 'Đang phát ${song['title'] ?? ''}. Chạm để mở trình phát',
+          child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
           child: Container(
             height: 64,
             decoration: BoxDecoration(
@@ -153,6 +155,7 @@ class MiniPlayer extends StatelessWidget {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

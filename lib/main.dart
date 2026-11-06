@@ -15,6 +15,7 @@ import 'services/media_session.dart';
 import 'services/realtime.dart';
 import 'services/theme_provider.dart';
 import 'services/offline_store.dart';
+import 'widgets/onboarding.dart';
 import 'screens/contribute_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/home_mobile_screen.dart';
@@ -239,7 +240,7 @@ class _AppRoot extends StatelessWidget {
         // "Cỡ chữ" preference multiplies on top of the OS text size.
         final mq = MediaQuery.of(context);
         return MediaQuery(
-          data: mq.copyWith(textScaler: TextScaler.linear((mq.textScaler.scale(16) / 16 * theme.textScale).clamp(0.9, 1.6))),
+          data: mq.copyWith(textScaler: TextScaler.linear((mq.textScaler.scale(16) / 16 * theme.textScale).clamp(0.9, 2.0))),
           child: UpdateBanner(
             child: Stack(
               children: [
@@ -409,6 +410,7 @@ final _router = GoRouter(
               songId: s.pathParameters['id']!,
               initialSong: extra,
               highlightCommentId: hi,
+              scrollToComments: extra?['scrollToComments'] == true,
             );
           },
         ),
@@ -550,6 +552,13 @@ class _MobileShellState extends State<_MobileShell> {
     super.initState();
     _player = context.read<PlayerProvider>();
     _player!.playErrorTick.addListener(_onPlayError);
+    // First launch on a phone: 3-step intro (text size, how to play, login).
+    // Skipped for scripted screenshot runs.
+    if (!kIsWeb && !Platform.environment.containsKey('BCDCNT_SHOT_SIZE')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && MediaQuery.sizeOf(context).width < 900) maybeShowOnboarding(context);
+      });
+    }
   }
 
   @override
@@ -558,10 +567,15 @@ class _MobileShellState extends State<_MobileShell> {
     super.dispose();
   }
 
+  /// Last page open inside each tab (location, extra), restored when the
+  /// user comes back to that tab.
+  final Map<int, (String, Object?)> _lastPage = {};
+
   void _onPlayError() {
     if (!mounted) return;
     final player = _player!;
     final hasNext = player.queue.length > player.currentIndex + 1;
+    final missing = player.currentSong?['empty_file'] == 1;
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     // Stays until dismissed: an older listener who looked away still needs
@@ -572,19 +586,22 @@ class _MobileShellState extends State<_MobileShell> {
       closeIconColor: Colors.white70,
       content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Text('Không phát được bài này', style: TextStyle(fontWeight: FontWeight.w700)),
-        const Text('Có thể mạng đang yếu hoặc mất kết nối.', style: TextStyle(fontSize: 13, color: Colors.white70)),
+        Text(
+          missing ? 'Bài này chưa có file nghe.' : 'Có thể mạng yếu, hoặc bản nghe của bài đang lỗi.',
+          style: const TextStyle(fontSize: 13, color: Colors.white70),
+        ),
         const SizedBox(height: 6),
         Row(children: [
-          TextButton(
+          if (!missing) TextButton(
             onPressed: () { messenger.hideCurrentSnackBar(); player.retryCurrent(); },
-            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(64, 40)),
+            style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(72, 48)),
             child: const Text('Thử lại', style: TextStyle(fontWeight: FontWeight.w800)),
           ),
           if (hasNext) ...[
-            const SizedBox(width: 16),
+            if (!missing) const SizedBox(width: 16),
             TextButton(
               onPressed: () { messenger.hideCurrentSnackBar(); player.playNext(); },
-              style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(64, 40)),
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFFE0AEAC), padding: EdgeInsets.zero, minimumSize: const Size(72, 48)),
               child: const Text('Bài tiếp', style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
@@ -604,6 +621,8 @@ class _MobileShellState extends State<_MobileShell> {
     _tabScreens.putIfAbsent(_activeTab, () => _buildTab(_activeTab));
     final child = widget.child;
     final hasPlayer = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
+    final unreadRaw = context.select<AuthProvider, Object?>((a) => a.user?['unread']);
+    final unread = unreadRaw is num ? unreadRaw.toInt() : 0;
 
     return MiniPlayerScope(
       child: Scaffold(
@@ -646,6 +665,10 @@ class _MobileShellState extends State<_MobileShell> {
           ),
           child: SafeArea(
             top: false,
+            // Tab labels stay readable but capped (as iOS does) so 200% text
+            // can't push the icons out of the bar.
+            child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
             child: SizedBox(
               height: 60,
               child: Row(
@@ -663,13 +686,40 @@ class _MobileShellState extends State<_MobileShell> {
                               TabReselect.notify(i);
                               return;
                             }
+                            final here = GoRouterState.of(context);
+                            if (i == _activeTab) {
+                              // Same tab from a page inside it: back to its top.
+                              _lastPage.remove(i);
+                              context.go(_tabs[i].$1);
+                              return;
+                            }
+                            // Remember where this tab was (a song page, a
+                            // composer…) and bring the other tab back to
+                            // where the user left it.
+                            if (!onTab) {
+                              _lastPage[_activeTab] = (here.uri.toString(), here.extra);
+                            } else {
+                              _lastPage.remove(_activeTab);
+                            }
+                            final back = _lastPage.remove(i);
                             context.go(_tabs[i].$1);
+                            if (back != null) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) GoRouter.of(context).push(back.$1, extra: back.$2);
+                              });
+                            }
                           },
                           radius: 40,
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted),
+                              Badge(
+                                // Replies and likes waiting: show them on Cộng đồng.
+                                isLabelVisible: i == 2 && unread > 0,
+                                label: Text(unread > 99 ? '99+' : '$unread'),
+                                backgroundColor: AppColors.accent,
+                                child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : Colors.white) : AppColors.textMuted),
+                              ),
                               const SizedBox(height: 4),
                               Text(_tabs[i].$4, style: body(TextStyle(
                                 fontSize: 12,
@@ -684,6 +734,7 @@ class _MobileShellState extends State<_MobileShell> {
                 ],
               ),
             ),
+            )
           ),
         ),
       ),

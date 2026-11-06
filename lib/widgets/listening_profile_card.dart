@@ -68,7 +68,7 @@ class _ListeningProfileCardState extends State<ListeningProfileCard> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
         padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: const LinearGradient(colors: [AppColors.wine, AppColors.rose])),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

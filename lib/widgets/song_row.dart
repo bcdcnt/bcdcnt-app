@@ -1,9 +1,11 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/semantics.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/share.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -240,8 +242,14 @@ class SongRow extends StatelessWidget {
       // VoiceOver/TalkBack read the row as one item instead of title,
       // byline and a nameless button separately.
       label: [song['title'] ?? '', sub, if (playing) 'đang phát'].where((e) => '$e'.isNotEmpty).join(', '),
-      hint: 'Chạm để nghe, nhấn giữ để xem thêm',
+      hint: 'Chạm để nghe',
       button: true,
+      // Read once as a single item; the ⋮ menu stays reachable as an action.
+      excludeSemantics: true,
+      onTap: () => _tap(context),
+      customSemanticsActions: {
+        const CustomSemanticsAction(label: 'Tuỳ chọn'): () => showSongActions(context, song),
+      },
       child: HoverHighlight(
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
@@ -505,8 +513,8 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Các bài trong danh sách đã có trong "Đã tải về".')));
     return;
   }
-  var done = 0, failed = 0;
-  var stop = false;
+  var done = 0, failed = 0, streak = 0;
+  var stop = false, finished = false;
   String? error;
   var running = false;
   await showModalBottomSheet<void>(
@@ -515,29 +523,39 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
     enableDrag: false,
     backgroundColor: AppColors.bg,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+    builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => PopScope(
+      // Android Back must not hide a sheet whose download keeps running.
+      canPop: finished,
+      child: Builder(builder: (ctx) {
       Future<void> run() async {
+        // Screen sleeping would suspend the downloads on iOS.
+        WakelockPlus.enable().catchError((_) {});
         for (final s in todo) {
           if (stop) break;
           final err = await store.download(s, auth);
           if (err == null) {
             done++;
+            streak = 0;
           } else {
             failed++;
+            streak++;
             if (err.contains('quá nhiều')) { error = err; break; }
+            // Three in a row: the network is down, not one bad file.
+            if (streak >= 3) { error = 'Mất kết nối mạng, đã tạm dừng'; break; }
           }
           if (ctx.mounted) setSheet(() {});
         }
-        if (ctx.mounted) setSheet(() => stop = true);
+        finished = true;
+        WakelockPlus.disable().catchError((_) {});
+        if (ctx.mounted) setSheet(() {});
       }
       if (!running) { running = true; run(); }
-      final finished = stop;
       final total = todo.length;
       return SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text(finished ? 'Đã tải xong' : 'Đang tải về máy', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+            Text(!finished ? (stop ? 'Đang dừng…' : 'Đang tải về máy') : (stop ? 'Đã dừng tải' : (error != null ? 'Chưa tải hết' : 'Đã tải xong')), style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
             if (title != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
             const SizedBox(height: 18),
             LinearProgressIndicator(value: total == 0 ? 0 : (done + failed) / total, minHeight: 8, borderRadius: BorderRadius.circular(4), color: AppColors.accent, backgroundColor: AppColors.surfaceLight),
@@ -552,11 +570,12 @@ Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> 
             if (finished)
               PillButton(label: 'Mở Đã tải về', icon: Icons.download_done_rounded, onTap: () { Navigator.pop(ctx); GoRouter.of(context).push('/da-tai-ve'); })
             else
-              PillButton(label: 'Dừng tải', primary: false, onTap: () => setSheet(() => stop = true)),
+              PillButton(label: stop ? 'Đang dừng…' : 'Dừng tải', primary: false, onTap: stop ? null : () => setSheet(() => stop = true)),
             if (finished) TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Đóng', style: body(TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary)))),
           ]),
         ),
       );
     }),
+    )),
   );
 }

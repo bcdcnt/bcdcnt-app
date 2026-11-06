@@ -115,8 +115,15 @@ class _CommentsFeedState extends State<CommentsFeed> {
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
+  int _gen = 0;
+
   Future<void> _fetch(int page) async {
     final filter = _filter;
+    // A page-1 load (filter change, pull-to-refresh) supersedes any
+    // load-more still in flight, so old pages can't be appended to it.
+    if (page == 1) _gen++;
+    final gen = _gen;
+    int newPage = page, newLast = 1;
     setState(() {
       _failed = false;
       if (page == 1) {
@@ -148,8 +155,8 @@ class _CommentsFeedState extends State<CommentsFeed> {
             },
           };
         }).toList();
-        _lastPage = 1;
-        _page = 1;
+        newPage = 1;
+        newLast = 1;
       } else {
         final d = await ApiClient.query(_latestQuery, {
           'page': page,
@@ -162,11 +169,15 @@ class _CommentsFeedState extends State<CommentsFeed> {
           return m;
         }).where((m) => (m['text'] as String).isNotEmpty).toList();
         final pi = raw?['paginatorInfo'] ?? {};
-        _page = pi['currentPage'] ?? page;
-        _lastPage = pi['lastPage'] ?? 1;
+        newPage = pi['currentPage'] ?? page;
+        newLast = pi['lastPage'] ?? 1;
       }
-      if (!mounted || filter != _filter) return;
+      // A late answer for a filter the user already left must not touch
+      // the paging of the one on screen.
+      if (!mounted || filter != _filter || gen != _gen) return;
       setState(() {
+        _page = newPage;
+        _lastPage = newLast;
         if (page == 1) {
           _items = list;
         } else {
@@ -176,7 +187,7 @@ class _CommentsFeedState extends State<CommentsFeed> {
         _loadingMore = false;
       });
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _loadingMore = false; _failed = _items.isEmpty; });
+      if (mounted && filter == _filter && gen == _gen) setState(() { _loading = false; _loadingMore = false; _failed = _items.isEmpty; });
     }
   }
 

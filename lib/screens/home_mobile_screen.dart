@@ -92,7 +92,18 @@ const _occasions = [
   (22, 12, 'Ngày thành lập Quân đội'),
 ];
 
-String? _occasionLine(DateTime now) {
+/// What to search for each occasion's songs.
+const _occasionQuery = {
+  'Tết Dương lịch': 'mùa xuân', 'Ngày thành lập Đảng': 'Đảng', 'Quốc tế Phụ nữ': 'mẹ',
+  'Ngày thành lập Đoàn': 'thanh niên', 'Ngày Giải phóng miền Nam': 'miền Nam', 'Quốc tế Lao động': 'công nhân',
+  'Chiến thắng Điện Biên Phủ': 'Điện Biên', 'Sinh nhật Bác Hồ': 'Bác Hồ', 'Quốc tế Thiếu nhi': 'thiếu nhi',
+  'Ngày Thương binh Liệt sĩ': 'liệt sĩ', 'Cách mạng Tháng Tám': 'tháng Tám', 'Quốc khánh': 'Tổ quốc',
+  'Giải phóng Thủ đô': 'Hà Nội', 'Ngày Phụ nữ Việt Nam': 'mẹ', 'Ngày Nhà giáo Việt Nam': 'thầy cô',
+  'Ngày thành lập Quân đội': 'bộ đội',
+};
+
+/// (line, search query)
+(String, String)? _occasionLine(DateTime now) {
   final today = DateTime(now.year, now.month, now.day);
   (int, String)? best;
   for (final (d, m, label) in _occasions) {
@@ -102,7 +113,8 @@ String? _occasionLine(DateTime now) {
     if (days <= 30 && (best == null || days < best.$1)) best = (days, label);
   }
   if (best == null) return null;
-  return best.$1 == 0 ? 'Hôm nay là ${best.$2}' : 'Còn ${best.$1} ngày đến ${best.$2}';
+  final line = best.$1 == 0 ? 'Hôm nay là ${best.$2}' : 'Còn ${best.$1} ngày đến ${best.$2}';
+  return (line, _occasionQuery[best.$2] ?? best.$2);
 }
 
 String _greeting(DateTime now) {
@@ -338,12 +350,25 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                       style: display(TextStyle(fontSize: 28, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
                   const SizedBox(height: 6),
                   Text(
-                    [
-                      '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month}',
-                      if (occasion != null) occasion,
-                    ].join(' · '),
+                    '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month}',
                     style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
                   ),
+                  // The countdown leads somewhere: songs for that day.
+                  if (occasion != null)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => context.push('/search', extra: occasion.$2),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.event_rounded, size: 18, color: AppColors.accentLight),
+                          const SizedBox(width: 6),
+                          Flexible(child: Text(occasion.$1, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight)))),
+                          const SizedBox(width: 4),
+                          Text('· Nghe bài hát ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                        ]),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -381,9 +406,24 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                   final s = _forYou[i];
                   final reason = s['reason']?.toString() ?? '';
                   return RailCard(
-                    cover: SongCover(song: s, size: 148, radius: 0),
+                    // Why it was picked sits on the cover; the singer stays
+                    // in the caption.
+                    cover: Stack(fit: StackFit.expand, children: [
+                      SongCover(song: s, size: 148, radius: 0),
+                      if (reason.isNotEmpty)
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.62), borderRadius: BorderRadius.circular(10)),
+                            child: Text(reason, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, height: 1.25, fontWeight: FontWeight.w700, color: Colors.white))),
+                          ),
+                        ),
+                    ]),
                     title: s['title']?.toString() ?? '',
-                    subtitle: reason.isNotEmpty ? reason : songByline(s),
+                    subtitle: songByline(s),
                     onTap: () => playOrOpen(context, s, _forYou, 'Dành cho bạn'),
                   );
                 },
@@ -521,11 +561,16 @@ class _PickCarouselState extends State<_PickCarousel> {
   final _ctrl = PageController(viewportFraction: 0.9);
   int _index = 0;
   Timer? _timer;
+  bool _touched = false;
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 6), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 7), (_) {
+      // Moving slides under a reader's finger is the worst case for older
+      // users: stop for good once they touch it, and never move when the
+      // phone asks for reduced motion.
+      if (_touched || (mounted && MediaQuery.of(context).disableAnimations)) return;
       // Count the slides actually shown (build() takes the first 6), else
       // the last slide asks for a page that doesn't exist and stays put.
       final count = widget.picks.length.clamp(0, _maxSlides);
@@ -549,7 +594,9 @@ class _PickCarouselState extends State<_PickCarousel> {
       children: [
         SizedBox(
           height: 156 + MediaQuery.textScalerOf(context).scale(80),
-          child: PageView.builder(
+          child: Listener(
+            onPointerDown: (_) => _touched = true,
+            child: PageView.builder(
             controller: _ctrl,
             // Centred slides: every card sits on the same margin, not just
             // the first one.
@@ -617,6 +664,7 @@ class _PickCarouselState extends State<_PickCarousel> {
               );
             },
           ),
+          ),
         ),
         const SizedBox(height: 12),
         Row(
@@ -653,7 +701,7 @@ class _OccasionCard extends StatelessWidget {
         child: InkWell(
           onTap: () => context.push('/playlist/${playlist['id']}'),
           child: Ink(
-            decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.wine, AppColors.rose])),
+            decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
             padding: const EdgeInsets.all(18),
             child: Row(
               children: [

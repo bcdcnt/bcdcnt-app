@@ -98,12 +98,20 @@ class OfflineStore extends ChangeNotifier {
       final dir = await _folder;
       final file = File('${dir.path}/$key.mp3');
       tmp = File('${file.path}.part');
-      final res = await http.Client().send(http.Request('GET', Uri.parse(url)));
+      final client = http.Client();
+      final http.StreamedResponse res;
+      try {
+        res = await client.send(http.Request('GET', Uri.parse(url))).timeout(const Duration(seconds: 30));
+      } catch (_) {
+        client.close();
+        rethrow;
+      }
       if (res.statusCode != 200) return 'Không tải được file (mã ${res.statusCode})';
       final total = res.contentLength ?? 0;
       var got = 0;
       final sink = tmp.openWrite();
-      await for (final chunk in res.stream) {
+      // A stalled stream must not hang a whole "tải cả danh sách" run.
+      await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
         sink.add(chunk);
         got += chunk.length;
         if (total > 0) {
@@ -112,6 +120,7 @@ class OfflineStore extends ChangeNotifier {
         }
       }
       await sink.close();
+      client.close();
       await tmp.rename(file.path);
 
       // Keep only what lists and the player need (detail maps carry lyrics,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack, PillButton;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -134,7 +135,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (cfg == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: Text('Không tìm thấy thể loại', style: AppText.bodyText)),
       );
     }
@@ -151,7 +152,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 backgroundColor: AppColors.bg,
                 title: Text('Thể loại'),
                 centerTitle: true,
-                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
 
               SliverPadding(
@@ -198,17 +199,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         padding: const EdgeInsets.only(bottom: 14),
                         child: Row(
                           children: [
-                            ElevatedButton.icon(
-                              onPressed: _playAll,
-                              icon: const Icon(Icons.play_arrow, size: 20),
-                              label: const Text('Phát tất cả'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              ),
-                            ),
+                            PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
                           ],
                         ),
                       ),

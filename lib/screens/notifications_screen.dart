@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import '../widgets/ui.dart' show SkeletonSongRow, OfflineBlock;
+import '../widgets/ui.dart' show SkeletonSongRow, OfflineBlock, goBack;
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
@@ -129,7 +129,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: Text('Vui lòng đăng nhập để xem thông báo', style: AppText.bodyText)),
       );
     }
@@ -143,10 +143,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             backgroundColor: AppColors.bg,
             title: Text('Thông báo'),
             centerTitle: true,
-            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
             actions: [
               if (hasUnread)
-                TextButton(onPressed: _markAllRead, child: Text('Đọc tất cả', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.accentLight)))),
+                TextButton(onPressed: _markAllRead, child: Text('Đọc tất cả', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentLight)))),
             ],
           ),
           if (_loading && _items.isEmpty)
@@ -164,7 +164,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ))
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
                 (ctx, i) {
                   final entry = _grouped[i];
@@ -195,19 +195,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         margin: const EdgeInsets.only(bottom: 2),
         decoration: BoxDecoration(
-          color: unread ? AppColors.accent.withValues(alpha: 0.10) : Colors.transparent,
+          color: unread ? AppColors.surface : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Opacity(
-            opacity: unread ? 1.0 : 0.55,
+            opacity: unread ? 1.0 : 0.75,
             child: Container(
               width: 40, height: 40,
               decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
               child: ClipOval(
                 child: sender?['avatar']?['url'] != null
                     ? CachedNetworkImage(imageUrl: cdnImg((sender['avatar']['url']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18))
-                    : Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 18),
+                    : sender?['username'] != null
+                        ? Center(child: Text('${sender!['username']}'.characters.first.toUpperCase(), style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.accentLight))))
+                        : Icon(Icons.notifications_outlined, color: AppColors.textMuted, size: 20),
               ),
             ),
           ),
@@ -215,14 +217,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             RichText(textScaler: MediaQuery.textScalerOf(context), text: TextSpan(children: [
               if (sender?['username'] != null)
-                TextSpan(text: '${sender!['username']} ', style: body(TextStyle(fontSize: 13, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
-              TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 13, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
+                TextSpan(text: '${sender!['username']} ', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
+              TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
             ])),
             const SizedBox(height: 4),
-            Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 12, color: unread ? AppColors.accentLight : AppColors.textMuted))),
+            Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 13, color: unread ? AppColors.accentLight : AppColors.textMuted))),
           ])),
           if (unread)
-            Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 4), decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
+            Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 12), decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
           else
             const SizedBox(width: 14),
         ]),

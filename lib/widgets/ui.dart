@@ -17,14 +17,28 @@ class BrandTint extends StatelessWidget {
   final bool enabled;
   const BrandTint({super.key, required this.child, this.enabled = true});
 
-  static const _tint = Color(0xFF8E1F1F);
+  // Duotone: shadows go deep wine, highlights warm paper, so photos read
+  // as old prints. A flat BlendMode.color with the logo red turned every
+  // picture salmon-pink.
+  static const _dark = [46.0, 8.0, 10.0];
+  static const _light = [246.0, 232.0, 222.0];
+  static final _filter = ColorFilter.matrix(<double>[
+    for (var c = 0; c < 3; c++) ...[
+      (_light[c] - _dark[c]) / 255 * 0.2126,
+      (_light[c] - _dark[c]) / 255 * 0.7152,
+      (_light[c] - _dark[c]) / 255 * 0.0722,
+      0,
+      _dark[c],
+    ],
+    0, 0, 0, 1, 0,
+  ]);
 
   @override
   Widget build(BuildContext context) {
     if (!enabled) return child;
     // ClipRect bounds the filter layer: on Impeller (iOS) an unclipped
     // ColorFiltered spills the tint over everything painted below it.
-    return ClipRect(child: ColorFiltered(colorFilter: const ColorFilter.mode(_tint, BlendMode.color), child: child));
+    return ClipRect(child: ColorFiltered(colorFilter: _filter, child: child));
   }
 }
 
@@ -498,6 +512,18 @@ class OfflineBlock extends StatelessWidget {
         action: 'Tải lại',
         onAction: onRetry,
       );
+}
+
+/// Back arrow behaviour for every screen: pop when there is somewhere to go
+/// back to, otherwise (opened from a notification or shared link) go home
+/// instead of doing nothing or closing the app.
+void goBack(BuildContext context) {
+  final nav = Navigator.of(context);
+  if (nav.canPop()) {
+    nav.pop();
+  } else {
+    GoRouter.of(context).go('/');
+  }
 }
 
 /// Glue the last two words of a short headline with a no-break space so a

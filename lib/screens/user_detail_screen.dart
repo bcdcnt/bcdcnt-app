@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack;
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -339,7 +340,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
     if (_user == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: Text('Không tìm thấy thành viên', style: AppText.bodyText)),
       );
     }
@@ -356,7 +357,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
               pinned: true,
               expandedHeight: 270,
               backgroundColor: AppColors.bg,
-              leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => context.pop()),
+              leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => goBack(context)),
               actions: [
                 IconButton(
                   tooltip: isOwnProfile ? 'Sao chép link hồ sơ' : 'Sao chép link',
@@ -370,7 +371,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with SingleTickerPr
                   if (u['background']?['url'] != null)
                     CachedNetworkImage(imageUrl: cdnImg((u['background']['url']).toString(), 960), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surface))
                   else
-                    Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight))),
+                    Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight))),
                   Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
                   Positioned(left: 16, right: 16, bottom: 12, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                     Row(crossAxisAlignment: CrossAxisAlignment.end, children: [

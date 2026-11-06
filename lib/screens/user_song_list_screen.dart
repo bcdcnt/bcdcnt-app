@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack, PillButton;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -189,7 +190,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                 backgroundColor: AppColors.bg,
                 title: Text(_title),
                 centerTitle: true,
-                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -199,7 +200,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
-                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Row(
@@ -233,45 +234,19 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () => _playAll(),
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: const Text('Phát tất cả'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.accent,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                              elevation: 0,
-                            ),
-                          ),
+                          child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => _playAll(shuffle: true),
-                            icon: const Icon(Icons.shuffle, size: 16),
-                            label: const Text('Ngẫu nhiên'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.accentLight,
-                              side: BorderSide(color: AppColors.accent),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                            ),
-                          ),
+                          child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false),
                         ),
                       ],
                     ),
                   if (_items.isNotEmpty)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title),
-                        style: TextButton.styleFrom(foregroundColor: AppColors.accentLight, minimumSize: const Size(44, 44)),
-                        icon: const Icon(Icons.download_for_offline_outlined, size: 22),
-                        label: Text('Tải cả danh sách về máy', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
-                      ),
-                    ),
+                    Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: 'Tải cả danh sách về máy', primary: false)),
+                  ),
                   const SizedBox(height: 8),
 
                   // List / loader / empty
@@ -297,7 +272,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                       return SongRow(
                         song: song,
                         index: e.key,
-                        showIndex: true,
+                        showIndex: widget.kind != UserListKind.history,
                         queue: asSongList(_items),
                       );
                     }),
@@ -318,7 +293,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
 
   Widget _scaffoldEmpty(String msg) => Scaffold(
     backgroundColor: AppColors.bg,
-    appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+    appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
     body: Center(child: Text(msg, style: AppText.bodyText)),
   );
 }

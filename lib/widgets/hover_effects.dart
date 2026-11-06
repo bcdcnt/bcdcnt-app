@@ -184,7 +184,7 @@ class _HoverPlayOverlayState extends State<HoverPlayOverlay> {
                     width: widget.size, height: widget.size,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                      gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                       boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.5 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))],
                     ),
                     child: Icon(Icons.play_arrow, color: Colors.white, size: widget.size * 0.55),

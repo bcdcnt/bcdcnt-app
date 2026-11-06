@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ui.dart' show goBack, PillButton;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -150,7 +151,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.bg,
           elevation: 0,
-          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           title: Text('Playlist'),
           centerTitle: true,
         ),
@@ -163,7 +164,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     if (_playlist == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: Text('Không tìm thấy playlist', style: AppText.bodyText)),
       );
     }
@@ -189,7 +190,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               backgroundColor: AppColors.bg,
               title: Text('Playlist'),
               centerTitle: true,
-              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+              leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
             ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(isDesktop ? 32 : 20, isDesktop ? 16 : 8, isDesktop ? 32 : 20, 24),
@@ -268,29 +269,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 ),
                 const SizedBox(height: 16),
                 if (_items.isNotEmpty) Row(children: [
-                  Expanded(child: ElevatedButton.icon(
-                    onPressed: () => _playAll(),
-                    icon: const Icon(Icons.play_arrow, size: 18),
-                    label: const Text('Phát tất cả'),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), elevation: 0),
-                  )),
+                  Expanded(child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true)),
                   const SizedBox(width: 10),
-                  Expanded(child: OutlinedButton.icon(
-                    onPressed: () => _playAll(shuffle: true),
-                    icon: const Icon(Icons.shuffle, size: 16),
-                    label: const Text('Ngẫu nhiên'),
-                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentLight, side: BorderSide(color: AppColors.accent), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
-                  )),
+                  Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                 ]),
                 if (_items.isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => saveAllForOffline(context, _items, title: pl['title']?.toString()),
-                      style: TextButton.styleFrom(foregroundColor: AppColors.accentLight, minimumSize: const Size(44, 44)),
-                      icon: const Icon(Icons.download_for_offline_outlined, size: 22),
-                      label: Text('Tải cả playlist về máy', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items, title: pl['title']?.toString()), icon: Icons.download_for_offline_outlined, label: 'Tải cả playlist về máy', primary: false)),
                   ),
                 const SizedBox(height: 8),
               ])),

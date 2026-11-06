@@ -35,7 +35,9 @@ class SongDetailScreen extends StatefulWidget {
   /// Optional comment id to deep-link to. CommentSection paginates
   /// until it surfaces, then scrolls + flashes a highlight on it.
   final String? highlightCommentId;
-  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong, this.highlightCommentId});
+  /// Open scrolled to the comment box ("Góp tay": write what you know).
+  final bool scrollToComments;
+  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong, this.highlightCommentId, this.scrollToComments = false});
 
   @override
   State<SongDetailScreen> createState() => _SongDetailScreenState();
@@ -251,6 +253,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             }).toList(),
           };
         }
+        if (widget.scrollToComments && !fresh) {
+          Future.delayed(const Duration(milliseconds: 700), () {
+            final ctx = _commentsKey.currentContext;
+            if (ctx != null && ctx.mounted) Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 600), curve: Curves.easeOutCubic);
+          });
+        }
         setState(() {
           _song = normalized;
           if (userId != null) {
@@ -298,11 +306,18 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       if (_song != null && mounted) {
         final player = context.read<PlayerProvider>();
         final isCurrent = _isThisSong(player.currentSong);
-        if (!isCurrent) _play();
+        // A song whose file is gone would only raise "Không phát được".
+        final playable = _song!['empty_file'] != 1 && (_song!['file']?['audio_url'] != null || _song!['file']?['video_url'] != null);
+        if (!isCurrent && playable) _play();
       }
-    } catch (e) { print('fetch error: $e'); }
-    setState(() => _loading = false);
+      _failed = false;
+    } catch (_) {
+      _failed = true;
+    }
+    if (mounted) setState(() => _loading = false);
   }
+
+  bool _failed = false;
 
   List<String> _extractImages(String? html) {
     if (html == null) return [];
@@ -559,7 +574,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   Future<void> _share() async {
     if (_song == null) return;
-    await shareText(context, text: songShareText(_song!), subject: _song!['title']?.toString());
+    final memory = _memberStory?['plain']?.toString();
+    final hook = firstLyricLine(_song!['content']) ??
+        (memory == null ? null : (memory.length > 140 ? '${memory.substring(0, 138)}…' : memory));
+    await shareText(context, text: songShareText(_song!, hook: hook), subject: _song!['title']?.toString());
   }
 
   void _showLoversSheet(List loves) {
@@ -765,7 +783,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         backgroundColor: AppColors.bg,
         appBar: AppBar(
           backgroundColor: AppColors.bg, elevation: 0,
-          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           title: Text('Chi tiết'),
           centerTitle: true,
         ),
@@ -776,7 +794,16 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       );
     }
     if (_song == null) {
-      return Scaffold(backgroundColor: AppColors.bg, appBar: AppBar(), body: Center(child: Text('Không tìm thấy', style: AppText.bodyText)));
+      // A network failure is not "this song doesn't exist".
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context))),
+        body: Center(
+          child: _failed
+              ? OfflineBlock(onRetry: () { setState(() => _loading = true); _fetch(); })
+              : const EmptyBlock(icon: Icons.music_off_outlined, title: 'Không tìm thấy bài hát', message: 'Bài có thể đã được gộp hoặc gỡ khỏi trang.'),
+        ),
+      );
     }
 
     final song = _song!;
@@ -794,6 +821,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final year = (song['sheet']?['year']?.toString() ?? '').isEmpty ? null : song['sheet']['year'].toString();
     final recordYear = (song['record_year']?.toString() ?? '').isEmpty ? null : song['record_year'].toString();
     final emptyFile = song['empty_file'] == 1;
+    // Nothing to play at all: the big button must not promise "Phát".
+    // empty_file = 1 means BQT found the file gone (the URL 404s).
+    final noMedia = emptyFile || ((song['file']?['audio_url'] ?? song['audioUrl']) == null && song['file']?['video_url'] == null);
     final player = context.watch<PlayerProvider>();
     final isCurrent = _isThisSong(player.currentSong);
     final isVideo = player.currentSong?['play_type'] == 'video';
@@ -1015,7 +1045,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       : const SizedBox.shrink(key: ValueKey('label')),
                 ),
                 centerTitle: true,
-                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
                 actions: [
                   // CTV tools (same menu as the web), only for members with a CTV permission.
                   if (canUseSongAdmin(context.watch<AuthProvider>()))
@@ -1085,10 +1115,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         videoPlayer: heroVideo,
                         onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
                       ),
-                      if (emptyFile)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text('Bài này chưa có file nghe.', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFB7791F)))),
+                      if (noMedia)
+                        Container(
+                          margin: const EdgeInsets.only(top: 14),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Icon(Icons.info_outline_rounded, size: 22, color: AppColors.textSecondary),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Bài này chưa có bản ghi âm để nghe. Bạn có bản thu? Chia sẻ trong bình luận để BQT bổ sung.',
+                                style: body(TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w600, color: AppColors.text)),
+                              ),
+                            ),
+                          ]),
                         ),
                       const SizedBox(height: 14),
                       ...metaItems,
@@ -1103,6 +1144,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
                       const SizedBox(height: 18),
+                      if (noMedia)
+                        Row(children: [
+                          Expanded(
+                            child: PillButton(
+                              label: 'Nghe bài tương tự',
+                              icon: Icons.queue_music_rounded,
+                              onTap: _suggestions.isEmpty ? null : () => _playList(_suggestions),
+                            ),
+                          ),
+                        ])
+                      else
                       Row(children: [
                         Expanded(
                           child: PillButton(
@@ -1377,7 +1429,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('CÂU CHUYỆN BÀI HÁT', style: AppText.eyebrow),
             const SizedBox(height: 8),
-            Text('Bài này chưa có câu chuyện. Bạn biết hoàn cảnh ra đời, hay có kỷ niệm gắn với bài hát? Hãy chia sẻ — BQT sẽ bổ sung vào trang.',
+            Text('Bạn biết hoàn cảnh ra đời, hay có kỷ niệm với bài hát này?',
                 style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
             const SizedBox(height: 12),
             TextButton.icon(
@@ -1727,7 +1779,7 @@ class _PrimaryPlayButton extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+              gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
               borderRadius: BorderRadius.circular(28),
               boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 14, offset: const Offset(0, 4))],
             ),
@@ -2019,7 +2071,7 @@ class _DesktopHero extends StatelessWidget {
                   child: thumb != null
                       ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
                       : Container(
-                          decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                          decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
                           child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
                         ),
                 ),
@@ -2205,7 +2257,7 @@ class _PrimaryActionPill extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            gradient: primary ? LinearGradient(colors: [AppColors.accent, AppColors.accentLight]) : null,
+            gradient: primary ? LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]) : null,
             color: bgColor,
             borderRadius: BorderRadius.circular(24),
             border: primary || activeAccent ? null : Border.all(color: AppColors.border),

@@ -239,9 +239,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       });
       logActivity(context.read<AuthProvider>(), 'view', _cfg.queryName, p['id']);
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _loading = false; _failed = true; });
     }
   }
+
+  bool _failed = false;
 
   Future<void> _fetchPage(String key, int page, {String? sort}) async {
     final cfg = _cfg.sections.firstWhere((c) => c.key == key);
@@ -416,7 +418,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         backgroundColor: AppColors.bg,
         appBar: AppBar(
           backgroundColor: AppColors.bg, elevation: 0,
-          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+          leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           title: Text(_cfg.label),
           centerTitle: true,
         ),
@@ -429,8 +431,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (_person == null) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop())),
-        body: Center(child: Text('Không tìm thấy', style: AppText.bodyText)),
+        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        body: Center(
+          child: _failed
+              ? OfflineBlock(onRetry: () { setState(() { _loading = true; _failed = false; }); _fetch(); })
+              : const EmptyBlock(icon: Icons.person_off_outlined, title: 'Không tìm thấy', message: 'Trang này có thể đã được gộp hoặc đổi tên.'),
+        ),
       );
     }
 
@@ -453,7 +459,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   SliverAppBar(
                     pinned: true,
                     backgroundColor: AppColors.bg,
-                    leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => context.pop()),
+                    leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
                     title: Text(_cfg.label),
                     centerTitle: true,
                     actions: [IconButton(icon: Icon(Icons.share, color: AppColors.textSecondary), onPressed: _share)],
@@ -699,7 +705,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               width: 200, height: 200,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                 boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 36, spreadRadius: -4)],
                 border: Border.all(color: AppColors.border, width: 3),
               ),
@@ -792,7 +798,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               onTap: avatar != null ? () => _showAvatarZoom(p) : null,
               child: avatar != null
                   ? BrandTint(child: CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 1000), fit: BoxFit.cover, alignment: const Alignment(0, -0.4), memCacheWidth: 1000))
-                  : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [AppColors.wine, AppColors.rose]))),
+                  : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]))),
             ),
             const IgnorePointer(
               child: DecoratedBox(
@@ -811,7 +817,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               left: 12,
               right: 12,
               child: Row(children: [
-                circle(Icons.arrow_back_ios_new_rounded, 'Quay lại', () => context.pop()),
+                circle(Icons.arrow_back_ios_new_rounded, 'Quay lại', () => goBack(context)),
                 const Spacer(),
                 circle(Icons.ios_share_rounded, 'Chia sẻ', _share),
               ]),

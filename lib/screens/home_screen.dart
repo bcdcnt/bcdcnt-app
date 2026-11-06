@@ -1440,7 +1440,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 44, height: 44,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 16, spreadRadius: -2)],
                   ),
                   child: ClipOval(
@@ -1510,7 +1510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                   boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2, offset: const Offset(0, 3))],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -2433,7 +2433,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight], begin: Alignment.centerLeft, end: Alignment.centerRight),
+                gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.centerLeft, end: Alignment.centerRight),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(13)),
               ),
               child: Row(
@@ -2863,7 +2863,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: av, height: av,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                        gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                       ),
                       child: ClipOval(
                         child: avatar != null
@@ -3127,7 +3127,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 68, height: 68,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                    gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                     border: Border.all(color: gold, width: 2),
                   ),
                   child: ClipOval(
@@ -3300,7 +3300,7 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 64, height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+                gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                 border: Border.all(color: AppColors.accentLight, width: 2),
               ),
               child: ClipOval(
@@ -3483,7 +3483,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 10),
               Container(
                 width: 40, height: 40,
-                decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight])),
+                decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
                 child: ClipOval(
                   child: u['avatar'] != null
                       ? CachedNetworkImage(imageUrl: cdnImg((u['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white70))
@@ -4147,7 +4147,7 @@ class _WelcomeBanner extends StatelessWidget {
           width: 44, height: 44,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentLight]),
+            gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
           ),
           child: const Icon(Icons.favorite_outline, color: Colors.white, size: 22),
         ),
