@@ -110,7 +110,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SectionTitle('Ngày này năm xưa', action: null),
       SizedBox(
-        height: 32 + scale.scale(80),
+        height: 32 + scale.scale(98),
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -127,10 +127,22 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     final name = '${p['title'] ?? ''}';
     final today = a.inDays == 0;
     final what = a.birth ? 'Ngày sinh' : 'Ngày giỗ';
-    final years = a.years > 0 ? (a.birth ? '${a.years} năm ngày sinh' : '${a.years} năm ngày mất') : what;
+    // Say plainly which year it counts from: "Kỷ niệm 75 năm ngày sinh"
+    // alone read like an age; living people get their age instead.
+    final alive = '${p['yod'] ?? ''}'.trim().isEmpty || '${p['yod']}' == '0';
+    final born = int.tryParse('${p['yob']}'.trim());
+    final died = int.tryParse('${p['yod']}'.trim());
+    final years = a.years <= 0
+        ? what
+        : a.birth
+            ? (alive ? 'Tròn ${a.years} tuổi' : '${a.years} năm ngày sinh')
+            : '${a.years} năm ngày mất';
+    final origin = alive
+        ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
+        : [if (born != null) '$born', if (died != null) '$died'].join(' – ');
     return Semantics(
       button: true,
-      label: '${_when(a)}, $years ${a.role} $name',
+      label: '${_when(a)}, ${a.role} $name, $years',
       child: Material(
         color: today ? AppColors.accent : AppColors.surface,
         borderRadius: BorderRadius.circular(20),
@@ -138,7 +150,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
           borderRadius: BorderRadius.circular(20),
           onTap: () => context.push('${a.route}${p['slug']}'),
           child: Container(
-            width: 260,
+            width: 290,
             padding: const EdgeInsets.all(14),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               NetImage(
@@ -162,7 +174,9 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
                   const SizedBox(height: 2),
                   Text('${a.role} $name', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
                   const SizedBox(height: 4),
-                  Text(years, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
+                  Text(years, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: today ? Colors.white : AppColors.text))),
+                  const SizedBox(height: 2),
+                  Text(origin, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: today ? Colors.white70 : AppColors.textMuted))),
                 ]),
               ),
             ]),
