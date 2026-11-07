@@ -4,7 +4,7 @@ import '../services/api.dart';
 import 'ui.dart';
 
 /// "Tư liệu mới": newest archive photos (one card per album/event), shown in
-/// Thư viện next to the other things members come back to look things up.
+/// the Tìm kiếm tab's browse view, next to the categories and decades.
 class NewDocumentsRail extends StatefulWidget {
   const NewDocumentsRail({super.key});
 

@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock, PillButton;
+import 'discussion_compose_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -163,6 +164,22 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
                   child: Text(f['content'], style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.5))),
                 ),
               const SizedBox(height: 16),
+              // Post a topic here. Only child forums take topics (top-level
+              // ones ask which child); "Gửi tác phẩm" goes through Bài gửi.
+              if ('${f['id']}' != submissionForumId) ...[
+                PillButton(
+                  label: 'Đăng thảo luận',
+                  icon: Icons.edit_note_rounded,
+                  height: 52,
+                  onTap: () => openDiscussionCompose(
+                    context,
+                    forumId: f['parent'] != null ? '${f['id']}' : null,
+                    forumTitle: f['parent'] != null ? '${f['title'] ?? ''}' : null,
+                    onPosted: _fetchInitial,
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
 
               if (_children.isNotEmpty) ...[
                 Text('CHUYÊN MỤC CON', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 1.2))),

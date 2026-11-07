@@ -1,6 +1,7 @@
+import 'dart:async';
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
+import '../widgets/ui.dart' show goBack, OfflineBlock, Pager, Skeleton, PagedLoader, PagedList, PageResult;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -19,18 +20,15 @@ class PersonListScreen extends StatefulWidget {
   State<PersonListScreen> createState() => _PersonListScreenState();
 }
 
-class _PersonListScreenState extends State<PersonListScreen> {
+class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
   static const _perPage = 30;
   final _scrollCtl = ScrollController();
-  List<Map<String, dynamic>> _items = [];
-  int _page = 1;
-  int _lastPage = 1;
-  int _total = 0;
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _failed = false;
-  bool _moreFailed = false;
-  int _reqId = 0;
+  final _list = PagedList<Map<String, dynamic>>();
+  // Name search, sent to the API as `title LIKE %…%` (the collation is
+  // accent-insensitive, so "tuan" also finds "Tuấn"). Debounced.
+  final _searchCtl = TextEditingController();
+  String _search = '';
+  Timer? _debounce;
   // Filter: starting letter (uppercase Vietnamese). Null means "all".
   // Selecting it resets pagination.
   String? _letter;
@@ -91,70 +89,51 @@ class _PersonListScreenState extends State<PersonListScreen> {
   @override
   void initState() {
     super.initState();
-    _scrollCtl.addListener(_onScroll);
     _fetch(1);
   }
 
   @override
+  void didUpdateWidget(PersonListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.type != widget.type) {
+      _debounce?.cancel();
+      _searchCtl.clear();
+      setState(() { _letter = null; _search = ''; _list.reset(); });
+      _fetch(1);
+    }
+  }
+
+  @override
   void dispose() {
-    _scrollCtl.removeListener(_onScroll);
+    _debounce?.cancel();
+    _searchCtl.dispose();
     _scrollCtl.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_loadingMore || _loading || _moreFailed) return;
-    if (_page >= _lastPage) return;
-    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) {
-      _fetch(_page + 1);
-    }
-  }
+  Future<void> _fetch(int page) => loadPage(_list, page, (page, _) async {
+        final and = <Map<String, dynamic>>[
+          if (_letter != null) {'column': 'title', 'operator': 'LIKE', 'value': '${_letter!}%'},
+          if (_search.isNotEmpty) {'column': 'title', 'operator': 'LIKE', 'value': '%${_search.replaceAll('%', '').replaceAll('_', ' ')}%'},
+        ];
+        final q = '''query(\$page: Int, \$where: WhereConditions) {
+          $_queryName(first: $_perPage, page: \$page, where: \$where, orderBy: [{column: "total_listens", order: DESC}]) {
+            data { id slug title avatar { url } total_listens }
+            paginatorInfo { currentPage lastPage total }
+          }
+        }''';
+        final data = await ApiClient.query(q, {'page': page, 'where': and.isEmpty ? null : {'AND': and}});
+        return PageResult.fromPaginator(data[_queryName], page);
+      }, scrollToTop: _scrollCtl);
 
-  Future<void> _fetch(int page) async {
-    final req = ++_reqId;
-    setState(() {
-      if (page == 1) { _loading = true; _failed = false; } else { _loadingMore = true; }
-      _moreFailed = false;
+  void _onSearchChanged(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 450), () {
+      final q = v.trim();
+      if (!mounted || q == _search) return;
+      setState(() => _search = q);
+      _fetch(1);
     });
-    // Build a where clause with an optional letter (title LIKE 'X%').
-    final wheres = <String>[];
-    if (_letter != null) {
-      wheres.add('{column: "title", operator: LIKE, value: "${_letter!}%"}');
-    }
-    final whereStr = wheres.isEmpty ? '' : ', where: {AND: [${wheres.join(',')}]}';
-    final q = '''query(\$page: Int) {
-      $_queryName(first: $_perPage, page: \$page$whereStr, orderBy: [{column: "total_listens", order: DESC}]) {
-        data { id slug title avatar { url } total_listens }
-        paginatorInfo { currentPage lastPage total }
-      }
-    }''';
-    try {
-      final data = await ApiClient.query(q, {'page': page});
-      final raw = data[_queryName];
-      final list = ((raw?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      final pi = raw?['paginatorInfo'] ?? {};
-      if (req != _reqId || !mounted) return;
-      setState(() {
-        if (page == 1) {
-          _items = list;
-        } else {
-          final seen = _items.map((e) => e['id']?.toString()).toSet();
-          _items.addAll(list.where((e) => !seen.contains(e['id']?.toString())));
-        }
-        _page = pi['currentPage'] ?? page;
-        _lastPage = pi['lastPage'] ?? 1;
-        _total = pi['total'] ?? _total;
-        _loading = false;
-        _loadingMore = false;
-      });
-    } catch (_) {
-      if (req != _reqId || !mounted) return;
-      setState(() {
-        if (page == 1) { _failed = true; } else { _moreFailed = true; }
-        _loading = false;
-        _loadingMore = false;
-      });
-    }
   }
 
   static String _initial(dynamic title) {
@@ -164,11 +143,54 @@ class _PersonListScreenState extends State<PersonListScreen> {
 
   void _setLetter(String? l) {
     if (_letter == l) return;
-    setState(() {
-      _letter = l;
-      _items = []; _page = 1; _lastPage = 1; _total = 0; _loadingMore = false;
-    });
+    setState(() => _letter = l);
     _fetch(1);
+  }
+
+  Widget _buildSearch() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: TextField(
+        controller: _searchCtl,
+        onChanged: _onSearchChanged,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (v) {
+          _debounce?.cancel();
+          final q = v.trim();
+          if (q == _search) return;
+          setState(() => _search = q);
+          _fetch(1);
+        },
+        style: body(TextStyle(fontSize: 17, color: AppColors.text)),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          hintText: 'Tìm ${_label.toLowerCase()} theo tên',
+          hintStyle: body(TextStyle(fontSize: 17, color: AppColors.textMuted)),
+          prefixIcon: Icon(Icons.search, size: 22, color: AppColors.textMuted),
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _searchCtl,
+            builder: (_, v, _) => v.text.isEmpty ? const SizedBox.shrink() : IconButton(
+              tooltip: 'Xoá',
+              iconSize: 22,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: Icon(Icons.close, color: AppColors.textMuted),
+              onPressed: () {
+                _debounce?.cancel();
+                _searchCtl.clear();
+                if (_search.isEmpty) return;
+                setState(() => _search = '');
+                _fetch(1);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildFilters() {
@@ -274,7 +296,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                             children: [
                               Text(_label, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_total > 0 ? '${_formatInt(_total)} ${_label.toLowerCase()}' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                              Text(_list.total > 0 ? '${_formatInt(_list.total)} ${_label.toLowerCase()}' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -282,17 +304,35 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  _buildSearch(),
+                  const SizedBox(height: 12),
                   // Filter row: A-Z index. Resets to "all" when tapped twice.
                   _buildFilters(),
                   const SizedBox(height: 12),
                 ])),
               ),
-              if (_loading && _items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-              else if (_failed && _items.isEmpty)
-                SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
-              else if (_items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có dữ liệu', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
+              if (_list.loading || (!_list.loaded && !_list.failed))
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 180, crossAxisSpacing: 14, mainAxisSpacing: 18, mainAxisExtent: tileExtent),
+                    delegate: SliverChildBuilderDelegate(
+                      (ctx, i) => const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Skeleton(width: 80, height: 80, radius: 40),
+                        SizedBox(height: 10),
+                        Skeleton(width: 90, height: 14, radius: 6),
+                      ]),
+                      childCount: 12,
+                    ),
+                  ),
+                )
+              else if (_list.failed && _list.items.isEmpty)
+                SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(_list.page)))
+              else if (_list.items.isEmpty)
+                SliverToBoxAdapter(child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                  child: Center(child: Text(_search.isNotEmpty ? 'Không tìm thấy "$_search"' : 'Chưa có dữ liệu', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
+                ))
               else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -309,7 +349,7 @@ class _PersonListScreenState extends State<PersonListScreen> {
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (ctx, i) {
-                        final p = _items[i];
+                        final p = _list.items[i];
                         final avatar = p['avatar']?['url'];
                         // Circle avatars for everyone — composer/poet/recomposer
                         // square treatment was reverted per user feedback. Section
@@ -353,14 +393,17 @@ class _PersonListScreenState extends State<PersonListScreen> {
                         ),
                         );
                       },
-                      childCount: _items.length,
+                      childCount: _list.items.length,
                     ),
                   ),
                 ),
               SliverToBoxAdapter(
                 child: Column(children: [
-                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
-                  if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
+                  if (!_list.loading && _list.items.isNotEmpty && _list.lastPage > 1)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: Pager(page: _list.page, lastPage: _list.lastPage, onPage: _fetch),
+                    ),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),

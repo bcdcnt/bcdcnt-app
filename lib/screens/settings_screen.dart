@@ -4,7 +4,7 @@ import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
 import '../widgets/ui.dart' show goBack, OfflineBlock;
 import '../services/friendly_error.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -115,6 +115,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _dobCtl.dispose(); _mobCtl.dispose(); _yobCtl.dispose();
     _passwordCtl.dispose(); _passwordConfirmCtl.dispose();
     _newUsernameCtl.dispose(); _usernameReasonCtl.dispose();
+    _rev.dispose();
     super.dispose();
   }
 
@@ -376,22 +377,123 @@ class _SettingsScreenState extends State<SettingsScreen> {
     router.go('/');
   }
 
+  /// Bumped on every setState so pushed sub-pages (separate routes that the
+  /// parent's rebuild never reaches) re-render with the latest form state.
+  final _rev = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _rev.value++;
+  }
+
+  /// Initial deep-link (route `extra`) has been handled — open it only once.
+  bool _openedInitial = false;
+
+  /// Old per-section keys (and the new group keys) → group id.
+  static const _sectionToGroup = {
+    'theme': 'appearance', 'appearance': 'appearance', 'display': 'appearance',
+    'push': 'notify', 'prefs': 'notify', 'notify': 'notify', 'notifications': 'notify',
+    'images': 'profile', 'profile': 'profile', 'username': 'profile',
+    'password': 'account', 'account': 'account', 'security': 'account',
+    'shortcuts': 'shortcuts',
+  };
+
+  bool get _accountReady {
+    final auth = context.read<AuthProvider>();
+    return auth.isAuthenticated && _loaded && !_loadError;
+  }
+
+  /// Groups with at least one visible item, in display order.
+  List<_SettingsGroup> _visibleGroups() {
+    final ready = _accountReady;
+    return [
+      for (final g in _groupDefs())
+        if (g.items.any((i) => !i.needsAccount || ready)) g,
+    ];
+  }
+
+  void _openGroup(String id) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => _SettingsSubPage(
+        rev: _rev,
+        title: () => _groupDefs().where((g) => g.id == id).firstOrNull?.title ?? 'Cài đặt',
+        content: () => _groupContent(id),
+      ),
+    ));
+  }
+
+  /// Body of a group: one card per visible item. Account items need a
+  /// loaded profile — otherwise a retry / login hint, never blank forms.
+  Widget _groupContent(String id) {
+    final g = _groupDefs().where((g) => g.id == id).firstOrNull;
+    if (g == null) return const SizedBox.shrink();
+    final auth = context.read<AuthProvider>();
+    final ready = _accountReady;
+    final items = g.items.where((i) => !i.needsAccount || ready).toList();
+    final missingAccount = g.items.any((i) => i.needsAccount) && !ready;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (missingAccount)
+        if (auth.isAuthenticated && _loadError)
+          OfflineBlock(onRetry: _fetch)
+        else if (auth.isAuthenticated && _loading)
+          Padding(padding: const EdgeInsets.all(32), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+        else if (!auth.isAuthenticated && items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text('Bạn cần đăng nhập để dùng mục này.', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))),
+          ),
+      for (final it in items) _itemCard(it, danger: it.id == 'delete'),
+    ]);
+  }
+
+  Widget _itemCard(_SettingsItem it, {bool danger = false}) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: danger ? AppColors.errorText.withValues(alpha: 0.5) : AppColors.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (it.title != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(children: [
+              Icon(it.icon, size: 20, color: danger ? AppColors.errorText : AppColors.accentFg),
+              const SizedBox(width: 8),
+              Expanded(child: Text(it.title!, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)))),
+            ]),
+          ),
+        it.builder(),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     final auth = context.watch<AuthProvider>();
-    // Theme (Phối màu) + shortcuts (Phím tắt) are local-only, so guests can
-    // use them too — only the account sections need a login.
-    const localOnlyIds = {'push', 'theme', 'shortcuts'};
-    // A failed profile load shows the retry block and only the local
-    // sections — never empty account forms that could be saved blank.
     final accountReady = auth.isAuthenticated && _loaded && !_loadError;
-    final sections = accountReady
-        ? _sectionDefs()
-        : _sectionDefs().where((s) => localOnlyIds.contains(s.id)).toList();
+    final groups = _visibleGroups();
     final header = (auth.isAuthenticated && _loadError) ? OfflineBlock(onRetry: _fetch) : null;
     // Only the account sections need a network fetch; guests skip the spinner.
     final showLoading = auth.isAuthenticated && _loading;
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
+    final initialGroup = widget.initialSection == null ? null : _sectionToGroup[widget.initialSection];
+
+    // Phones: a deep-link (e.g. "Phối màu" from the profile) opens that
+    // sub-page straight away, once the account state has settled.
+    if (!isDesktop && !_openedInitial && !showLoading) {
+      _openedInitial = true;
+      if (initialGroup != null && groups.any((g) => g.id == initialGroup)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _openGroup(initialGroup);
+        });
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -402,20 +504,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             surfaceTintColor: Colors.transparent,
             title: Text('Cài đặt'),
             centerTitle: true,
-            leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+            leading: IconButton(tooltip: 'Quay lại', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           if (showLoading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-          else
+          else if (isDesktop)
             SliverFillRemaining(
               hasScrollBody: true,
-              child: _SettingsBody(
+              child: _SettingsDesktopBody(
                 key: ValueKey('settings-${_uid ?? 'guest'}-$accountReady'),
-                sections: sections,
+                groups: groups,
                 header: header,
-                initialSectionId: widget.initialSection,
+                initialGroupId: initialGroup,
+                content: _groupContent,
                 bottomPadding: player.currentSong != null ? 90 : 20,
               ),
+            )
+          else
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, player.currentSong != null ? 90 : 20),
+              sliver: SliverList.list(children: [
+                ?header,
+                for (final g in groups) _GroupRow(group: g, onTap: () => _openGroup(g.id)),
+              ]),
             ),
         ]),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
@@ -638,159 +749,180 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// Section list — single source of truth shared by both layouts. Keeping
-  /// it here means the body widget can be a dumb consumer.
-  List<_SettingsSectionDef> _sectionDefs() {
-    final defs = _allSectionDefs();
-    if (MediaQuery.sizeOf(context).width >= 900) return defs;
-    // Phones: what older listeners actually look for (text size, theme,
-    // notifications) comes first; keyboard shortcuts are desktop-only.
-    const first = ['theme', 'push'];
+  /// Top-level groups — single source of truth for the phone list, the
+  /// sub-pages and the desktop 2-pane layout.
+  List<_SettingsGroup> _groupDefs() {
+    final isDesktop = MediaQuery.sizeOf(context).width >= 900;
     return [
-      for (final id in first) ...defs.where((d) => d.id == id),
-      ...defs.where((d) => !first.contains(d.id) && d.id != 'shortcuts' && (kIsWeb || d.id != 'prefs')),
-    ];
-  }
-
-  List<_SettingsSectionDef> _allSectionDefs() {
-    return [
-      _SettingsSectionDef(
-        id: 'images',
-        icon: Icons.image_outlined,
-        title: 'Hình ảnh',
-        builder: () => _imagePickers(),
-      ),
-      _SettingsSectionDef(
-        id: 'prefs',
-        icon: Icons.tune,
-        title: 'Tuỳ chọn',
-        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // Web-only: the in-page "ding" for new notifications.
-          if (kIsWeb) _toggleRow(
-            icon: Icons.notifications_outlined,
-            title: 'Âm thanh thông báo',
-            subtitle: 'Phát âm thanh khi có thông báo mới',
-            value: _notificationSound,
-            onChanged: (_) => _toggleNotificationSound(),
-          ),
-          if (MediaQuery.sizeOf(context).width >= 900) _toggleRow(
-            icon: Icons.chat_bubble_outline,
-            title: 'Sidebar bình luận',
-            subtitle: 'Hiện sidebar bình luận trên desktop',
-            value: _showCommentSidebar,
-            onChanged: (_) => _toggleCommentSidebar(),
-          ),
-        ]),
-      ),
-      _SettingsSectionDef(
-        id: 'profile',
-        icon: Icons.person_outline,
-        title: 'Thông tin cá nhân',
-        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _field('Họ và tên', _fullnameCtl),
-          _field('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone),
-          _field('Địa chỉ', _addressCtl),
-          Row(children: [
-            Expanded(child: _field('Ngày', _dobCtl, keyboardType: TextInputType.number, hint: 'DD')),
-            const SizedBox(width: 8),
-            Expanded(child: _field('Tháng', _mobCtl, keyboardType: TextInputType.number, hint: 'MM')),
-            const SizedBox(width: 8),
-            Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
-          ]),
-          Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              _genderChip('male', 'Nam'),
-              _genderChip('female', 'Nữ'),
-              _genderChip('other', 'Khác'),
-            ]),
-          ])),
-          const SizedBox(height: 8),
-          _saveBtn('Lưu thông tin', _saving == 'info', _loaded ? _saveInfo : null),
-        ]),
-      ),
-      _SettingsSectionDef(
-        id: 'password',
-        icon: Icons.lock_outline,
-        title: 'Đổi mật khẩu',
-        builder: () => AutofillGroup(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _field('Mật khẩu mới', _passwordCtl,
-                obscure: !_showPassword,
-                autofillHints: const [AutofillHints.newPassword],
-                suffix: IconButton(
-                  tooltip: _showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
-                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                  icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary),
-                  onPressed: () => setState(() => _showPassword = !_showPassword),
-                )),
-            _field('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: !_showPassword, autofillHints: const [AutofillHints.newPassword]),
-            const SizedBox(height: 8),
-            _saveBtn('Đổi mật khẩu', _saving == 'pw', _savePassword),
-          ]),
-        ),
-      ),
-      _SettingsSectionDef(
-        id: 'username',
-        icon: Icons.alternate_email,
-        title: 'Đổi tên đăng nhập',
-        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
-          ),
-          _field('Tên đăng nhập mới', _newUsernameCtl),
-          _field('Lý do', _usernameReasonCtl),
-          const SizedBox(height: 8),
-          _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
-          if (_usernameReqs.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('LỊCH SỬ', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
-            const SizedBox(height: 6),
-            ..._usernameReqs.map(_usernameReqRow),
-          ],
-        ]),
-      ),
-      if (PushService.supported)
-        _SettingsSectionDef(
-          id: 'push',
-          icon: Icons.notifications_active_outlined,
-          title: 'Thông báo điện thoại',
-          builder: () => const PushSettings(),
-        ),
-      _SettingsSectionDef(
-        id: 'theme',
+      _SettingsGroup(
+        id: 'appearance',
         icon: Icons.palette_outlined,
         title: 'Giao diện & cỡ chữ',
-        builder: () => const _ThemePicker(),
-      ),
-      _SettingsSectionDef(
-        id: 'shortcuts',
-        icon: Icons.keyboard_outlined,
-        title: 'Phím tắt',
-        builder: () => const _ShortcutsList(),
-      ),
-      _SettingsSectionDef(
-        id: 'account',
-        icon: Icons.manage_accounts_outlined,
-        title: 'Tài khoản',
-        builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Xoá vĩnh viễn tài khoản và thông tin cá nhân của bạn khỏi BCĐCNT.', style: body(TextStyle(fontSize: 15, height: 1.4, color: AppColors.textSecondary))),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 48,
-            child: OutlinedButton.icon(
-              onPressed: _deleteAccount,
-              icon: Icon(Icons.delete_forever_outlined, size: 20, color: AppColors.errorText),
-              label: Text('Xoá tài khoản', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.errorText))),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppColors.errorText, width: 1.5),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        subtitle: 'Nền sáng hoặc tối, chữ to hay nhỏ',
+        items: [
+          _SettingsItem(id: 'theme', builder: () => const _ThemePicker()),
+          if (isDesktop)
+            _SettingsItem(
+              id: 'sidebar',
+              needsAccount: true,
+              icon: Icons.chat_bubble_outline,
+              title: 'Bình luận bên cạnh',
+              builder: () => _toggleRow(
+                icon: Icons.chat_bubble_outline,
+                title: 'Sidebar bình luận',
+                subtitle: 'Hiện sidebar bình luận trên desktop',
+                value: _showCommentSidebar,
+                onChanged: (_) => _toggleCommentSidebar(),
               ),
             ),
-          ),
-        ]),
+        ],
       ),
+      _SettingsGroup(
+        id: 'notify',
+        icon: Icons.notifications_active_outlined,
+        title: 'Thông báo',
+        subtitle: 'Trả lời bình luận, lượt thích, theo dõi',
+        items: [
+          if (PushService.supported)
+            _SettingsItem(id: 'push', icon: Icons.notifications_active_outlined, title: 'Thông báo điện thoại', builder: () => const PushSettings()),
+          // Web-only: the in-page "ding" for new notifications.
+          if (kIsWeb)
+            _SettingsItem(
+              id: 'sound',
+              needsAccount: true,
+              icon: Icons.volume_up_outlined,
+              title: 'Âm thanh',
+              builder: () => _toggleRow(
+                icon: Icons.notifications_outlined,
+                title: 'Âm thanh thông báo',
+                subtitle: 'Phát âm thanh khi có thông báo mới',
+                value: _notificationSound,
+                onChanged: (_) => _toggleNotificationSound(),
+              ),
+            ),
+        ],
+      ),
+      _SettingsGroup(
+        id: 'profile',
+        icon: Icons.person_outline,
+        title: 'Hồ sơ',
+        subtitle: 'Ảnh đại diện, họ tên, tên đăng nhập',
+        items: [
+          _SettingsItem(id: 'images', needsAccount: true, icon: Icons.image_outlined, title: 'Hình ảnh', builder: () => _imagePickers()),
+          _SettingsItem(
+            id: 'profile',
+            needsAccount: true,
+            icon: Icons.badge_outlined,
+            title: 'Thông tin cá nhân',
+            builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _field('Họ và tên', _fullnameCtl),
+              _field('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone),
+              _field('Địa chỉ', _addressCtl),
+              Row(children: [
+                Expanded(child: _field('Ngày', _dobCtl, keyboardType: TextInputType.number, hint: 'DD')),
+                const SizedBox(width: 8),
+                Expanded(child: _field('Tháng', _mobCtl, keyboardType: TextInputType.number, hint: 'MM')),
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
+              ]),
+              Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  _genderChip('male', 'Nam'),
+                  _genderChip('female', 'Nữ'),
+                  _genderChip('other', 'Khác'),
+                ]),
+              ])),
+              const SizedBox(height: 8),
+              _saveBtn('Lưu thông tin', _saving == 'info', _loaded ? _saveInfo : null),
+            ]),
+          ),
+          _SettingsItem(
+            id: 'username',
+            needsAccount: true,
+            icon: Icons.alternate_email,
+            title: 'Đổi tên đăng nhập',
+            builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Text('Yêu cầu sẽ được BQT xét duyệt thủ công.', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+              ),
+              _field('Tên đăng nhập mới', _newUsernameCtl),
+              _field('Lý do', _usernameReasonCtl),
+              const SizedBox(height: 8),
+              _saveBtn('Gửi yêu cầu', _saving == 'username', _requestUsername),
+              if (_usernameReqs.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('LỊCH SỬ', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted, letterSpacing: 0.5))),
+                const SizedBox(height: 6),
+                ..._usernameReqs.map(_usernameReqRow),
+              ],
+            ]),
+          ),
+        ],
+      ),
+      _SettingsGroup(
+        id: 'account',
+        icon: Icons.lock_outline,
+        title: 'Tài khoản & bảo mật',
+        subtitle: 'Đổi mật khẩu, xoá tài khoản',
+        items: [
+          _SettingsItem(
+            id: 'password',
+            needsAccount: true,
+            icon: Icons.lock_outline,
+            title: 'Đổi mật khẩu',
+            builder: () => AutofillGroup(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _field('Mật khẩu mới', _passwordCtl,
+                    obscure: !_showPassword,
+                    autofillHints: const [AutofillHints.newPassword],
+                    suffix: IconButton(
+                      tooltip: _showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary),
+                      onPressed: () => setState(() => _showPassword = !_showPassword),
+                    )),
+                _field('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: !_showPassword, autofillHints: const [AutofillHints.newPassword]),
+                const SizedBox(height: 8),
+                _saveBtn('Đổi mật khẩu', _saving == 'pw', _savePassword),
+              ]),
+            ),
+          ),
+          // Kept last on the page, away from everyday actions.
+          _SettingsItem(
+            id: 'delete',
+            needsAccount: true,
+            icon: Icons.delete_forever_outlined,
+            title: 'Xoá tài khoản',
+            builder: () => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Xoá vĩnh viễn tài khoản và thông tin cá nhân của bạn khỏi BCĐCNT.', style: body(TextStyle(fontSize: 15, height: 1.4, color: AppColors.textSecondary))),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _deleteAccount,
+                  icon: Icon(Icons.delete_forever_outlined, size: 20, color: AppColors.errorText),
+                  label: Text('Xoá tài khoản', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.errorText))),
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppColors.errorText, width: 1.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+      // Keyboard shortcuts only make sense with a keyboard (desktop).
+      if (isDesktop)
+        _SettingsGroup(
+          id: 'shortcuts',
+          icon: Icons.keyboard_outlined,
+          title: 'Phím tắt',
+          subtitle: 'Điều khiển nhanh bằng bàn phím',
+          items: [_SettingsItem(id: 'shortcuts', builder: () => const _ShortcutsList())],
+        ),
     ];
   }
 }
@@ -914,113 +1046,168 @@ class _DeleteConfirmDialogState extends State<_DeleteConfirmDialog> {
   }
 }
 
-class _SettingsSectionDef {
+/// One setting block inside a group's page. [title] null → no card header
+/// (the group page title already says it).
+class _SettingsItem {
+  final String id;
+  final IconData icon;
+  final String? title;
+  final bool needsAccount;
+  final Widget Function() builder;
+  const _SettingsItem({required this.id, required this.builder, this.icon = Icons.settings_outlined, this.title, this.needsAccount = false});
+}
+
+class _SettingsGroup {
   final String id;
   final IconData icon;
   final String title;
-  final Widget Function() builder;
-  const _SettingsSectionDef({required this.id, required this.icon, required this.title, required this.builder});
+  final String subtitle;
+  final List<_SettingsItem> items;
+  const _SettingsGroup({required this.id, required this.icon, required this.title, required this.subtitle, required this.items});
 }
 
-/// Renders the settings sections — 2-pane macOS layout on desktop (≥900px),
-/// stacked single-column on mobile.
-class _SettingsBody extends StatefulWidget {
-  final List<_SettingsSectionDef> sections;
-  final double bottomPadding;
-  final String? initialSectionId;
-  /// Shown above the sections (e.g. the "chưa tải được" retry block).
-  final Widget? header;
-  const _SettingsBody({super.key, required this.sections, required this.bottomPadding, this.initialSectionId, this.header});
+/// Large top-level row (≥56pt): icon, title, one-line subtitle, chevron.
+class _GroupRow extends StatelessWidget {
+  final _SettingsGroup group;
+  final VoidCallback onTap;
+  const _GroupRow({required this.group, required this.onTap});
 
   @override
-  State<_SettingsBody> createState() => _SettingsBodyState();
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 72),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+            child: Row(children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
+                child: Icon(group.icon, size: 24, color: AppColors.accentFg),
+              ),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(group.title, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text))),
+                const SizedBox(height: 2),
+                Text(group.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary))),
+              ])),
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right_rounded, size: 28, color: AppColors.textSecondary),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _SettingsBodyState extends State<_SettingsBody> {
+/// A group's own page (phones). Content is rebuilt from the parent
+/// settings state whenever it changes ([rev]).
+class _SettingsSubPage extends StatelessWidget {
+  final ValueListenable<int> rev;
+  final String Function() title;
+  final Widget Function() content;
+  const _SettingsSubPage({required this.rev, required this.title, required this.content});
+
+  @override
+  Widget build(BuildContext context) {
+    final player = context.watch<PlayerProvider>();
+    context.watch<ThemeProvider>(); // repaint with the new palette right away
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(
+        backgroundColor: AppColors.bg,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        title: ValueListenableBuilder<int>(valueListenable: rev, builder: (_, _, _) => Text(title())),
+        leading: IconButton(
+          tooltip: 'Quay lại',
+          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: Stack(children: [
+        ValueListenableBuilder<int>(
+          valueListenable: rev,
+          builder: (_, _, _) => ListView(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, player.currentSong != null ? 90 : 20),
+            children: [content()],
+          ),
+        ),
+        if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+}
+
+/// Desktop (≥900px): 2-pane macOS-style layout, group nav on the left.
+class _SettingsDesktopBody extends StatefulWidget {
+  final List<_SettingsGroup> groups;
+  final double bottomPadding;
+  final String? initialGroupId;
+  final Widget Function(String id) content;
+  /// Shown above the content (e.g. the "chưa tải được" retry block).
+  final Widget? header;
+  const _SettingsDesktopBody({super.key, required this.groups, required this.bottomPadding, required this.content, this.initialGroupId, this.header});
+
+  @override
+  State<_SettingsDesktopBody> createState() => _SettingsDesktopBodyState();
+}
+
+class _SettingsDesktopBodyState extends State<_SettingsDesktopBody> {
   String? _activeId;
 
   @override
   void initState() {
     super.initState();
-    final ids = widget.sections.map((s) => s.id).toSet();
-    _activeId = (widget.initialSectionId != null && ids.contains(widget.initialSectionId))
-        ? widget.initialSectionId
-        : (widget.sections.isNotEmpty ? widget.sections.first.id : null);
-  }
-
-  Widget _sectionCard(_SettingsSectionDef s) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Row(children: [
-              Icon(s.icon, size: 20, color: s.id == 'account' ? AppColors.errorText : AppColors.accentFg),
-              const SizedBox(width: 8),
-              Expanded(child: Text(s.title, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)))),
-            ]),
-          ),
-          s.builder(),
-        ],
-      ),
-    );
+    final ids = widget.groups.map((g) => g.id).toSet();
+    _activeId = (widget.initialGroupId != null && ids.contains(widget.initialGroupId))
+        ? widget.initialGroupId
+        : (widget.groups.isNotEmpty ? widget.groups.first.id : null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDesktop = MediaQuery.of(context).size.width >= 900;
-    if (!isDesktop) {
-      return ListView(
-        padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomPadding),
-        children: [
-          if (widget.header != null) widget.header!,
-          ...widget.sections.map(_sectionCard),
-        ],
-      );
-    }
-    if (widget.sections.isEmpty) {
+    if (widget.groups.isEmpty) {
       return ListView(children: [if (widget.header != null) widget.header!]);
     }
-    final active = widget.sections.firstWhere(
-      (s) => s.id == _activeId,
-      orElse: () => widget.sections.first,
-    );
+    final active = widget.groups.firstWhere((g) => g.id == _activeId, orElse: () => widget.groups.first);
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomPadding),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left pane: section nav (macOS System Settings vibe).
           SizedBox(
-            width: 220,
+            width: 240,
             child: ListView(
               padding: const EdgeInsets.only(top: 6),
-              children: widget.sections.map((s) {
-                final selected = s.id == active.id;
+              children: widget.groups.map((g) {
+                final selected = g.id == active.id;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 2),
                   child: InkWell(
-                    onTap: () => setState(() => _activeId = s.id),
+                    onTap: () => setState(() => _activeId = g.id),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
+                      constraints: const BoxConstraints(minHeight: 44),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: selected ? AppColors.accentSoft : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(children: [
-                        Icon(s.icon, size: 16, color: selected ? AppColors.accentLight : AppColors.textSecondary),
+                        Icon(g.icon, size: 18, color: selected ? AppColors.accentFg : AppColors.textSecondary),
                         const SizedBox(width: 10),
-                        Expanded(child: Text(s.title, style: body(TextStyle(
-                          fontSize: 13,
+                        Expanded(child: Text(g.title, style: body(TextStyle(
+                          fontSize: 14,
                           fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                           color: selected ? AppColors.text : AppColors.textSecondary,
                         )))),
@@ -1042,7 +1229,7 @@ class _SettingsBodyState extends State<_SettingsBody> {
                   padding: const EdgeInsets.only(bottom: 16),
                   child: Text(active.title, style: AppText.displayLarge),
                 ),
-                active.builder(),
+                widget.content(active.id),
               ],
             ),
           ),

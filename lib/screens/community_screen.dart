@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -17,7 +19,11 @@ class CommunityScreen extends StatefulWidget {
 }
 
 class _CommunityScreenState extends State<CommunityScreen> {
-  int _pane = 0;
+  // Screenshot/automation hook: BCDCNT_COMMUNITY_PANE=0|1|2 (desktop only)
+  // opens Cảm nhận / Thảo luận / Hoạt động. No-op in normal use.
+  int _pane = kIsWeb || !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)
+      ? 0
+      : (int.tryParse(Platform.environment['BCDCNT_COMMUNITY_PANE'] ?? '') ?? 0).clamp(0, 2);
   final Map<int, Widget> _built = {};
 
   Widget _build(int i) => switch (i) {

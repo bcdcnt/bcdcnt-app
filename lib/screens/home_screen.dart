@@ -18,7 +18,6 @@ import '../widgets/waveform_player.dart';
 import '../widgets/gallery_lightbox.dart';
 import '../widgets/video_poster.dart';
 import '../widgets/shimmer.dart';
-import '../widgets/hero_spotlight.dart';
 import '../widgets/login_dialog.dart';
 
 // --- Queries ---

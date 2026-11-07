@@ -25,7 +25,7 @@ class _StatsScreenState extends State<StatsScreen> {
     ('listen_folk', 'Dân ca', Color(0xFFC9A96E)),
     ('listen_instrumental', 'Khí nhạc', Color(0xFFB48988)),
     ('listen_poem', 'Tiếng thơ', Color(0xFFD4A84B)),
-    ('listen_karaoke', 'Thành viên hát', Color(0xFF6ECF8E)),
+    ('listen_karaoke', 'Bản thu', Color(0xFF6ECF8E)),
     ('listen_playlist', 'Playlist', Color(0xFF7B8EC9)),
   ];
 

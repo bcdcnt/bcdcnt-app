@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +11,7 @@ import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/shimmer.dart' show SongListSkeleton;
 
 class TagDetailScreen extends StatefulWidget {
   final String slug;
@@ -20,22 +21,28 @@ class TagDetailScreen extends StatefulWidget {
   State<TagDetailScreen> createState() => _TagDetailScreenState();
 }
 
-class _TagDetailScreenState extends State<TagDetailScreen> {
+class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
+  static const _perPage = 20;
+  // *ByTag builders filter with whereHas, so every song column sorts.
+  static const _sorts = kSongSorts;
   Map<String, dynamic>? _tag;
   bool _tagLoading = true;
   bool _tagFailed = false;
   String _activeType = 'song';
-  // Per-type state: items, page, lastPage, total, loading
-  final Map<String, _TabState> _tabs = {
-    'song': _TabState(),
-    'instrumental': _TabState(),
-    'karaoke': _TabState(),
+  // Per-type list: its own page + sort, kept when switching tabs.
+  final Map<String, PagedList<Map<String, dynamic>>> _tabs = {
+    'song': PagedList(),
+    'instrumental': PagedList(),
+    'karaoke': PagedList(),
   };
+  // Totals from the one-shot count query, shown on the type tabs before
+  // a tab has been opened.
+  final Map<String, int> _counts = {};
 
   static const _tabConfig = [
     ('song', 'Tân nhạc', 'songsByTag'),
     ('instrumental', 'Khí nhạc', 'instrumentalsByTag'),
-    ('karaoke', 'Thành viên hát', 'karaokesByTag'),
+    ('karaoke', 'Bản thu', 'karaokesByTag'),
   ];
 
   final _scrollCtl = ScrollController();
@@ -43,23 +50,13 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _scrollCtl.addListener(_onScroll);
     _fetchTag();
   }
 
   @override
   void dispose() {
-    _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
     super.dispose();
-  }
-
-  void _onScroll() {
-    final tab = _tabs[_activeType]!;
-    if (tab.loading || tab.failed || tab.page >= tab.lastPage) return;
-    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) {
-      _fetchPage(_activeType, tab.page + 1);
-    }
   }
 
   Future<void> _fetchTag() async {
@@ -98,9 +95,9 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
       );
       if (!mounted) return;
       setState(() {
-        _tabs['song']!.total = data['songsByTag']?['paginatorInfo']?['total'] ?? 0;
-        _tabs['instrumental']!.total = data['instrumentalsByTag']?['paginatorInfo']?['total'] ?? 0;
-        _tabs['karaoke']!.total = data['karaokesByTag']?['paginatorInfo']?['total'] ?? 0;
+        _counts['song'] = data['songsByTag']?['paginatorInfo']?['total'] ?? 0;
+        _counts['instrumental'] = data['instrumentalsByTag']?['paginatorInfo']?['total'] ?? 0;
+        _counts['karaoke'] = data['karaokesByTag']?['paginatorInfo']?['total'] ?? 0;
       });
     } catch (_) {}
   }
@@ -135,54 +132,32 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
     player.setFetchMore(null);
   }
 
-  Future<void> _fetchPage(String type, int page) async {
+  Future<void> _fetchPage(String type, int page, {int? sort}) async {
     final tag = _tag;
     if (tag == null) return;
-    final st = _tabs[type]!;
-    final req = ++st.reqId;
-    setState(() { st.loading = true; st.failed = false; });
-    final qmap = {
-      'song': r'query($tag: String!, $page: Int) { songsByTag(first: 20, page: $page, tag: $tag, orderBy: [{column: "views", order: DESC}]) { data { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } } paginatorInfo { currentPage lastPage total } } }',
-      'instrumental': r'query($tag: String!, $page: Int) { instrumentalsByTag(first: 20, page: $page, tag: $tag, orderBy: [{column: "views", order: DESC}]) { data { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } } paginatorInfo { currentPage lastPage total } } }',
-      'karaoke': r'query($tag: String!, $page: Int) { karaokesByTag(first: 20, page: $page, tag: $tag, orderBy: [{column: "views", order: DESC}]) { data { id slug title views play_type thumbnail { url } file { audio_url video_url duration } users(first: 5) { data { id username avatar { url } } } } paginatorInfo { currentPage lastPage total } } }',
-    };
-    final dataKey = {'song': 'songsByTag', 'instrumental': 'instrumentalsByTag', 'karaoke': 'karaokesByTag'};
-    try {
-      final data = await ApiClient.query(qmap[type]!, {'tag': tag['name'], 'page': page});
-      final raw = data[dataKey[type]];
-      final items = ((raw?['data'] ?? []) as List).map((e) {
-        final m = Map<String, dynamic>.from(e as Map);
+    final dataKey = {'song': 'songsByTag', 'instrumental': 'instrumentalsByTag', 'karaoke': 'karaokesByTag'}[type]!;
+    final people = type == 'karaoke'
+        ? 'users(first: 5) { data { id username avatar { url } } }'
+        : 'artists(first: 5) { data { id slug title avatar { url } } }';
+    await loadPage(_tabs[type]!, page, (page, sort) async {
+      final col = kSongSortColumn[_sorts[sort]]!;
+      final q = 'query(\$tag: String!, \$page: Int) { $dataKey(first: $_perPage, page: \$page, tag: \$tag, orderBy: [{column: "$col", order: DESC}]) { data { id slug title views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } $people } paginatorInfo { currentPage lastPage total } } }';
+      final data = await ApiClient.query(q, {'tag': tag['name'], 'page': page});
+      return PageResult.fromPaginator(data[dataKey], page, (m) {
         m['file_type'] = type;
         if (m['users']?['data'] != null && m['artists'] == null) {
           m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
         }
         return m;
-      }).toList();
-      final pi = raw?['paginatorInfo'] ?? {};
-      if (req != st.reqId || !mounted) return;
-      setState(() {
-        if (page == 1) {
-          st.items = items;
-        } else {
-          final seen = st.items.map((e) => e['id']?.toString()).toSet();
-          st.items.addAll(items.where((e) => !seen.contains(e['id']?.toString())));
-        }
-        st.page = pi['currentPage'] ?? page;
-        st.lastPage = pi['lastPage'] ?? 1;
-        st.total = pi['total'] ?? 0;
-        st.loading = false;
       });
-    } catch (_) {
-      if (req != st.reqId || !mounted) return;
-      setState(() { st.loading = false; st.failed = true; });
-    }
+    }, sort: sort, scrollToTop: _scrollCtl);
   }
 
   void _setType(String t) {
     if (t == _activeType) return;
     setState(() => _activeType = t);
     final st = _tabs[t]!;
-    if (st.items.isEmpty && !st.loading) _fetchPage(t, 1);
+    if (!st.loaded && !st.loading) _fetchPage(t, 1);
   }
 
   Widget _stateScaffold(Widget child) => Scaffold(
@@ -210,7 +185,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
     if (_tag == null) {
-      if (_tagLoading) return _stateScaffold(Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      if (_tagLoading) return _stateScaffold(const SingleChildScrollView(padding: EdgeInsets.fromLTRB(20, 8, 20, 0), child: SongListSkeleton(rows: 8, showIndex: true)));
       if (_tagFailed) return _stateScaffold(ListView(children: [OfflineBlock(onRetry: _fetchTag)]));
       return _stateScaffold(Center(child: Text('Không tìm thấy tag này', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
     }
@@ -267,7 +242,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                       itemBuilder: (ctx, i) {
                         final t = _tabConfig[i];
                         final active = _activeType == t.$1;
-                        final total = _tabs[t.$1]!.total;
+                        final total = _tabs[t.$1]!.loaded ? _tabs[t.$1]!.total : (_counts[t.$1] ?? 0);
                         return InkWell(
                           onTap: active ? null : () => _setType(t.$1),
                           child: Container(
@@ -292,36 +267,25 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
                 const SizedBox(height: 14),
                 Row(children: [
                   Expanded(
-                    child: Text(activeLabel + (st.total > 0 ? ' • ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight, letterSpacing: 1))),
+                    child: Text(activeLabel + (st.total > 0 ? ' · ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
                   ),
                   if (st.items.isNotEmpty)
                     PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
                 ]),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                SortTabs(labels: _sorts, selected: st.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetchPage(_activeType, 1, sort: i)),
+                const SizedBox(height: 14),
+                ...pagedListBody<Map<String, dynamic>>(
+                  st,
+                  perPage: _perPage,
+                  emptyText: 'Chưa có bài',
+                  onRetry: () => _fetchPage(_activeType, st.page),
+                  onPage: (p) => _fetchPage(_activeType, p),
+                  itemBuilder: (song, i) => SongRow(song: song, index: i, showIndex: true, metricKey: kSongSortMetric[_sorts[st.sort]]!, queue: asSongList(st.items)),
+                ),
+                SizedBox(height: player.currentSong != null ? 90 : 20),
               ])),
             ),
-            if (st.loading && st.items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-            else if (st.failed && st.items.isEmpty)
-              SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetchPage(_activeType, 1)))
-            else if (st.items.isEmpty)
-              SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Chưa có bài hát', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
-            else
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                  (ctx, i) {
-                    final song = st.items[i];
-                    return SongRow(song: song, index: i, showIndex: true, queue: asSongList(st.items));
-                  },
-                  childCount: st.items.length,
-                )),
-              ),
-            SliverToBoxAdapter(child: Column(children: [
-              if (st.loading && st.items.isNotEmpty) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
-              if (st.failed && st.items.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetchPage(_activeType, st.page + 1)))),
-              SizedBox(height: player.currentSong != null ? 90 : 20),
-            ])),
           ],
         ),
         if (player.currentSong != null)
@@ -329,16 +293,6 @@ class _TagDetailScreenState extends State<TagDetailScreen> {
       ]),
     );
   }
-}
-
-class _TabState {
-  List<Map<String, dynamic>> items = [];
-  int page = 1;
-  int lastPage = 1;
-  int total = 0;
-  bool loading = false;
-  bool failed = false;
-  int reqId = 0;
 }
 
 /// "Xây dựng tag" — overlapping avatars of users who tagged content with

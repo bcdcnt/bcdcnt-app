@@ -1,6 +1,6 @@
 // Câu hỏi thường gặp trong app. Nội dung gốc từ bcdcnt-web/packages/web/lib/faqData.js,
-// chỉnh lại những câu chỉ đường cho đúng cách bố trí của app (tab Khám phá /
-// Cộng đồng / Thư viện, Góp ý & hỗ trợ, Đã tải về…). Sửa web thì nhớ xem lại đây.
+// chỉnh lại những câu chỉ đường cho đúng cách bố trí của app (tab Tìm kiếm /
+// Cộng đồng / Cá nhân, Góp ý & hỗ trợ, Đã tải về…). Sửa web thì nhớ xem lại đây.
 
 class FaqItem {
   final String q;
@@ -41,7 +41,7 @@ const kFaq = [
     FaqItem('Nghe một bài hát như thế nào?',
         'Chạm vào bài hát bất kỳ để phát. Thanh phát nhỏ ở cuối màn hình cho tạm dừng và chuyển bài; chạm vào thanh đó để mở trình phát đầy đủ: tua, lặp lại, phát ngẫu nhiên, hẹn giờ tắt và xem lời bài hát.'),
     FaqItem('Tải nhạc về máy để nghe khi không có mạng?',
-        'Trên trang bài hát bấm Tải về, hoặc bấm nút ⋮ cạnh bài rồi chọn "Tải về để nghe offline". Bài đã tải nằm ở Thư viện → Đã tải về và nghe được cả khi không có mạng.'),
+        'Trên trang bài hát bấm Tải về, hoặc bấm nút ⋮ cạnh bài rồi chọn "Tải về để nghe offline". Bài đã tải nằm ở Cá nhân → Đã tải về và nghe được cả khi không có mạng.'),
     FaqItem('BCĐCNT có những bản nào?',
         'Bạn đang dùng ứng dụng BCĐCNT. Ngoài ra còn có bản cho máy tính (Windows / macOS / Linux) và website bcdcnt.net — dùng chung một tài khoản.'),
     FaqItem('Vì sao có bài không nghe/tải được hoặc bị gián đoạn?',
@@ -49,13 +49,13 @@ const kFaq = [
     FaqItem('Tạo và quản lý playlist thế nào?',
         'Bấm nút ⋮ cạnh bài hát rồi chọn "Thêm vào playlist" để tạo/lưu playlist riêng. Xem lại tại Playlist của tôi.'),
     FaqItem('Lưu yêu thích và xem lại nghe gần đây ở đâu?',
-        'Bấm biểu tượng trái tim để lưu vào Yêu thích; lịch sử nghe nằm ở mục Nghe gần đây. Cả hai đều ở tab Thư viện.'),
+        'Bấm biểu tượng trái tim để lưu vào Yêu thích; lịch sử nghe nằm ở mục Nghe gần đây. Cả hai đều ở tab Cá nhân.'),
   ]),
   FaqGroup('Tài khoản & thành viên', [
     FaqItem('Có bắt buộc đăng ký để nghe nhạc không?',
         'Không. Bạn nghe nhạc mà không cần đăng nhập. Đăng ký giúp lưu yêu thích, playlist, bình luận, gửi bài và tích điểm.'),
     FaqItem('Đăng ký / đăng nhập như thế nào?',
-        'Vào tab Thư viện rồi bấm Đăng nhập hoặc Đăng ký. Trên iPhone, iPad và Mac bạn có thể dùng "Tiếp tục với Apple".'),
+        'Vào tab Cá nhân rồi bấm Đăng nhập hoặc Đăng ký. Trên iPhone, iPad và Mac bạn có thể dùng "Tiếp tục với Apple".'),
     FaqItem('Quên mật khẩu thì làm sao?',
         'Bấm "Quên mật khẩu?" trong màn đăng nhập; nếu cần hỗ trợ thêm, gửi yêu cầu riêng qua mục Góp ý & hỗ trợ.'),
     FaqItem('Đổi tên hiển thị (tên tài khoản) như thế nào?',
@@ -67,7 +67,7 @@ const kFaq = [
   ]),
   FaqGroup('Đóng góp', [
     FaqItem('Làm sao để gửi / đăng một bài hát?',
-        'Đăng nhập trên website bcdcnt.net rồi vào mục Gửi bài. Nếu chưa đủ quyền đăng trực tiếp, bạn có thể gửi qua diễn đàn để ban quản trị xem xét. Bài đã gửi xem lại ở Thư viện → Bài gửi.'),
+        'Đăng nhập trên website bcdcnt.net rồi vào mục Gửi bài. Nếu chưa đủ quyền đăng trực tiếp, bạn có thể gửi qua diễn đàn để ban quản trị xem xét. Bài đã gửi xem lại ở Cá nhân → Bài gửi.'),
     FaqItem('Tôi tự thu âm / hát cover, gửi lên được không?',
         'Được. Gửi bản hát của bạn — sau khi duyệt sẽ nằm ở mục Thành viên hát.'),
     FaqItem('Bài gửi được duyệt như thế nào, bao lâu?',
@@ -79,9 +79,9 @@ const kFaq = [
   ]),
   FaqGroup('Tìm kiếm & khám phá', [
     FaqItem('Tìm bài hát / nghệ sĩ / nhạc sĩ như thế nào?',
-        'Dùng tab Khám phá: gõ tên bài, nghệ sĩ, nhạc sĩ, nhà thơ, soạn giả… Nhớ mỗi một câu hát? Chọn bộ lọc "Lời bài hát". Bấm biểu tượng micro để tìm bằng giọng nói.'),
+        'Dùng tab Tìm kiếm: gõ tên bài, nghệ sĩ, nhạc sĩ, nhà thơ, soạn giả… Nhớ mỗi một câu hát? Chọn bộ lọc "Lời bài hát". Bấm biểu tượng micro để tìm bằng giọng nói.'),
     FaqItem('Duyệt nhạc theo chủ đề và thập niên?',
-        'Tab Khám phá có sẵn các ô thể loại, thập niên (1940s–1990s) và chủ đề. Trang chủ cũng có mục Nghe theo thập niên.'),
+        'Tab Tìm kiếm có sẵn các ô thể loại, thập niên (1940s–1990s), chủ đề, tư liệu mới và playlist cộng đồng. Trang chủ cũng có mục Nghe theo thập niên.'),
     FaqItem('Bản nhạc (sheet) dùng để làm gì?',
         'Sheet là bản ký âm/tổng phổ giúp bạn hát và chơi nhạc theo. Xem tại mục Bản nhạc hoặc ngay trên trang bài hát.'),
   ]),

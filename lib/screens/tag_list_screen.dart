@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, Skeleton, SortTabs;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -15,8 +15,9 @@ class TagListScreen extends StatefulWidget {
 }
 
 class _TagListScreenState extends State<TagListScreen> {
+  // Tags have views + id (no likes/downloads).
   static const _sortOptions = [
-    ('views', 'Nghe nhiều', 'views'),
+    ('views', 'Nghe nhiều nhất', 'views'),
     ('newest', 'Mới cập nhật', 'id'),
   ];
 
@@ -99,32 +100,11 @@ class _TagListScreenState extends State<TagListScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Sort tabs (underline style, matches search/category/BXH)
-                Container(
-                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-                  child: SizedBox(
-                    height: 48,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _sortOptions.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 16),
-                      itemBuilder: (ctx, i) {
-                        final opt = _sortOptions[i];
-                        final active = _sort == opt.$1;
-                        return InkWell(
-                          onTap: active ? null : () => _fetch(sort: opt.$1),
-                          child: Container(
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
-                            ),
-                            child: Text(opt.$2, style: body(TextStyle(fontSize: 15, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                SortTabs(
+                  labels: [for (final o in _sortOptions) o.$2],
+                  selected: _sortOptions.indexWhere((o) => o.$1 == _sort),
+                  padding: EdgeInsets.zero,
+                  onSelect: (i) => _fetch(sort: _sortOptions[i].$1),
                 ),
                 const SizedBox(height: 14),
 
@@ -157,7 +137,9 @@ class _TagListScreenState extends State<TagListScreen> {
                 const SizedBox(height: 14),
 
                 if (_loading)
-                  Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    for (var i = 0; i < 18; i++) Skeleton(width: 70.0 + (i * 37) % 80, height: 48, radius: 24),
+                  ])
                 else if (_failed && _items.isEmpty)
                   OfflineBlock(onRetry: () => _fetch())
                 else if (filtered.isEmpty)

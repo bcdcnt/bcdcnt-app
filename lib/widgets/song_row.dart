@@ -50,7 +50,8 @@ String songByline(Map song, {bool withComposer = false}) {
 }
 
 /// Generated cover for songs without artwork: brand-red gradient with the
-/// title's first letter, so lists never show empty grey boxes.
+/// title's first letter and faint record grooves, so lists never show empty
+/// grey boxes.
 class GeneratedCover extends StatelessWidget {
   final String title;
   final double size;
@@ -71,19 +72,47 @@ class GeneratedCover extends StatelessWidget {
         borderRadius: BorderRadius.circular(radius),
         gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [tone, const Color(0xFF1B0909)]),
       ),
-      padding: EdgeInsets.all(size > 90 ? 12 : 0),
-      child: size > 90
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('BCĐCNT', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: Color(0xCCFFFFFF)))),
-                Text(letter, style: display(TextStyle(fontSize: size * 0.3, fontWeight: FontWeight.w800, color: Colors.white, height: 1))),
-              ],
-            )
-          : Center(child: Text(letter, style: display(TextStyle(fontSize: size * 0.42, fontWeight: FontWeight.w800, color: Colors.white, height: 1)))),
+      clipBehavior: Clip.antiAlias,
+      child: CustomPaint(
+        painter: const _GroovesPainter(),
+        child: Padding(
+          padding: EdgeInsets.all(size > 90 ? 12 : 0),
+          child: size > 90
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('BCĐCNT', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2, color: Color(0xCCFFFFFF)))),
+                    Text(letter, style: display(TextStyle(fontSize: size * 0.3, fontWeight: FontWeight.w800, color: Colors.white, height: 1))),
+                  ],
+                )
+              : Center(child: Text(letter, style: display(TextStyle(fontSize: size * 0.42, fontWeight: FontWeight.w800, color: Colors.white, height: 1)))),
+        ),
+      ),
     );
   }
+}
+
+/// Concentric record grooves fanning out of the bottom-right corner.
+class _GroovesPainter extends CustomPainter {
+  const _GroovesPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final k = size.width / 148;
+    final c = Offset(size.width + 2 * k, size.height + 2 * k);
+    final ring = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2 * k
+      ..color = const Color(0x1AFFFFFF);
+    for (var r = 20.0; r <= 140; r += 12) {
+      canvas.drawCircle(c, r * k, ring);
+    }
+    canvas.drawCircle(c, 9 * k, Paint()..color = const Color(0x24FFFFFF));
+  }
+
+  @override
+  bool shouldRepaint(covariant _GroovesPainter oldDelegate) => false;
 }
 
 /// Song artwork with the generated cover as fallback.
@@ -179,6 +208,8 @@ class SongRow extends StatelessWidget {
   /// draws ▲n / ▼n, or "MỚI" when [chartNew] (not charted last period).
   final int? prevRank;
   final bool chartNew;
+  /// Replaces the byline + metric line.
+  final String? subtitle;
 
   const SongRow({
     super.key,
@@ -192,6 +223,7 @@ class SongRow extends StatelessWidget {
     this.metricKey = 'views',
     this.prevRank,
     this.chartNew = false,
+    this.subtitle,
   });
 
   String? _metric() {
@@ -237,7 +269,7 @@ class SongRow extends StatelessWidget {
     final playing = isPlaying || (id != null && OfflineStore.keyOf(song) == current);
     final byline = songByline(song);
     final metric = _metric();
-    final sub = [byline, if (metric != null) metric].where((s) => s.isNotEmpty).join(' · ');
+    final sub = subtitle ?? [byline, if (metric != null) metric].where((s) => s.isNotEmpty).join(' · ');
     final hi = AppColors.accentLight;
 
     return Semantics(
@@ -338,7 +370,7 @@ class SongRow extends StatelessWidget {
                           // gives way first, and long bylines drop the count.
                           Builder(builder: (_) {
                             final st = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
-                            if (metric == null || byline.isEmpty) return Text(sub, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
+                            if (subtitle != null || metric == null || byline.isEmpty) return Text(sub, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
                             if (byline.length > 28) return Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
                             return Row(children: [
                               Flexible(child: Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis)),
@@ -440,7 +472,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
                     : item('save', Icons.download_for_offline_outlined, 'Tải về để nghe offline'),
               item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
               if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến $composerRole ${composer['title']}'),
-              if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'ca sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
+              if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'nghệ sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
               item('share', Icons.ios_share_rounded, 'Chia sẻ (Zalo, Facebook…)'),
             ],
           ),

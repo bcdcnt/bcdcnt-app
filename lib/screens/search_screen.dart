@@ -10,6 +10,7 @@ import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../main.dart' show TabReselect;
 import '../widgets/voice_search_sheet.dart';
+import '../widgets/new_documents_rail.dart';
 
 class SearchScreen extends StatefulWidget {
   /// Pre-fill the search box + auto-run on first build. Used by the home
@@ -57,7 +58,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   final _browseScroll = ScrollController();
 
-  // Tapping "Khám phá" again: back to the top of the browse grid, or put
+  // Tapping "Tìm kiếm" again: back to the top of the browse grid, or put
   // the cursor in the search box when already there.
   void _onReselect() {
     if (TabReselect.tick.value.$1 != 1) return;
@@ -423,7 +424,7 @@ class _SearchScreenState extends State<SearchScreen> {
       color: AppColors.bg,
       child: Column(
         children: [
-          if (!hasQuery && !_focus.hasFocus) const PageTitle('Khám phá'),
+          if (!hasQuery && !_focus.hasFocus) const PageTitle('Tìm kiếm'),
           Padding(
             padding: EdgeInsets.fromLTRB(20, hasQuery || _focus.hasFocus ? 10 : 16, 20, 4),
             child: Row(
@@ -452,7 +453,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             textInputAction: TextInputAction.search,
                             style: body(TextStyle(color: AppColors.text, fontSize: 16, fontWeight: FontWeight.w600)),
                             decoration: InputDecoration(
-                              hintText: 'Bài hát, nhạc sĩ, ca sĩ, lời…',
+                              hintText: 'Bài hát, nhạc sĩ, nghệ sĩ, lời…',
                               hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 16, fontWeight: FontWeight.w600)),
                               border: InputBorder.none,
                               isDense: true,
@@ -928,8 +929,17 @@ class _HitRow extends StatelessWidget {
   }
 }
 
-/// Browse shortcuts under the empty search box: kinds, decades, popular
-/// topics and the archive — an empty search still leads somewhere.
+/// Browse shortcuts under the empty search box: kinds, decades, community
+/// playlists, popular topics, newest archive photos and the archive — an
+/// empty search still leads somewhere.
+
+const _plItemObj = '... on Song { id thumbnail { url } } ... on Folk { id thumbnail { url } } ... on Instrumental { id thumbnail { url } } ... on Poem { id thumbnail { url } }';
+
+List<String> _plThumbs(Map p) => (((p['items']?['data']) ?? const []) as List)
+    .whereType<Map>()
+    .map((i) => i['object']?['thumbnail']?['url']?.toString())
+    .whereType<String>()
+    .toList();
 class _BrowseBlocks extends StatefulWidget {
   const _BrowseBlocks();
   @override
@@ -948,14 +958,56 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
   static const _decades = [1940, 1950, 1960, 1970, 1980, 1990];
 
   List<Map<String, dynamic>> _tags = [];
+  List<Map<String, dynamic>> _playlists = [];
+  /// "Tuyển tập": BQT's themed system playlists.
+  List<Map<String, dynamic>> _collections = [];
 
   @override
   void initState() {
     super.initState();
+    _fetchPlaylists();
+    _fetchCollections();
     ApiClient.query(r'query { popularTags(limit: 12) { id name slug song_count sample_images } }').then((d) {
       if (!mounted) return;
       setState(() => _tags = ((d['popularTags'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList());
     }).catchError((_) {});
+  }
+
+  /// Public playlists worth showing: a real title, at least 10 songs, a cover.
+  static List<Map<String, dynamic>> _goodPlaylists(dynamic data) => ((data ?? const []) as List)
+      .whereType<Map>()
+      .map((e) => Map<String, dynamic>.from(e))
+      .where((p) => p['thumbnail']?['url'] != null || _plThumbs(p).isNotEmpty)
+      .where((p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0) >= 10 && RegExp(r'[^\d\s]{3,}').hasMatch('${p['title'] ?? ''}'))
+      .toList();
+
+  /// "Tuyển tập": BQT's themed system playlists (Mùa xuân, Bác Hồ kính
+  /// yêu…). Most new system playlists are one-song anniversary picks, so
+  /// only the 10+ song ones, in a new order on every visit.
+  Future<void> _fetchCollections() async {
+    try {
+      final d = await ApiClient.query('''query(\$w: WhereConditions) {
+        playlists(first: 80, orderBy: [{column: "id", order: DESC}], where: \$w) {
+          data { id slug title thumbnail { url } items(first: 4) { paginatorInfo { total } data { object { $_plItemObj } } } }
+        }
+      }''', {'w': {'AND': [{'column': 'is_public', 'value': '1'}, {'column': 'is_system', 'value': '1'}]}});
+      final list = _goodPlaylists(d['playlists']?['data'])..shuffle();
+      if (mounted) setState(() => _collections = list.take(12).toList());
+    } catch (_) {}
+  }
+
+  /// "Playlist cộng đồng" (moved here from Trang chủ): members' own public
+  /// playlists.
+  Future<void> _fetchPlaylists() async {
+    try {
+      final d = await ApiClient.query('''query(\$w: WhereConditions) {
+        playlists(first: 24, orderBy: [{column: "id", order: DESC}], where: \$w) {
+          data { id slug title thumbnail { url } user { id username } items(first: 4) { paginatorInfo { total } data { object { $_plItemObj } } } }
+        }
+      }''', {'w': {'AND': [{'column': 'is_public', 'value': '1'}, {'column': 'is_system', 'value': '0'}]}});
+      final list = _goodPlaylists(d['playlists']?['data']);
+      if (mounted) setState(() => _playlists = list);
+    } catch (_) {}
   }
 
   List<String> get _images => [
@@ -1018,9 +1070,27 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: _decades.length,
             separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) => BrandChip(label: 'Thập niên ${_decades[i] % 100 == 0 ? '00' : _decades[i] % 100}', onTap: () => context.push('/bai-hat/thap-nien/${_decades[i]}')),
+            // "40s": short labels, more of them on one line.
+            itemBuilder: (_, i) => BrandChip(label: '${_decades[i] % 100 == 0 ? '00' : _decades[i] % 100}s', onTap: () => context.push('/bai-hat/thap-nien/${_decades[i]}')),
           ),
         ),
+        if (_collections.isNotEmpty) ...[
+          SectionTitle('Tuyển tập', onAction: () => context.push('/playlist')),
+          Rail(
+            height: 226,
+            count: _collections.length,
+            builder: (_, i) {
+              final p = _collections[i];
+              final total = p['items']?['paginatorInfo']?['total'];
+              return RailCard(
+                cover: _PlaylistCover(playlist: p),
+                title: p['title']?.toString() ?? '',
+                subtitle: total != null ? '$total bài' : null,
+                onTap: () => context.push('/playlist/${p['id']}'),
+              );
+            },
+          ),
+        ],
         if (_tags.isNotEmpty) ...[
           SectionTitle('Chủ đề', action: 'Tất cả', onAction: () => context.push('/tag')),
           Padding(
@@ -1032,15 +1102,55 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
             ),
           ),
         ],
+        const NewDocumentsRail(),
+        // Below "Tư liệu mới": shown, not tucked into a list, so it gets taps.
+        if (_playlists.isNotEmpty) ...[
+          SectionTitle('Playlist cộng đồng', onAction: () => context.push('/playlist')),
+          Rail(
+            height: 226,
+            count: _playlists.length,
+            builder: (_, i) {
+              final p = _playlists[i];
+              final total = p['items']?['paginatorInfo']?['total'];
+              return RailCard(
+                cover: _PlaylistCover(playlist: p),
+                title: p['title']?.toString() ?? '',
+                subtitle: [if (total != null) '$total bài', if (p['user']?['username'] != null) p['user']['username']].join(' · '),
+                onTap: () => context.push('/playlist/${p['id']}'),
+              );
+            },
+          ),
+        ],
         SectionTitle('Kho tư liệu', action: null),
         ListItem(icon: Icons.photo_outlined, title: 'Ảnh tư liệu', onTap: () => context.push('/tu-lieu/hinh-anh')),
         ListItem(icon: Icons.videocam_outlined, title: 'Video tư liệu', onTap: () => context.push('/tu-lieu/video')),
         ListItem(icon: Icons.graphic_eq_rounded, title: 'Tư liệu âm thanh', onTap: () => context.push('/tu-lieu/am-thanh')),
         ListItem(icon: Icons.emoji_events_outlined, title: 'Bảng xếp hạng', onTap: () => context.push('/bang-xep-hang')),
         ListItem(icon: Icons.person_search_outlined, title: 'Nhạc sĩ', onTap: () => context.push('/nhac-si')),
-        ListItem(icon: Icons.mic_none_rounded, title: 'Ca sĩ', onTap: () => context.push('/nghe-si')),
-        ListItem(icon: Icons.queue_music_rounded, title: 'Playlist cộng đồng', onTap: () => context.push('/playlist')),
+        ListItem(icon: Icons.mic_none_rounded, title: 'Nghệ sĩ', onTap: () => context.push('/nghe-si')),
+        ListItem(icon: Icons.edit_note_rounded, title: 'Soạn giả', onTap: () => context.push('/soan-gia')),
+        ListItem(icon: Icons.menu_book_outlined, title: 'Nhà thơ', onTap: () => context.push('/nha-tho')),
+        // The rail above already links there; keep a way in if it didn't load.
+        if (_playlists.isEmpty) ListItem(icon: Icons.queue_music_rounded, title: 'Playlist cộng đồng', onTap: () => context.push('/playlist')),
       ],
+    );
+  }
+}
+
+class _PlaylistCover extends StatelessWidget {
+  final Map<String, dynamic> playlist;
+  const _PlaylistCover({required this.playlist});
+  @override
+  Widget build(BuildContext context) {
+    final own = playlist['thumbnail']?['url']?.toString();
+    if (own != null) return NetImage(url: own);
+    final t = _plThumbs(playlist);
+    if (t.length < 4) return NetImage(url: t.first);
+    return GridView.count(
+      crossAxisCount: 2,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: EdgeInsets.zero,
+      children: [for (final u in t.take(4)) NetImage(url: u)],
     );
   }
 }

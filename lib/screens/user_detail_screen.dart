@@ -400,7 +400,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
 
   static const _typeLabels = {
     'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'poem': 'Tiếng thơ',
-    'karaoke': 'Thành viên hát', 'sheet': 'Bản nhạc', 'discussion': 'Thảo luận',
+    'karaoke': 'Bản thu', 'sheet': 'Bản nhạc', 'discussion': 'Thảo luận',
     'document': 'Tư liệu', 'artist': 'Nghệ sĩ', 'composer': 'Nhạc sĩ', 'poet': 'Nhà thơ', 'recomposer': 'Soạn giả',
     'playlist': 'Playlist', 'upload': 'Bài gửi',
   };
@@ -410,7 +410,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
   }
 
   static const _uploadTypeLabels = {
-    'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'karaoke': 'Karaoke',
+    'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'karaoke': 'Bản thu',
     'poem': 'Tiếng thơ', 'beat': 'Nhạc nền', 'replace': 'Bổ sung bản ghi', 'sheet': 'Bản nhạc',
     'document_audio': 'Tư liệu âm thanh', 'document_image': 'Tư liệu hình ảnh',
     'document_video': 'Tư liệu video', 'document_news': 'Bài viết',

@@ -400,8 +400,8 @@ const _primaryNavGroups = <_NavGroup>[
     _NavItem('Hoạt động', '/cong-dong/hoat-dong-thanh-vien', Icons.show_chart),
   ]),
   _NavGroup(label: 'KHÁM PHÁ', items: [
-    // Library hub leads the Explore group (was a standalone anchor before).
-    _NavItem('Thư viện', '/library', Icons.library_music_outlined),
+    // Personal hub ("Cá nhân", route /library) leads the Explore group.
+    _NavItem('Cá nhân', '/library', Icons.person_outline_rounded),
     _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
     _NavItem('Nhạc sĩ', '/nhac-si', Icons.piano_outlined),
     _NavItem('Nhà thơ', '/nha-tho', Icons.menu_book_outlined),

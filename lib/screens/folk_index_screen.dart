@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, Skeleton;
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -108,13 +108,22 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(
+        backgroundColor: AppColors.bg,
         title: Text(_appBarTitle),
         centerTitle: true,
         leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
       ),
       body: Stack(children: [
         if (_loading)
-          Center(child: CircularProgressIndicator(color: AppColors.accent))
+          ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+            children: [
+              const Skeleton(height: 50, radius: 12, margin: EdgeInsets.only(bottom: 16)),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (var i = 0; i < 18; i++) Skeleton(width: 80.0 + (i * 41) % 90, height: 48, radius: 24),
+              ]),
+            ],
+          )
         else if (_failed)
           ListView(children: [OfflineBlock(onRetry: _fetch)])
         else
@@ -135,9 +144,8 @@ class _FolkIndexScreenState extends State<FolkIndexScreen> {
                   onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
                   style: body(TextStyle(fontSize: 16, color: AppColors.text)),
                   decoration: InputDecoration(
-                    isDense: true,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                     hintText: 'Lọc theo tên...',
                     hintStyle: body(TextStyle(fontSize: 16, color: AppColors.textMuted)),
                     prefixIcon: Icon(Icons.search, size: 18, color: AppColors.textMuted),

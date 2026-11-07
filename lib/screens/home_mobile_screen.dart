@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,17 +15,25 @@ import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
 
-// Trang chủ for phone widths (2026-11 brand redesign). Order: today's
-// pick → keep listening → occasion playlist → weekly top → newest →
-// decades → featured comments → composers / singers → community playlists
-// → newest archive photos. Desktop keeps HomeScreen.
+// Trang chủ for phone widths (2026-11 refresh, canvas "BCĐCNT App — Giao
+// diện"). Order: greeting + lunar date → Nghe tiếp → Mọi người đang nghe →
+// Kỷ niệm tuần này → Gợi ý (the coming occasion's playlist, else yesterday's
+// most played) → Mới cập nhật → Nghe nhiều hôm nay → Cảm nhận hay → Có thể
+// bạn thích → Nghe đi nghe lại → Thập niên → Nhạc sĩ → Nghệ sĩ. Most of it changes daily or faster. Thành viên tiêu
+// biểu lives in Cộng đồng, Bài yêu thích in Cá nhân. Desktop keeps HomeScreen.
 
-const _songFields = 'id slug title subtitle views play_type file_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
+const _songFields = 'id slug title subtitle views created_at play_type file_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
 
 const _mainQuery = '''query {
-  stickySongs(first: 12, random: true) { data { $_songFields } }
-  statisticListen(first: 5, type: "song", period: "week") { data { total object { ... on Song { $_songFields } } } }
+  stickySongs(first: 12) { data { $_songFields } }
   featuredComments(limit: 10) { id snippet likes created_at username user_avatar song_id song_title song_slug song_image audio_url play_type file_type }
+}''';
+
+/// The fast-changing blocks, asked separately so a slow or failing one
+/// never holds up the rest of the page.
+const _liveQuery = '''query {
+  nowListening(limit: 12) { listeners song { $_songFields } }
+  topSongsToday(limit: 5) { $_songFields }
 }''';
 
 const _peopleFields = 'id slug title avatar { url } total_listens';
@@ -48,18 +55,6 @@ const _peopleVars = {
     {'column': 'image_id', 'operator': 'GT', 'value': '0'},
   ]},
 };
-
-const _itemObj = '... on Song { id thumbnail { url } } ... on Folk { id thumbnail { url } } ... on Instrumental { id thumbnail { url } } ... on Poem { id thumbnail { url } }';
-
-const _belowQuery = '''query(\$plWhere: WhereConditions, \$docWhere: WhereConditions, \$evWhere: WhereConditions) {
-  playlists(first: 24, orderBy: [{column: "id", order: DESC}], where: \$plWhere) {
-    data { id slug title thumbnail { url } user { id username } items(first: 4) { paginatorInfo { total } data { object { $_itemObj } } } }
-  }
-  documents(first: 12, orderBy: [{column: "id", order: DESC}], where: \$docWhere) { data { id slug title thumbnail { url } } }
-  events: playlists(first: 3, where: \$evWhere) {
-    data { id slug title excerpt thumbnail { url } items(first: 4) { paginatorInfo { total } data { object { $_itemObj } } } }
-  }
-}''';
 
 class _Cat {
   final String name, slug, query;
@@ -83,8 +78,8 @@ const _decades = [
 
 const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
 
-/// Fixed-date days the archive has songs for. The home header counts down
-/// to the next one within 30 days.
+/// Fixed-date days the archive has songs for. Within two weeks of one, the
+/// big "Gợi ý" cards play its songs.
 const _occasions = [
   (1, 1, 'Tết Dương lịch'), (3, 2, 'Ngày thành lập Đảng'), (8, 3, 'Quốc tế Phụ nữ'),
   (26, 3, 'Ngày thành lập Đoàn'), (30, 4, 'Ngày Giải phóng miền Nam'), (1, 5, 'Quốc tế Lao động'),
@@ -94,16 +89,6 @@ const _occasions = [
   (22, 12, 'Ngày thành lập Quân đội'),
 ];
 
-/// What to search for each occasion's songs.
-const _occasionQuery = {
-  'Tết Dương lịch': 'mùa xuân', 'Ngày thành lập Đảng': 'Đảng', 'Quốc tế Phụ nữ': 'mẹ',
-  'Ngày thành lập Đoàn': 'thanh niên', 'Ngày Giải phóng miền Nam': 'miền Nam', 'Quốc tế Lao động': 'công nhân',
-  'Chiến thắng Điện Biên Phủ': 'Điện Biên', 'Sinh nhật Bác Hồ': 'Bác Hồ', 'Quốc tế Thiếu nhi': 'thiếu nhi',
-  'Ngày Thương binh Liệt sĩ': 'liệt sĩ', 'Cách mạng Tháng Tám': 'tháng Tám', 'Quốc khánh': 'Tổ quốc',
-  'Giải phóng Thủ đô': 'Hà Nội', 'Ngày Phụ nữ Việt Nam': 'mẹ', 'Ngày Nhà giáo Việt Nam': 'thầy cô',
-  'Ngày thành lập Quân đội': 'bộ đội',
-};
-
 /// Site playlists made for an occasion, used when BQT hasn't set up a
 /// dated event playlist for it (playlist.event_start/event_end).
 const _occasionPlaylist = {
@@ -112,20 +97,19 @@ const _occasionPlaylist = {
   'Ngày thành lập Quân đội': 6, 'Quốc khánh': 1, 'Giải phóng Thủ đô': 2,
 };
 
-/// (line, search query, playlist id or null, mm-dd)
-(String, String, int?, String)? _occasionLine(DateTime now) {
+typedef _Occasion = ({int days, int day, int month, String label});
+
+/// The nearest occasion within the next 14 days (today included).
+_Occasion? _nextOccasion(DateTime now) {
   final today = DateTime(now.year, now.month, now.day);
-  (int, String, String)? best;
+  _Occasion? best;
   for (final (d, m, label) in _occasions) {
     var date = DateTime(now.year, m, d);
     if (date.isBefore(today)) date = DateTime(now.year + 1, m, d);
     final days = date.difference(today).inDays;
-    final mmdd = '${m.toString().padLeft(2, '0')}-${d.toString().padLeft(2, '0')}';
-    if (days <= 30 && (best == null || days < best.$1)) best = (days, label, mmdd);
+    if (days <= 14 && (best == null || days < best.days)) best = (days: days, day: d, month: m, label: label);
   }
-  if (best == null) return null;
-  final line = best.$1 == 0 ? 'Hôm nay là ${best.$2}' : 'Còn ${best.$1} ngày đến ${best.$2}';
-  return (line, _occasionQuery[best.$2] ?? best.$2, _occasionPlaylist[best.$2], best.$3);
+  return best;
 }
 
 String _greeting(DateTime now) {
@@ -136,13 +120,20 @@ String _greeting(DateTime now) {
   return 'Chào buổi tối';
 }
 
+/// "Hôm nay" / "Hôm qua" / "3 ngày trước" by calendar day, for "Mới cập nhật".
+String _postedAgo(String? createdAt) {
+  final at = DateTime.tryParse((createdAt ?? '').replaceFirst(' ', 'T'));
+  if (at == null) return '';
+  final now = DateTime.now();
+  final days = DateTime(now.year, now.month, now.day).difference(DateTime(at.year, at.month, at.day)).inDays;
+  if (days <= 0) return 'Hôm nay';
+  if (days == 1) return 'Hôm qua';
+  if (days < 7) return '$days ngày trước';
+  return timeago(createdAt);
+}
+
 List<Map<String, dynamic>> _maps(dynamic list) =>
     ((list ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-
-List<String> _itemThumbs(Map p) => _maps(p['items']?['data'])
-    .map((i) => i['object']?['thumbnail']?['url']?.toString())
-    .whereType<String>()
-    .toList();
 
 class HomeMobileScreen extends StatefulWidget {
   const HomeMobileScreen({super.key});
@@ -153,19 +144,21 @@ class HomeMobileScreen extends StatefulWidget {
 class _HomeMobileScreenState extends State<HomeMobileScreen> {
   bool _loading = true;
   bool _failed = false;
+  /// Yesterday's most played (stickySongs): the "Gợi ý" cards outside occasions.
   List<Map<String, dynamic>> _picks = [];
-  List<Map<String, dynamic>> _weekly = [];
   List<Map<String, dynamic>> _comments = [];
   List<Map<String, dynamic>> _composers = [];
   List<Map<String, dynamic>> _artists = [];
-  List<Map<String, dynamic>> _playlists = [];
-  List<Map<String, dynamic>> _docs = [];
-  List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _recent = [];
   List<Map<String, dynamic>> _forYou = [];
-  List<Map<String, dynamic>> _fromFollowed = [];
-  List<Map<String, dynamic>> _loved = [];
-  List<Map<String, dynamic>> _members = [];
+  /// "Nghe đi nghe lại": the member's most played, with 'plays'.
+  List<Map<String, dynamic>> _again = [];
+  /// "Mọi người đang nghe": {listeners, song}.
+  List<Map<String, dynamic>> _live = [];
+  List<Map<String, dynamic>> _today = [];
+  _Occasion? _occasion;
+  String? _occasionPlaylistId;
+  List<Map<String, dynamic>> _occasionSongs = [];
   int _cat = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
   AuthProvider? _auth;
@@ -208,34 +201,25 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   late final AppLifecycleListener _life = AppLifecycleListener(onResume: () {
     if (!mounted) return;
     setState(() {});
-    // Coming back hours later: "Nghe tiếp" / "Yêu thích" should show what
-    // was played or ♥'d meanwhile (on the web, another phone…).
+    // Coming back hours later: "Nghe tiếp" should show what was played
+    // meanwhile (on the web, another phone…), "đang nghe" what is on now.
     _refreshPersonal(throttle: true);
+    _fetchLive(throttle: true);
   });
 
-  bool get _hasContent => _picks.isNotEmpty || _weekly.isNotEmpty || _comments.isNotEmpty || _composers.isNotEmpty || _artists.isNotEmpty || _playlists.isNotEmpty;
+  bool get _hasContent => _picks.isNotEmpty || _today.isNotEmpty || _comments.isNotEmpty || _composers.isNotEmpty || _artists.isNotEmpty;
 
   Future<void> _fetch() async {
     _life; // start listening
     // null = that request failed (vs. an empty answer).
     Future<Map<String, dynamic>?> safe(Future<Map<String, dynamic>> f) => f.then<Map<String, dynamic>?>((v) => v).catchError((_) => null);
-    final now = DateTime.now();
-    final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     if (_failed) setState(() => _failed = false);
     _refreshPersonal();
+    _fetchOccasion(_nextOccasion(DateTime.now()));
     final r = await Future.wait([
       safe(ApiClient.query(_mainQuery)),
       safe(ApiClient.query(_peopleQuery, _peopleVars)),
-      safe(ApiClient.query(_belowQuery, {
-        'plWhere': {'AND': [{'column': 'is_public', 'value': '1'}]},
-        'docWhere': {'AND': [{'column': 'type', 'value': 'image'}]},
-        'evWhere': {'AND': [
-          {'column': 'is_system', 'value': '1'},
-          {'column': 'is_public', 'value': '1'},
-          {'column': 'event_start', 'operator': 'LTE', 'value': mmdd},
-          {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
-        ]},
-      })),
+      safe(ApiClient.query(_liveQuery)),
     ]);
     if (!mounted) return;
     if (r.every((x) => x == null)) {
@@ -255,18 +239,13 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     }
     _latest.clear();
     _fetchLatest(_cats[_cat]);
-    _fetchMembers();
-    final main = r[0], people = r[1], below = r[2];
+    final main = r[0], people = r[1], live = r[2];
     setState(() {
       // Daily cards re-key (and refetch) only when the network is back.
       _refreshTick++;
       // Each block updates only from a request that answered.
       if (main != null) {
         _picks = _maps(main['stickySongs']?['data']).where((s) => s['thumbnail']?['url'] != null).toList();
-        _weekly = _maps(main['statisticListen']?['data'])
-            .where((d) => d['object'] is Map)
-            .map((d) => {...Map<String, dynamic>.from(d['object']), 'weeklyListens': d['total']})
-            .toList();
         _comments = _maps(main['featuredComments']).where((c) => (c['snippet'] ?? '').toString().trim().isNotEmpty).toList();
       }
       if (people != null) {
@@ -276,38 +255,81 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         _composers = _maps(people['composers']?['data']).where(hasPhoto).take(12).toList();
         _artists = _maps(people['artists']?['data']).where(hasPhoto).take(12).toList();
       }
-      if (below != null) {
-        // Community playlists worth showing: a real title, a real size.
-        _playlists = _maps(below['playlists']?['data'])
-            .where((p) => p['thumbnail']?['url'] != null || _itemThumbs(p).isNotEmpty)
-            .where((p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0) >= 10 && RegExp(r'[^\d\s]{3,}').hasMatch('${p['title'] ?? ''}'))
-            .toList();
-        // One card per album (several photos of one event share a title).
-        final seenDoc = <String>{};
-        _docs = _maps(below['documents']?['data']).where((d) => d['thumbnail']?['url'] != null && seenDoc.add('${d['title']}'.trim().toLowerCase())).toList();
-        _events = _maps(below['events']?['data']);
-      }
+      if (live != null) _applyLive(live);
       _loading = false;
       _failed = false;
     });
   }
 
+  DateTime? _liveAt;
+
+  void _applyLive(Map<String, dynamic> live) {
+    _liveAt = DateTime.now();
+    _live = _maps(live['nowListening']).where((x) => x['song'] is Map).map((x) => {
+          'listeners': x['listeners'],
+          'song': {...Map<String, dynamic>.from(x['song']), 'file_type': 'song'},
+        }).toList();
+    _today = _maps(live['topSongsToday']).map((s) => {...s, 'file_type': 'song'}).toList();
+  }
+
+  /// "Mọi người đang nghe" moves minute to minute: re-read it on resume.
+  Future<void> _fetchLive({bool throttle = false}) async {
+    if (throttle && _liveAt != null && DateTime.now().difference(_liveAt!) < const Duration(minutes: 1)) return;
+    try {
+      final d = await ApiClient.query(_liveQuery);
+      if (mounted) setState(() => _applyLive(d));
+    } catch (_) {}
+  }
+
+  /// The coming occasion's songs: a dated event playlist BQT set up for that
+  /// day if there is one, else the site's themed playlist.
+  Future<void> _fetchOccasion(_Occasion? o) async {
+    if (o == null) {
+      if (_occasion != null && mounted) setState(() { _occasion = null; _occasionSongs = []; });
+      return;
+    }
+    final mmdd = '${o.month.toString().padLeft(2, '0')}-${o.day.toString().padLeft(2, '0')}';
+    try {
+      String? id;
+      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
+        'w': {'AND': [
+          {'column': 'is_system', 'value': '1'},
+          {'column': 'is_public', 'value': '1'},
+          {'column': 'event_start', 'operator': 'LTE', 'value': mmdd},
+          {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
+        ]},
+      });
+      id = (ev['playlists']?['data'] as List?)?.firstOrNull?['id']?.toString() ?? _occasionPlaylist[o.label]?.toString();
+      if (id == null) return;
+      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { songs(first: 12) { data { $_songFields } } } }', {'id': id});
+      final songs = _maps(d['playlist']?['songs']?['data'])
+          .where((s) => s['thumbnail']?['url'] != null && (s['file']?['audio_url'] != null || s['file']?['video_url'] != null))
+          .map((s) => {...s, 'file_type': 'song'})
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _occasion = o;
+        _occasionPlaylistId = id;
+        _occasionSongs = songs;
+      });
+    } catch (_) {}
+  }
+
   DateTime? _personalAt;
 
-  /// Re-reads the member's own rails (Nghe tiếp, Yêu thích, Dành cho bạn,
-  /// Mới từ nghệ sĩ). A failed request keeps what is on screen.
+  /// Re-reads the member's own rails (Nghe tiếp, Có thể bạn thích, Nghe đi
+  /// nghe lại). A failed request keeps what is on screen.
   void _refreshPersonal({bool throttle = false}) {
     final auth = _auth;
     final uid = auth?.user?['id']?.toString();
     if (auth == null || uid == null || uid != _recentFor) return;
     final now = DateTime.now();
-    // Switching apps back and forth must not refire four queries each time.
+    // Switching apps back and forth must not refire the queries each time.
     if (throttle && _personalAt != null && now.difference(_personalAt!) < const Duration(minutes: 2)) return;
     _personalAt = now;
-    _fetchLoved(auth, uid);
     _fetchRecent(auth, uid);
     _fetchForYou(auth, uid);
-    _fetchFromFollowed(auth, uid);
+    _fetchAgain(uid);
   }
 
   void _maybeFetchRecent() {
@@ -317,14 +339,13 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (uid == _recentFor) return;
     _recentFor = uid;
     if (uid == null) {
-      setState(() { _recent = []; _forYou = []; _fromFollowed = []; _loved = []; });
+      setState(() { _recent = []; _forYou = []; _again = []; });
       return;
     }
     _personalAt = DateTime.now();
-    _fetchLoved(auth, uid);
     _fetchRecent(auth, uid);
     _fetchForYou(auth, uid);
-    _fetchFromFollowed(auth, uid);
+    _fetchAgain(uid);
   }
 
   Future<void> _fetchRecent(AuthProvider auth, String uid) async {
@@ -346,78 +367,13 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     } catch (_) {}
   }
 
-  /// The occasion's playlist: a dated event playlist BQT set up for that day
-  /// if there is one, else the site's themed playlist, else a search.
-  bool _openingOccasion = false;
-
-  Future<void> _openOccasion((String, String, int?, String) o) async {
-    // One tap, one page (the lookup takes a moment on slow networks).
-    if (_openingOccasion) return;
-    setState(() => _openingOccasion = true);
-    try {
-      await _openOccasionInner(o);
-    } finally {
-      if (mounted) setState(() => _openingOccasion = false);
-    }
-  }
-
-  Future<void> _openOccasionInner((String, String, int?, String) o) async {
-    try {
-      final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
-        'w': {'AND': [
-          {'column': 'is_system', 'value': '1'},
-          {'column': 'is_public', 'value': '1'},
-          {'column': 'event_start', 'operator': 'LTE', 'value': o.$4},
-          {'column': 'event_end', 'operator': 'GTE', 'value': o.$4},
-        ]},
-      });
-      final id = (d['playlists']?['data'] as List?)?.firstOrNull?['id'];
-      if (!mounted) return;
-      if (id != null) { context.push('/playlist/$id'); return; }
-    } catch (_) {}
-    if (!mounted) return;
-    if (o.$3 != null) {
-      context.push('/playlist/${o.$3}');
-    } else {
-      context.push('/search', extra: o.$2);
-    }
-  }
-
-  /// The member's ♥ songs: what people replay most, one tap from home.
-  Future<void> _fetchLoved(AuthProvider auth, String uid) async {
-    const f = 'id title slug subtitle play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } }';
-    try {
-      final d = await auth.authedQuery('''query(\$id: ID!) { user(id: \$id) { loves(first: 15, orderBy: [{column: "id", order: DESC}]) { data { object { __typename ... on Song { $f } ... on Folk { $f } ... on Instrumental { $f } ... on Poem { $f } } } } } }''', {'id': uid});
-      const tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
-      final out = <Map<String, dynamic>>[];
-      for (final e in _maps(d['user']?['loves']?['data'])) {
-        final o = e['object'];
-        if (o is! Map) continue;
-        final m = Map<String, dynamic>.from(o);
-        if (m['file']?['audio_url'] == null && m['file']?['video_url'] == null) continue;
-        m['file_type'] = tn[m['__typename']] ?? 'song';
-        out.add(m);
-      }
-      if (mounted && _recentFor == uid) setState(() => _loved = out);
-    } catch (_) {}
-  }
-
-  /// "Thành viên tiêu biểu": the members who gave most to the archive
-  /// (points from approved uploads, stories, lyrics…), with their photos.
-  Future<void> _fetchMembers() async {
-    try {
-      final d = await ApiClient.query('query { topMember(field: "point", first: 20) { data { id username point avatar { url } } } }');
-      final list = _maps(d['topMember']?['data']).where((m) => '${m['avatar']?['url'] ?? ''}'.isNotEmpty).take(12).toList();
-      if (mounted) setState(() => _members = list);
-    } catch (_) {}
-  }
-
-  /// "Dành cho bạn" — the recommendedSongs resolver the desktop home uses
-  /// (same composer / topic / co-listened as what the member plays).
+  /// "Có thể bạn thích" — the recommendedSongs resolver the desktop home
+  /// uses (same composer / singer / topic as what the member plays), shown
+  /// as one plain rail: the API already shuffles them.
   Future<void> _fetchForYou(AuthProvider auth, String uid) async {
     try {
       final d = await auth.authedQuery(r'''query($id: ID) { recommendedSongs(user_id: $id, limit: 20) {
-        id title subtitle slug image audio_url video_url play_type file_type reason artists { id title slug }
+        id title subtitle slug image audio_url video_url play_type file_type artists { id title slug }
       } }''', {'id': uid});
       final out = <Map<String, dynamic>>[];
       for (final m in _maps(d['recommendedSongs'])) {
@@ -433,7 +389,6 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           'file': {'audio_url': m['audio_url'], 'video_url': m['video_url']},
           'play_type': m['play_type'],
           'file_type': const {'audio': 'song', 'video': 'song'}[m['file_type']] ?? m['file_type'] ?? 'song',
-          'reason': m['reason'],
           'artists': {'data': m['artists'] ?? []},
         });
       }
@@ -441,35 +396,27 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     } catch (_) {}
   }
 
-  /// "Bài mới của người bạn theo dõi": newest songs of the composers and
-  /// singers the member ♥'d, from the last 6 months. Gives following a
-  /// payoff on the home page (and a reason to come back).
-  Future<void> _fetchFromFollowed(AuthProvider auth, String uid) async {
+  /// "Nghe đi nghe lại": the songs this member played most, all time
+  /// (most_listens is recounted on every listen), 3 plays or more.
+  Future<void> _fetchAgain(String uid) async {
+    const f = 'id title slug play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } }';
     try {
-      final f = await auth.authedQuery('query { myFollowing(first: 12) { id slug object_type } }', null);
-      final people = _maps(f['myFollowing']).where((p) => p['object_type'] == 'composer' || p['object_type'] == 'artist').take(10).toList();
-      if (people.isEmpty) return;
-      const fields = 'id title slug subtitle created_at views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } } sheet { year composers(first: 2) { data { id slug title } } }';
-      final parts = [
-        for (var i = 0; i < people.length; i++)
-          'p$i: ${people[i]['object_type']}(slug: ${jsonEncode(people[i]['slug'])}) { title songs(first: 4, orderBy: [{column: "id", order: DESC}]) { data { $fields } } }',
-      ];
-      final d = await ApiClient.query('query { ${parts.join(' ')} }');
-      final cutoff = DateTime.now().subtract(const Duration(days: 180));
-      final seen = <String>{};
+      final d = await ApiClient.query('''query(\$w: WhereConditions) { mostListens(first: 20, where: \$w, orderBy: [{column: "total", order: DESC}]) { data { total object { __typename ... on Song { $f } ... on Folk { $f } ... on Instrumental { $f } ... on Poem { $f } } } } }''', {
+        'w': {'column': 'user_id', 'value': uid},
+      });
+      const tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
       final out = <Map<String, dynamic>>[];
-      for (var i = 0; i < people.length; i++) {
-        final who = d['p$i']?['title']?.toString();
-        for (final sg in _maps(d['p$i']?['songs']?['data'])) {
-          final at = DateTime.tryParse('${sg['created_at']}'.replaceFirst(' ', 'T'));
-          if (at == null || at.isBefore(cutoff) || !seen.add('${sg['id']}')) continue;
-          if (sg['file']?['audio_url'] == null && sg['file']?['video_url'] == null) continue;
-          if ('${sg['thumbnail']?['url'] ?? ''}'.isEmpty) continue;
-          out.add({...sg, 'file_type': 'song', 'followedName': who});
-        }
+      for (final e in _maps(d['mostListens']?['data'])) {
+        final o = e['object'];
+        final plays = (e['total'] as num?)?.toInt() ?? 0;
+        if (o is! Map || plays < 3) continue;
+        final m = Map<String, dynamic>.from(o);
+        if (m['file']?['audio_url'] == null && m['file']?['video_url'] == null) continue;
+        m['file_type'] = tn[m['__typename']] ?? 'song';
+        m['plays'] = plays;
+        out.add(m);
       }
-      out.sort((a, b) => '${b['created_at']}'.compareTo('${a['created_at']}'));
-      if (mounted && _recentFor == uid) setState(() => _fromFollowed = out.take(12).toList());
+      if (mounted && _recentFor == uid) setState(() => _again = out.take(12).toList());
     } catch (_) {}
   }
 
@@ -479,7 +426,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         : 'artists(first: 3) { data { id slug title } }';
     final q = '''query {
       ${cat.query}(first: 8, orderBy: [{column: "id", order: DESC}]) {
-        data { id slug title subtitle views play_type file_type thumbnail { url } file { audio_url video_url duration } $people }
+        data { id slug title subtitle views created_at play_type file_type thumbnail { url } file { audio_url video_url duration } $people }
       }
     }''';
     try {
@@ -503,14 +450,18 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     final user = context.select<AuthProvider, Map<String, dynamic>?>((a) => a.user);
     final unread = (user?['unread'] is num) ? (user!['unread'] as num).toInt() : 0;
     final name = user?['username']?.toString();
-    final occasion = _occasionLine(now);
     final cat = _cats[_cat];
     final latest = _latest[cat.slug];
-    // A song shows up once on the page: personal rails lower down skip
-    // what is already in "Nghe tiếp" / "Bài bạn yêu thích".
-    final seen = <String>{for (final x in [..._recent, ..._loved]) '${x['file_type']}-${x['id']}'};
+    // Suggestions are new songs: skip what the member just played or plays
+    // over and over.
+    final seen = <String>{for (final x in [..._recent, ..._again]) '${x['file_type']}-${x['id']}'};
     final forYou = [for (final x in _forYou) if (seen.add('${x['file_type']}-${x['id']}')) x];
-    final fromFollowed = [for (final x in _fromFollowed) if (seen.add('${x['file_type']}-${x['id']}')) x];
+    final occ = _occasion;
+    final occasionOn = occ != null && _occasionSongs.length >= 3;
+    // Outside occasions the big cards are yesterday's most played: leave out
+    // what "Nghe nhiều hôm nay" already lists.
+    final todayIds = {for (final s in _today) '${s['id']}'};
+    final picks = occasionOn ? _occasionSongs : _picks.where((s) => !todayIds.contains('${s['id']}')).toList();
 
     return ColoredBox(
       color: AppColors.bg,
@@ -546,36 +497,6 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                     '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label}',
                     style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
                   ),
-                  // The countdown leads somewhere: songs for that day.
-                  if (occasion != null)
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => _openOccasion(occasion),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            // The playlist lookup takes a moment on 3G: show
-                            // the tap registered so it isn't tapped again.
-                            child: _openingOccasion
-                                ? SizedBox(width: 20, height: 20, child: Padding(padding: const EdgeInsets.all(2), child: CircularProgressIndicator(strokeWidth: 2.2, color: AppColors.accentLight)))
-                                : Icon(Icons.event_rounded, size: 20, color: AppColors.accentLight),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text(occasion.$1.replaceFirst(RegExp(r'^Còn \d+ ngày đến '), ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-                              const SizedBox(height: 2),
-                              Text(
-                                [if (RegExp(r'^Còn (\d+) ngày').hasMatch(occasion.$1)) 'Còn ${RegExp(r'^Còn (\d+) ngày').firstMatch(occasion.$1)!.group(1)} ngày', _openingOccasion ? 'Đang mở…' : 'Nghe bài hát ›'].join(' · '),
-                                style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight)),
-                              ),
-                            ]),
-                          ),
-                        ]),
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -587,16 +508,10 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 child: PillButton(label: 'Mở bài đã tải về', icon: Icons.download_done_rounded, primary: false, onTap: () => context.push('/da-tai-ve')),
               ),
             ],
-            // Birthdays / anniversaries first.
-            AnniversaryRail(key: ValueKey('anniv-$_dayKey-$_refreshTick')),
-            const SizedBox(height: 18),
-            if (_loading)
-              const Skeleton(height: 236, radius: 24, margin: EdgeInsets.symmetric(horizontal: 20))
-            else if (_picks.isNotEmpty)
-              _PickCarousel(picks: _picks),
-
             if (_recent.isNotEmpty) ...[
-              SectionTitle('Nghe tiếp', action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day')),
+              // Right under the greeting: picking up where they left off is
+              // what most people open the app for.
+              SectionTitle('Nghe tiếp', action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day'), padding: const EdgeInsets.fromLTRB(20, 18, 12, 10)),
               Rail(
                 height: 226,
                 count: _recent.length,
@@ -604,102 +519,48 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
               ),
             ],
 
-            if (_loved.isNotEmpty) ...[
-              SectionTitle('Bài bạn yêu thích', action: 'Phát tất cả', onAction: () => playOrOpen(context, _loved.first, _loved, 'Bài yêu thích')),
+            // What others are playing right now: never the same twice.
+            if (_live.length >= 3) ...[
+              const _LiveTitle(),
               Rail(
                 height: 226,
-                count: _loved.length + 1,
+                count: _live.length,
                 builder: (_, i) {
-                  if (i == _loved.length) {
-                    return RailCard(
-                      cover: Container(color: AppColors.accentSoft, alignment: Alignment.center, child: Icon(Icons.favorite_rounded, size: 44, color: AppColors.accentLight)),
-                      title: 'Xem tất cả',
-                      subtitle: 'Bài đã thả tim',
-                      onTap: () => context.push('/yeu-thich'),
-                    );
-                  }
-                  return _songCard(_loved[i], _loved, 'Bài yêu thích');
-                },
-              ),
-            ],
-
-            if (forYou.isNotEmpty) ...[
-              SectionTitle('Dành cho bạn', action: null),
-              Rail(
-                height: 226,
-                count: forYou.length,
-                builder: (_, i) {
-                  final s = forYou[i];
-                  final reason = s['reason']?.toString() ?? '';
+                  final s = Map<String, dynamic>.from(_live[i]['song'] as Map);
+                  final n = (_live[i]['listeners'] as num?)?.toInt() ?? 0;
+                  final queue = [for (final x in _live) Map<String, dynamic>.from(x['song'] as Map)];
                   return RailCard(
-                    // Why it was picked sits on the cover; the singer stays
-                    // in the caption.
                     cover: Stack(fit: StackFit.expand, children: [
                       SongCover(song: s, size: 148, radius: 0),
-                      if (reason.isNotEmpty)
-                        Positioned(
-                          left: 8,
-                          right: 8,
-                          bottom: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), borderRadius: BorderRadius.circular(8)),
-                            child: Text(reason.replaceFirst('#', ''), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w700, color: Colors.white))),
-                          ),
-                        ),
+                      if (n > 1) Positioned(left: 8, top: 8, child: _ListenersPill(count: n)),
                     ]),
                     title: s['title']?.toString() ?? '',
                     subtitle: songByline(s),
-                    onTap: () => playOrOpen(context, s, forYou, 'Dành cho bạn'),
+                    onTap: () => playOrOpen(context, s, queue, 'Mọi người đang nghe'),
                   );
                 },
               ),
             ],
 
-            if (fromFollowed.isNotEmpty) ...[
-              SectionTitle('Mới từ nghệ sĩ bạn theo dõi', action: null),
-              Rail(
-                height: 226,
-                count: fromFollowed.length,
-                builder: (_, i) {
-                  final s = fromFollowed[i];
-                  return RailCard(
-                    cover: SongCover(song: s, size: 148, radius: 0),
-                    title: s['title']?.toString() ?? '',
-                    subtitle: s['followedName'] != null ? 'Mới · ${s['followedName']}' : songByline(s),
-                    onTap: () => playOrOpen(context, s, fromFollowed, 'Mới từ nghệ sĩ bạn theo dõi'),
-                  );
-                },
-              ),
-            ],
+            // Birthdays / anniversaries in the coming week.
+            AnniversaryRail(key: ValueKey('anniv-$_dayKey-$_refreshTick')),
 
-            // Members' memories are what no other music app has — keep them
-            // near the top instead of under the decades.
-            if (_comments.isNotEmpty) ...[
-              SectionTitle('Cảm nhận hay', action: 'Xem thêm', onAction: () => context.go('/cong-dong')),
-              Rail(
-                height: 226,
-                count: _comments.length,
-                builder: (_, i) => _QuoteCard(comment: _comments[i]),
-              ),
-            ],
-
-            if (_events.isNotEmpty) ...[
-              const SectionTitle('Nhân dịp hôm nay', action: null),
-              _OccasionCard(playlist: _events.first),
-            ],
-
-            // Offline first launch: no titles over empty space.
-            if (_loading || _weekly.isNotEmpty) ...[
-              SectionTitle('Nghe nhiều tuần này', action: 'Bảng xếp hạng', onAction: () => context.push('/bang-xep-hang')),
-              if (_loading)
-                for (var i = 0; i < 5; i++) const SkeletonSongRow()
+            // The coming occasion's songs, else what everyone played yesterday.
+            if (_loading) ...[
+              const SizedBox(height: 18),
+              const Skeleton(height: 236, radius: 24, margin: EdgeInsets.symmetric(horizontal: 20)),
+            ] else if (picks.isNotEmpty) ...[
+              if (occasionOn)
+                _EyebrowTitle(
+                  eyebrow: occ.days == 0 ? 'Hôm nay · ${occ.day}/${occ.month}' : '${occ.day}/${occ.month} · còn ${occ.days} ngày',
+                  eyebrowStrong: occ.days == 0,
+                  title: occ.label,
+                  chevron: _occasionPlaylistId != null,
+                  onTap: _occasionPlaylistId == null ? null : () => context.push('/playlist/$_occasionPlaylistId'),
+                )
               else
-                for (var i = 0; i < _weekly.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 20, right: 6),
-                    child: SongRow(song: _weekly[i], index: i, showIndex: true, queue: _weekly, sourceLabel: 'Nghe nhiều tuần này'),
-                  ),
+                const _EyebrowTitle(eyebrow: 'Hôm qua', title: 'Mọi người nghe nhiều'),
+              _PickCarousel(key: ValueKey(occasionOn ? 'occ-${occ.label}' : 'top'), picks: picks, label: occasionOn ? occ.label : 'Hôm qua nghe nhiều'),
             ],
 
             if (!_failed) ...[
@@ -714,90 +575,108 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
               ),
               const SizedBox(height: 14),
               if (latest == null)
-                Rail(height: 226, count: 4, builder: (_, __) => const Skeleton(width: 148, height: 148, radius: 18))
+                Rail(height: 246, textHeight: 80, count: 4, builder: (_, __) => const Skeleton(width: 148, height: 148, radius: 18))
               else
-                Rail(height: 226, count: latest.length, builder: (_, i) => _songCard(latest[i], latest, 'Mới cập nhật · ${cat.name}')),
-
-              SectionTitle('Nghe theo thập niên', action: null),
-              _DecadeGrid(images: [for (final s in _picks.skip(1).take(4)) s['thumbnail']?['url']?.toString()]),
+                Rail(
+                  height: 246,
+                  textHeight: 80,
+                  count: latest.length,
+                  builder: (_, i) {
+                    final s = latest[i];
+                    return RailCard(
+                      cover: SongCover(song: s, size: 148, radius: 0),
+                      title: s['title']?.toString() ?? '',
+                      subtitle: songByline(s),
+                      // When it went up: a list that didn't change since
+                      // yesterday still reads as current.
+                      meta: _postedAgo(s['created_at']?.toString()),
+                      onTap: () => playOrOpen(context, s, latest, 'Mới cập nhật · ${cat.name}'),
+                    );
+                  },
+                ),
             ],
 
-            if (_members.isNotEmpty) ...[
-              SectionTitle('Thành viên tiêu biểu', action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang/cong-hien')),
+            // Offline first launch: no titles over empty space.
+            if (_loading || _today.length >= 3) ...[
+              SectionTitle('Nghe nhiều hôm nay', action: 'Bảng xếp hạng', onAction: () => context.push('/bang-xep-hang')),
+              if (_loading)
+                for (var i = 0; i < 5; i++) const SkeletonSongRow()
+              else
+                for (var i = 0; i < _today.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 20, right: 6),
+                    // The rank says the order; no listen counts (small
+                    // numbers early in the day read as an empty site).
+                    child: SongRow(song: _today[i], index: i, showIndex: true, queue: _today, sourceLabel: 'Nghe nhiều hôm nay', subtitle: _chartLine(_today[i])),
+                  ),
+            ],
+
+            // Members' memories: what no other music app has.
+            if (_comments.isNotEmpty) ...[
+              SectionTitle('Cảm nhận hay', action: 'Xem thêm', onAction: () => context.go('/cong-dong')),
               Rail(
-                height: 130,
-                textHeight: 52,
-                gap: 22,
-                count: _members.length,
+                height: 226,
+                count: _comments.length,
+                builder: (_, i) => _QuoteCard(comment: _comments[i]),
+              ),
+            ],
+
+            if (forYou.isNotEmpty) ...[
+              const SectionTitle('Có thể bạn thích', action: null),
+              Rail(
+                height: 226,
+                count: forYou.length,
+                builder: (_, i) => _songCard(forYou[i], forYou, 'Có thể bạn thích'),
+              ),
+            ],
+
+            // The member's own favourites, by how often they come back.
+            if (_again.length >= 3) ...[
+              const SectionTitle('Nghe đi nghe lại', action: null),
+              Rail(
+                height: 246,
+                textHeight: 80,
+                count: _again.length,
                 builder: (_, i) {
-                  final m = _members[i];
-                  final pts = (m['point'] as num?)?.toInt() ?? 0;
-                  return Semantics(
-                    button: true,
-                    excludeSemantics: true,
-                    label: 'Thành viên ${m['username']}, hạng ${i + 1}, ${formatViews(pts)} điểm',
-                    child: GestureDetector(
-                      onTap: () => context.push('/user/${m['id']}'),
-                      child: SizedBox(
-                        width: 76,
-                        child: Column(children: [
-                          Stack(clipBehavior: Clip.none, children: [
-                            NetImage(url: m['avatar']?['url']?.toString(), width: 76, height: 76, circle: true),
-                            if (i < 3)
-                              Positioned(
-                                right: -2,
-                                bottom: -2,
-                                child: Container(
-                                  width: 26,
-                                  height: 26,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(color: const [Color(0xFFC9A227), Color(0xFF9EA3A8), Color(0xFFB0703C)][i], shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2)),
-                                  child: Text('${i + 1}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white))),
-                                ),
-                              ),
-                          ]),
-                          const SizedBox(height: 8),
-                          Text('${m['username']}', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
-                          Text('${formatViews(pts)} điểm', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                        ]),
-                      ),
-                    ),
+                  final s = _again[i];
+                  return RailCard(
+                    cover: SongCover(song: s, size: 148, radius: 0),
+                    title: s['title']?.toString() ?? '',
+                    subtitle: songByline(s),
+                    meta: '${s['plays']} lần',
+                    onTap: () => playOrOpen(context, s, _again, 'Nghe đi nghe lại'),
                   );
                 },
               ),
             ],
 
+            if (!_failed) ...[
+              const SectionTitle('Nghe theo thập niên', action: null),
+              _DecadeGrid(images: [for (final s in _picks.skip(1).take(4)) s['thumbnail']?['url']?.toString()]),
+            ],
+
+            // Composers and singers in their own rails: behind a chip, the
+            // second one was never opened.
             if (_loading || _composers.isNotEmpty) ...[
               SectionTitle('Nhạc sĩ', onAction: () => context.push('/nhac-si')),
               _PeopleRail(people: _composers, loading: _loading, route: '/nhac-si/'),
             ],
             if (_loading || _artists.isNotEmpty) ...[
-              SectionTitle('Giọng ca', onAction: () => context.push('/nghe-si')),
+              SectionTitle('Nghệ sĩ', onAction: () => context.push('/nghe-si')),
               _PeopleRail(people: _artists, loading: _loading, route: '/nghe-si/'),
             ],
-
-            if (_playlists.isNotEmpty) ...[
-              SectionTitle('Playlist cộng đồng', onAction: () => context.push('/playlist')),
-              Rail(
-                height: 226,
-                count: _playlists.length,
-                builder: (_, i) {
-                  final p = _playlists[i];
-                  final total = p['items']?['paginatorInfo']?['total'];
-                  return RailCard(
-                    cover: _PlaylistCover(playlist: p),
-                    title: p['title']?.toString() ?? '',
-                    subtitle: [if (total != null) '$total bài', if (p['user']?['username'] != null) p['user']['username']].join(' · '),
-                    onTap: () => context.push('/playlist/${p['id']}'),
-                  );
-                },
-              ),
-            ],
-
           ],
         ),
       ),
     );
+  }
+
+  /// Singer(s); a song with none on record shows its composer instead.
+  String _chartLine(Map<String, dynamic> s) {
+    final by = songByline(s);
+    if (by.isNotEmpty) return by;
+    final comp = songByline({'artists': s['sheet']?['composers']});
+    return comp.isEmpty ? '' : 'Nhạc: $comp';
   }
 
   Widget _songCard(Map<String, dynamic> s, List<Map<String, dynamic>> list, String label) => RailCard(
@@ -808,27 +687,92 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       );
 }
 
-class _Tag extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _Tag({required this.icon, required this.label});
+/// Section title with a small line above it: "20/11 · còn 14 ngày" over
+/// "Ngày Nhà giáo Việt Nam ›".
+class _EyebrowTitle extends StatelessWidget {
+  final String eyebrow;
+  /// Red instead of grey: only for "Hôm nay · 20/11".
+  final bool eyebrowStrong;
+  final String title;
+  final bool chevron;
+  final VoidCallback? onTap;
+  const _EyebrowTitle({required this.eyebrow, required this.title, this.eyebrowStrong = false, this.chevron = false, this.onTap});
+
   @override
-  Widget build(BuildContext context) => Container(
-        constraints: const BoxConstraints(minHeight: 28),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(14)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 14, color: AppColors.wine),
-          const SizedBox(width: 5),
-          Text(label, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.wine))),
+  Widget build(BuildContext context) {
+    final text = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Text(eyebrow, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: eyebrowStrong ? FontWeight.w800 : FontWeight.w600, color: eyebrowStrong ? AppColors.accentLight : AppColors.textMuted))),
+      const SizedBox(height: 2),
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
+        if (chevron) Icon(Icons.chevron_right_rounded, size: 26, color: AppColors.text),
+      ]),
+    ]);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 28, 12, 10),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: onTap == null
+                ? text
+                : Semantics(
+                    button: true,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: onTap,
+                      child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 48), child: text),
+                    ),
+                  ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// "● Mọi người đang nghe" title.
+class _LiveTitle extends StatelessWidget {
+  const _LiveTitle();
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 28, 12, 10),
+        child: Row(children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: const Color(0xFFC62828), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFC62828).withValues(alpha: 0.18), spreadRadius: 4)]),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Mọi người đang nghe', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
         ]),
       );
 }
 
-/// Big swipeable "Gợi ý hôm nay" cards with brand-tinted photos.
+/// "● 6 người" on a cover in "Mọi người đang nghe".
+class _ListenersPill extends StatelessWidget {
+  final int count;
+  const _ListenersPill({required this.count});
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(13)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFFC62828), shape: BoxShape.circle)),
+          const SizedBox(width: 6),
+          Text('$count người', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF161112)))),
+        ]),
+      );
+}
+
+/// Big swipeable "Gợi ý" cards with brand-tinted photos (the section title
+/// above says why these songs).
 class _PickCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> picks;
-  const _PickCarousel({required this.picks});
+  /// Player header and VoiceOver: "Ngày Nhà giáo Việt Nam", …
+  final String label;
+  const _PickCarousel({super.key, required this.picks, required this.label});
   @override
   State<_PickCarousel> createState() => _PickCarouselState();
 }
@@ -894,11 +838,11 @@ class _PickCarouselState extends State<_PickCarousel> {
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Semantics(
                   button: true,
-                  label: 'Gợi ý hôm nay: ${s['title'] ?? ''}${comp.isNotEmpty ? ', $comp' : ''}',
+                  label: '${widget.label}: ${s['title'] ?? ''}${comp.isNotEmpty ? ', $comp' : ''}',
                   hint: 'Chạm để nghe',
                   excludeSemantics: true,
                   child: GestureDetector(
-                  onTap: () => playOrOpen(context, s, picks, 'Gợi ý hôm nay'),
+                  onTap: () => playOrOpen(context, s, picks, widget.label),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(24),
                     child: Stack(
@@ -915,7 +859,6 @@ class _PickCarouselState extends State<_PickCarousel> {
                             ),
                           ),
                         ),
-                        Positioned(left: 14, top: 14, child: _Tag(icon: Icons.star_outline_rounded, label: 'Gợi ý hôm nay')),
                         Positioned(
                           left: 18,
                           right: 18,
@@ -971,52 +914,6 @@ class _PickCarouselState extends State<_PickCarousel> {
           ],
         ),
       ],
-    );
-  }
-}
-
-/// Today's occasion playlist (Ngày Nhà giáo, 30/4…) as a gradient banner.
-class _OccasionCard extends StatelessWidget {
-  final Map<String, dynamic> playlist;
-  const _OccasionCard({required this.playlist});
-
-  @override
-  Widget build(BuildContext context) {
-    final total = playlist['items']?['paginatorInfo']?['total'];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Material(
-        borderRadius: BorderRadius.circular(22),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => context.push('/playlist/${playlist['id']}'),
-          child: Ink(
-            decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
-            padding: const EdgeInsets.all(18),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('PLAYLIST THEO DỊP', style: body(const TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: Color(0xCCFFFFFF)))),
-                      const SizedBox(height: 4),
-                      Text(playlist['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white))),
-                      if (total != null) Text('$total bài', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xD9FFFFFF)))),
-                    ],
-                  ),
-                ),
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                  child: const Icon(Icons.play_arrow_rounded, color: AppColors.wine, size: 30),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1140,24 +1037,6 @@ class _QuoteCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _PlaylistCover extends StatelessWidget {
-  final Map<String, dynamic> playlist;
-  const _PlaylistCover({required this.playlist});
-  @override
-  Widget build(BuildContext context) {
-    final own = playlist['thumbnail']?['url']?.toString();
-    if (own != null) return NetImage(url: own);
-    final t = _itemThumbs(playlist);
-    if (t.length < 4) return NetImage(url: t.first);
-    return GridView.count(
-      crossAxisCount: 2,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.zero,
-      children: [for (final u in t.take(4)) NetImage(url: u)],
     );
   }
 }

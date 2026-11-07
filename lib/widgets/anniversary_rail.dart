@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import 'song_row.dart' show playOrOpen;
 import 'ui.dart';
 
-/// "Ngày này năm xưa" — birthdays and death anniversaries of composers and
-/// singers in the coming week. Remembering these days is a habit of the
+/// "Kỷ niệm tuần này" — birthdays and death anniversaries of composers and
+/// singers in the coming week (today first). Remembering these days is a habit of the
 /// site's listeners, and the row changes every day without anyone editing it.
 ///
 /// People's dob/mob/dod/mod are free text ("8" or "08"), so each month is
@@ -90,7 +91,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
             final diff = date.difference(start).inDays;
             if (diff < 0 || date.isAfter(end)) continue;
             if (!seen.add('$route${p['id']}$birth')) break;
-            out.add(_Anniv(p, route, role, birth, date, year != null && year > 1800 ? y - year : 0, diff));
+            out.add(_Anniv(p, route, role, birth, date, year > 1800 ? y - year : 0, diff));
             break;
           }
         }
@@ -126,20 +127,20 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     final scale = MediaQuery.textScalerOf(context);
     if (items == null) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        const SectionTitle('Ngày này năm xưa', action: null),
+        const SectionTitle('Kỷ niệm tuần này', action: null),
         SizedBox(
           height: 28 + scale.scale(82),
           child: ListView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 20), children: const [
-            Skeleton(width: 272, height: 102, radius: 20),
+            Skeleton(width: 300, height: 102, radius: 20),
             SizedBox(width: 12),
-            Skeleton(width: 272, height: 102, radius: 20),
+            Skeleton(width: 300, height: 102, radius: 20),
           ]),
         ),
       ]);
     }
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SectionTitle('Ngày này năm xưa', action: null),
+      const SectionTitle('Kỷ niệm tuần này', action: null),
       SizedBox(
         height: 28 + scale.scale(82),
         child: ListView.separated(
@@ -174,49 +175,104 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     final origin = alive
         ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
         : [if (born != null) '$born', if (died != null) '$died'].join('\u2060–\u2060');
-    return Semantics(
-      button: true,
-      excludeSemantics: true,
-      label: '${_when(a)}, ${a.role} $name, $years, $origin',
-      hint: 'Mở trang ${a.role.toLowerCase()}',
-      child: Material(
-        color: today ? AppColors.accent : AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => context.push('${a.route}${p['slug']}'),
-          child: Container(
-            width: 272,
-            padding: const EdgeInsets.all(12),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-              NetImage(
-                url: p['avatar']?['url']?.toString(),
-                width: 52,
-                height: 52,
-                circle: true,
-                tint: true,
-                fallback: Container(
-                  width: 52,
-                  height: 52,
-                  color: today ? Colors.white24 : AppColors.accentSoft,
-                  alignment: Alignment.center,
-                  child: Text(name.isEmpty ? '?' : name.characters.first, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.accentLight))),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                  Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
-                  const SizedBox(height: 2),
-                  Text('${a.role} $name', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
-                  const SizedBox(height: 2),
-                  Text('$years · $origin', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
+    final loading = _playing == '${p['slug']}';
+    return Material(
+      color: today ? AppColors.accent : AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        width: 300,
+        padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+        child: Row(children: [
+          Expanded(
+            child: Semantics(
+              button: true,
+              excludeSemantics: true,
+              label: '${_when(a)}, ${a.role} $name, $years, $origin',
+              hint: 'Mở trang ${a.role.toLowerCase()}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => context.push('${a.route}${p['slug']}'),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  NetImage(
+                    url: p['avatar']?['url']?.toString(),
+                    width: 52,
+                    height: 52,
+                    circle: true,
+                    tint: true,
+                    fallback: Container(
+                      width: 52,
+                      height: 52,
+                      color: today ? Colors.white24 : AppColors.accentSoft,
+                      alignment: Alignment.center,
+                      child: Text(name.isEmpty ? '?' : name.characters.first, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.accentLight))),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
+                      const SizedBox(height: 2),
+                      // Name only (the role stays in the VoiceOver label): long names fit.
+                      Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),
+                      // Years and life span on their own lines: never wraps
+                      // mid-phrase ("75 năm ngày sinh · / 1951–2001").
+                      Text(years, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white : AppColors.textSecondary))),
+                      if (origin.isNotEmpty)
+                        Text(origin, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600, color: today ? Colors.white70 : AppColors.textMuted))),
+                    ]),
+                  ),
                 ]),
               ),
-            ]),
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          // Remembering someone here means hearing them.
+          IconButton(
+            tooltip: 'Nghe các bài của $name',
+            onPressed: loading ? null : () => _play(a),
+            style: IconButton.styleFrom(
+              backgroundColor: today ? Colors.white : AppColors.wine,
+              disabledBackgroundColor: today ? Colors.white : AppColors.wine,
+              fixedSize: const Size(48, 48),
+              minimumSize: const Size(48, 48),
+            ),
+            icon: loading
+                ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: today ? AppColors.wine : Colors.white))
+                : Icon(Icons.play_arrow_rounded, size: 28, color: today ? AppColors.wine : Colors.white),
+          ),
+        ]),
       ),
     );
+  }
+
+  /// Slug of the person whose songs are loading (one tap at a time).
+  String? _playing;
+
+  /// ▶ on a card: that person's best-known songs, most listened first.
+  Future<void> _play(_Anniv a) async {
+    final p = a.person;
+    final slug = '${p['slug'] ?? ''}';
+    if (slug.isEmpty || _playing != null) return;
+    setState(() => _playing = slug);
+    try {
+      final type = a.route == '/nhac-si/' ? 'composer' : 'artist';
+      const f = 'id title slug play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } } sheet { composers(first: 2) { data { id slug title } } }';
+      final d = await ApiClient.query('query(\$s: String!) { p: $type(slug: \$s) { songs(first: 20, orderBy: [{column: "views", order: DESC}]) { data { $f } } } }', {'s': slug});
+      final songs = ((d['p']?['songs']?['data'] ?? []) as List)
+          .whereType<Map>()
+          .map((e) => <String, dynamic>{...Map<String, dynamic>.from(e), 'file_type': 'song'})
+          .where((x) => x['file']?['audio_url'] != null || x['file']?['video_url'] != null)
+          .toList();
+      if (!mounted) return;
+      if (songs.isEmpty) {
+        context.push('${a.route}$slug');
+      } else {
+        playOrOpen(context, songs.first, songs, '${a.role} ${p['title'] ?? ''}');
+      }
+    } catch (_) {
+      if (mounted) context.push('${a.route}$slug');
+    } finally {
+      if (mounted) setState(() => _playing = null);
+    }
   }
 }

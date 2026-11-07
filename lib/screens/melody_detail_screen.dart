@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
+import '../widgets/ui.dart' show goBack, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
+import '../widgets/shimmer.dart' show SongListSkeleton;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -15,79 +16,51 @@ class MelodyDetailScreen extends StatefulWidget {
   State<MelodyDetailScreen> createState() => _MelodyDetailScreenState();
 }
 
-class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
+class _MelodyDetailScreenState extends State<MelodyDetailScreen> with PagedLoader {
+  static const _perPage = 20;
+  // Folk rows have views / likes / downloads columns.
+  static const _sorts = kSongSorts;
   final _scrollCtl = ScrollController();
   Map<String, dynamic>? _melody;
-  List<Map<String, dynamic>> _songs = [];
-  int _page = 1, _lastPage = 1, _total = 0;
-  bool _loading = true, _loadingMore = false;
-  bool _failed = false, _moreFailed = false;
-  int _reqId = 0;
-  String _sort = 'views';
+  bool _notFound = false;
+  final _list = PagedList<Map<String, dynamic>>();
 
   @override
-  void initState() { super.initState(); _scrollCtl.addListener(_onScroll); _fetch(1); }
+  void initState() { super.initState(); _fetch(1); }
   @override
-  void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
-  void _onScroll() {
-    if (_loadingMore || _loading || _moreFailed || _page >= _lastPage) return;
-    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
-  }
-
-  Future<void> _fetch(int page) async {
-    final req = ++_reqId;
-    setState(() {
-      if (page == 1) { _loading = true; _failed = false; _loadingMore = false; } else { _loadingMore = true; }
-      _moreFailed = false;
-    });
-    try {
-      final q = '''query(\$slug: Mixed, \$page: Int) {
-        melodies(first: 1, where: { column: "slug", value: \$slug }) {
-          data {
-            id title slug
-            folks(first: 20, page: \$page, orderBy: [{column: "$_sort", order: DESC}]) {
-              data {
-                id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration }
-                artists(first: 5) { data { id title slug } }
-                recomposers(first: 5) { data { id slug title } }
-              }
-              paginatorInfo { currentPage lastPage total }
-            }
-          }
-        }
-      }''';
-      final data = await ApiClient.query(q, {'slug': widget.slug, 'page': page});
-      final melody = ((data['melodies']?['data'] ?? []) as List).isNotEmpty
-          ? Map<String, dynamic>.from(data['melodies']['data'][0] as Map) : null;
-      if (req != _reqId || !mounted) return;
-      if (melody == null) { setState(() { _loading = false; _loadingMore = false; }); return; }
-      final folks = ((melody['folks']?['data'] ?? []) as List).map((e) {
-        final m = Map<String, dynamic>.from(e as Map);
-        m['file_type'] = 'folk';
-        return m;
-      }).toList();
-      final pi = melody['folks']?['paginatorInfo'] ?? {};
-      setState(() {
-        _melody = melody;
-        if (page == 1) {
-          _songs = folks;
-        } else {
-          final seen = _songs.map((e) => e['id']?.toString()).toSet();
-          _songs.addAll(folks.where((e) => !seen.contains(e['id']?.toString())));
-        }
-        _page = pi['currentPage'] ?? page;
-        _lastPage = pi['lastPage'] ?? 1;
-        _total = pi['total'] ?? 0;
-        _loading = false; _loadingMore = false;
-      });
-    } catch (_) {
-      if (req != _reqId || !mounted) return;
-      setState(() {
-        if (page == 1) { _failed = true; } else { _moreFailed = true; }
-        _loading = false; _loadingMore = false;
-      });
+  void didUpdateWidget(MelodyDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.slug != widget.slug) {
+      setState(() { _melody = null; _notFound = false; _list.reset(); });
+      _fetch(1);
     }
   }
+  @override
+  void dispose() { _scrollCtl.dispose(); super.dispose(); }
+
+  Future<void> _fetch(int page, {int? sort}) => loadPage(_list, page, (page, sort) async {
+        final col = kSongSortColumn[_sorts[sort]]!;
+        final q = '''query(\$slug: Mixed, \$page: Int) {
+          melodies(first: 1, where: { column: "slug", value: \$slug }) {
+            data {
+              id title slug
+              folks(first: $_perPage, page: \$page, orderBy: [{column: "$col", order: DESC}]) {
+                data {
+                  id title subtitle slug views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration }
+                  artists(first: 5) { data { id title slug } }
+                  recomposers(first: 5) { data { id slug title } }
+                }
+                paginatorInfo { currentPage lastPage total }
+              }
+            }
+          }
+        }''';
+        final data = await ApiClient.query(q, {'slug': widget.slug, 'page': page});
+        final rows = (data['melodies']?['data'] ?? []) as List;
+        final melody = rows.isNotEmpty ? Map<String, dynamic>.from(rows[0] as Map) : null;
+        if (mounted) setState(() { if (melody != null) _melody = melody; _notFound = melody == null; });
+        return PageResult.fromPaginator(melody?['folks'], page, (m) => m..['file_type'] = 'folk');
+      }, sort: sort, scrollToTop: _scrollCtl);
 
   String _formatInt(int n) {
     final s = n.abs().toString();
@@ -110,13 +83,13 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
-          if (_loading && _melody == null)
-            SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-          else if (_failed && _melody == null)
+          if (_melody == null && !_list.failed && !_notFound)
+            const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, 0), child: SongListSkeleton(rows: 8, showIndex: true)))
+          else if (_melody == null && _list.failed)
             SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
           else if (_melody == null)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Không tìm thấy làn điệu', style: AppText.bodyText)))
-          else ...[
+          else
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               sliver: SliverList(delegate: SliverChildListDelegate([
@@ -133,64 +106,24 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(_melody!['title'] ?? '', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                       const SizedBox(height: 4),
-                      Text(_total > 0 ? '${_formatInt(_total)} bài' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có bài')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                      Text(_list.total > 0 ? '${_formatInt(_list.total)} bài' : (_list.loading ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có bài')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                     ])),
                   ]),
                 ),
                 const SizedBox(height: 14),
-                // Sort tabs
-                SizedBox(
-                  height: 48,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: 2,
-                    separatorBuilder: (_, __) => const SizedBox(width: 6),
-                    itemBuilder: (ctx, i) {
-                      final s = i == 0 ? ('views', 'Nghe nhiều') : ('id', 'Mới cập nhật');
-                      final active = _sort == s.$1;
-                      return InkWell(
-                        onTap: active ? null : () { setState(() => _sort = s.$1); _fetch(1); },
-                        borderRadius: BorderRadius.circular(24),
-                        child: Container(
-                          alignment: Alignment.center,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          decoration: BoxDecoration(
-                            color: active ? AppColors.accent : AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: active ? AppColors.accent : AppColors.border),
-                          ),
-                          child: Text(s.$2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: active ? Colors.white : AppColors.textSecondary))),
-                        ),
-                      );
-                    },
-                  ),
+                SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
+                const SizedBox(height: 14),
+                ...pagedListBody<Map<String, dynamic>>(
+                  _list,
+                  perPage: _perPage,
+                  emptyText: 'Chưa có bài nào thuộc làn điệu này',
+                  onRetry: () => _fetch(_list.page),
+                  onPage: (p) => _fetch(p),
+                  itemBuilder: (s, i) => SongRow(song: s, index: i, showIndex: true, metricKey: kSongSortMetric[_sorts[_list.sort]]!, queue: asSongList(_list.items)),
                 ),
-                const SizedBox(height: 8),
               ])),
             ),
-            if (_loading)
-              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator(color: AppColors.accent))))
-            else if (_failed)
-              SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(1)))
-            else if (_songs.isEmpty)
-              SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài nào thuộc làn điệu này', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted))))))
-            else
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList(delegate: SliverChildBuilderDelegate(
-                (ctx, i) {
-                  final s = _songs[i];
-                  return SongRow(song: s, index: i, showIndex: true, queue: asSongList(_songs));
-                },
-                childCount: _songs.length,
-              )),
-            ),
-          ],
-          SliverToBoxAdapter(child: Column(children: [
-            if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
-            if (_moreFailed) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: PillButton(label: 'Thử lại', icon: Icons.refresh, primary: false, onTap: () => _fetch(_page + 1)))),
-            SizedBox(height: player.currentSong != null ? 90 : 20),
-          ])),
+          SliverToBoxAdapter(child: SizedBox(height: player.currentSong != null ? 90 : 20)),
         ]),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),

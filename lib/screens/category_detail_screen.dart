@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SkeletonSongRow;
+import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
-import '../services/friendly_error.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -24,15 +23,8 @@ const _cats = <String, _CatCfg>{
   'dan-ca': _CatCfg(name: 'Dân ca', slug: 'dan-ca', query: 'folks', artistField: 'artists', composerField: 'recomposers', fileType: 'folk', bg: Color(0xFF8B6914), icon: Icons.music_note),
   'khi-nhac': _CatCfg(name: 'Khí nhạc', slug: 'khi-nhac', query: 'instrumentals', artistField: 'artists', composerField: 'composers', fileType: 'instrumental', bg: Color(0xFF7A3B3A), icon: Icons.piano),
   'tieng-tho': _CatCfg(name: 'Tiếng thơ', slug: 'tieng-tho', query: 'poems', artistField: 'artists', composerField: 'poets', fileType: 'poem', bg: Color(0xFF6B5210), icon: Icons.auto_stories_outlined),
-  'thanh-vien-hat': _CatCfg(name: 'Thành viên hát', slug: 'thanh-vien-hat', query: 'karaokes', artistField: 'users', composerField: 'composers', fileType: 'karaoke', bg: Color(0xFF2D5E3A), icon: Icons.mic),
+  'thanh-vien-hat': _CatCfg(name: 'Bản thu', slug: 'thanh-vien-hat', query: 'karaokes', artistField: 'users', composerField: 'composers', fileType: 'karaoke', bg: Color(0xFF2D5E3A), icon: Icons.mic),
 };
-
-const _sortOptions = [
-  ('views', 'Nghe nhiều', 'views'),
-  ('newest', 'Mới nhất', 'id'),
-  ('likes', 'Yêu thích', 'likes'),
-  ('downloads', 'Tải nhiều', 'downloads'),
-];
 
 class CategoryDetailScreen extends StatefulWidget {
   final String slug;
@@ -42,16 +34,12 @@ class CategoryDetailScreen extends StatefulWidget {
   State<CategoryDetailScreen> createState() => _CategoryDetailScreenState();
 }
 
-class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
+class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedLoader {
+  static const _perPage = 10;
+  // Every category table has views / likes / downloads columns.
+  static const _sorts = kSongSorts;
   _CatCfg? get _cfg => _cats[widget.slug];
-  List<dynamic> _items = [];
-  int _total = 0;
-  int _page = 1;
-  int _lastPage = 1;
-  String _sort = 'views';
-  bool _loading = true;
-  bool _failed = false;
-  int _reqId = 0;
+  final _list = PagedList<Map<String, dynamic>>();
   final _scrollCtl = ScrollController();
 
   @override
@@ -70,70 +58,31 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   void didUpdateWidget(CategoryDetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.slug != widget.slug) {
-      setState(() { _items = []; _total = 0; _page = 1; _lastPage = 1; _sort = 'views'; _loading = true; _failed = false; });
+      setState(() => _list.reset());
       _fetch(1);
     }
   }
 
-  Future<void> _fetch(int page, {String? sort}) async {
+  Future<void> _fetch(int page, {int? sort}) async {
     final cfg = _cfg;
-    if (cfg == null) { setState(() => _loading = false); return; }
-    final useSort = sort ?? _sort;
-    final prevSort = _sort;
-    final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$3;
-    final req = ++_reqId;
-    setState(() { _sort = useSort; _loading = true; _failed = false; });
-
-    final artistNested = cfg.artistField == 'users'
-        ? 'users(first: 5) { data { id username } }'
-        : 'artists(first: 5) { data { id title slug avatar { url } } }';
-    final composerNested = '${cfg.composerField}(first: 20) { data { id slug title } }';
-    final q = 'query(\$page: Int) { ${cfg.query}(first: 10, page: \$page, orderBy: [{column: "$sortCol", order: DESC}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
-
-    try {
+    if (cfg == null) return;
+    await loadPage(_list, page, (page, sort) async {
+      final sortCol = kSongSortColumn[_sorts[sort]]!;
+      final artistNested = cfg.artistField == 'users'
+          ? 'users(first: 5) { data { id username } }'
+          : 'artists(first: 5) { data { id title slug avatar { url } } }';
+      final composerNested = '${cfg.composerField}(first: 20) { data { id slug title } }';
+      final q = 'query(\$page: Int) { ${cfg.query}(first: $_perPage, page: \$page, orderBy: [{column: "$sortCol", order: DESC}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
       final data = await ApiClient.query(q, {'page': page});
-      final raw = data[cfg.query];
-      final items = ((raw?['data'] ?? []) as List).map((s) {
-        final m = Map<String, dynamic>.from(s as Map);
+      return PageResult.fromPaginator(data[cfg.query], page, (m) {
         m['file_type'] = cfg.fileType;
         // Normalize karaoke users -> artists shape
         if (cfg.artistField == 'users' && m['users']?['data'] != null) {
           m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
         }
         return m;
-      }).toList();
-      final pi = raw?['paginatorInfo'] ?? {};
-      if (req != _reqId || !mounted) return;
-      setState(() {
-        _items = items;
-        _total = pi['total'] ?? 0;
-        _page = pi['currentPage'] ?? page;
-        _lastPage = pi['lastPage'] ?? 1;
-        _loading = false;
       });
-      // New page / sort: start reading from the top, not where the old
-      // list's pager button was.
-      if (_scrollCtl.hasClients && _scrollCtl.offset > 0) {
-        _scrollCtl.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
-      }
-    } catch (e) {
-      if (req != _reqId || !mounted) return;
-      final hadItems = _items.isNotEmpty;
-      setState(() {
-        _loading = false;
-        if (hadItems) {
-          _sort = prevSort; // keep the tab matching the list still shown
-        } else {
-          _failed = true;
-        }
-      });
-      if (hadItems) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(friendlyError(e)),
-          action: SnackBarAction(label: 'Thử lại', onPressed: () => _fetch(page, sort: useSort)),
-        ));
-      }
-    }
+    }, sort: sort, scrollToTop: _scrollCtl);
   }
 
   String _formatInt(int n) {
@@ -147,11 +96,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   void _playAll() {
-    if (_items.isEmpty) return;
+    if (_list.items.isEmpty) return;
     final player = context.read<PlayerProvider>();
     final queue = <Map<String, dynamic>>[];
-    for (final s in _items) {
-      final m = Map<String, dynamic>.from(s as Map);
+    for (final s in _list.items) {
+      final m = Map<String, dynamic>.from(s);
       m['audioUrl'] = m['file']?['audio_url'];
       if (m['audioUrl'] != null) queue.add(m);
     }
@@ -215,7 +164,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                 Text(cfg.name, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _total > 0 ? '${_formatInt(_total)} bài' : (_loading ? 'Đang tải...' : (_failed ? '' : 'Chưa có bài')),
+                                  _list.total > 0 ? '${_formatInt(_list.total)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có bài')),
                                   style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                                 ),
                               ],
@@ -226,7 +175,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     ),
 
                     // Play all
-                    if (_items.isNotEmpty)
+                    if (_list.items.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 14),
                         child: Row(
@@ -236,64 +185,25 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                         ),
                       ),
 
-                    // Sort tabs — underline style for app-wide consistency
-                    // (matches search filter, BXH period tabs, in-page
-                    // section tabs).
-                    Container(
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-                      child: SizedBox(
-                        height: 48,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: _sortOptions.length,
-                          separatorBuilder: (_, __) => const SizedBox(width: 16),
-                          itemBuilder: (ctx, i) {
-                            final opt = _sortOptions[i];
-                            final active = _sort == opt.$1;
-                            return InkWell(
-                              onTap: active ? null : () => _fetch(1, sort: opt.$1),
-                              child: Container(
-                                alignment: Alignment.center,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                decoration: BoxDecoration(
-                                  border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
-                                ),
-                                child: Text(opt.$2, style: body(TextStyle(fontSize: 15, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                    SortTabs(
+                      labels: _sorts,
+                      selected: _list.sort,
+                      padding: EdgeInsets.zero,
+                      onSelect: (i) => _fetch(1, sort: i),
                     ),
                     const SizedBox(height: 14),
 
-                    // List / loader
-                    if (_loading && _items.isEmpty)
-                      for (var i = 0; i < 6; i++) const SkeletonSongRow()
-                    else if (_failed && _items.isEmpty)
-                      OfflineBlock(onRetry: () => _fetch(1))
-                    else if (_items.isEmpty)
-                      Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
-                    else
-                      ..._items.asMap().entries.map((e) {
-                        final song = Map<String, dynamic>.from(e.value as Map);
-                        song['file_type'] = cfg.fileType;
-                        return SongRow(
-                          song: song,
-                          index: (_page - 1) * 10 + e.key,
-                          showIndex: true,
-                          metricKey: _sort == 'newest' ? 'time' : _sort,
-                          queue: asSongList(_items),
-                        );
-                      }),
-
-                    if (_lastPage > 1) Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: _Pager(
-                        currentPage: _page,
-                        lastPage: _lastPage,
-                        loading: _loading,
-                        onGoto: (p) => _fetch(p),
+                    ...pagedListBody<Map<String, dynamic>>(
+                      _list,
+                      perPage: _perPage,
+                      onRetry: () => _fetch(_list.page),
+                      onPage: (p) => _fetch(p),
+                      itemBuilder: (song, i) => SongRow(
+                        song: song,
+                        index: i,
+                        showIndex: true,
+                        metricKey: kSongSortMetric[_sorts[_list.sort]]!,
+                        queue: asSongList(_list.items),
                       ),
                     ),
 
@@ -306,80 +216,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],
-      ),
-    );
-  }
-}
-
-class _Pager extends StatelessWidget {
-  final int currentPage;
-  final int lastPage;
-  final bool loading;
-  final void Function(int) onGoto;
-  const _Pager({required this.currentPage, required this.lastPage, required this.loading, required this.onGoto});
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = <int>{1, lastPage};
-    for (int i = -1; i <= 1; i++) {
-      final p = currentPage + i;
-      if (p >= 1 && p <= lastPage) pages.add(p);
-    }
-    final ordered = pages.toList()..sort();
-    final children = <Widget>[
-      _PageBtn(icon: Icons.chevron_left, enabled: currentPage > 1 && !loading, onTap: () => onGoto(currentPage - 1)),
-    ];
-    int prev = 0;
-    for (final p in ordered) {
-      if (prev != 0 && p - prev > 1) {
-        children.add(Padding(padding: EdgeInsets.symmetric(horizontal: 2), child: Text('…', style: TextStyle(fontSize: 16, color: AppColors.textMuted))));
-      }
-      children.add(_PageBtn(label: '$p', enabled: p != currentPage && !loading, active: p == currentPage, onTap: () => onGoto(p)));
-      prev = p;
-    }
-    children.add(_PageBtn(icon: Icons.chevron_right, enabled: currentPage < lastPage && !loading, onTap: () => onGoto(currentPage + 1)));
-    return Center(child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: children));
-  }
-}
-
-class _PageBtn extends StatelessWidget {
-  final String? label;
-  final IconData? icon;
-  final bool enabled;
-  final bool active;
-  final VoidCallback onTap;
-  const _PageBtn({this.label, this.icon, this.enabled = true, this.active = false, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final bg = active ? AppColors.accent : AppColors.surfaceLight;
-    final fg = active ? Colors.white : (enabled ? AppColors.text : AppColors.textMuted);
-    final semLabel = icon == Icons.chevron_left ? 'Trang trước' : icon == Icons.chevron_right ? 'Trang sau' : 'Trang $label';
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      selected: active,
-      label: semLabel,
-      excludeSemantics: true,
-      child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 48, height: 48,
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: active ? AppColors.accent : AppColors.border),
-          ),
-          child: Center(
-            child: icon != null
-                ? Icon(icon, size: 24, color: fg)
-                : Text(label!, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: fg))),
-          ),
-        ),
-      ),
       ),
     );
   }

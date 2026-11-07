@@ -29,7 +29,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
     'song': 'Tân nhạc',
     'folk': 'Dân ca',
     'instrumental': 'Khí nhạc',
-    'karaoke': 'Karaoke',
+    'karaoke': 'Bản thu',
     'poem': 'Tiếng thơ',
     'replace': 'Bổ sung bản ghi',
     'document_audio': 'Tư liệu âm thanh',

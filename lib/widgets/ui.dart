@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
+import '../services/friendly_error.dart';
+import 'shimmer.dart' show SongListSkeleton;
 
 // Shared building blocks of the 2026-11 brand redesign (white + #711313 +
 // #B48988, Montserrat). Screens compose these so headers, chips, buttons and
@@ -592,7 +594,9 @@ class RailCard extends StatelessWidget {
   final VoidCallback? onTap;
   final double width;
   final double coverHeight;
-  const RailCard({super.key, required this.cover, required this.title, this.subtitle, this.onTap, this.width = 148, double? coverHeight}) : coverHeight = coverHeight ?? width;
+  /// Small grey line under the subtitle ("Hôm qua").
+  final String? meta;
+  const RailCard({super.key, required this.cover, required this.title, this.subtitle, this.onTap, this.width = 148, double? coverHeight, this.meta}) : coverHeight = coverHeight ?? width;
 
   @override
   Widget build(BuildContext context) => SizedBox(
@@ -600,7 +604,7 @@ class RailCard extends StatelessWidget {
         // One VoiceOver stop per card ("Tên bài, ca sĩ, nút") instead of loose text.
         child: Semantics(
           button: onTap != null,
-          label: [title, if (subtitle != null && subtitle!.isNotEmpty) subtitle].join(', '),
+          label: [title, if (subtitle != null && subtitle!.isNotEmpty) subtitle, if (meta != null && meta!.isNotEmpty) meta].join(', '),
           excludeSemantics: true,
           child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -620,6 +624,11 @@ class RailCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
                   child: Text(subtitle!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ),
+              if (meta != null && meta!.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 3),
+                  child: Text(meta!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: AppColors.textMuted))),
                 ),
             ],
           ),
@@ -652,7 +661,7 @@ class Rail extends StatelessWidget {
       );
 }
 
-/// Round person avatar + name, for Nhạc sĩ / Giọng ca strips.
+/// Round person avatar + name, for Nhạc sĩ / Nghệ sĩ strips.
 class PersonBubble extends StatelessWidget {
   final String name;
   final String? image;
@@ -809,4 +818,349 @@ class SubPageBar extends StatelessWidget implements PreferredSizeWidget {
         title: Text(title),
         actions: [...actions, const SizedBox(width: 6)],
       );
+}
+
+
+// ---------------------------------------------------------------------------
+// Song-list sorting + page-based paging, shared by every list screen so the
+// sort row, the pager and the loading/offline states look and behave the
+// same everywhere (2026-11 consistency pass).
+// ---------------------------------------------------------------------------
+
+/// The four standard sort tabs for song lists, in display order. A screen
+/// shows only the ones its query can order by (see [kSongSortColumn]).
+const kSongSorts = <String>['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất', 'Tải nhiều nhất'];
+
+/// `orderBy` column for each label in [kSongSorts]. "Mới cập nhật" orders
+/// by id (newest upload first), same as the web.
+const kSongSortColumn = <String, String>{
+  'Nghe nhiều nhất': 'views',
+  'Mới cập nhật': 'id',
+  'Yêu thích nhất': 'likes',
+  'Tải nhiều nhất': 'downloads',
+};
+
+/// [SongRow.metricKey] matching each sort, so the row shows the number
+/// the list is sorted by ("1,2 N lượt nghe", "3 ngày trước", ...).
+const kSongSortMetric = <String, String>{
+  'Nghe nhiều nhất': 'views',
+  'Mới cập nhật': 'time',
+  'Yêu thích nhất': 'likes',
+  'Tải nhiều nhất': 'downloads',
+};
+
+/// Sort row ("Nghe nhiều nhất · Mới cập nhật · ..."): [BrandChip] pills,
+/// 44pt tall, horizontally scrollable. Tapping the active tab does nothing.
+class SortTabs extends StatelessWidget {
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelect;
+  final EdgeInsets padding;
+  const SortTabs({super.key, required this.labels, required this.selected, required this.onSelect, this.padding = const EdgeInsets.symmetric(horizontal: 20)});
+
+  @override
+  Widget build(BuildContext context) {
+    if (labels.length < 2) return const SizedBox.shrink();
+    return Semantics(
+      container: true,
+      label: 'Sắp xếp',
+      explicitChildNodes: true,
+      child: ChipStrip(
+        labels: labels,
+        selected: selected.clamp(0, labels.length - 1),
+        padding: padding,
+        onSelect: (i) {
+          if (i != selected) onSelect(i);
+        },
+      ),
+    );
+  }
+}
+
+/// Big pager for older users: "‹ Trước" / "Sau ›" buttons (48pt), the
+/// current position "Trang X / Y" in words, and numbered pages above when
+/// the screen is wide enough. Hidden when there is only one page.
+class Pager extends StatelessWidget {
+  final int page;
+  final int lastPage;
+  final ValueChanged<int> onPage;
+  /// Disables every button while a page is on its way.
+  final bool loading;
+  const Pager({super.key, required this.page, required this.lastPage, required this.onPage, this.loading = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (lastPage <= 1) return const SizedBox.shrink();
+    final cur = page.clamp(1, lastPage);
+    return LayoutBuilder(builder: (context, c) {
+      final scale = MediaQuery.textScalerOf(context).scale(1);
+      // Five 48pt numbers + gaps need ~300pt; skip them on narrow or
+      // large-text screens rather than wrap into a messy second row.
+      final showNumbers = c.maxWidth >= 300 * scale.clamp(1.0, 2.0);
+      final nums = <Widget>[];
+      if (showNumbers) {
+        final pages = <int>{1, lastPage, for (var i = -1; i <= 1; i++) if (cur + i >= 1 && cur + i <= lastPage) cur + i}.toList()..sort();
+        var prev = 0;
+        for (final p in pages) {
+          if (prev != 0 && p - prev > 1) {
+            nums.add(ExcludeSemantics(child: Text('…', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
+          }
+          nums.add(_PagerNumber(page: p, active: p == cur, enabled: !loading && p != cur, onTap: () => onPage(p)));
+          prev = p;
+        }
+      }
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (nums.isNotEmpty) ...[
+            Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 6, children: nums),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              _PagerStep(label: '‹ Trước', semantic: 'Trang trước', enabled: !loading && cur > 1, onTap: () => onPage(cur - 1)),
+              Expanded(
+                child: Semantics(
+                  liveRegion: true,
+                  label: 'Trang $cur trên $lastPage',
+                  excludeSemantics: true,
+                  child: Text('Trang $cur / $lastPage', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                ),
+              ),
+              _PagerStep(label: 'Sau ›', semantic: 'Trang sau', enabled: !loading && cur < lastPage, onTap: () => onPage(cur + 1)),
+            ],
+          ),
+        ],
+      );
+    });
+  }
+}
+
+class _PagerStep extends StatelessWidget {
+  final String label;
+  final String semantic;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _PagerStep({required this.label, required this.semantic, required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        enabled: enabled,
+        label: semantic,
+        excludeSemantics: true,
+        child: Material(
+          color: enabled ? AppColors.surface : Colors.transparent,
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(24),
+            onTap: enabled
+                ? () {
+                    HapticFeedback.selectionClick();
+                    onTap();
+                  }
+                : null,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48, minWidth: 96),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)),
+              child: Text(label, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: enabled ? AppColors.text : AppColors.textMuted))),
+            ),
+          ),
+        ),
+      );
+}
+
+class _PagerNumber extends StatelessWidget {
+  final int page;
+  final bool active;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _PagerNumber({required this.page, required this.active, required this.enabled, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = active ? (AppColors.isLight ? AppColors.wine : AppColors.accent) : AppColors.surface;
+    final fg = active ? Colors.white : (enabled ? AppColors.text : AppColors.textMuted);
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: active,
+      label: active ? 'Trang $page, đang xem' : 'Trang $page',
+      excludeSemantics: true,
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: enabled
+              ? () {
+                  HapticFeedback.selectionClick();
+                  onTap();
+                }
+              : null,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            alignment: Alignment.center,
+            child: Text('$page', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg))),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One page of a Lighthouse paginator.
+class PageResult<T> {
+  final List<T> items;
+  final int page;
+  final int lastPage;
+  final int total;
+  const PageResult({required this.items, required this.page, required this.lastPage, required this.total});
+
+  /// Reads `{ data [...] paginatorInfo { currentPage lastPage total } }`;
+  /// [map] adapts each row (e.g. sets `file_type`).
+  static PageResult<Map<String, dynamic>> fromPaginator(dynamic raw, int page, [Map<String, dynamic> Function(Map<String, dynamic>)? map]) {
+    final pi = (raw is Map ? raw['paginatorInfo'] : null) ?? const {};
+    final rows = ((raw is Map ? raw['data'] : null) ?? const []) as List;
+    final items = <Map<String, dynamic>>[];
+    for (final e in rows) {
+      if (e is! Map) continue;
+      final m = Map<String, dynamic>.from(e);
+      items.add(map == null ? m : map(m));
+    }
+    return PageResult(
+      items: items,
+      page: (pi['currentPage'] as num?)?.toInt() ?? page,
+      lastPage: (pi['lastPage'] as num?)?.toInt() ?? 1,
+      total: (pi['total'] as num?)?.toInt() ?? items.length,
+    );
+  }
+}
+
+/// State of one page-based list: the page on screen plus loading/failed
+/// flags. [sort] is an index into the screen's own sort labels.
+class PagedList<T> {
+  PagedList({this.sort = 0});
+  List<T> items = [];
+  int page = 1;
+  int lastPage = 1;
+  int total = 0;
+  int sort;
+  bool loading = false;
+  bool failed = false;
+  /// A page has arrived at least once (header shows the total, not "Đang tải...").
+  bool loaded = false;
+  int _req = 0;
+
+  /// Back to an empty first page; any request still in flight is dropped.
+  void reset({int sort = 0}) {
+    items = [];
+    page = 1;
+    lastPage = 1;
+    total = 0;
+    this.sort = sort;
+    loading = false;
+    failed = false;
+    loaded = false;
+    _req++;
+  }
+}
+
+/// Loads pages into [PagedList]s for a [State]. Older responses that land
+/// late are dropped (request token). On failure the page already on screen
+/// stays (with a "Thử lại" snackbar); with nothing to show, [PagedList.failed]
+/// makes the body show [OfflineBlock].
+mixin PagedLoader<W extends StatefulWidget> on State<W> {
+  Future<void> loadPage<T>(
+    PagedList<T> list,
+    int page,
+    Future<PageResult<T>> Function(int page, int sort) fetch, {
+    int? sort,
+    ScrollController? scrollToTop,
+    VoidCallback? onLoaded,
+  }) async {
+    final useSort = sort ?? list.sort;
+    final prevSort = list.sort;
+    final req = ++list._req;
+    setState(() {
+      list.sort = useSort;
+      list.loading = true;
+      list.failed = false;
+    });
+    try {
+      final r = await fetch(page, useSort);
+      if (req != list._req || !mounted) return;
+      setState(() {
+        list.items = r.items;
+        list.page = r.page;
+        list.lastPage = r.lastPage < 1 ? 1 : r.lastPage;
+        list.total = r.total;
+        list.loading = false;
+        list.loaded = true;
+      });
+      // New page / sort: read from the top, not from where the pager was.
+      final c = scrollToTop;
+      if (c != null && c.hasClients && c.offset > 0) {
+        c.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+      }
+      onLoaded?.call();
+    } catch (e) {
+      if (req != list._req || !mounted) return;
+      final kept = list.items.isNotEmpty;
+      setState(() {
+        list.loading = false;
+        if (kept) {
+          list.sort = prevSort; // tab must match the list still shown
+        } else {
+          list.failed = true;
+        }
+      });
+      if (kept) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(friendlyError(e)),
+          action: SnackBarAction(label: 'Thử lại', onPressed: () => loadPage(list, page, fetch, sort: useSort, scrollToTop: scrollToTop, onLoaded: onLoaded)),
+        ));
+      }
+    }
+  }
+}
+
+/// Body of a page-based list, as a widget list for a Column / SliverList:
+/// skeleton while a page loads, [OfflineBlock] when nothing could be
+/// loaded, an empty note, or the rows followed by the [Pager].
+List<Widget> pagedListBody<T>(
+  PagedList<T> list, {
+  required Widget Function(T item, int index) itemBuilder,
+  required VoidCallback onRetry,
+  required ValueChanged<int> onPage,
+  int perPage = 10,
+  String emptyText = 'Chưa có bài',
+  Widget? skeleton,
+  Widget? empty,
+}) {
+  if (list.loading || (!list.loaded && !list.failed)) {
+    return [skeleton ?? const SongListSkeleton(rows: 8, showIndex: true)];
+  }
+  if (list.failed && list.items.isEmpty) return [OfflineBlock(onRetry: onRetry)];
+  if (list.items.isEmpty) {
+    return [
+      empty ??
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: Text(emptyText, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
+          ),
+    ];
+  }
+  final base = (list.page - 1) * perPage;
+  return [
+    for (var i = 0; i < list.items.length; i++) itemBuilder(list.items[i], base + i),
+    if (list.lastPage > 1)
+      Padding(
+        padding: const EdgeInsets.only(top: 16),
+        child: Pager(page: list.page, lastPage: list.lastPage, loading: list.loading, onPage: onPage),
+      ),
+  ];
 }

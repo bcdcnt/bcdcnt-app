@@ -8,12 +8,11 @@ import '../services/offline_store.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/ui.dart';
-import '../widgets/new_documents_rail.dart';
 import '../widgets/listening_profile_card.dart';
 import '../main.dart' show TabReselect;
 
-/// Thư viện tab (2026-11): everything "của tôi" in one place — the old
-/// Thư viện and Cá nhân tabs merged. Profile card on top, four big tiles,
+/// Cá nhân tab (2026-11): everything "của tôi" in one place — the old
+/// Thư viện and Cá nhân tabs merged (route stays /library). Profile card on top, four big tiles,
 /// my playlists, then my activity and settings.
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -49,7 +48,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     await Future.wait([_fetchPlaylists(auth, quiet: _playlists.isNotEmpty), _fetchFollowing(auth, uid)]);
   }
 
-  /// Push a sub-page and refresh when the member comes back to Thư viện.
+  /// Push a sub-page and refresh when the member comes back to Cá nhân.
   Future<void> _pushThenRefresh(String route) async {
     await context.push(route);
     if (mounted) _refresh();
@@ -155,7 +154,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         padding: const EdgeInsets.only(bottom: 32),
         children: [
           PageTitle(
-            'Thư viện',
+            'Cá nhân',
             leading: user != null
                 ? Semantics(
                     label: 'Hồ sơ của tôi',
@@ -242,8 +241,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ListItem(icon: Icons.volunteer_activism_outlined, title: 'Góp tay cho kho nhạc', subtitle: 'Bổ sung tác giả, năm sáng tác… được cộng điểm', onTap: () => context.push('/gop-tay')),
             ListItem(icon: Icons.notifications_none_rounded, title: 'Thông báo', trailingText: (user['unread'] ?? 0) > 0 ? '${user['unread']}' : null, onTap: () => context.push('/thong-bao')),
           ],
-          // Below the personal content so it never pushes "của tôi" down while loading.
-          const NewDocumentsRail(),
           const GroupLabel('Khác'),
           ListItem(icon: Icons.info_outline_rounded, title: 'Giới thiệu BCĐCNT', onTap: () => context.push('/gioi-thieu')),
           ListItem(icon: Icons.help_outline_rounded, title: 'Câu hỏi thường gặp', subtitle: 'Nghe, tải nhạc, tài khoản, đóng góp', onTap: () => context.push('/faq')),
@@ -272,6 +269,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           const SizedBox(height: 24),
           const Center(child: BrandLogo(height: 26)),
+          // "1.4.1+14" → "Phiên bản 1.4.1 (14)": what to quote when asking BQT for help.
+          if (ApiClient.appVersion.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Phiên bản ${ApiClient.appVersion.split('+').first}${ApiClient.appVersion.contains('+') ? ' (${ApiClient.appVersion.split('+').last})' : ''}',
+                textAlign: TextAlign.center,
+                style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textMuted)),
+              ),
+            ),
         ],
         ),
       ),

@@ -1,6 +1,5 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -15,7 +14,6 @@ import '../services/friendly_error.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
-import 'home_mobile_screen.dart' show playOrOpen;
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/shimmer.dart';
@@ -113,11 +111,15 @@ class _SectionState {
   }
 }
 
+// Standard song sorts; every section (songs/folks/instrumentals/poems)
+// has views, likes and downloads columns. Labels come from kSongSorts.
 const _sortOptions = [
-  ('views', 'Nghe nhiều', 'views'),
-  ('newest', 'Mới nhất', 'id'),
-  ('likes', 'Yêu thích', 'likes'),
+  ('views', 'views'),
+  ('newest', 'id'),
+  ('likes', 'likes'),
+  ('downloads', 'downloads'),
 ];
+const _perPage = 10;
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Map<String, dynamic>? _person;
@@ -135,6 +137,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   // lands late is dropped instead of overwriting the newer list.
   final Map<String, int> _reqIds = {};
   int _fetchReq = 0;
+  final _nestedKey = GlobalKey<NestedScrollViewState>();
 
   _TypeConfig get _cfg => _config[widget.type]!;
 
@@ -281,24 +284,24 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     if (personId == null) return;
     final prev = _sections[key]!;
     final useSort = sort ?? prev.sort;
-    final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$3;
+    final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$2;
     final req = (_reqIds[key] ?? 0) + 1;
     _reqIds[key] = req;
     setState(() {
-      // A new sort starts from a clean list so old rows don't flash.
-      _sections[key] = prev.copyWith(loading: true, sort: useSort, failed: false, items: useSort != prev.sort ? const [] : null);
+      // Skeleton while the page loads; the old page stays in [items] so a
+      // failed request can fall back to it.
+      _sections[key] = prev.copyWith(loading: true, sort: useSort, failed: false);
     });
     try {
       final queryById = '${_cfg.queryName}ByID';
-      final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: 10, page: \$page, orderBy: [{ column: "$sortCol", order: DESC }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
+      final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: $_perPage, page: \$page, orderBy: [{ column: "$sortCol", order: DESC }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
       final data = await ApiClient.query(q, {'id': personId, 'page': page});
       final raw = data[queryById]?[key];
       if (req != _reqIds[key] || !mounted) return;
       final newItems = (raw?['data'] ?? []) as List;
       setState(() {
         _sections[key] = _SectionState(
-          // page=1 is either initial sort/refresh — replace. page>1 — append.
-          items: page == 1 ? newItems : prev.appended(newItems),
+          items: newItems,
           total: raw?['paginatorInfo']?['total'] ?? prev.total,
           currentPage: raw?['paginatorInfo']?['currentPage'] ?? page,
           lastPage: raw?['paginatorInfo']?['lastPage'] ?? prev.lastPage,
@@ -306,17 +309,31 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           loading: false,
         );
       });
-    } catch (_) {
-      if (req == _reqIds[key] && mounted) setState(() {
-        _sections[key] = prev.copyWith(loading: false, sort: useSort, failed: true, items: useSort != prev.sort ? const [] : null);
+      _scrollListToTop();
+    } catch (e) {
+      if (req != _reqIds[key] || !mounted) return;
+      final kept = prev.items.isNotEmpty;
+      setState(() {
+        // Keep the page already on screen (and its sort tab) when there is one.
+        _sections[key] = kept ? prev.copyWith(loading: false, failed: false) : prev.copyWith(loading: false, sort: useSort, failed: true);
       });
+      if (kept) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(friendlyError(e)),
+          action: SnackBarAction(label: 'Thử lại', onPressed: () => _fetchPage(key, page, sort: useSort)),
+        ));
+      }
     }
   }
 
-  void _loadMore(String key) {
-    final s = _sections[key]!;
-    if (s.loading || s.failed || s.currentPage >= s.lastPage) return;
-    _fetchPage(key, s.currentPage + 1);
+  /// New page / sort: back to the top of the list (header collapsed, tab
+  /// bar and sort chips in view) instead of staying at the pager.
+  void _scrollListToTop() {
+    final inner = _nestedKey.currentState?.innerController;
+    if (inner == null || !inner.hasClients) return;
+    for (final pos in inner.positions) {
+      if (pos.pixels > 0) pos.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
   }
 
   String _formatInt(dynamic n) {
@@ -488,6 +505,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         body: Stack(
           children: [
             NestedScrollView(
+              key: _nestedKey,
               headerSliverBuilder: (ctx, _) => [
                 if (MediaQuery.sizeOf(context).width >= 900)
                   SliverAppBar(
@@ -766,7 +784,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 //   font tier  32 → 14 → 11 (anchor = title)
                 //   space tier  6 → 14 → 6 → 22 (within / between groups)
                 Text(
-                  _cfg.label.toUpperCase(),
+                  _cfg.label,
                   style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
                 ),
                 const SizedBox(height: 6),
@@ -871,7 +889,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_cfg.label.toUpperCase(), style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0xD9FFFFFF)))),
+                  Text(_cfg.label, style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: Color(0xD9FFFFFF)))),
                   const SizedBox(height: 6),
                   Text(p['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 34, height: 1.1, fontWeight: FontWeight.w800, color: Colors.white))),
                   if (meta.isNotEmpty || rank.isNotEmpty) ...[
@@ -977,59 +995,42 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   Widget _buildSectionTab(_SectionCfg cfg) {
     final state = _sections[cfg.key]!;
-    final hasMore = state.currentPage < state.lastPage;
-
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n.metrics.axis != Axis.vertical) return false;
-        if (!state.loading && hasMore && n.metrics.pixels > n.metrics.maxScrollExtent - 600) {
-          _loadMore(cfg.key);
-        }
-        return false;
-      },
-      child: ListView.builder(
-        key: PageStorageKey('person-${cfg.key}'),
-        // No side padding on the list: the sort chips run edge to edge,
-        // rows add their own 20px.
-        padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
-        itemCount: state.items.length + 2, // [sort bar, ...items, footer]
-        itemBuilder: (ctx, i) {
-          if (i == 0) return _buildSortBar(cfg.key, state);
-          if (i == state.items.length + 1) {
-            if (state.loading) {
-              return Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
-            }
-            if (state.failed) {
-              return state.items.isEmpty
-                  ? OfflineBlock(onRetry: () => _fetchPage(cfg.key, 1))
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Center(child: PillButton(label: 'Chưa tải được · Thử lại', icon: Icons.refresh_rounded, primary: false, onTap: () => _fetchPage(cfg.key, state.currentPage + 1))),
-                    );
-            }
-            if (!hasMore && state.items.isNotEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: Text('Đã hết', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)))),
-              );
-            }
-            return const SizedBox(height: 16);
-          }
-          final s = state.items[i - 1];
-          final sg = Map<String, dynamic>.from(s as Map);
-          sg['file_type'] = cfg.fileType;
-          final queue = state.items.whereType<Map>().map((x) => {...Map<String, dynamic>.from(x), 'file_type': cfg.fileType}).toList();
-          return Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Builder(
+    final queue = state.items.whereType<Map>().map((x) => {...Map<String, dynamic>.from(x), 'file_type': cfg.fileType}).toList();
+    final metric = state.sort == 'newest' ? 'time' : state.sort;
+    final Widget content;
+    if (state.loading) {
+      content = const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: SongListSkeleton(rows: 8, showIndex: true));
+    } else if (state.failed && state.items.isEmpty) {
+      content = OfflineBlock(onRetry: () => _fetchPage(cfg.key, state.currentPage));
+    } else if (state.items.isEmpty) {
+      content = Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
+    } else {
+      content = Column(children: [
+        for (var i = 0; i < queue.length; i++)
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Builder(
             builder: (rowCtx) => SongRow(
-              song: sg,
-              metricKey: state.sort == 'newest' ? 'time' : state.sort,
+              song: queue[i],
+              index: (state.currentPage - 1) * _perPage + i,
+              showIndex: true,
+              metricKey: metric,
               // Same id *and* kind: song 12 and folk 12 are different rows.
-              isPlaying: rowCtx.select<PlayerProvider, bool>((pl) => sameSong(pl.currentSong, sg)),
-              onTap: () => playOrOpen(context, sg, queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
+              isPlaying: rowCtx.select<PlayerProvider, bool>((pl) => sameSong(pl.currentSong, queue[i])),
+              onTap: () => playOrOpen(context, queue[i], queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
             ),
-          ));
-        },
-      ),
+          )),
+        if (state.lastPage > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            child: Pager(page: state.currentPage, lastPage: state.lastPage, loading: state.loading, onPage: (p) => _fetchPage(cfg.key, p)),
+          ),
+      ]);
+    }
+    return ListView(
+      key: PageStorageKey('person-${cfg.key}'),
+      // No side padding on the list: the sort chips run edge to edge,
+      // rows add their own 20px.
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
+      children: [_buildSortBar(cfg.key, state), content],
     );
   }
 
@@ -1037,12 +1038,10 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final selected = _sortOptions.indexWhere((o) => o.$1 == state.sort);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: ChipStrip(
-        labels: const ['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất'],
+      child: SortTabs(
+        labels: kSongSorts,
         selected: selected < 0 ? 0 : selected,
-        onSelect: (i) {
-          if (_sortOptions[i].$1 != state.sort) _fetchPage(key, 1, sort: _sortOptions[i].$1);
-        },
+        onSelect: (i) => _fetchPage(key, 1, sort: _sortOptions[i].$1),
       ),
     );
   }

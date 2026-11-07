@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, EmptyBlock, OfflineBlock;
-import '../services/friendly_error.dart';
+import '../widgets/ui.dart' show goBack, PillButton, EmptyBlock, PagedLoader, PagedList, PageResult, pagedListBody;
+import '../widgets/shimmer.dart' show SongListSkeleton;
+import '../services/friendly_error.dart' show askLogin;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
@@ -20,16 +21,14 @@ class UserSongListScreen extends StatefulWidget {
   State<UserSongListScreen> createState() => _UserSongListScreenState();
 }
 
-class _UserSongListScreenState extends State<UserSongListScreen> {
+// No sort tabs here: loves / recentListens rows only carry their own id
+// and time (the song is a polymorphic `object`), so the API can't order
+// them by listens, likes or downloads. Newest first, page by page.
+class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoader {
   static const _perPage = 20;
   final _scrollCtl = ScrollController();
-  List<Map<String, dynamic>> _items = [];
-  int _page = 1;
-  int _lastPage = 1;
-  int _total = 0;
-  bool _loading = true;
-  bool _loadingMore = false;
-  bool _failed = false;
+  final _list = PagedList<Map<String, dynamic>>();
+  List<Map<String, dynamic>> get _items => _list.items;
 
   String get _field => widget.kind == UserListKind.favorites ? 'loves' : 'recentListens';
   String get _title => widget.kind == UserListKind.favorites ? 'Yêu thích' : 'Nghe gần đây';
@@ -42,7 +41,6 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
   @override
   void initState() {
     super.initState();
-    _scrollCtl.addListener(_onScroll);
     // Auth restores its token asynchronously from storage. If we fetched
     // once in initState we'd race it (token not ready → empty list, no
     // retry) — visible when deep-linking straight onto this screen. So we
@@ -63,39 +61,24 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
     if (_didInitialFetch && uid == _fetchedFor) return;
     _didInitialFetch = true;
     _fetchedFor = uid;
-    if (_items.isNotEmpty) setState(() { _items = []; _total = 0; _page = 1; _lastPage = 1; });
+    setState(() => _list.reset());
     _fetch(1);
   }
 
   @override
   void dispose() {
     _authRef?.removeListener(_initialFetch);
-    _scrollCtl.removeListener(_onScroll);
     _scrollCtl.dispose();
     super.dispose();
   }
 
-  void _onScroll() {
-    if (_loadingMore || _loading) return;
-    if (_page >= _lastPage) return;
-    if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 400) {
-      _fetch(_page + 1);
-    }
-  }
-
   Future<void> _fetch(int page) async {
     final auth = context.read<AuthProvider>();
-    if (!auth.isAuthenticated) {
-      setState(() => _loading = false);
+    final userId = auth.user?['id']?.toString();
+    if (!auth.isAuthenticated || userId == null) {
+      setState(() => _list.reset());
       return;
     }
-    final userId = auth.user?['id']?.toString();
-    if (userId == null) { setState(() => _loading = false); return; }
-
-    setState(() {
-      _failed = false;
-      if (page == 1) { _loading = true; } else { _loadingMore = true; }
-    });
 
     final q = '''query(\$id: ID!, \$first: Int!, \$page: Int) {
       user(id: \$id) {
@@ -103,11 +86,11 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
           data {
             object {
               __typename
-              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Instrumental { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Poem { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Karaoke { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } users(first: 3) { data { id username avatar { url } } } }
+              ... on Song { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
+              ... on Folk { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
+              ... on Instrumental { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
+              ... on Poem { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
+              ... on Karaoke { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } users(first: 3) { data { id username avatar { url } } } }
             }
           }
           paginatorInfo { total currentPage lastPage }
@@ -115,43 +98,36 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
       }
     }''';
 
-    try {
+    await loadPage(_list, page, (page, _) async {
       final data = await auth.authedQuery(q, {'id': userId, 'first': _perPage, 'page': page});
+      // Signed out / switched account while this was loading: drop it.
+      if (!mounted || userId != context.read<AuthProvider>().user?['id']?.toString()) {
+        throw StateError('account changed');
+      }
       final raw = data['user']?[_field];
-      final list = ((raw?['data'] ?? []) as List);
       final pi = raw?['paginatorInfo'] ?? {};
       const tnMap = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
-
       final fresh = <Map<String, dynamic>>[];
-      final seen = {if (page > 1) ..._items.map((s) => s['id'].toString())};
-      for (final entry in list) {
-        final obj = entry['object'];
+      // id + kind: tân nhạc 12 and dân ca 12 are different songs.
+      final seen = <String>{};
+      for (final entry in ((raw?['data'] ?? []) as List)) {
+        final obj = entry is Map ? entry['object'] : null;
         if (obj == null) continue;
         final m = Map<String, dynamic>.from(obj as Map);
-        final id = m['id'].toString();
-        if (seen.contains(id)) continue;
-        seen.add(id);
+        m['file_type'] = tnMap[m['__typename']?.toString()] ?? 'song';
+        if (!seen.add('${m['file_type']}:${m['id']}')) continue;
         if (m['users']?['data'] != null && m['artists'] == null) {
           m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
         }
-        m['file_type'] = tnMap[m['__typename']?.toString()] ?? 'song';
         fresh.add(m);
       }
-
-      if (!mounted || userId != context.read<AuthProvider>().user?['id']?.toString()) return;
-      setState(() {
-        if (page == 1) _items = fresh; else _items.addAll(fresh);
-        _page = pi['currentPage'] ?? page;
-        _lastPage = pi['lastPage'] ?? 1;
-        _total = pi['total'] ?? _total;
-        _loading = false;
-        _loadingMore = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() { _loading = false; _loadingMore = false; _failed = page == 1; });
-      if (page > 1) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e, fallback: 'Chưa tải thêm được, vui lòng thử lại.'))));
-    }
+      return PageResult(
+        items: fresh,
+        page: (pi['currentPage'] as num?)?.toInt() ?? page,
+        lastPage: (pi['lastPage'] as num?)?.toInt() ?? 1,
+        total: (pi['total'] as num?)?.toInt() ?? fresh.length,
+      );
+    }, scrollToTop: _scrollCtl);
   }
 
   void _playAll({bool shuffle = false}) {
@@ -227,8 +203,8 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                               Text(_title, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
                               Text(
-                                _total > 0 ? '${_formatInt(_total)} bài' : (_loading ? 'Đang tải...' : 'Chưa có'),
-                                style: body(const TextStyle(fontSize: 13, color: Colors.white70)),
+                                _list.total > 0 ? '${_formatInt(_list.total)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')),
+                                style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                               ),
                             ],
                           ),
@@ -254,17 +230,18 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                   if (_items.isNotEmpty)
                     Padding(
                     padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: 'Tải tất cả về máy', primary: false)),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: _list.lastPage > 1 ? 'Tải về máy cả trang này' : 'Tải tất cả về máy', primary: false)),
                   ),
                   const SizedBox(height: 8),
 
-                  // List / loader / empty
-                  if (_loading && _items.isEmpty)
-                    Padding(padding: EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-                  else if (_failed && _items.isEmpty)
-                    OfflineBlock(onRetry: () => _fetch(1))
-                  else if (_items.isEmpty)
-                    Padding(
+                  // List / loader / empty, then the pager
+                  ...pagedListBody<Map<String, dynamic>>(
+                    _list,
+                    perPage: _perPage,
+                    onRetry: () => _fetch(_list.page),
+                    onPage: (p) => _fetch(p),
+                    skeleton: SongListSkeleton(rows: 8, showIndex: widget.kind != UserListKind.history),
+                    empty: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),
                       child: Column(
                         children: [
@@ -272,23 +249,19 @@ class _UserSongListScreenState extends State<UserSongListScreen> {
                           const SizedBox(height: 12),
                           Text(
                             widget.kind == UserListKind.favorites ? 'Bạn chưa yêu thích bài nào' : 'Chưa có lịch sử nghe',
-                            style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)),
+                            style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)),
                           ),
                         ],
                       ),
-                    )
-                  else
-                    ..._items.asMap().entries.map((e) {
-                      final song = Map<String, dynamic>.from(e.value);
-                      return SongRow(
-                        song: song,
-                        index: e.key,
-                        showIndex: widget.kind != UserListKind.history,
-                        queue: asSongList(_items),
-                      );
-                    }),
-
-                  if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
+                    ),
+                    itemBuilder: (song, i) => SongRow(
+                      song: song,
+                      index: i,
+                      showIndex: widget.kind != UserListKind.history,
+                      metricKey: widget.kind == UserListKind.history ? 'none' : 'views',
+                      queue: asSongList(_items),
+                    ),
+                  ),
 
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ])),

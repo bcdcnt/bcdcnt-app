@@ -154,7 +154,7 @@ class _CommandPaletteState extends State<CommandPalette> {
       _PaletteAction(icon: Icons.search, title: 'Tìm kiếm', subtitle: 'Đi tới /search', run: () => go('/search')),
       _PaletteAction(icon: Icons.chat_bubble_outline, title: 'Bình luận', subtitle: 'Đi tới /binh-luan', run: () => go('/binh-luan')),
       _PaletteAction(icon: Icons.leaderboard_outlined, title: 'Bảng xếp hạng', subtitle: 'Đi tới /bang-xep-hang', run: () => go('/bang-xep-hang')),
-      _PaletteAction(icon: Icons.library_music_outlined, title: 'Thư viện', subtitle: 'Đi tới /library', run: () => go('/library')),
+      _PaletteAction(icon: Icons.person_outline_rounded, title: 'Cá nhân', subtitle: 'Đi tới /library', run: () => go('/library')),
       _PaletteAction(icon: Icons.notifications_outlined, title: 'Thông báo', subtitle: 'Đi tới /thong-bao', run: () => go('/thong-bao')),
       _PaletteAction(icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Đi tới /cai-dat', run: () => go('/cai-dat')),
       _PaletteAction(icon: Icons.mic_outlined, title: 'Nghệ sĩ', subtitle: 'Đi tới /nghe-si', run: () => go('/nghe-si')),
@@ -472,7 +472,7 @@ class _PaletteRow extends StatelessWidget {
       case 'folk': return 'Dân ca';
       case 'instrumental': return 'Khí nhạc';
       case 'poem': return 'Tiếng thơ';
-      case 'karaoke': return 'Karaoke';
+      case 'karaoke': return 'Bản thu';
       case 'artist': return 'Nghệ sĩ';
       case 'composer': return 'Nhạc sĩ';
       case 'poet': return 'Nhà thơ';

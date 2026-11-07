@@ -403,7 +403,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           m['file_type'] = 'karaoke';
           // Karaoke API exposes performers as `users` (id+username+avatar);
           // SongRow + downstream UI read `artists`. Map shape so member
-          // names render in "Thành viên hát bài này" rows.
+          // names render in "Bản thu của thành viên" rows.
           if (m['users']?['data'] != null && m['artists'] == null) {
             m['artists'] = {
               'data': ((m['users']['data']) as List).map((u) => {
@@ -1154,7 +1154,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       _MobileHeader(
                         song: song,
                         thumb: thumb,
-                        kind: const {'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'poem': 'Tiếng thơ', 'karaoke': 'Thành viên hát'}[_resolvedType] ?? 'Bài hát',
+                        kind: const {'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'poem': 'Tiếng thơ', 'karaoke': 'Bản thu'}[_resolvedType] ?? 'Bài hát',
                         year: year,
                         videoPlayer: heroVideo,
                         onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
@@ -1644,7 +1644,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             SectionHeader(
               icon: Icons.album_outlined,
-              title: _resolvedType == 'karaoke' ? 'Ca sĩ trình bày' : 'Bản thu khác',
+              title: _resolvedType == 'karaoke' ? 'Nghệ sĩ trình bày' : 'Nghệ sĩ khác trình bày',
               count: '(${filtered.length})',
               onPlayAll: () => _playList(filtered),
             ),
@@ -1668,7 +1668,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             SectionHeader(
               icon: Icons.mic_outlined,
-              title: 'Thành viên hát bài này',
+              title: 'Bản thu của thành viên',
               count: '(${karaokes.length})',
               onPlayAll: () => _playList(karaokes),
             ),
@@ -2035,7 +2035,7 @@ String _typeLabelFor(String t) {
     case 'folk': return 'Dân ca';
     case 'instrumental': return 'Khí nhạc';
     case 'poem': return 'Tiếng thơ';
-    case 'karaoke': return 'Thành viên hát';
+    case 'karaoke': return 'Bản thu';
     default: return 'Bài hát';
   }
 }

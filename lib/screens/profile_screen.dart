@@ -39,7 +39,7 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    // Legacy screen: phones use the Thư viện tab (profile + "của tôi" merged
+    // Legacy screen: phones use the Cá nhân tab (profile + "của tôi" merged
     // there in 2026-11). Send anyone landing on /profile from a phone there.
     final phone = MediaQuery.sizeOf(context).width < 900;
     if (phone) {

@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
+import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -40,7 +41,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
           thumbnail { url }
           forum { id title slug parent { id title slug } }
           file { audio_url video_url duration type }
-          polls(first: 5) { data { id title options { id name total_answer percent position answers(first: 12) { data { id user { id username avatar { url } } } } } } }
+          polls(first: 5) { data { ''' + _pollFields + r''' } }
         }
       }''', {'id': widget.id});
       if (!mounted) return;
@@ -148,9 +149,9 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
               if ((d['content'] ?? '').toString().isNotEmpty)
                 CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString(), inlineImages: true),
 
-              // Polls / "đánh giá" — render each poll with its options and
-              // current vote counts. Voting itself is read-only here for now.
-              ..._buildPolls(d['polls']?['data']),
+              // Polls / "đánh giá": vote with one tap, see the results.
+              for (final p in ((d['polls']?['data'] ?? const []) as List).whereType<Map>())
+                _DiscussionPoll(key: ValueKey('poll-${p['id']}'), poll: Map<String, dynamic>.from(p)),
               const SizedBox(height: 24),
               Divider(color: AppColors.border, height: 1),
               const SizedBox(height: 20),
@@ -222,113 +223,227 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
     }
     return [];
   }
+}
 
-  List<Widget> _buildPolls(dynamic polls) {
-    if (polls is! List || polls.isEmpty) return [];
-    return polls.map<Widget>((p) {
-      final pp = Map<String, dynamic>.from(p as Map);
-      final options = (pp['options'] ?? []) as List;
-      final total = options.fold<int>(0, (sum, o) {
-        if (o is Map) return sum + ((o['total_answer'] as num?)?.toInt() ?? 0);
-        return sum;
+/// Poll fields shared by the discussion query and the answerPoll response.
+const _pollFields = r'id title status options(orderBy: [{column: "position", order: ASC}]) { id name total_answer percent position answers(first: 12) { data { id user { id username avatar { url } } } } }';
+
+/// One poll under a discussion. One choice per person (the API replaces the
+/// previous answer, so tapping another option changes the vote). Results
+/// (bars + percent + who voted) show once you've voted or the poll is closed.
+class _DiscussionPoll extends StatefulWidget {
+  final Map<String, dynamic> poll;
+  const _DiscussionPoll({super.key, required this.poll});
+
+  @override
+  State<_DiscussionPoll> createState() => _DiscussionPollState();
+}
+
+class _DiscussionPollState extends State<_DiscussionPoll> {
+  late Map<String, dynamic> _poll = widget.poll;
+  String? _mine;
+  String? _sending;
+  String? _forUser;
+  bool _mineLoaded = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload "your answer" on login/logout (wait for the saved login first).
+    final auth = context.watch<AuthProvider>();
+    if (auth.loading) return;
+    final uid = auth.user?['id']?.toString();
+    if (!_mineLoaded || uid != _forUser) {
+      _forUser = uid;
+      _mineLoaded = true;
+      _loadMine();
+    }
+  }
+
+  Future<void> _loadMine() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) { if (_mine != null) setState(() => _mine = null); return; }
+    final uid = _forUser;
+    try {
+      final d = await auth.authedQuery(r'query($p: ID!) { myAnswer(poll_id: $p, first: 10) { data { id option_id } } }', {'p': _poll['id']});
+      final list = (d['myAnswer']?['data'] ?? const []) as List;
+      if (!mounted || uid != _forUser) return;
+      setState(() => _mine = list.isNotEmpty ? '${list.first['option_id']}' : null);
+    } catch (_) {}
+  }
+
+  bool get _closed => '${_poll['status']}' == 'closed';
+
+  Future<void> _vote(String optionId) async {
+    if (_closed || _sending != null || optionId == _mine) return;
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) {
+      await askLogin(context);
+      return;
+    }
+    setState(() => _sending = optionId);
+    try {
+      final d = await auth.authedMutate(
+        r'mutation($p: ID!, $o: [ID]!) { answerPoll(poll_id: $p, option_ids: $o) { ' + _pollFields + r' } }',
+        {'p': _poll['id'], 'o': [optionId]},
+      );
+      final updated = d['answerPoll'];
+      if (!mounted) return;
+      setState(() {
+        _mine = optionId;
+        if (updated is Map) _poll = {..._poll, ...Map<String, dynamic>.from(updated)};
       });
-      return Container(
-        margin: const EdgeInsets.only(top: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Icon(Icons.how_to_vote_outlined, size: 16, color: AppColors.accentLight),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                (pp['title'] ?? 'Đánh giá').toString(),
-                style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
-              ),
-            ),
-            Text('$total bình chọn', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-          ]),
-          const SizedBox(height: 10),
-          ...options.map((o) {
-            final oo = Map<String, dynamic>.from(o as Map);
-            final votes = (oo['total_answer'] as num?)?.toInt() ?? 0;
-            final pct = ((oo['percent'] as num?)?.toDouble() ?? (total > 0 ? votes / total : 0)) / (oo['percent'] != null ? 100.0 : 1.0);
-            final answers = (oo['answers']?['data'] ?? []) as List;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Row(children: [
-                  Expanded(child: Text((oo['name'] ?? '').toString(), style: body(TextStyle(fontSize: 15, color: AppColors.text)))),
-                  Text('$votes', style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w700))),
-                ]),
-                const SizedBox(height: 4),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: pct.clamp(0.0, 1.0),
-                    minHeight: 6,
-                    backgroundColor: AppColors.surfaceLight,
-                    valueColor: AlwaysStoppedAnimation(AppColors.accentLight),
-                  ),
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(friendlyError(e, fallback: 'Chưa gửi được bình chọn. Thử lại sau.'))));
+      }
+    } finally {
+      if (mounted) setState(() => _sending = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final options = ((_poll['options'] ?? const []) as List).whereType<Map>().map((o) => Map<String, dynamic>.from(o)).toList();
+    if (options.isEmpty) return const SizedBox.shrink();
+    final total = options.fold<int>(0, (sum, o) => sum + ((o['total_answer'] as num?)?.toInt() ?? 0));
+    final showResults = _mine != null || _closed;
+    final isGuest = !context.select<AuthProvider, bool>((a) => a.isAuthenticated);
+
+    String hint;
+    if (_closed) {
+      hint = 'Bình chọn đã kết thúc · $total người tham gia';
+    } else if (_mine != null) {
+      hint = 'Cảm ơn bạn! $total người đã bình chọn. Muốn đổi ý, chạm lựa chọn khác.';
+    } else if (isGuest) {
+      hint = 'Đăng nhập để bình chọn.';
+    } else {
+      hint = 'Chạm vào một lựa chọn để bình chọn.';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Icon(_closed ? Icons.lock_outline_rounded : Icons.how_to_vote_outlined, size: 20, color: AppColors.accentLight),
+          const SizedBox(width: 8),
+          Expanded(child: Text((_poll['title'] ?? 'Bình chọn').toString(), style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)))),
+        ]),
+        const SizedBox(height: 12),
+        for (final o in options) _optionRow(o, total, showResults),
+        const SizedBox(height: 2),
+        Text(hint, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      ]),
+    );
+  }
+
+  Widget _optionRow(Map<String, dynamic> o, int total, bool showResults) {
+    final id = '${o['id']}';
+    final name = (o['name'] ?? '').toString();
+    final votes = (o['total_answer'] as num?)?.toInt() ?? 0;
+    final pct = total > 0 ? votes * 100 / total : 0.0;
+    final mine = id == _mine;
+    final sending = _sending == id;
+    final tappable = !_closed && _sending == null && !mine;
+    final answers = ((o['answers']?['data'] ?? const []) as List).whereType<Map>().toList();
+
+    final row = Material(
+      color: AppColors.bg,
+      borderRadius: BorderRadius.circular(12),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: mine ? AppColors.accentLight : AppColors.border, width: mine ? 2 : 1.5),
+      ),
+      child: InkWell(
+        onTap: tappable ? () => _vote(id) : null,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 56),
+          child: Stack(children: [
+            if (showResults)
+              Positioned.fill(
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: (pct / 100).clamp(0.0, 1.0),
+                  child: Container(color: mine ? AppColors.accent.withValues(alpha: 0.22) : AppColors.surfaceHover),
                 ),
-                if (answers.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      for (final a in answers.take(12))
-                        Builder(builder: (_) {
-                          final aa = Map<String, dynamic>.from(a as Map);
-                          final user = aa['user'] as Map?;
-                          if (user == null) return const SizedBox.shrink();
-                          final avatar = (user['avatar'] as Map?)?['url']?.toString();
-                          final username = user['username']?.toString() ?? '';
-                          return Tooltip(
-                            message: username,
-                            child: InkWell(
-                              onTap: () => context.push('/user/${user['id']}'),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.surfaceLight,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  ClipOval(
-                                    child: SizedBox(
-                                      width: 16, height: 16,
-                                      child: avatar != null && avatar.isNotEmpty
-                                          ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.accent))
-                                          : Container(color: AppColors.accent, alignment: Alignment.center, child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?', style: body(const TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)))),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(username, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
-                                ]),
-                              ),
-                            ),
-                          );
-                        }),
-                      if (votes > answers.length)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Text('+${votes - answers.length}', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-                        ),
-                    ],
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(children: [
+                if (sending)
+                  SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.accent))
+                else
+                  Icon(
+                    mine ? Icons.check_circle_rounded : Icons.radio_button_off_rounded,
+                    size: 24,
+                    color: mine ? AppColors.accentLight : AppColors.textMuted,
                   ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(name, style: body(TextStyle(fontSize: 17, fontWeight: mine ? FontWeight.w800 : FontWeight.w600, color: AppColors.text)))),
+                if (showResults) ...[
+                  const SizedBox(width: 8),
+                  Text('${pct.round()}%', style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
                 ],
               ]),
-            );
-          }),
+            ),
+          ]),
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Semantics(
+          button: tappable,
+          selected: mine,
+          label: showResults
+              ? '$name: ${pct.round()} phần trăm, $votes người${mine ? ', bạn đã chọn' : ''}'
+              : 'Chọn $name',
+          excludeSemantics: true,
+          child: row,
+        ),
+        if (showResults && answers.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            for (final a in answers.take(12)) _voterChip(a['user'] as Map?),
+            if (votes > answers.length)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text('+${votes - answers.length}', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+              ),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  Widget _voterChip(Map? user) {
+    if (user == null) return const SizedBox.shrink();
+    final avatar = (user['avatar'] as Map?)?['url']?.toString();
+    final username = user['username']?.toString() ?? '';
+    return InkWell(
+      onTap: () => context.push('/user/${user['id']}'),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          ClipOval(
+            child: SizedBox(
+              width: 20, height: 20,
+              child: avatar != null && avatar.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: cdnImg(avatar, 160), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.accent))
+                  : Container(color: AppColors.accent, alignment: Alignment.center, child: Text(username.isNotEmpty ? username[0].toUpperCase() : '?', style: body(const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)))),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(username, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600))),
         ]),
-      );
-    }).toList();
+      ),
+    );
   }
 }

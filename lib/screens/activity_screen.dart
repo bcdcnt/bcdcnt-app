@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../widgets/contribute_card.dart';
 import '../widgets/ui.dart' show goBack, ChipStrip, OfflineBlock;
 import '../services/auth.dart';
 import '../main.dart' show TabReselect;
@@ -33,7 +34,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     'create_song': 'đăng bài hát mới',
     'create_folk': 'đăng bài dân ca mới',
     'create_instrumental': 'đăng bài khí nhạc mới',
-    'create_karaoke': 'đăng bài thành viên hát mới',
+    'create_karaoke': 'đăng bản thu mới',
     'create_poem': 'đăng bài tiếng thơ mới',
     'approve_upload': 'duyệt bài gửi',
     'reject_upload': 'từ chối bài gửi',
@@ -54,19 +55,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
     'reject_upload': Icons.close,
     'create_discussion': Icons.forum_outlined,
   };
+  /// Five broad filters (elderly-friendly) instead of one per action.
   static const _filters = [
     ('all', 'Tất cả'),
-    ('update_lyric', 'Lời bài hát'),
     ('comment', 'Bình luận'),
-    ('create_sheet', 'Bản nhạc'),
-    ('create_song', 'Tân nhạc'),
-    ('create_folk', 'Dân ca'),
-    ('create_instrumental', 'Khí nhạc'),
-    ('create_karaoke', 'Thành viên hát'),
-    ('create_poem', 'Tiếng thơ'),
-    ('create_document', 'Tư liệu'),
-    ('create_discussion', 'Thảo luận'),
+    ('new', 'Bài mới'),
     ('upload', 'Bài gửi'),
+    ('create_discussion', 'Thảo luận'),
   ];
 
   String _filter = 'all';
@@ -103,6 +98,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (f == 'all') return _actionLabels.keys.toList();
     if (f == 'upload') return ['approve_upload', 'reject_upload'];
     if (f == 'comment') return ['comment', 'love_comment'];
+    // New on the site: songs of every kind, bản thu, lyrics, sheets, tư liệu.
+    if (f == 'new') {
+      return ['create_song', 'create_folk', 'create_instrumental', 'create_karaoke', 'create_poem', 'update_lyric', 'create_sheet', 'create_document'];
+    }
     return [f];
   }
 
@@ -188,6 +187,27 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   List<Object> get _grouped => groupByDay(_items, (a) => a['created_at']);
 
+  /// Real titles for uploads whose "title" is a pasted page link
+  /// ("https://bcdcnt.net/bai-hat/hang-em-nguoc-nui-14685.html"): looked up
+  /// once, so the row reads "duyệt bài gửi Hàng em ngược núi".
+  final Map<String, String?> _linkTitles = {};
+
+  Object? _shownTitle(Object? title) {
+    final t = '${title ?? ''}'.trim();
+    if (!RegExp(r'^https?://').hasMatch(t)) return title;
+    if (_linkTitles.containsKey(t)) return _linkTitles[t] ?? 'một bài';
+    _linkTitles[t] = null;
+    final r = uploadResultRoute(t);
+    final type = r?.extra?['file_type'], id = r?.extra?['id'];
+    if (type != null && id != null) {
+      ApiClient.query('query(\$id: ID!) { o: $type(id: \$id) { title } }', {'id': id}).then((d) {
+        final real = d['o']?['title']?.toString();
+        if (mounted && real != null && real.isNotEmpty) setState(() => _linkTitles[t] = real);
+      }).catchError((_) {});
+    }
+    return 'một bài';
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
@@ -206,6 +226,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
               centerTitle: true,
               leading: IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
             ),
+          // Next to what others just contributed: the invitation to add more.
+          if (widget.embedded) const SliverPadding(padding: EdgeInsets.fromLTRB(20, 14, 20, 0), sliver: SliverToBoxAdapter(child: ContributeCard())),
           SliverPadding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             sliver: SliverToBoxAdapter(child: ChipStrip(
@@ -261,7 +283,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final byBqt = action == 'approve_upload' || action == 'reject_upload';
     final user = byBqt ? null : a['user'];
     final innerObj = isComment ? _target(obj) : null;
-    final objTitle = (innerObj ?? obj)?['title'];
+    final objTitle = _shownTitle((innerObj ?? obj)?['title']);
     final openObj = _openerFor(obj);
 
     final base = body(TextStyle(fontSize: 15, color: AppColors.text, height: 1.5));

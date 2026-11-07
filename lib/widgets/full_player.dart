@@ -305,40 +305,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     }
   }
 
-  Widget _buildArtistRow(List artists) {
-    final entries = <Map>[];
-    for (final a in artists) {
-      if (a is Map) {
-        final label = (a['title'] ?? a['username'] ?? '').toString();
-        if (label.isNotEmpty) entries.add(a);
-      }
-    }
-    if (entries.isEmpty) return const SizedBox.shrink();
-    final style = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _PC.accentLight));
-    final sepStyle = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _PC.textMuted));
-    final children = <Widget>[];
-    for (var i = 0; i < entries.length; i++) {
-      final a = entries[i];
-      final label = (a['title'] ?? a['username']).toString();
-      children.add(InkWell(
-        onTap: () => _openArtistDetail(a),
-        borderRadius: BorderRadius.circular(4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-          child: Text(label, style: style),
-        ),
-      ));
-      if (i < entries.length - 1) {
-        children.add(Text(',', style: sepStyle));
-      }
-    }
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: children,
-    );
-  }
-
   /// Single-line credits row: "Sáng tác: X · Thơ: Y · Thể hiện: Z".
   /// Each name tappable; segments collapse out when their role has no
   /// data. Wraps onto multiple lines when the viewport is narrow.
@@ -387,7 +353,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     final segments = <List<Widget>>[
       seg('Sáng tác:', _composers, '/nhac-si/'),
       seg('Thơ:', _poets, '/nha-tho/'),
-      seg(isKaraoke ? 'Thành viên hát:' : 'Trình bày:', artists, isKaraoke ? '/user/' : '/nghe-si/'),
+      seg(isKaraoke ? 'Thể hiện:' : 'Trình bày:', artists, isKaraoke ? '/user/' : '/nghe-si/'),
     ].where((s) => s.isNotEmpty).toList();
     if (segments.isEmpty) return const SizedBox.shrink();
 
@@ -982,8 +948,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
 
   void _showMoreSheet(BuildContext ctx, Map<String, dynamic> song, PlayerProvider player) {
     final speedLabel = '${player.playbackRate.toStringAsFixed(player.playbackRate == player.playbackRate.roundToDouble() ? 0 : 2)}x';
-    final loveCount = _lovers.length > 99 ? '99+' : (_lovers.isEmpty ? null : '${_lovers.length}');
-    final isInstrumental = songKind(song) == 'instrumental';
     final hasQueue = player.queue.isNotEmpty;
     showModalBottomSheet(
       context: ctx,
@@ -1716,7 +1680,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 for (final c in _poets) _creditRow(c, isPoem ? 'Sáng tác' : 'Lời thơ', () => _openPerson('/nha-tho/${c['slug']}')),
                                 for (final a in (_creditArtists.isNotEmpty ? _creditArtists : artists).whereType<Map>().where((a) => ok(a['title'])))
                                   isKaraoke
-                                      ? _creditRow(Map<String, dynamic>.from(a), 'Thành viên hát', () => _openPerson('/user/${a['id']}'))
+                                      ? _creditRow(Map<String, dynamic>.from(a), 'Thể hiện', () => _openPerson('/user/${a['id']}'))
                                       : _creditRow(Map<String, dynamic>.from(a), 'Trình bày', () => _openArtistDetail(a)),
                               ],
                             ),

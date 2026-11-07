@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../widgets/song_row.dart' show playOrOpen;
+import '../widgets/top_members_rail.dart';
 import '../widgets/ui.dart';
 import '../main.dart' show TabReselect;
 
@@ -32,7 +33,7 @@ const _objFields = '''
 
 const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
     latestComments(first: 20, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
-      data { id content likes created_at user { id username avatar { url } } object { $_objFields } }
+      data { id content likes created_at is_request user { id username avatar { url } } object { $_objFields } }
       paginatorInfo { currentPage lastPage total }
     }
   }''';
@@ -166,30 +167,18 @@ class _CommentsFeedState extends State<CommentsFeed> {
         newPage = 1;
         newLast = 1;
       } else {
+        // "Mới nhất" is every new comment, requests included (tagged in the
+        // row); "Yêu cầu bổ sung" is the requests alone.
         final d = await ApiClient.query(_latestQuery, {
           'page': page,
-          'where': {'AND': [{'column': 'is_request', 'value': filter == 2 ? 1 : 0}]},
+          if (filter == 2) 'where': {'AND': [{'column': 'is_request', 'value': 1}]},
         });
         final raw = d['latestComments'];
         list = ((raw?['data'] ?? []) as List).whereType<Map>().map((e) {
           final m = Map<String, dynamic>.from(e);
           m['text'] = _stripHtml(m['content']?.toString());
           return m;
-        }).where((m) {
-          final t = m['text'] as String;
-          if (t.isEmpty) return false;
-          // "Mới nhất" is the first thing newcomers read: skip one-liners
-          // and playback complaints (those belong in Góp ý & hỗ trợ).
-          if (filter == 1) {
-            final low = t.toLowerCase();
-            final liked = ((m['likes'] as num?) ?? 0) > 0;
-            if (!liked && t.length < 40) return false;
-            if (!liked && RegExp(r'(bị lỗi|không nghe được|ko nghe được|không phát|mất tiếng|lỗi rồi)').hasMatch(low)) return false;
-            // Pasted video titles / links ("… | TOPiano", "youtu.be/…").
-            if (!liked && RegExp(r'(https?://|youtu|\| ?\w+$|sheet music|=\)\)\))').hasMatch(low)) return false;
-          }
-          return true;
-        }).toList();
+        }).where((m) => (m['text'] as String).isNotEmpty).toList();
         final pi = raw?['paginatorInfo'] ?? {};
         newPage = pi['currentPage'] ?? page;
         newLast = pi['lastPage'] ?? 1;
@@ -260,35 +249,8 @@ class _CommentsFeedState extends State<CommentsFeed> {
         controller: _scrollCtl,
         slivers: [
           if (widget.showTitle) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.only(bottom: 14), child: PageTitle('Bình luận'))),
-          // Invitation to fill gaps in the archive; scrolls away with the feed.
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              child: Material(
-                color: AppColors.accentSoft,
-                borderRadius: BorderRadius.circular(18),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => context.push('/gop-tay'),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 10, 14),
-                    child: Row(children: [
-                      Icon(Icons.volunteer_activism_outlined, color: AppColors.accentLight, size: 28),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Góp tay cho kho nhạc', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-                          const SizedBox(height: 2),
-                          Text('Nhiều bài còn thiếu tác giả, năm sáng tác. Bạn có nhớ?', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textSecondary))),
-                        ]),
-                      ),
-                      Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-                    ]),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          // Moved here from the home page: who keeps the archive going.
+          if (!widget.showTitle) const SliverToBoxAdapter(child: TopMembersRail()),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.only(top: 14, bottom: 6),
@@ -407,6 +369,14 @@ class CommentTile extends StatelessWidget {
                     onTap: userId != null ? openUser : null,
                     child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
                   )),
+                  if ('${comment['is_request'] ?? 0}' == '1') ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8)),
+                      child: Text('Yêu cầu', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                    ),
+                  ],
                   const SizedBox(width: 8),
                   Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 ]),

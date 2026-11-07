@@ -141,6 +141,29 @@ void main() async {
   runApp(const BcdcntApp());
   _maybeAutoOpenFullPlayer();
   _maybeOpenAuthDialog();
+  _maybeScrollForShot();
+}
+
+// Screenshot/automation hook: BCDCNT_SCROLL=<px> (desktop only) scrolls the
+// tallest vertical list on screen to that offset once content has loaded, so
+// a capture script can shoot a long page in slices (the window can't be taller
+// than the display). No-op in normal use.
+void _maybeScrollForShot() {
+  if (kIsWeb || !(Platform.isMacOS || Platform.isWindows || Platform.isLinux)) return;
+  final px = double.tryParse(Platform.environment['BCDCNT_SCROLL'] ?? '');
+  if (px == null) return;
+  Future.delayed(const Duration(seconds: 9), () {
+    ScrollPosition? best;
+    void visit(Element e) {
+      if (e is StatefulElement && e.state is ScrollableState) {
+        final pos = (e.state as ScrollableState).position;
+        if (pos.axis == Axis.vertical && pos.hasContentDimensions && (best == null || pos.maxScrollExtent > best!.maxScrollExtent)) best = pos;
+      }
+      e.visitChildren(visit);
+    }
+    WidgetsBinding.instance.rootElement?.visitChildren(visit);
+    best?.jumpTo(px.clamp(0, best!.maxScrollExtent));
+  });
 }
 
 // Screenshot/automation hook: BCDCNT_OPEN_AUTH=login|register (desktop only)
@@ -566,9 +589,9 @@ class _MobileShellState extends State<_MobileShell> {
 
   static const _tabs = [
     ('/', Icons.home_outlined, Icons.home_rounded, 'Trang chủ'),
-    ('/search', Icons.explore_outlined, Icons.explore_rounded, 'Khám phá'),
+    ('/search', Icons.search_outlined, Icons.search_rounded, 'Tìm kiếm'),
     ('/cong-dong', Icons.people_outline_rounded, Icons.people_rounded, 'Cộng đồng'),
-    ('/library', Icons.library_music_outlined, Icons.library_music_rounded, 'Thư viện'),
+    ('/library', Icons.person_outline_rounded, Icons.person_rounded, 'Cá nhân'),
   ];
 
   @override
