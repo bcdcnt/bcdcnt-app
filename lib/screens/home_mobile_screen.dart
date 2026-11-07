@@ -12,7 +12,6 @@ import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/anniversary_rail.dart';
 import '../services/lunar.dart';
-import '../widgets/song_of_day_card.dart';
 import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
@@ -588,10 +587,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 child: PillButton(label: 'Mở bài đã tải về', icon: Icons.download_done_rounded, primary: false, onTap: () => context.push('/da-tai-ve')),
               ),
             ],
-            // Daily ritual: today's song (same as the push) + one-tap question.
-            SongOfDayCard(key: ValueKey('sotd-$_dayKey-$_refreshTick')),
-            // Birthdays / anniversaries first: the same story the daily push
-            // tells, so a push about Lê Dung lands on Lê Dung.
+            // Birthdays / anniversaries first.
             AnniversaryRail(key: ValueKey('anniv-$_dayKey-$_refreshTick')),
             const SizedBox(height: 18),
             if (_loading)

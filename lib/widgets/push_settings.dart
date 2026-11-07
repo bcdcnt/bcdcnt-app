@@ -7,8 +7,8 @@ import '../services/auth.dart';
 import '../services/push.dart';
 import '../services/friendly_error.dart';
 
-/// Cài đặt → Thông báo điện thoại: system permission, "Bài hát của ngày"
-/// (guests too), and for members one switch per kind + quiet hours
+/// Cài đặt → Thông báo điện thoại: system permission, and for members one
+/// switch per kind + quiet hours
 /// (user.push_prefs on the API).
 class PushSettings extends StatefulWidget {
   const PushSettings({super.key});
@@ -20,7 +20,6 @@ class PushSettings extends StatefulWidget {
 class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver {
   AuthorizationStatus? _status;
   bool _statusLoaded = false; // false until the first status() returns
-  bool _daily = true;
   Map<String, dynamic>? _prefs; // null until loaded (or API not ready yet)
   bool _prefsFailed = false;
 
@@ -69,8 +68,6 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
 
   Future<void> _load() async {
     await _loadStatus();
-    final daily = await PushService.instance.dailySongEnabled();
-    if (mounted) setState(() => _daily = daily);
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) return;
@@ -120,10 +117,6 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _permissionCard(),
       const SizedBox(height: 8),
-      _row(Icons.music_note_outlined, 'Bài hát của ngày', 'Vài buổi tối mỗi tuần và các ngày lễ lớn', _daily, (v) {
-        setState(() => _daily = v);
-        PushService.instance.setDailySong(v);
-      }),
       if (auth.isAuthenticated) ...[
         if (_prefs == null && !_prefsFailed)
           Padding(padding: const EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg))))

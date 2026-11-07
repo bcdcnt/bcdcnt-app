@@ -28,9 +28,7 @@ class PushService {
   PushService._();
   static final instance = PushService._();
 
-  static const dailySongTopic = 'daily_song';
   static const _kAskedAt = 'push_asked_at';
-  static const _kDailySong = 'push_daily_song';
 
   bool _ready = false;
   String? _token;
@@ -92,8 +90,15 @@ class PushService {
       return;
     }
     await _register();
-    if (await dailySongEnabled()) {
-      try { await FirebaseMessaging.instance.subscribeToTopic(dailySongTopic); } catch (_) {}
+    // "Bài hát của ngày" (topic daily_song) was dropped in 2026-11. Older
+    // builds subscribed every install by default: take them off it, once.
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('push_daily_song_off') != true) {
+      try {
+        await FirebaseMessaging.instance.unsubscribeFromTopic('daily_song');
+        await prefs.setBool('push_daily_song_off', true);
+        await prefs.remove('push_daily_song');
+      } catch (_) {}
     }
   }
 
@@ -151,7 +156,7 @@ class PushService {
     final t = notificationRoute(data);
     if (t != null) {
       router.push(t.path, extra: t.extra);
-    } else if (data['action'] != 'daily_song') {
+    } else {
       router.push('/thong-bao');
     }
   }
@@ -190,22 +195,6 @@ class PushService {
     final ok = _allowed(s.authorizationStatus);
     if (ok) await _start();
     return ok;
-  }
-
-  // ── "Bài hát của ngày" (topic, works without an account) ────────────
-
-  Future<bool> dailySongEnabled() async => (await SharedPreferences.getInstance()).getBool(_kDailySong) ?? true;
-
-  Future<void> setDailySong(bool on) async {
-    (await SharedPreferences.getInstance()).setBool(_kDailySong, on);
-    if (!_ready || _token == null) return;
-    try {
-      if (on) {
-        await FirebaseMessaging.instance.subscribeToTopic(dailySongTopic);
-      } else {
-        await FirebaseMessaging.instance.unsubscribeFromTopic(dailySongTopic);
-      }
-    } catch (_) {}
   }
 
   /// Red number on the app icon; cleared when Thông báo is opened.
