@@ -21,21 +21,21 @@
       "x": 470,
       "y": 0,
       "w": 390,
-      "h": 2960,
+      "h": 3384,
       "title": "Tìm kiếm"
     },
     "CongDong.dc.html": {
       "x": 940,
       "y": 0,
       "w": 390,
-      "h": 2853,
-      "title": "Cộng đồng"
+      "h": 2765,
+      "title": "Cộng đồng · Cảm nhận"
     },
     "CaNhan.dc.html": {
-      "x": 1410,
+      "x": 2350,
       "y": 0,
       "w": 390,
-      "h": 2261,
+      "h": 2287,
       "title": "Cá nhân"
     },
     "BaiHat.dc.html": {
@@ -107,12 +107,36 @@
       "w": 390,
       "h": 78,
       "title": "Thành phần: Trình phát nhỏ"
+    },
+    "CongDong_ThaoLuan.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 1410,
+      "title": "Cộng đồng · Thảo luận"
+    },
+    "CongDong_HoatDong.dc.html": {
+      "x": 1880,
+      "y": 0,
+      "w": 390,
+      "h": 1120,
+      "title": "Cộng đồng · Hoạt động"
+    },
+    "DangThaoLuan.dc.html": {
+      "x": 1410,
+      "y": 1530,
+      "w": 390,
+      "h": 958,
+      "title": "Đăng thảo luận"
     }
   },
   "order": [
     "Main.dc.html",
     "TimKiem.dc.html",
     "CongDong.dc.html",
+    "CongDong_ThaoLuan.dc.html",
+    "DangThaoLuan.dc.html",
+    "CongDong_HoatDong.dc.html",
     "CaNhan.dc.html",
     "BaiHat.dc.html",
     "TrinhPhat.dc.html",
@@ -131,7 +155,7 @@
       "y": -300,
       "text": "4 tab chính",
       "kind": "title1",
-      "maxW": 1800
+      "maxW": 2740
     },
     "row2": {
       "x": 0,
@@ -148,7 +172,7 @@
       "maxW": 1800
     },
     "rule": {
-      "x": 2360,
+      "x": 2830,
       "y": 0,
       "w": 420,
       "text": "Quy trình: mọi thay đổi giao diện sửa trên canvas này trước → duyệt → mới sửa code app (Flutter).\n\nMàu: nền #FFFFFF · bề mặt #F4F1F0 · đỏ rượu #711313 / #8E1F1F · chữ #161112 · phụ #4F4547 · mờ #665C5E.\nFont: Montserrat. Chữ thân 16, phụ 14, chú thích 13. Vùng bấm ≥ 44–48pt.\nẢnh minh hoạ trong app được nhuộm đơn sắc nâu đỏ.",
