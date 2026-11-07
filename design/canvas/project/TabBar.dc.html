@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Thanh tab</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0}</style>
+</helmet>
+<nav aria-label="Thanh tab" style="width: 390px; height: 61px; box-sizing: border-box; background: #FFFFFF; border-top: 1px solid #ECE4E4; display: flex; font-family: Montserrat, sans-serif">
+<sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
+<a href="{{t.href}}" aria-label="{{t.label}}" style="flex: 1; min-width: 0; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; color: {{t.color}}">
+<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="position: relative; top: -1.5px"><path d="{{t.d}}"></path></svg>
+<span style="margin-top: 4px; font-size: 13px; line-height: 16px; font-weight: 700; white-space: nowrap">{{t.label}}</span>
+</a>
+</sc-for>
+</nav>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"active":{"editor":"enum","options":["home","search","community","me","none"],"default":"home"},"$preview":{"width":390,"height":61}}'>
+class Component extends DCLogic {
+renderVals() {
+const active = this.props.active ?? 'home';
+// Material icons (community idle = people_alt outlined, as Flutter renders people_outline_rounded): outlined when idle, rounded (filled) when selected — as in lib/main.dart _tabs.
+const defs = [
+{ key: 'home', label: 'Trang chủ', href: 'Main.dc.html',
+off: 'M12 5.69l5 4.5V18h-2v-6H9v6H7v-7.81l5-4.5M12 3L2 12h3v8h6v-6h2v6h6v-8h3L12 3z',
+on: 'M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z' },
+{ key: 'search', label: 'Tìm kiếm', href: 'TimKiem.dc.html',
+off: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+on: 'M15.5 14h-.79l-.28-.27c1.2-1.4 1.82-3.31 1.48-5.34-.47-2.78-2.79-5-5.59-5.34-4.23-.52-7.79 3.04-7.27 7.27.34 2.8 2.56 5.12 5.34 5.59 2.03.34 3.94-.28 5.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z' },
+{ key: 'community', label: 'Cộng đồng', href: 'CongDong.dc.html',
+off: 'M16.343 13.051C17.617 13.916 18.51 15.088 18.51 16.65v1.86c0 0.512 0.419 0.93 0.93 0.93h1.86c0.512 0 0.93 -0.419 0.93 -0.93v-1.86c0 -2.027 -3.32 -3.227 -5.887 -3.599zM14.79 12c2.055 0 3.72 -1.665 3.72 -3.72s-1.665 -3.72 -3.72 -3.72c-0.437 0 -0.846 0.093 -1.237 0.223C14.325 5.741 14.79 6.959 14.79 8.28s-0.465 2.539 -1.237 3.497c0.391 0.13 0.8 0.223 1.237 0.223zM9.21 12c2.055 0 3.72 -1.665 3.72 -3.72s-1.665 -3.72 -3.72 -3.72 -3.72 1.665 -3.72 3.72 1.665 3.72 3.72 3.72zm0 -5.58c1.023 0 1.86 0.837 1.86 1.86s-0.837 1.86 -1.86 1.86 -1.86 -0.837 -1.86 -1.86 0.837 -1.86 1.86 -1.86zM9.21 12.93c-2.483 0 -7.44 1.246 -7.44 3.72v1.86c0 0.512 0.419 0.93 0.93 0.93h13.02c0.512 0 0.93 -0.419 0.93 -0.93v-1.86c0 -2.474 -4.957 -3.72 -7.44 -3.72zm5.58 4.65H3.63v-0.921C3.816 15.99 6.699 14.79 9.21 14.79s5.394 1.2 5.58 1.86v0.93z',
+on: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V18c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05.02.01.03.03.04.04 1.14.83 1.93 1.94 1.93 3.41V18c0 .35-.07.69-.18 1H22c.55 0 1-.45 1-1v-1.5c0-2.33-4.67-3.5-7-3.5z' },
+{ key: 'me', label: 'Cá nhân', href: 'CaNhan.dc.html',
+off: 'M12 6c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2m0 9c2.7 0 5.8 1.29 6 2v1H6v-.99c.2-.72 3.3-2.01 6-2.01m0-11C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 9c-2.67 0-8 1.34-8 4v2c0 .55.45 1 1 1h14c.55 0 1-.45 1-1v-2c0-2.66-5.33-4-8-4z',
+on: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v1c0 .55.45 1 1 1h14c.55 0 1-.45 1-1v-1c0-2.66-5.33-4-8-4z' }
+];
+const tabs = defs.map((d) => {
+const on = d.key === active;
+return { label: d.label, href: d.href, color: on ? '#711313' : '#665C5E', d: on ? d.on : d.off };
+});
+return { tabs };
+}
+}
+</script>
+</body>
+</html>

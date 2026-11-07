@@ -1,0 +1,159 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-11-06T11:30:00Z"
+  },
+  "title": "BCĐCNT App — Giao diện",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 4109,
+      "title": "Trang chủ"
+    },
+    "TimKiem.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 2960,
+      "title": "Tìm kiếm"
+    },
+    "CongDong.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 2645,
+      "title": "Cộng đồng"
+    },
+    "CaNhan.dc.html": {
+      "x": 1410,
+      "y": 0,
+      "w": 390,
+      "h": 2261,
+      "title": "Cá nhân"
+    },
+    "BaiHat.dc.html": {
+      "x": 0,
+      "y": 4608,
+      "w": 390,
+      "h": 4377,
+      "title": "Chi tiết bài hát"
+    },
+    "TrinhPhat.dc.html": {
+      "x": 470,
+      "y": 4608,
+      "w": 390,
+      "h": 1860,
+      "title": "Trình phát"
+    },
+    "NgheSi.dc.html": {
+      "x": 940,
+      "y": 4608,
+      "w": 390,
+      "h": 1595,
+      "title": "Trang nghệ sĩ / nhạc sĩ"
+    },
+    "DanhSach.dc.html": {
+      "x": 1410,
+      "y": 4608,
+      "w": 390,
+      "h": 1879,
+      "title": "Danh sách (Thập niên)"
+    },
+    "ThanhVien.dc.html": {
+      "x": 1880,
+      "y": 4608,
+      "w": 390,
+      "h": 2068,
+      "title": "Trang thành viên"
+    },
+    "ThongBao.dc.html": {
+      "x": 0,
+      "y": 9508,
+      "w": 390,
+      "h": 984,
+      "title": "Thông báo"
+    },
+    "CaiDat.dc.html": {
+      "x": 470,
+      "y": 9508,
+      "w": 390,
+      "h": 958,
+      "title": "Cài đặt"
+    },
+    "DangNhap.dc.html": {
+      "x": 940,
+      "y": 9508,
+      "w": 390,
+      "h": 958,
+      "title": "Đăng nhập"
+    },
+    "TabBar.dc.html": {
+      "x": 1410,
+      "y": 9508,
+      "w": 390,
+      "h": 61,
+      "title": "Thành phần: Thanh tab"
+    },
+    "MiniPlayer.dc.html": {
+      "x": 1410,
+      "y": 9649,
+      "w": 390,
+      "h": 78,
+      "title": "Thành phần: Trình phát nhỏ"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "TimKiem.dc.html",
+    "CongDong.dc.html",
+    "CaNhan.dc.html",
+    "BaiHat.dc.html",
+    "TrinhPhat.dc.html",
+    "NgheSi.dc.html",
+    "DanhSach.dc.html",
+    "ThanhVien.dc.html",
+    "ThongBao.dc.html",
+    "CaiDat.dc.html",
+    "DangNhap.dc.html",
+    "TabBar.dc.html",
+    "MiniPlayer.dc.html"
+  ],
+  "notes": {
+    "row1": {
+      "x": 0,
+      "y": -300,
+      "text": "4 tab chính",
+      "kind": "title1",
+      "maxW": 1800
+    },
+    "row2": {
+      "x": 0,
+      "y": 4308,
+      "text": "Trang chi tiết",
+      "kind": "title1",
+      "maxW": 2270
+    },
+    "row3": {
+      "x": 0,
+      "y": 9208,
+      "text": "Tài khoản & thành phần dùng chung",
+      "kind": "title1",
+      "maxW": 1800
+    },
+    "rule": {
+      "x": 2360,
+      "y": 0,
+      "w": 420,
+      "text": "Quy trình: mọi thay đổi giao diện sửa trên canvas này trước → duyệt → mới sửa code app (Flutter).\n\nMàu: nền #FFFFFF · bề mặt #F4F1F0 · đỏ rượu #711313 / #8E1F1F · chữ #161112 · phụ #4F4547 · mờ #665C5E.\nFont: Montserrat. Chữ thân 16, phụ 14, chú thích 13. Vùng bấm ≥ 44–48pt.\nẢnh minh hoạ trong app được nhuộm đơn sắc nâu đỏ.",
+      "fill": "orange"
+    }
+  },
+  "designSystems": []
+}

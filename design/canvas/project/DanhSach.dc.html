@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Danh sách bài hát theo thập niên</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
+</style>
+</helmet>
+<div style="width: 390px; height: 1879px; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; display: flex; flex-direction: column; overflow: hidden">
+
+<div style="height: 56px; flex-shrink: 0; display: flex; align-items: center; position: relative">
+<a href="Main.dc.html" aria-label="Quay lại" style="width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; color: #161112"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3.5L7.5 12l8.5 8.5"></path></svg></a>
+<h1 style="margin: 0; position: absolute; left: 72px; right: 72px; text-align: center; font-size: 17px; font-weight: 800; color: #161112">Thập niên</h1>
+</div>
+
+<div style="padding: 8px 20px 24px 20px; display: flex; flex-direction: column">
+
+<div style="height: 92px; box-sizing: border-box; border-radius: 18px; background: linear-gradient(105deg, #4A0C0C, #8E1F1F); box-shadow: 0 6px 16px rgba(113,19,19,0.3); padding: 18px; display: flex; align-items: center; color: #FFFFFF">
+<span style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 14px; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 0 1 0 17a8.5 8.5 0 0 1 0-17z" stroke-dasharray="2.6 2.4"></path><path d="M12 7.5V12l3.2 1.8"></path></svg></span>
+<span style="margin-left: 14px; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 22px; font-weight: 800; letter-spacing: -0.44px; color: #FFFFFF">Thập niên 1970</span><span style="font-size: 15px; font-weight: 400; color: rgba(255,255,255,0.7)">573 bài hát</span></span>
+</div>
+
+<div style="display: flex; gap: 10px; margin-top: 14px">
+<button style="flex: 1; height: 50px; border-radius: 25px; border: none; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 800; letter-spacing: 0.23px; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"></path></svg>Phát tất cả</button>
+<button style="flex: 1; height: 50px; border-radius: 25px; border: none; background: #F4F1F0; color: #161112; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 800; letter-spacing: 0.23px; display: flex; align-items: center; justify-content: center; gap: 8px"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"></path></svg>Ngẫu nhiên</button>
+</div>
+
+<div role="group" aria-label="Sắp xếp" style="display: flex; gap: 8px; margin-top: 14px; height: 44px; overflow: hidden">
+<button style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px; white-space: nowrap">Nghe nhiều nhất</button>
+<button style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px; white-space: nowrap">Mới cập nhật</button>
+<button style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px; white-space: nowrap">Yêu thích nhất</button>
+<button style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px; white-space: nowrap">Tải nhiều nhất</button>
+</div>
+
+<div style="margin-top: 14px; display: flex; flex-direction: column">
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">1</span>
+<img src="/_blob/bb15a0633800c97866b0575ac7a8efe3" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bác Hồ một tình yêu bao la</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Thanh Hoa</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 96N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Bác Hồ một tình yêu bao la" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">2</span>
+<img src="/_blob/84fe0671a446653224f8891c05dca4bd" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Đưa cơm cho mẹ đi cày</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Ngọc Thoa</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 86N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Đưa cơm cho mẹ đi cày" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">3</span>
+<img src="/_blob/347a87561e5096b8ac982c0ba4fe4ee2" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Gửi em ở cuối sông Hồng</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Thanh Ho…</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 72N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Gửi em ở cuối sông Hồng" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">4</span>
+<img src="/_blob/bb3b0f0da1d0e24961fccd46653d78fd" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bác đang cùng chúng cháu hành quân</span><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Ngọc Tú, Tốp ca nam Nhà hát CMNVN</span></span>
+<span aria-label="Tuỳ chọn cho Bác đang cùng chúng cháu hành quân" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">5</span>
+<img src="/_blob/4d43b1ae67d8f63d12f062c5a3594426" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bài ca biên giới</span><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Ngọc Tân, Huy Hùng, Tốp ca nam Đài TNVN</span></span>
+<span aria-label="Tuỳ chọn cho Bài ca biên giới" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">6</span>
+<img src="/_blob/4389c9865793c9555b85222a96bc6261" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Từ một ngã tư đường phố</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Thuý Hà, Mạnh Hà</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 66N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Từ một ngã tư đường phố" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">7</span>
+<img src="/_blob/0e1dfac4bf0c5070d0e77dd72f7e1493" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tổ quốc yêu thương</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Kiều Hưng</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 62N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Tổ quốc yêu thương" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">8</span>
+<img src="/_blob/15d021a625e44f0e9ff37aae395a5ec2" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Anh ở đầu sông, em cuối sông</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Lê Dung</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 61N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Anh ở đầu sông, em cuối sông" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">9</span>
+<img src="/_blob/7029255daca5bbae966e61e9fb4e27d7" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Chiến đấu vì độc lập tự do</span><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tuyết Nhung, Thanh Hương (Đài TNVN), Hợp ca nam nữ Đài TNVN</span></span>
+<span aria-label="Tuỳ chọn cho Chiến đấu vì độc lập tự do" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">10</span>
+<img src="/_blob/afaa85824e060ece03e7d7be0f886989" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Rặng trâm bầu</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Kiều Hưng, Thanh Huyền</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 55N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Rặng trâm bầu" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">11</span>
+<img src="/_blob/df179115019a3ccc2745790e41db9e77" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Một khúc tâm tình của người Hà Tĩnh</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Thu Hiền</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 54N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Một khúc tâm tình của người Hà Tĩnh" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">12</span>
+<img src="/_blob/407334b38fb39dee547379140b934f8e" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bài ca phụ nữ Việt Nam</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tuyết Thanh</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 53N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Bài ca phụ nữ Việt Nam" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">13</span>
+<img src="/_blob/c3eb49be84f21d30d39a418683ce57e7" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bác Hồ, người cho em tất cả</span><span style="font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tốp ca thiếu nhi quận Ba Đình, Hà Nội</span></span>
+<span aria-label="Tuỳ chọn cho Bác Hồ, người cho em tất cả" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">14</span>
+<img src="/_blob/0a4457564aa3b6ba9b1f0d4937deee1c" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Từ rừng xanh cháu về thăm lăng Bác</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Hải Vân</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 48N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Từ rừng xanh cháu về thăm lăng Bác" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">15</span>
+<img src="/_blob/15d021a625e44f0e9ff37aae395a5ec2" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Nha Trang mùa thu lại về</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Ái Vân</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 47N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Nha Trang mùa thu lại về" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">16</span>
+<img src="/_blob/6cc19bfea22f29ee669879d6f5a7c855" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tình ca mùa xuân</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bảo Yến</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 46N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Tình ca mùa xuân" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">17</span>
+<img src="/_blob/fa0fa31512004cd35b83cd21cca5b844" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Hà Nội niềm tin và hy vọng</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Trần Khánh</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 45N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Hà Nội niềm tin và hy vọng" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">18</span>
+<img src="/_blob/0a4457564aa3b6ba9b1f0d4937deee1c" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Bến cảng quê hương tôi</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Thuý Hà</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 44N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Bến cảng quê hương tôi" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">19</span>
+<img src="/_blob/afaa85824e060ece03e7d7be0f886989" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Anh ở đầu sông, em cuối sông</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Kiều Hưng</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 44N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Anh ở đầu sông, em cuối sông" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+<a href="BaiHat.dc.html" style="display: flex; align-items: center; min-height: 68px; padding: 8px 0; box-sizing: border-box; color: #161112; border-radius: 12px">
+<span style="width: 40px; flex-shrink: 0; text-align: center; font-size: 16px; font-weight: 800; color: #8E1F1F; font-variant-numeric: tabular-nums">20</span>
+<img src="/_blob/bb3b0f0da1d0e24961fccd46653d78fd" alt="" style="margin-left: 10px; width: 52px; height: 52px; flex-shrink: 0; border-radius: 12px; object-fit: cover">
+<span style="margin-left: 14px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 7px"><span style="font-size: 16px; font-weight: 700; letter-spacing: 0.25px; color: #161112; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Đất nước trọn niềm vui</span><span style="display: flex; min-width: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.23px; color: #665C5E"><span style="min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Hữu Nội</span><span style="flex-shrink: 0; white-space: nowrap">&nbsp;· 41N lượt nghe</span></span></span>
+<span aria-label="Tuỳ chọn cho Đất nước trọn niềm vui" style="width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><circle cx="12" cy="5.5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="18.5" r="2"></circle></svg></span>
+</a>
+</div>
+
+<nav aria-label="Phân trang" style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; justify-content: center; align-items: center; gap: 6px">
+<button aria-current="page" aria-label="Trang 1, đang xem" style="min-width: 48px; height: 48px; padding: 0 6px; border-radius: 12px; border: none; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 16px; font-weight: 800">1</button>
+<button aria-label="Trang 2" style="min-width: 48px; height: 48px; padding: 0 6px; border-radius: 12px; border: none; background: #F4F1F0; color: #161112; font-family: Montserrat, sans-serif; font-size: 16px; font-weight: 800">2</button>
+<span aria-hidden="true" style="font-size: 16px; color: #665C5E">…</span>
+<button aria-label="Trang 29" style="min-width: 48px; height: 48px; padding: 0 6px; border-radius: 12px; border: none; background: #F4F1F0; color: #161112; font-family: Montserrat, sans-serif; font-size: 16px; font-weight: 800">29</button>
+</div>
+<div style="display: flex; align-items: center">
+<button disabled="disabled" aria-label="Trang trước" style="min-width: 96px; height: 48px; padding: 0 16px; box-sizing: border-box; border-radius: 24px; border: 1px solid #ECE4E4; background: transparent; color: #665C5E; font-family: Montserrat, sans-serif; font-size: 16px; font-weight: 800">‹ Trước</button>
+<span style="flex: 1; text-align: center; font-size: 16px; font-weight: 700; color: #4F4547">Trang 1 / 29</span>
+<button aria-label="Trang sau" style="min-width: 96px; height: 48px; padding: 0 16px; box-sizing: border-box; border-radius: 24px; border: 1px solid #ECE4E4; background: #F4F1F0; color: #161112; font-family: Montserrat, sans-serif; font-size: 16px; font-weight: 800">Sau ›</button>
+</div>
+</nav>
+<div style="height: 20px"></div>
+
+</div>
+
+<div style="flex: 1"></div>
+<dc-import name="TabBar" active="home" hint-size="390px,61px"></dc-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1879}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>
