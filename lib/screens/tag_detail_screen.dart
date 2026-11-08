@@ -131,7 +131,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
     return out;
   }
 
-  void _playAll() {
+  void _playAll({bool shuffle = false}) {
     final st = _tabs[_activeType]!;
     if (st.items.isEmpty) return;
     final player = context.read<PlayerProvider>();
@@ -142,8 +142,10 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
       if (m['audioUrl'] != null) queue.add(m);
     }
     if (queue.isEmpty) return;
+    if (shuffle) queue.shuffle();
     player.playSong(queue.first, queue);
     player.setFetchMore(null);
+    if (shuffle && !player.shuffle) player.toggleShuffle();
   }
 
   Future<void> _fetchPage(String type, int page, {int? sort, bool append = false}) async {
@@ -265,16 +267,15 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                           child: Container(
                             alignment: Alignment.center,
                             padding: const EdgeInsets.symmetric(vertical: 8),
+                            // Same look as the person page tabs: "Tân nhạc · 2.026",
+                            // dark bold when active over a 3pt wine bar.
                             decoration: BoxDecoration(
-                              border: Border(bottom: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2)),
+                              border: Border(bottom: BorderSide(color: active ? AppColors.accent : Colors.transparent, width: 3)),
                             ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Text(t.$2, style: body(TextStyle(fontSize: 15, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.accentLight : AppColors.textSecondary))),
-                              if (total > 0) ...[
-                                const SizedBox(width: 6),
-                                Text('$total', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: active ? AppColors.accentLight.withValues(alpha: 0.7) : AppColors.textMuted))),
-                              ],
-                            ]),
+                            child: Text(
+                              total > 0 ? '${t.$2} · ${_formatInt(total)}' : t.$2,
+                              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: active ? AppColors.text : AppColors.textMuted)),
+                            ),
                           ),
                         );
                       },
@@ -282,14 +283,15 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Row(children: [
-                  Expanded(
-                    child: Text(activeLabel + (st.allTotal > 0 ? ' · ${_formatInt(st.allTotal)} bài' : ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                  ),
-                  if (st.items.isNotEmpty)
-                    PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
-                ]),
-                const SizedBox(height: 12),
+                // Kind and count are on the tab above: just the play buttons.
+                if (st.items.isNotEmpty) ...[
+                  Row(children: [
+                    Expanded(child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true)),
+                    const SizedBox(width: 10),
+                    Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
+                  ]),
+                  const SizedBox(height: 14),
+                ],
                 ListSearchField(hint: 'Tìm trong ${st.allTotal > 0 ? '${_formatInt(st.allTotal)} bài ' : ''}$activeLabel', onChanged: _search),
                 ListSearchSummary(query: _q, total: st.total, loading: st.loading),
                 const SizedBox(height: 14),

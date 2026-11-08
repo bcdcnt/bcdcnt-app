@@ -107,7 +107,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
     return n < 0 ? '-${buf.toString()}' : buf.toString();
   }
 
-  void _playAll() {
+  void _playAll({bool shuffle = false}) {
     if (_list.items.isEmpty) return;
     final player = context.read<PlayerProvider>();
     final queue = <Map<String, dynamic>>[];
@@ -117,8 +117,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
       if (m['audioUrl'] != null) queue.add(m);
     }
     if (queue.isEmpty) return;
+    if (shuffle) queue.shuffle();
     player.playSong(queue.first, queue);
     player.setFetchMore(null);
+    if (shuffle && !player.shuffle) player.toggleShuffle();
   }
 
   @override
@@ -192,7 +194,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                         padding: const EdgeInsets.only(bottom: 14),
                         child: Row(
                           children: [
-                            PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
+                            Expanded(child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true)),
+                            const SizedBox(width: 10),
+                            Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                           ],
                         ),
                       ),
