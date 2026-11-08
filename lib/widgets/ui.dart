@@ -727,9 +727,11 @@ class UserAvatar extends StatelessWidget {
       fallback: Container(
         width: size,
         height: size,
-        color: AppColors.accentSoft,
+        // Dark wine, not a pale tint: a member without a photo should still
+        // stand out on the white page.
+        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
         alignment: Alignment.center,
-        child: Text(initial, style: body(TextStyle(fontSize: size * 0.4, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+        child: Text(initial, style: body(TextStyle(fontSize: size * 0.4, fontWeight: FontWeight.w800, color: Colors.white))),
       ),
     );
   }

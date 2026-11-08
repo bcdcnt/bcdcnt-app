@@ -890,9 +890,9 @@ class _CommentSectionState extends State<CommentSection> {
                     Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor: AppColors.accentSoft,
+                        backgroundColor: const Color(0xFF711313),
                         backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(cdnImg((auth.user!['avatar']).toString(), 160)) : null,
-                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 16, color: AppColors.accentLight) : null,
+                        child: auth.user?['avatar'] == null ? const Icon(Icons.person, size: 16, color: Colors.white) : null,
                       ),
                       const SizedBox(width: 4),
                       _attachMenuButton(),

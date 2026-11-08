@@ -770,7 +770,7 @@ class _MobileShellState extends State<_MobileShell> {
                         button: true,
                         selected: i == _activeTab,
                         excludeSemantics: true,
-                        label: i == 2 && unread > 0 ? '${_tabs[i].$4}, $unread thông báo mới' : _tabs[i].$4,
+                        label: i == 3 && unread > 0 ? '${_tabs[i].$4}, $unread thông báo mới' : _tabs[i].$4,
                         child: InkResponse(
                           onTap: () {
                             HapticFeedback.selectionClick();
@@ -812,8 +812,8 @@ class _MobileShellState extends State<_MobileShell> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Badge(
-                                // Replies and likes waiting: show them on Cộng đồng.
-                                isLabelVisible: i == 2 && unread > 0,
+                                // Unread notifications: Thông báo lives under Cá nhân.
+                                isLabelVisible: i == 3 && unread > 0,
                                 label: Text(unread > 99 ? '99+' : '$unread'),
                                 backgroundColor: AppColors.accent,
                                 child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : AppColors.accentLight) : AppColors.textMuted),

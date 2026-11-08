@@ -13,8 +13,8 @@
 </helmet>
 <nav aria-label="Thanh tab" style="width: 390px; height: 61px; box-sizing: border-box; background: #FFFFFF; border-top: 1px solid #ECE4E4; display: flex; font-family: Montserrat, sans-serif">
 <sc-for list="{{tabs}}" as="t" hint-placeholder-count="4">
-<a href="{{t.href}}" aria-label="{{t.label}}" style="flex: 1; min-width: 0; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; color: {{t.color}}">
-<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="position: relative; top: -1.5px"><path d="{{t.d}}"></path></svg>
+<a href="{{t.href}}" aria-label="{{t.aria}}" style="flex: 1; min-width: 0; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; color: {{t.color}}">
+<span style="position: relative; display: block; width: 26px; height: 26px; top: -1.5px"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{t.d}}"></path></svg><span aria-hidden="true" style="display: {{t.badgeDisplay}}; position: absolute; left: 15px; top: -6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; border: 2px solid #FFFFFF; background: #711313; color: #FFFFFF; font-size: 10.5px; line-height: 14px; font-weight: 800; text-align: center">{{t.badge}}</span></span>
 <span style="margin-top: 4px; font-size: 13px; line-height: 16px; font-weight: 700; white-space: nowrap">{{t.label}}</span>
 </a>
 </sc-for>
@@ -41,7 +41,9 @@ on: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1
 ];
 const tabs = defs.map((d) => {
 const on = d.key === active;
-return { label: d.label, href: d.href, color: on ? '#711313' : '#665C5E', d: on ? d.on : d.off };
+// Unread notifications ride on Cá nhân (Thông báo lives there), not Cộng đồng.
+const badge = d.key === 'me' ? '1' : '';
+return { label: d.label, aria: badge ? d.label + ', ' + badge + ' thông báo mới' : d.label, href: d.href, color: on ? '#711313' : '#665C5E', d: on ? d.on : d.off, badge, badgeDisplay: badge ? 'block' : 'none' };
 });
 return { tabs };
 }
