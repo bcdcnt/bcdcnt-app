@@ -19,7 +19,7 @@ export '../widgets/song_row.dart' show playOrOpen;
 // diện"). Order: greeting + lunar date → Nghe tiếp → Mọi người đang nghe →
 // Kỷ niệm tuần này → Gợi ý (the coming occasion's playlist, else yesterday's
 // most played) → Mới cập nhật → Nghe nhiều hôm nay → Cảm nhận hay → Có thể
-// bạn thích → Nghe đi nghe lại → Thập niên → Nhạc sĩ → Nghệ sĩ. Most of it changes daily or faster. Thành viên tiêu
+// bạn thích → Nghe đi nghe lại → Thập niên → Nhạc sĩ nổi bật → Nghệ sĩ nổi bật. Most of it changes daily or faster. Thành viên tiêu
 // biểu lives in Cộng đồng, Bài yêu thích in Cá nhân. Desktop keeps HomeScreen.
 
 const _songFields = 'id slug title subtitle views created_at play_type file_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
@@ -38,25 +38,13 @@ const _liveQuery = '''query HomeLive {
   topSongsToday(limit: 5) { $_songFields }
 }''';
 
-const _peopleFields = 'id slug title avatar { url } total_listens';
-const _peopleQuery = '''query(\$composerWhere: WhereConditions, \$artistWhere: WhereConditions) {
-  composers(first: 16, random: true, where: \$composerWhere) { data { $_peopleFields } }
-  artists(first: 16, random: true, where: \$artistWhere) { data { $_peopleFields } }
+const _peopleFields = 'id slug title avatar { url }';
+/// "Nhạc sĩ nổi bật" / "Nghệ sĩ nổi bật": the people the most listeners
+/// played today (no groups, all with a photo), recounted every 5 minutes.
+const _peopleQuery = '''query HomePeople {
+  topComposersToday(limit: 12) { $_peopleFields }
+  topArtistsToday(limit: 12) { $_peopleFields }
 }''';
-
-const _peopleVars = {
-  'composerWhere': {'AND': [
-    {'column': 'type', 'value': 'domestic'},
-    {'column': 'total_listens', 'operator': 'GT', 'value': '10000'},
-    {'column': 'image_id', 'operator': 'GT', 'value': '0'},
-  ]},
-  'artistWhere': {'AND': [
-    {'column': 'type', 'value': 'domestic'},
-    {'column': 'is_group', 'value': '0'},
-    {'column': 'total_listens', 'operator': 'GT', 'value': '10000'},
-    {'column': 'image_id', 'operator': 'GT', 'value': '0'},
-  ]},
-};
 
 class _Cat {
   final String name, slug, query;
@@ -220,7 +208,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     _fetchOccasion(_nextOccasion(DateTime.now()));
     final r = await Future.wait([
       safe(ApiClient.query(_mainQuery)),
-      safe(ApiClient.query(_peopleQuery, _peopleVars)),
+      safe(ApiClient.query(_peopleQuery)),
       safe(ApiClient.query(_liveQuery)),
     ]);
     if (!mounted) return;
@@ -254,8 +242,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         // image_id > 0 doesn't guarantee the image row exists (~10% don't):
         // keep only people with a real photo so the rail stays all faces.
         bool hasPhoto(Map p) => (p['avatar']?['url']?.toString() ?? '').isNotEmpty;
-        _composers = _maps(people['composers']?['data']).where(hasPhoto).take(12).toList();
-        _artists = _maps(people['artists']?['data']).where(hasPhoto).take(12).toList();
+        _composers = _maps(people['topComposersToday']).where(hasPhoto).toList();
+        _artists = _maps(people['topArtistsToday']).where(hasPhoto).toList();
       }
       if (live != null) _applyLive(live);
       _loading = false;
@@ -659,11 +647,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             // Composers and singers in their own rails: behind a chip, the
             // second one was never opened.
             if (_loading || _composers.isNotEmpty) ...[
-              SectionTitle('Nhạc sĩ', onAction: () => context.push('/nhac-si')),
+              SectionTitle('Nhạc sĩ nổi bật', onAction: () => context.push('/nhac-si')),
               _PeopleRail(people: _composers, loading: _loading, route: '/nhac-si/'),
             ],
             if (_loading || _artists.isNotEmpty) ...[
-              SectionTitle('Nghệ sĩ', onAction: () => context.push('/nghe-si')),
+              SectionTitle('Nghệ sĩ nổi bật', onAction: () => context.push('/nghe-si')),
               _PeopleRail(people: _artists, loading: _loading, route: '/nghe-si/'),
             ],
           ],
