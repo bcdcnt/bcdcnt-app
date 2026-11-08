@@ -1015,17 +1015,16 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
           ...((t['sample_images'] is List) ? (t['sample_images'] as List).whereType<String>() : const <String>[]),
       ];
 
-  /// "Tân nhạc" / "Dân ca" and their chips, wrapping onto more lines.
-  Widget _group(String label, List<(String, String)> items) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final (t, route) in items) BrandChip(label: t, onTap: () => context.push(route)),
-          ]),
-        ]),
-      );
+  static const _subKinds = [
+    ('Nhạc thiếu nhi', '/tag/nhac-thieu-nhi', Icons.star_outline_rounded, Color(0xFF8B6914)),
+    ('Nhạc nước ngoài', '/tag/nhac-nuoc-ngoai', Icons.public_rounded, Color(0xFF2D5E3A)),
+    ('Nhạc nhẹ', '/tag/nhac-nhe', Icons.music_note_outlined, Color(0xFF6B5210)),
+    ('Nhạc tiền chiến', '/tag/nhac-tien-chien', Icons.schedule_rounded, Color(0xFFA89060)),
+    ('Nhạc phim', '/tag/nhac-phim', Icons.movie_outlined, Color(0xFF7A3B3A)),
+    ('Video', '/bai-hat/video', Icons.play_arrow_rounded, Color(0xFF4A0D0D)),
+    ('Thể loại dân ca', '/the-loai-dan-ca', Icons.layers_outlined, Color(0xFF8B6914)),
+    ('Làn điệu dân ca', '/lan-dieu', Icons.headphones_outlined, Color(0xFFA89060)),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -1074,19 +1073,19 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
             ],
           ),
         ),
-        // Smaller groups under the kinds, as on the web's Thư viện page.
-        _group('Tân nhạc', const [
-          ('Nhạc thiếu nhi', '/tag/nhac-thieu-nhi'),
-          ('Nhạc nước ngoài', '/tag/nhac-nuoc-ngoai'),
-          ('Nhạc nhẹ', '/tag/nhac-nhe'),
-          ('Nhạc tiền chiến', '/tag/nhac-tien-chien'),
-          ('Nhạc phim', '/tag/nhac-phim'),
-          ('Video', '/bai-hat/video'),
-        ]),
-        _group('Dân ca', const [
-          ('Thể loại dân ca', '/the-loai-dan-ca'),
-          ('Làn điệu dân ca', '/lan-dieu'),
-        ]),
+        // Smaller kinds under the big tiles, coloured as on the web's Thư viện page.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          child: GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            mainAxisExtent: 56,
+            children: [for (final k in _subKinds) _SubKindTile(label: k.$1, route: k.$2, icon: k.$3, color: k.$4)],
+          ),
+        ),
         SectionTitle('Thập niên', action: null),
         SizedBox(
           height: 38,
@@ -1177,6 +1176,42 @@ class _PlaylistCover extends StatelessWidget {
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
       children: [for (final u in t.take(4)) NetImage(url: u)],
+    );
+  }
+}
+
+/// One of the smaller kinds under Thể loại: colour, icon, name on one line.
+class _SubKindTile extends StatelessWidget {
+  final String label;
+  final String route;
+  final IconData icon;
+  final Color color;
+  const _SubKindTile({required this.label, required this.route, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(colors: [color, color.withValues(alpha: 0.7)], begin: Alignment.centerLeft, end: Alignment.centerRight),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => context.push(route),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 12, right: 10),
+            child: Row(children: [
+              Icon(icon, size: 20, color: Colors.white),
+              const SizedBox(width: 8),
+              // Long names shrink a little instead of losing letters.
+              Expanded(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(label, maxLines: 1, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white))))),
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -19,7 +19,7 @@ export '../widgets/song_row.dart' show playOrOpen;
 // diện"). Order: greeting + lunar date → Nghe tiếp → Mọi người đang nghe →
 // Kỷ niệm tuần này → Gợi ý (the coming occasion's playlist, else yesterday's
 // most played) → Mới cập nhật → Nghe nhiều hôm nay → Cảm nhận hay → Có thể
-// bạn thích → Nghe đi nghe lại → Thập niên → Nhạc sĩ nổi bật → Nghệ sĩ nổi bật. Most of it changes daily or faster. Thành viên tiêu
+// bạn thích → Nghe đi nghe lại → Thập niên → Nhạc sĩ tiêu biểu → Nghệ sĩ tiêu biểu. Most of it changes daily or faster. Thành viên tiêu
 // biểu lives in Cộng đồng, Bài yêu thích in Cá nhân. Desktop keeps HomeScreen.
 
 const _songFields = 'id slug title subtitle views created_at play_type file_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
@@ -39,7 +39,7 @@ const _liveQuery = '''query HomeLive {
 }''';
 
 const _peopleFields = 'id slug title avatar { url }';
-/// "Nhạc sĩ nổi bật" / "Nghệ sĩ nổi bật": the people the most listeners
+/// "Nhạc sĩ tiêu biểu" / "Nghệ sĩ tiêu biểu": the people the most listeners
 /// played today (no groups, all with a photo), recounted every 5 minutes.
 const _peopleQuery = '''query HomePeople {
   topComposersToday(limit: 12) { $_peopleFields }
@@ -647,11 +647,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             // Composers and singers in their own rails: behind a chip, the
             // second one was never opened.
             if (_loading || _composers.isNotEmpty) ...[
-              SectionTitle('Nhạc sĩ nổi bật', onAction: () => context.push('/nhac-si')),
+              SectionTitle('Nhạc sĩ tiêu biểu', onAction: () => context.push('/nhac-si')),
               _PeopleRail(people: _composers, loading: _loading, route: '/nhac-si/'),
             ],
             if (_loading || _artists.isNotEmpty) ...[
-              SectionTitle('Nghệ sĩ nổi bật', onAction: () => context.push('/nghe-si')),
+              SectionTitle('Nghệ sĩ tiêu biểu', onAction: () => context.push('/nghe-si')),
               _PeopleRail(people: _artists, loading: _loading, route: '/nghe-si/'),
             ],
           ],
