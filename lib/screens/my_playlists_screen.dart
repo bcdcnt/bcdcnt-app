@@ -1,15 +1,15 @@
-import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, OfflineBlock;
 import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../widgets/empty_state.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/playlist_cover.dart';
+import 'playlist_edit_screen.dart' show confirmDeletePlaylist;
 
 class MyPlaylistsScreen extends StatefulWidget {
   const MyPlaylistsScreen({super.key});
@@ -85,9 +85,12 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     const q = r'''query($first: Int!, $page: Int) {
       myPlaylists(first: $first, page: $page, orderBy: [{column: "id", order: DESC}]) {
         data {
-          id title slug
+          id title slug is_public
           thumbnail { url }
-          items(first: 1) { paginatorInfo { total } }
+          items(first: 4, orderBy: [{column: "position", order: ASC}]) {
+            data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } ... on Karaoke { thumbnail { url } } } }
+            paginatorInfo { total }
+          }
         }
         paginatorInfo { currentPage lastPage total }
       }
@@ -117,9 +120,86 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     }
   }
 
-  /// "+ Tạo playlist": ask for a name, create it, then open it.
+  /// Opens a playlist (or its Sửa page); whatever happened there, the list
+  /// is read again on the way back.
+  Future<void> _open(String route) async {
+    await context.push(route);
+    if (mounted) _fetch(1);
+  }
+
+  /// ⋮ on a row: Mở · Sửa · Xoá.
+  Future<void> _menu(Map<String, dynamic> pl) async {
+    final title = (pl['title'] ?? '').toString();
+    final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
+    final pub = pl['is_public']?.toString() == '1';
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      backgroundColor: AppColors.bg,
+      builder: (ctx) {
+        Widget item(String v, IconData icon, String label, {Color? color}) => InkWell(
+              onTap: () => Navigator.pop(ctx, v),
+              child: SizedBox(
+                height: 56,
+                child: Row(children: [
+                  const SizedBox(width: 24),
+                  Icon(icon, size: 24, color: color ?? AppColors.textSecondary),
+                  const SizedBox(width: 18),
+                  Text(label, style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color ?? AppColors.text))),
+                ]),
+              ),
+            );
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 10, bottom: 8),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(3))),
+              const SizedBox(height: 14),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Row(children: [
+                  PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 52),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
+                      Text('$total bài · ${pub ? 'Công khai' : 'Không công khai'}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                    ]),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 14),
+              Divider(height: 1, color: AppColors.border),
+              const SizedBox(height: 6),
+              item('open', Icons.queue_music_rounded, 'Mở playlist'),
+              item('edit', Icons.edit_rounded, 'Sửa playlist'),
+              item('delete', Icons.delete_rounded, 'Xoá playlist', color: AppColors.errorText),
+            ]),
+          ),
+        );
+      },
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'open':
+        _open('/playlist/${pl['id']}');
+      case 'edit':
+        _open('/playlist/${pl['id']}/sua');
+      case 'delete':
+        if (await confirmDeletePlaylist(context, id: pl['id'].toString(), title: title, songs: total) && mounted) {
+          setState(() { _items.remove(pl); _total = (_total - 1).clamp(0, 1 << 30); });
+        }
+    }
+  }
+
+  /// "+ Tạo playlist": ask for a name, create it, then open it. BQT get the
+  /// whole Tạo playlist page instead (playlist sự kiện, ghim…).
   Future<void> _create() async {
     if (_creating) return;
+    if (context.read<AuthProvider>().hasPermission('manage_playlist')) {
+      _open('/playlist-moi');
+      return;
+    }
     final ctl = TextEditingController();
     final title = await showDialog<String>(
       context: context,
@@ -164,8 +244,11 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
       if (!mounted) return;
       setState(() => _creating = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã tạo playlist "$title"')));
-      _fetch(1);
-      if (id != null) context.push('/playlist/$id');
+      if (id != null) {
+        _open('/playlist/$id');
+      } else {
+        _fetch(1);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _creating = false);
@@ -273,43 +356,49 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                     )
                   else
                     ..._items.map((pl) {
-                      final thumb = pl['thumbnail']?['url'];
                       final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
-                      return InkWell(
-                        onTap: () => context.push('/playlist/${pl['id']}'),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: Row(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: thumb != null
-                                    ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover)
-                                    : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
-                                    const SizedBox(height: 4),
-                                    Text('$total bài', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
-                                  ],
-                                ),
-                              ),
-                              Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
-                            ],
-                          ),
+                      final pub = pl['is_public']?.toString() == '1';
+                      final meta = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
                         ),
+                        child: Row(children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => _open('/playlist/${pl['id']}'),
+                              borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+                                child: Row(children: [
+                                  PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 56, radius: 10),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                                      Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+                                      const SizedBox(height: 4),
+                                      Row(children: [
+                                        Text('$total bài · ', style: meta),
+                                        Icon(pub ? Icons.public_rounded : Icons.visibility_off_outlined, size: 14, color: AppColors.textMuted),
+                                        const SizedBox(width: 4),
+                                        Flexible(child: Text(pub ? 'Công khai' : 'Không công khai', maxLines: 1, overflow: TextOverflow.ellipsis, style: meta)),
+                                      ]),
+                                    ]),
+                                  ),
+                                ]),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Tuỳ chọn cho ${pl['title'] ?? 'playlist'}',
+                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                            onPressed: () => _menu(pl),
+                            icon: Icon(Icons.more_vert_rounded, color: AppColors.textMuted),
+                          ),
+                        ]),
                       );
                     }),
 

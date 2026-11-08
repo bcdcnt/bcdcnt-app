@@ -16,6 +16,8 @@ import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/shimmer.dart';
 import '../widgets/section_header.dart';
+import '../widgets/playlist_cover.dart';
+import '../services/friendly_error.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
   final String id;
@@ -33,6 +35,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   bool _failed = false;
   /// Real number of songs in the playlist (the list itself is capped at 200).
   int _itemTotal = 0;
+  bool _descOpen = false;
 
   @override
   void initState() {
@@ -45,7 +48,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         playlist(id: $id) {
-          id slug title description event_date is_system thumbnail { url } user { id username avatar { url } }
+          id slug title description event_date is_system is_public thumbnail { url } user { id username avatar { url } }
           items(first: 200, orderBy: [{column: "position", order: ASC}]) {
             data {
               id position type
@@ -71,6 +74,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         if (obj == null) continue;
         final m = Map<String, dynamic>.from(obj as Map);
         m['file_type'] = entry['type'] ?? tnMap[m['__typename']?.toString()] ?? 'song';
+        m['_itemId'] = entry['id']?.toString();
         if (m['users']?['data'] != null && m['artists'] == null) {
           m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
         }
@@ -110,6 +114,42 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       if (!mounted) return;
       setState(() => _related = list);
     } catch (_) {}
+  }
+
+  /// The owner, or BQT (manage_playlist), may change the playlist.
+  bool _canEdit(Map<String, dynamic> pl) {
+    final auth = context.watch<AuthProvider>();
+    final me = auth.user?['id']?.toString();
+    return auth.isAuthenticated && ((me != null && me == pl['user']?['id']?.toString()) || auth.hasPermission('manage_playlist'));
+  }
+
+  Future<void> _edit() async {
+    final r = await context.push<String>('/playlist/${widget.id}/sua');
+    if (!mounted) return;
+    if (r == 'deleted') {
+      context.pop('deleted');
+    } else if (r == 'saved') {
+      _fetch();
+    }
+  }
+
+  Future<void> _remove(Map<String, dynamic> song) async {
+    final itemId = song['_itemId'];
+    if (itemId == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final at = _items.indexOf(song);
+    setState(() { _items.remove(song); _itemTotal--; });
+    try {
+      await context.read<AuthProvider>().authedMutate(
+        r'mutation($id: ID!, $item: ID!) { updatePlaylist(input: {id: $id, items: {delete: [$item]}}) { id } }',
+        {'id': widget.id, 'item': itemId},
+      );
+      messenger.showSnackBar(SnackBar(content: Text('Đã bỏ “${song['title']}” khỏi playlist')));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _items.insert(at.clamp(0, _items.length), song); _itemTotal++; });
+      messenger.showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
+    }
   }
 
   void _playAll({bool shuffle = false, int startIndex = 0}) {
@@ -181,6 +221,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final thumb = pl['thumbnail']?['url'];
     final user = pl['user'];
     final isDesktop = MediaQuery.of(context).size.width >= 900;
+    final canEdit = _canEdit(pl);
     // Apple Music-style scale-up: bigger artwork + display type on desktop.
     final thumbSize = isDesktop ? 200.0 : 120.0;
     final titleSize = isDesktop ? 32.0 : 19.0;
@@ -201,6 +242,18 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               title: Text('Playlist'),
               centerTitle: true,
               leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+              actions: [
+                if (canEdit)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: TextButton.icon(
+                      style: TextButton.styleFrom(backgroundColor: AppColors.surface, foregroundColor: AppColors.text, minimumSize: const Size(48, 40), shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 14)),
+                      onPressed: _edit,
+                      icon: const Icon(Icons.edit_rounded, size: 18),
+                      label: Text('Sửa', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+                    ),
+                  ),
+              ],
             ),
             SliverPadding(
               padding: EdgeInsets.fromLTRB(isDesktop ? 32 : 20, isDesktop ? 16 : 8, isDesktop ? 32 : 20, 24),
@@ -215,11 +268,11 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                         borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 18, offset: const Offset(0, 8))],
                       ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(isDesktop ? 12 : 16),
-                        child: thumb != null
-                            ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Icon(Icons.queue_music, color: AppColors.textMuted, size: 60))
-                            : Container(color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted, size: 60)),
+                      child: PlaylistCover(
+                        thumb: thumb?.toString(),
+                        songThumbs: [for (final s in _items.take(4)) if (s['thumbnail']?['url'] != null) s['thumbnail']['url'].toString()],
+                        size: thumbSize,
+                        radius: isDesktop ? 12 : 16,
                       ),
                     ),
                     SizedBox(width: isDesktop ? 24 : 14),
@@ -255,14 +308,25 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             ]),
                           ),
                           const SizedBox(height: 6),
-                          Text('${_formatInt(_itemTotal)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textSecondary))),
+                          Row(children: [
+                            Text('${_formatInt(_itemTotal)} bài', style: body(TextStyle(fontSize: metaSize, color: AppColors.textSecondary))),
+                            // Only the owner / BQT need to know: the others see it either way.
+                            if (canEdit) ...[
+                              Text(' · ', style: body(TextStyle(fontSize: metaSize, color: AppColors.textSecondary))),
+                              Icon(pl['is_public']?.toString() == '1' ? Icons.public_rounded : Icons.visibility_off_outlined, size: 14, color: AppColors.textSecondary),
+                              const SizedBox(width: 4),
+                              Flexible(child: Text(pl['is_public']?.toString() == '1' ? 'Công khai' : 'Không công khai', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: metaSize, color: AppColors.textSecondary)))),
+                            ],
+                          ]),
                         ],
                       ),
                     ),
                   ],
                 ),
-                if (pl['description'] != null && (pl['description'] as String).isNotEmpty) Padding(
-                  padding: const EdgeInsets.only(top: 14),
+                if (pl['description'] != null && (pl['description'] as String).isNotEmpty) _Clamped(
+                  open: _descOpen,
+                  long: _isLong(pl['description'] as String),
+                  onToggle: () => setState(() => _descOpen = !_descOpen),
                   child: Html(
                     data: pl['description'],
                     style: {
@@ -283,11 +347,6 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   const SizedBox(width: 10),
                   Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                 ]),
-                if (_items.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items, title: pl['title']?.toString()), icon: Icons.download_for_offline_outlined, label: 'Tải tất cả về máy', primary: false)),
-                  ),
                 const SizedBox(height: 8),
               ])),
             ),
@@ -304,6 +363,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       index: i,
                       showIndex: true,
                       onTap: () => _playAll(startIndex: i),
+                      onRemove: canEdit && song['_itemId'] != null ? () => _remove(song) : null,
                     );
                   },
                   childCount: _items.length,
@@ -466,6 +526,49 @@ class _RelatedCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// About four lines of giới thiệu or more (pictures count as long).
+bool _isLong(String html) {
+  if (RegExp(r'<img', caseSensitive: false).hasMatch(html)) return true;
+  final text = html.replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+  return text.length > 170 || RegExp(r'<(br|/p)', caseSensitive: false).allMatches(html).length > 3;
+}
+
+/// Long giới thiệu: four lines fading out + "Xem thêm"; open: all + "Thu gọn".
+class _Clamped extends StatelessWidget {
+  final bool open;
+  final bool long;
+  final VoidCallback onToggle;
+  final Widget child;
+  const _Clamped({required this.open, required this.long, required this.onToggle, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!long) return Padding(padding: const EdgeInsets.only(top: 14), child: child);
+    final lines = MediaQuery.textScalerOf(context).scale(16) * 1.6 * 4;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (open)
+          child
+        else
+          ShaderMask(
+            shaderCallback: (r) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black, Colors.black, Colors.transparent], stops: [0, 0.7, 1]).createShader(r),
+            blendMode: BlendMode.dstIn,
+            child: ConstrainedBox(constraints: BoxConstraints(maxHeight: lines), child: ClipRect(child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: child))),
+          ),
+        TextButton(
+          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(48, 40), foregroundColor: AppColors.accentLight),
+          onPressed: onToggle,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(open ? 'Thu gọn' : 'Xem thêm', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+            Icon(open ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, size: 20),
+          ]),
+        ),
+      ]),
     );
   }
 }

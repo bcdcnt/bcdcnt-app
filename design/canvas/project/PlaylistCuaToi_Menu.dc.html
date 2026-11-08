@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Playlist · Tuỳ chọn</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
+</style>
+</helmet>
+<div style="width: 390px; height: 958px; position: relative; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; overflow: hidden">
+<dc-import name="PlaylistCuaToi" hint-size="390px,958px"></dc-import>
+<div style="position: absolute; inset: 0; background: rgba(0,0,0,0.54)"></div>
+<div role="dialog" aria-modal="true" aria-label="Tuỳ chọn playlist" style="position: absolute; left: 0; right: 0; bottom: 0; border-radius: 24px 24px 0 0; background: #FFFFFF; padding: 10px 0 30px 0">
+<div style="width: 36px; height: 4px; border-radius: 2px; background: #D9D0D0; margin: 0 auto 14px auto"></div>
+<div style="display: flex; align-items: center; gap: 14px; padding: 0 24px 14px 24px; border-bottom: 1px solid #F3EEEE"><span style="width: 52px; height: 52px; border-radius: 12px; overflow: hidden; display: grid; grid-template-columns: 26px 26px; grid-template-rows: 26px 26px; flex-shrink: 0"><img src="/_blob/4d43b1ae67d8f63d12f062c5a3594426" alt="" style="width: 26px; height: 26px; object-fit: cover; display: block"><img src="/_blob/afaa85824e060ece03e7d7be0f886989" alt="" style="width: 26px; height: 26px; object-fit: cover; display: block"><img src="/_blob/bb15a0633800c97866b0575ac7a8efe3" alt="" style="width: 26px; height: 26px; object-fit: cover; display: block"><img src="/_blob/7c18e6713e2fe52e6a52bc2f56b2ecaf" alt="" style="width: 26px; height: 26px; object-fit: cover; display: block"></span><span style="display: flex; flex-direction: column; gap: 4px; min-width: 0"><span style="font-size: 17px; font-weight: 800">Chiến thắng Điện Biên</span><span style="font-size: 14px; font-weight: 600; color: #665C5E">13 bài · Công khai</span></span></div>
+<div style="padding-top: 6px">
+<a href="Playlist_CuaToi.dc.html" style="min-height: 56px; padding: 0 24px; display: flex; align-items: center; gap: 18px; color: #161112; font-size: 17px; font-weight: 700"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"></path></svg>Mở playlist</a>
+<a href="Playlist_Sua.dc.html" style="min-height: 56px; padding: 0 24px; display: flex; align-items: center; gap: 18px; color: #161112; font-size: 17px; font-weight: 700"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"></path></svg>Sửa playlist</a>
+<a href="Playlist_Xoa.dc.html" style="min-height: 56px; padding: 0 24px; display: flex; align-items: center; gap: 18px; color: #B3261E; font-size: 17px; font-weight: 700"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>Xoá playlist</a>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

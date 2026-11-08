@@ -40,6 +40,7 @@ import 'screens/decade_songs_screen.dart';
 import 'screens/playlist_list_screen.dart';
 import 'screens/tag_list_screen.dart';
 import 'screens/playlist_detail_screen.dart';
+import 'screens/playlist_edit_screen.dart';
 import 'screens/tag_detail_screen.dart';
 import 'screens/my_uploads_screen.dart';
 import 'screens/sheet_list_screen.dart';
@@ -502,6 +503,8 @@ final _router = GoRouter(
         GoRoute(path: '/soan-gia', builder: (c, s) => const PersonListScreen(type: PersonType.recomposer)),
         GoRoute(path: '/playlist', builder: (c, s) => const PlaylistListScreen()),
         GoRoute(path: '/playlist/:id', builder: (c, s) => PlaylistDetailScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/playlist/:id/sua', builder: (c, s) => PlaylistEditScreen(id: s.pathParameters['id']!)),
+        GoRoute(path: '/playlist-moi', builder: (c, s) => const PlaylistEditScreen()),
         GoRoute(path: '/tag', builder: (c, s) => const TagListScreen()),
         GoRoute(path: '/tag/:slug', builder: (c, s) => TagDetailScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/bai-gui-cua-toi', builder: (c, s) => const MyUploadsScreen()),

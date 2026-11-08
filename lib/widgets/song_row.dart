@@ -214,6 +214,8 @@ class SongRow extends StatelessWidget {
   final String? subtitle;
   /// The list's search words: matching letters in the title turn bold red.
   final String? highlight;
+  /// The reader's own playlist: the ⋮ sheet gets "Bỏ khỏi playlist".
+  final VoidCallback? onRemove;
 
   const SongRow({
     super.key,
@@ -229,6 +231,7 @@ class SongRow extends StatelessWidget {
     this.chartNew = false,
     this.subtitle,
     this.highlight,
+    this.onRemove,
   });
 
   String? _metric() {
@@ -287,15 +290,15 @@ class SongRow extends StatelessWidget {
       excludeSemantics: true,
       onTap: () => _tap(context),
       customSemanticsActions: {
-        const CustomSemanticsAction(label: 'Tuỳ chọn'): () => showSongActions(context, song),
+        const CustomSemanticsAction(label: 'Tuỳ chọn'): () => showSongActions(context, song, onRemove: onRemove),
       },
       child: HoverHighlight(
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
-        onSecondaryTapDown: (d) => showSongActions(context, song),
+        onSecondaryTapDown: (d) => showSongActions(context, song, onRemove: onRemove),
         onLongPress: () {
           HapticFeedback.mediumImpact();
-          showSongActions(context, song);
+          showSongActions(context, song, onRemove: onRemove);
         },
         child: InkWell(
           onTap: () => _tap(context),
@@ -388,7 +391,7 @@ class SongRow extends StatelessWidget {
                   ),
                   IconButton(
                     tooltip: 'Tuỳ chọn cho ${song['title'] ?? 'bài hát'}',
-                    onPressed: () => showSongActions(context, song),
+                    onPressed: () => showSongActions(context, song, onRemove: onRemove),
                     icon: Icon(Icons.more_vert_rounded, color: AppColors.textMuted, size: 22),
                   ),
                 ],
@@ -404,7 +407,7 @@ class SongRow extends StatelessWidget {
 
 /// Bottom sheet with every secondary action for a song. Opened from the ⋮
 /// button on any song row, long-press, or right-click on desktop.
-Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) async {
+Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {VoidCallback? onRemove}) async {
   final artists = _people(song['artists']);
   final fileType = songKind(song);
   // Author page by kind, as on the song page: dân ca → soạn giả, thơ → nhà thơ.
@@ -471,6 +474,7 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
               if (hasAudio) item('next', Icons.playlist_play_rounded, 'Phát tiếp theo'),
               if (hasAudio) item('queue', Icons.queue_music_rounded, 'Thêm vào danh sách phát'),
               item('playlist', Icons.playlist_add_rounded, 'Thêm vào playlist'),
+              if (onRemove != null) item('remove', Icons.playlist_remove_rounded, 'Bỏ khỏi playlist'),
               if (hasAudio)
                 OfflineStore.instance.isSaved(song)
                     ? item('unsave', Icons.download_done_rounded, 'Xoá khỏi "Đã tải về"')
@@ -514,6 +518,9 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
         break;
       }
       showDialog(context: context, builder: (_) => PlaylistDialog(songId: song['id'].toString(), type: fileType));
+      break;
+    case 'remove':
+      onRemove?.call();
       break;
     case 'save':
       saveForOffline(context, song);
