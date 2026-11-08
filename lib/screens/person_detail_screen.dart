@@ -13,6 +13,7 @@ import '../services/auth.dart';
 import '../services/friendly_error.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
+import '../widgets/list_search.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
@@ -95,9 +96,14 @@ class _SectionState {
   final bool loadingMore;
   /// Loading the next page failed: wait for a tap on "Thử lại".
   final bool moreFailed;
-  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false, this.failed = false, this.loadingMore = false, this.moreFailed = false});
+  /// Words in this tab's search box ('' = every song).
+  final String query;
+  /// Songs in the tab without a search: the tab label, the stats panel and
+  /// whether the tab shows at all must not follow a search's count.
+  final int allTotal;
+  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false, this.failed = false, this.loadingMore = false, this.moreFailed = false, this.query = '', int? allTotal}) : allTotal = allTotal ?? total;
 
-  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading, bool? failed, bool? loadingMore, bool? moreFailed}) =>
+  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading, bool? failed, bool? loadingMore, bool? moreFailed, String? query}) =>
       _SectionState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -108,6 +114,8 @@ class _SectionState {
         failed: failed ?? this.failed,
         loadingMore: loadingMore ?? this.loadingMore,
         moreFailed: moreFailed ?? this.moreFailed,
+        query: query ?? this.query,
+        allTotal: allTotal,
       );
 
   /// Appends a page without repeating rows already shown.
@@ -300,12 +308,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   /// [append]: the next page, added under the rows already shown (the
   /// lists load more as they scroll; a person has few songs).
-  Future<void> _fetchPage(String key, int page, {String? sort, bool append = false}) async {
+  Future<void> _fetchPage(String key, int page, {String? sort, bool append = false, String? query}) async {
     final cfg = _cfg.sections.firstWhere((c) => c.key == key);
     final personId = _person?['id']?.toString();
     if (personId == null) return;
     final prev = _sections[key]!;
     final useSort = sort ?? prev.sort;
+    final useQuery = query ?? prev.query;
     final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$2;
     final order = useSort == 'title' ? 'ASC' : 'DESC';
     final req = (_reqIds[key] ?? 0) + 1;
@@ -313,12 +322,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     setState(() {
       // Skeleton while a new list loads; the old one stays in [items] so a
       // failed request can fall back to it.
-      _sections[key] = append ? prev.copyWith(loadingMore: true, moreFailed: false) : prev.copyWith(loading: true, sort: useSort, failed: false);
+      _sections[key] = append ? prev.copyWith(loadingMore: true, moreFailed: false) : prev.copyWith(loading: true, sort: useSort, failed: false, query: useQuery);
     });
     try {
       final queryById = '${_cfg.queryName}ByID';
-      final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: $_perPage, page: \$page, orderBy: [{ column: "$sortCol", order: $order }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
-      final data = await ApiClient.query(q, {'id': personId, 'page': page});
+      final q = 'query(\$id: ID!, \$page: Int, \$q: String) { $queryById(id: \$id) { $key(first: $_perPage, page: \$page, q: \$q, orderBy: [{ column: "$sortCol", order: $order }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
+      final data = await ApiClient.query(q, {'id': personId, 'page': page, 'q': useQuery});
       final raw = data[queryById]?[key];
       if (req != _reqIds[key] || !mounted) return;
       final newItems = (raw?['data'] ?? []) as List;
@@ -330,6 +339,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           lastPage: raw?['paginatorInfo']?['lastPage'] ?? prev.lastPage,
           sort: useSort,
           loading: false,
+          query: useQuery,
+          allTotal: useQuery.isEmpty ? (raw?['paginatorInfo']?['total'] ?? prev.allTotal) : prev.allTotal,
         );
       });
       if (!append) _scrollListToTop();
@@ -486,7 +497,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Future<void> _share() async {
     final p = _person;
     if (p == null) return;
-    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.total ?? 0) > 0, orElse: () => _cfg.sections.first);
+    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.allTotal ?? 0) > 0, orElse: () => _cfg.sections.first);
     await showPersonShareSheet(
       context,
       person: p,
@@ -494,7 +505,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       label: _cfg.label,
       path: '${_cfg.routePrefix}${p['slug']}',
       topSongs: _topSongs,
-      songCount: _sections[first.key]?.total ?? 0,
+      songCount: _sections[first.key]?.allTotal ?? 0,
       listens: ((p['total_listens'] ?? 0) as num).toInt(),
       onCount: (n) {
         if (mounted) setState(() => _shares = n);
@@ -535,7 +546,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final player = context.watch<PlayerProvider>();
     // Hide section tabs that have no data — keeps the bar tight for niche
     // people types (e.g. recomposers usually only have folks).
-    final visibleSections = _cfg.sections.where((c) => (_sections[c.key]?.total ?? 0) > 0).toList();
+    final visibleSections = _cfg.sections.where((c) => (_sections[c.key]?.allTotal ?? 0) > 0).toList();
     final visibleMedia = _mediaSecs.where((m) => (_media[m.key]?.total ?? 0) > 0).toList();
 
     return DefaultTabController(
@@ -563,7 +574,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   pinned: true,
                   delegate: _TabBarDelegate(
                     tabs: [
-                      ...visibleSections.map((c) => Tab(text: '${c.label} · ${_formatInt(_sections[c.key]!.total)}')),
+                      ...visibleSections.map((c) => Tab(text: '${c.label} · ${_formatInt(_sections[c.key]!.allTotal)}')),
                       const Tab(text: 'Tiểu sử'),
                       ...visibleMedia.map((m) => Tab(text: '${m.label} · ${_formatInt(_media[m.key]!.total)}')),
                     ],
@@ -944,7 +955,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   Widget _buildMobileHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
-    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.total ?? 0) > 0, orElse: () => _cfg.sections.first);
+    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.allTotal ?? 0) > 0, orElse: () => _cfg.sections.first);
     final firstState = _sections[first.key];
     final canPlay = (firstState?.items.isNotEmpty ?? false);
     return Padding(
@@ -960,7 +971,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 children: [
                   _StatCell(label: 'lượt nghe', value: formatViews(((p['total_listens'] ?? 0) as num).toInt())),
                   Container(width: 1, color: AppColors.border),
-                  _StatCell(label: first.label.toLowerCase(), value: _formatInt(firstState?.total ?? 0)),
+                  _StatCell(label: first.label.toLowerCase(), value: _formatInt(firstState?.allTotal ?? 0)),
                   Container(width: 1, color: AppColors.border),
                   _StatCell(label: 'lượt tải', value: formatViews(((p['total_downloads'] ?? 0) as num).toInt())),
                 ],
@@ -1032,13 +1043,16 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     } else if (state.failed && state.items.isEmpty) {
       content = OfflineBlock(onRetry: () => _fetchPage(cfg.key, state.currentPage));
     } else if (state.items.isEmpty) {
-      content = Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
+      content = state.query.isNotEmpty
+          ? ListSearchEmpty(query: state.query)
+          : Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
     } else {
       content = Column(children: [
         for (var i = 0; i < queue.length; i++)
           Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Builder(
             builder: (rowCtx) => SongRow(
               song: queue[i],
+              highlight: state.query,
               index: i,
               showIndex: true,
               metricKey: metric,
@@ -1076,7 +1090,21 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       // No side padding on the list: the sort chips run edge to edge,
       // rows add their own 20px.
       padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
-      children: [_buildSortBar(cfg.key, state), content],
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            ListSearchField(
+              initial: state.query,
+              hint: 'Tìm trong ${_formatInt(state.allTotal)} bài${cfg.key == 'songs' ? '' : ' ${cfg.label.toLowerCase()}'} của ${_person?['title'] ?? ''}',
+              onChanged: (q) => _fetchPage(cfg.key, 1, query: q),
+            ),
+            ListSearchSummary(query: state.query, total: state.total, loading: state.loading),
+          ]),
+        ),
+        _buildSortBar(cfg.key, state),
+        content,
+      ],
     ),
     );
   }

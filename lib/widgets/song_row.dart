@@ -14,6 +14,7 @@ import '../services/player.dart';
 import '../services/auth.dart';
 import '../services/offline_store.dart';
 import 'hover_effects.dart';
+import 'list_search.dart' show highlightSpans;
 import '../services/friendly_error.dart' show askLogin;
 import 'playlist_dialog.dart';
 import 'synced_video.dart';
@@ -211,6 +212,8 @@ class SongRow extends StatelessWidget {
   final bool chartNew;
   /// Replaces the byline + metric line.
   final String? subtitle;
+  /// The list's search words: matching letters in the title turn bold red.
+  final String? highlight;
 
   const SongRow({
     super.key,
@@ -225,6 +228,7 @@ class SongRow extends StatelessWidget {
     this.prevRank,
     this.chartNew = false,
     this.subtitle,
+    this.highlight,
   });
 
   String? _metric() {
@@ -354,8 +358,8 @@ class SongRow extends StatelessWidget {
                           children: [
                             if (playing) ...[NowPlayingBars(color: hi, animate: playerPlaying), const SizedBox(width: 7)],
                             Expanded(
-                              child: Text(
-                                song['title'] ?? '',
+                              child: Text.rich(
+                                TextSpan(children: highlightSpans('${song['title'] ?? ''}', highlight, TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentLight))),
                                 style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: playing ? hi : AppColors.text)),
                                 // Large text: let long titles wrap rather than
                                 // cut to "Bài ca cho…".

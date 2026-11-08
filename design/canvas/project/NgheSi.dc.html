@@ -14,7 +14,7 @@ body{margin:0}
 a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
 </style>
 </helmet>
-<div style="width: 390px; height: 1595px; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; display: flex; flex-direction: column; overflow: hidden">
+<div style="width: 390px; height: 1655px; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; display: flex; flex-direction: column; overflow: hidden">
 
 <!-- Hero (340px, duotone photo) -->
 <svg width="0" height="0" aria-hidden="true" style="position: absolute"><filter id="brandTint" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.1667 0.5609 0.0566 0 0.1804  0.1868 0.6283 0.0634 0 0.0314  0.1767 0.5946 0.0600 0 0.0392  0 0 0 1 0"></feColorMatrix></filter></svg>
@@ -49,6 +49,9 @@ a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
 <button aria-selected="true" role="tab" style="position: relative; flex-shrink: 0; height: 49px; margin: 0 11px; padding: 0 0 2px 0; letter-spacing: 0.1px; border: none; background: transparent; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; color: #161112; white-space: nowrap">Bài hát · 315<span style="position: absolute; left: 0; right: 0; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: #711313"></span></button><button aria-selected="false" role="tab" style="position: relative; flex-shrink: 0; height: 49px; margin: 0 11px; padding: 0 0 2px 0; letter-spacing: 0.1px; border: none; background: transparent; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; color: #665C5E; white-space: nowrap">Khí nhạc · 9</button><button aria-selected="false" role="tab" style="position: relative; flex-shrink: 0; height: 49px; margin: 0 11px; padding: 0 0 2px 0; letter-spacing: 0.1px; border: none; background: transparent; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; color: #665C5E; white-space: nowrap">Tiểu sử</button><button aria-selected="false" role="tab" style="position: relative; flex-shrink: 0; height: 49px; margin: 0 11px; padding: 0 0 2px 0; letter-spacing: 0.1px; border: none; background: transparent; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; color: #665C5E; white-space: nowrap">Hình ảnh · [N]</button>
 </div>
 
+<!-- Ô tìm theo tên trong tab đang xem -->
+<div style="padding: 12px 20px 0; flex-shrink: 0"><div role="search" aria-label="Tìm trong 315 bài của Phạm Tuyên" style="margin-top: 0px; height: 48px; flex-shrink: 0; box-sizing: border-box; border-radius: 24px; background: #F4F1F0; display: flex; align-items: center; padding: 0 16px; gap: 10px"><svg width="20" height="20" viewBox="0 0 24 24" fill="#665C5E" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg><span style="flex: 1; min-width: 0; font-size: 15px; font-weight: 600; color: #8A7F81; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tìm trong 315 bài của Phạm Tuyên</span></div></div>
+
 <!-- Sort chips (edge to edge) -->
 <div style="padding: 12px 0 12px 20px; flex-shrink: 0; display: flex; gap: 8px; overflow: hidden">
 <button aria-pressed="true" style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px">Nghe nhiều nhất</button><button aria-pressed="false" style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px">Mới cập nhật</button><button aria-pressed="false" style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px">Yêu thích nhất</button><button aria-pressed="false" style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px">Tải nhiều nhất</button><button aria-pressed="false" style="flex-shrink: 0; min-height: 44px; padding: 0 16px; border-radius: 22px; border: none; background: #F4F1F0; color: #4F4547; font-family: Montserrat, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 0.27px">Tên A–Z</button>
@@ -75,7 +78,7 @@ a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
 <dc-import name="TabBar" active="home" hint-size="390px,61px"></dc-import>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1595}}'>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":1655}}'>
 class Component extends DCLogic {
 renderVals() {
 return {};

@@ -1084,6 +1084,12 @@ class PagedList<T> {
   bool failed = false;
   /// A page has arrived at least once (header shows the total, not "Đang tải...").
   bool loaded = false;
+  /// Words in the list's search box the items were loaded with ('' = all).
+  /// Set it before [PagedLoader.loadPage].
+  String query = '';
+  /// [total] of the list without a search: headers and tab counts keep it
+  /// while a search shows fewer songs.
+  int allTotal = 0;
   int _req = 0;
 
   /// Back to an empty first page; any request still in flight is dropped.
@@ -1098,6 +1104,8 @@ class PagedList<T> {
     moreFailed = false;
     failed = false;
     loaded = false;
+    query = '';
+    allTotal = 0;
     _req++;
   }
 }
@@ -1139,6 +1147,7 @@ mixin PagedLoader<W extends StatefulWidget> on State<W> {
         list.page = r.page;
         list.lastPage = r.lastPage < 1 ? 1 : r.lastPage;
         list.total = r.total;
+        if (list.query.isEmpty) list.allTotal = r.total;
         list.loading = false;
         list.loadingMore = false;
         list.loaded = true;

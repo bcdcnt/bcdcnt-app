@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
+import '../widgets/list_search.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 
@@ -54,6 +55,14 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
     _scrollCtl.addListener(_maybeMore);
   }
 
+  /// Words in the search box ('' = whole list).
+  String _q = '';
+
+  void _search(String q) {
+    setState(() => _q = _list.query = q);
+    _fetch(1);
+  }
+
   void _maybeMore() {
     if (nearListEnd(_scrollCtl, _list)) _fetch(_list.page + 1, append: true);
   }
@@ -86,9 +95,9 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
       return;
     }
 
-    final q = '''query(\$id: ID!, \$first: Int!, \$page: Int) {
+    final q = '''query(\$id: ID!, \$first: Int!, \$page: Int, \$q: String) {
       user(id: \$id) {
-        $_field(first: \$first, page: \$page, orderBy: [{column: "id", order: DESC}]) {
+        $_field(first: \$first, page: \$page, q: \$q, orderBy: [{column: "id", order: DESC}]) {
           data {
             object {
               __typename
@@ -105,7 +114,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
     }''';
 
     await loadPage(_list, page, (page, _) async {
-      final data = await auth.authedQuery(q, {'id': userId, 'first': _perPage, 'page': page});
+      final data = await auth.authedQuery(q, {'id': userId, 'first': _perPage, 'page': page, 'q': _q});
       // Signed out / switched account while this was loading: drop it.
       if (!mounted || userId != context.read<AuthProvider>().user?['id']?.toString()) {
         throw StateError('account changed');
@@ -209,7 +218,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                               Text(_title, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
                               Text(
-                                _list.total > 0 ? '${_formatInt(_list.total)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')),
+                                _list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')),
                                 style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                               ),
                             ],
@@ -238,6 +247,14 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                     padding: const EdgeInsets.only(top: 10),
                     child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: _list.page < _list.lastPage ? 'Tải ${_items.length} bài đang hiện về máy' : 'Tải tất cả về máy', primary: false)),
                   ),
+                  if (_items.isNotEmpty || _q.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    ListSearchField(
+                      hint: widget.kind == UserListKind.favorites ? 'Tìm trong ${_q.isEmpty && _list.allTotal > 0 ? '${_list.allTotal} ' : ''}bài yêu thích' : 'Tìm trong bài vừa nghe',
+                      onChanged: _search,
+                    ),
+                    ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
+                  ],
                   const SizedBox(height: 8),
 
                   // List / loader / empty; more rows load on scroll
@@ -246,7 +263,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                     onRetry: () => _fetch(1),
                     onMore: () => _fetch(_list.page + 1, append: true),
                     skeleton: SongListSkeleton(rows: 8, showIndex: widget.kind != UserListKind.history),
-                    empty: Padding(
+                    empty: _q.isNotEmpty ? ListSearchEmpty(query: _q) : Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),
                       child: Column(
                         children: [
@@ -261,6 +278,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                     ),
                     itemBuilder: (song, i) => SongRow(
                       song: song,
+                      highlight: _q,
                       index: i,
                       showIndex: widget.kind != UserListKind.history,
                       metricKey: widget.kind == UserListKind.history ? 'none' : 'views',

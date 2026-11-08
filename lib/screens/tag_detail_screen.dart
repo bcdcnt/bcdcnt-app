@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/list_search.dart';
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -46,10 +47,23 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
   ];
 
   final _scrollCtl = ScrollController();
+  /// Words in the search box ('' = whole list); applies to every tab.
+  String _q = '';
+
+  void _maybeMore() {
+    final st = _tabs[_activeType]!;
+    if (nearListEnd(_scrollCtl, st)) _fetchPage(_activeType, st.page + 1, append: true);
+  }
+
+  void _search(String q) {
+    setState(() => _q = q);
+    _fetchPage(_activeType, 1);
+  }
 
   @override
   void initState() {
     super.initState();
+    _scrollCtl.addListener(_maybeMore);
     _fetchTag();
   }
 
@@ -132,17 +146,19 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
     player.setFetchMore(null);
   }
 
-  Future<void> _fetchPage(String type, int page, {int? sort}) async {
+  Future<void> _fetchPage(String type, int page, {int? sort, bool append = false}) async {
     final tag = _tag;
     if (tag == null) return;
     final dataKey = {'song': 'songsByTag', 'instrumental': 'instrumentalsByTag', 'karaoke': 'karaokesByTag'}[type]!;
     final people = type == 'karaoke'
         ? 'users(first: 5) { data { id username avatar { url } } }'
         : 'artists(first: 5) { data { id slug title avatar { url } } }';
+    final q = _q;
+    _tabs[type]!.query = q;
     await loadPage(_tabs[type]!, page, (page, sort) async {
       final col = kSongSortColumn[_sorts[sort]]!;
-      final q = 'query(\$tag: String!, \$page: Int) { $dataKey(first: $_perPage, page: \$page, tag: \$tag, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id slug title views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } $people } paginatorInfo { currentPage lastPage total } } }';
-      final data = await ApiClient.query(q, {'tag': tag['name'], 'page': page});
+      final query = 'query(\$tag: String!, \$page: Int, \$q: String) { $dataKey(first: $_perPage, page: \$page, tag: \$tag, q: \$q, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id slug title views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } $people } paginatorInfo { currentPage lastPage total } } }';
+      final data = await ApiClient.query(query, {'tag': tag['name'], 'page': page, 'q': q});
       return PageResult.fromPaginator(data[dataKey], page, (m) {
         m['file_type'] = type;
         if (m['users']?['data'] != null && m['artists'] == null) {
@@ -150,14 +166,15 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
         }
         return m;
       });
-    }, sort: sort, scrollToTop: _scrollCtl);
+    }, sort: sort, scrollToTop: _scrollCtl, append: append);
   }
 
   void _setType(String t) {
     if (t == _activeType) return;
     setState(() => _activeType = t);
     final st = _tabs[t]!;
-    if (!st.loaded && !st.loading) _fetchPage(t, 1);
+    // Loaded before the search words changed: load again with them.
+    if ((!st.loaded && !st.loading) || st.query != _q) _fetchPage(t, 1);
   }
 
   Widget _stateScaffold(Widget child) => Scaffold(
@@ -242,7 +259,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                       itemBuilder: (ctx, i) {
                         final t = _tabConfig[i];
                         final active = _activeType == t.$1;
-                        final total = _tabs[t.$1]!.loaded ? _tabs[t.$1]!.total : (_counts[t.$1] ?? 0);
+                        final total = _tabs[t.$1]!.loaded && _tabs[t.$1]!.allTotal > 0 ? _tabs[t.$1]!.allTotal : (_counts[t.$1] ?? 0);
                         return InkWell(
                           onTap: active ? null : () => _setType(t.$1),
                           child: Container(
@@ -267,21 +284,24 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                 const SizedBox(height: 14),
                 Row(children: [
                   Expanded(
-                    child: Text(activeLabel + (st.total > 0 ? ' · ${_formatInt(st.total)} bài' : ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                    child: Text(activeLabel + (st.allTotal > 0 ? ' · ${_formatInt(st.allTotal)} bài' : ''), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
                   ),
                   if (st.items.isNotEmpty)
                     PillButton(onTap: _playAll, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true),
                 ]),
                 const SizedBox(height: 12),
+                ListSearchField(hint: 'Tìm trong ${st.allTotal > 0 ? '${_formatInt(st.allTotal)} bài ' : ''}$activeLabel', onChanged: _search),
+                ListSearchSummary(query: _q, total: st.total, loading: st.loading),
+                const SizedBox(height: 14),
                 SortTabs(labels: _sorts, selected: st.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetchPage(_activeType, 1, sort: i)),
                 const SizedBox(height: 14),
-                ...pagedListBody<Map<String, dynamic>>(
+                ...infiniteListBody<Map<String, dynamic>>(
                   st,
-                  perPage: _perPage,
                   emptyText: 'Chưa có bài',
+                  empty: _q.isEmpty ? null : ListSearchEmpty(query: _q),
                   onRetry: () => _fetchPage(_activeType, st.page),
-                  onPage: (p) => _fetchPage(_activeType, p),
-                  itemBuilder: (song, i) => SongRow(song: song, index: i, showIndex: true, metricKey: kSongSortMetric[_sorts[st.sort]]!, queue: asSongList(st.items)),
+                  onMore: () => _fetchPage(_activeType, st.page + 1, append: true),
+                  itemBuilder: (song, i) => SongRow(highlight: _q, song: song, index: i, showIndex: true, metricKey: kSongSortMetric[_sorts[st.sort]]!, queue: asSongList(st.items)),
                 ),
                 SizedBox(height: player.currentSong != null ? 90 : 20),
               ])),

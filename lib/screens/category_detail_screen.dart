@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/list_search.dart';
+import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -41,10 +42,21 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
   _CatCfg? get _cfg => _cats[widget.slug];
   final _list = PagedList<Map<String, dynamic>>();
   final _scrollCtl = ScrollController();
+  /// Words in the search box ('' = whole list).
+  String _q = '';
+
+  void _maybeMore() {
+    if (nearListEnd(_scrollCtl, _list)) _fetch(_list.page + 1, append: true);
+  }
+
+  void _search(String q) {
+    setState(() => _q = _list.query = q);
+    _fetch(1);
+  }
 
   @override
   void initState() {
-    super.initState();
+    super.initState(); _scrollCtl.addListener(_maybeMore);
     _fetch(1);
   }
 
@@ -63,7 +75,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
     }
   }
 
-  Future<void> _fetch(int page, {int? sort}) async {
+  Future<void> _fetch(int page, {int? sort, bool append = false}) async {
     final cfg = _cfg;
     if (cfg == null) return;
     await loadPage(_list, page, (page, sort) async {
@@ -72,8 +84,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
           ? 'users(first: 5) { data { id username } }'
           : 'artists(first: 5) { data { id title slug avatar { url } } }';
       final composerNested = '${cfg.composerField}(first: 20) { data { id slug title } }';
-      final q = 'query(\$page: Int) { ${cfg.query}(first: $_perPage, page: \$page, orderBy: [{column: "$sortCol", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
-      final data = await ApiClient.query(q, {'page': page});
+      final q = 'query(\$page: Int, \$q: String) { ${cfg.query}(first: $_perPage, page: \$page, q: \$q, orderBy: [{column: "$sortCol", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
+      final data = await ApiClient.query(q, {'page': page, 'q': _q});
       return PageResult.fromPaginator(data[cfg.query], page, (m) {
         m['file_type'] = cfg.fileType;
         // Normalize karaoke users -> artists shape
@@ -82,7 +94,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
         }
         return m;
       });
-    }, sort: sort, scrollToTop: _scrollCtl);
+    }, sort: sort, scrollToTop: _scrollCtl, append: append);
   }
 
   String _formatInt(int n) {
@@ -164,7 +176,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                                 Text(cfg.name, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _list.total > 0 ? '${_formatInt(_list.total)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có bài')),
+                                  _list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có bài')),
                                   style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                                 ),
                               ],
@@ -185,6 +197,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                         ),
                       ),
 
+                    ListSearchField(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài ' : ''}${cfg.name}', onChanged: _search),
+
+                    ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
+
+                    const SizedBox(height: 14),
+
                     SortTabs(
                       labels: _sorts,
                       selected: _list.sort,
@@ -193,12 +211,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                     ),
                     const SizedBox(height: 14),
 
-                    ...pagedListBody<Map<String, dynamic>>(
+                    ...infiniteListBody<Map<String, dynamic>>(
                       _list,
-                      perPage: _perPage,
                       onRetry: () => _fetch(_list.page),
-                      onPage: (p) => _fetch(p),
-                      itemBuilder: (song, i) => SongRow(
+                      onMore: () => _fetch(_list.page + 1, append: true),
+                      empty: _q.isEmpty ? null : ListSearchEmpty(query: _q),
+                      itemBuilder: (song, i) => SongRow(highlight: _q, 
                         song: song,
                         index: i,
                         showIndex: true,

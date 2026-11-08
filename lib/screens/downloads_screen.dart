@@ -2,13 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/offline_store.dart';
+import '../widgets/list_search.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 
 /// "Đã tải về": songs stored in the app, playable without network.
-class DownloadsScreen extends StatelessWidget {
+class DownloadsScreen extends StatefulWidget {
   const DownloadsScreen({super.key});
+
+  @override
+  State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends State<DownloadsScreen> {
+  /// Words in the search box: these songs are on the phone, so the list is
+  /// filtered right here (works offline).
+  String _q = '';
 
   String _size(int bytes) {
     if (bytes >= 1 << 30) return '${(bytes / (1 << 30)).toStringAsFixed(1).replaceAll('.', ',')} GB';
@@ -19,6 +29,7 @@ class DownloadsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final store = context.watch<OfflineStore>();
     final items = store.items;
+    final shown = _q.isEmpty ? items : items.where((s) => titleMatches('${s['title'] ?? ''}', _q)).toList();
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: SubPageBar(
@@ -64,25 +75,36 @@ class DownloadsScreen extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                     child: Row(children: [
-                      Expanded(child: PillButton(label: 'Phát tất cả', icon: Icons.play_arrow_rounded, onTap: () => playOrOpen(context, items.first, items, 'Đã tải về'))),
+                      Expanded(child: PillButton(label: 'Phát tất cả', icon: Icons.play_arrow_rounded, onTap: shown.isEmpty ? null : () => playOrOpen(context, shown.first, shown, 'Đã tải về'))),
                       const SizedBox(width: 10),
                       Expanded(
                         child: PillButton(
                           label: 'Ngẫu nhiên',
                           icon: Icons.shuffle_rounded,
                           primary: false,
-                          onTap: () {
-                            final q = List<Map<String, dynamic>>.from(items)..shuffle();
+                          onTap: shown.isEmpty ? null : () {
+                            final q = List<Map<String, dynamic>>.from(shown)..shuffle();
                             playOrOpen(context, q.first, q, 'Đã tải về');
                           },
                         ),
                       ),
                     ]),
                   ),
-                  for (final s in items)
+                  ListSearchField(
+                    hint: 'Tìm trong ${items.length} bài đã tải về',
+                    padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                    onChanged: (q) => setState(() => _q = q),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ListSearchSummary(query: _q, total: shown.length),
+                  ),
+                  const SizedBox(height: 8),
+                  if (shown.isEmpty) ListSearchEmpty(query: _q),
+                  for (final s in shown)
                     Padding(
                       padding: const EdgeInsets.only(left: 20, right: 6),
-                      child: SongRow(song: s, queue: items, sourceLabel: 'Đã tải về', metricKey: 'none'),
+                      child: SongRow(song: s, queue: shown, sourceLabel: 'Đã tải về', metricKey: 'none', highlight: _q),
                     ),
                 ],
               ),

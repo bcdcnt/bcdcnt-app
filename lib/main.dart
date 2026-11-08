@@ -155,7 +155,8 @@ void _maybeScrollForShot() {
   Future.delayed(const Duration(seconds: 9), () {
     ScrollPosition? best;
     void visit(Element e) {
-      if (e is StatefulElement && e.state is ScrollableState) {
+      // Skip hidden tabs (the home tab under a pushed page is taller).
+      if (e is StatefulElement && e.state is ScrollableState && TickerMode.valuesOf(e).enabled) {
         final pos = (e.state as ScrollableState).position;
         if (pos.axis == Axis.vertical && pos.hasContentDimensions && (best == null || pos.maxScrollExtent > best!.maxScrollExtent)) best = pos;
       }
