@@ -508,6 +508,7 @@ final _router = GoRouter(
         GoRoute(path: '/tag', builder: (c, s) => const TagListScreen()),
         GoRoute(path: '/tag/:slug', builder: (c, s) => TagDetailScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/bai-gui-cua-toi', builder: (c, s) => const MyUploadsScreen()),
+        GoRoute(path: '/bai-hat/video', builder: (c, s) => const DecadeSongsScreen(video: true)),
         GoRoute(
           path: '/bai-hat/thap-nien/:decade',
           builder: (c, s) => DecadeSongsScreen(decade: int.tryParse(s.pathParameters['decade']!) ?? 1990),

@@ -591,8 +591,8 @@ class _Clamped extends StatelessWidget {
   }
 }
 
-/// "Nguyễn Huy · 3 bài" under a related playlist: a long name is cut, the
-/// count always shows.
+/// "3 bài · Nguyễn Huy" under a related playlist, as in Playlist cộng đồng:
+/// a long name is cut, the count always shows.
 class _OwnerLine extends StatelessWidget {
   final String? owner;
   final dynamic total;
@@ -606,8 +606,8 @@ class _OwnerLine extends StatelessWidget {
     final count = n > 0 ? '$n bài' : '';
     if (owner == null || owner!.isEmpty) return Text(count, maxLines: 1, style: st);
     return Row(children: [
+      if (count.isNotEmpty) Text('$count · ', maxLines: 1, softWrap: false, style: st),
       Flexible(child: Text(owner!, maxLines: 1, overflow: TextOverflow.ellipsis, style: st)),
-      if (count.isNotEmpty) Text(' · $count', maxLines: 1, softWrap: false, style: st),
     ]);
   }
 }

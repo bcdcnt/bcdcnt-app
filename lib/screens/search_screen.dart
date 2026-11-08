@@ -1015,6 +1015,18 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
           ...((t['sample_images'] is List) ? (t['sample_images'] as List).whereType<String>() : const <String>[]),
       ];
 
+  /// "Tân nhạc" / "Dân ca" and their chips, wrapping onto more lines.
+  Widget _group(String label, List<(String, String)> items) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final (t, route) in items) BrandChip(label: t, onTap: () => context.push(route)),
+          ]),
+        ]),
+      );
+
   @override
   Widget build(BuildContext context) {
     final imgs = _images;
@@ -1062,6 +1074,19 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
             ],
           ),
         ),
+        // Smaller groups under the kinds, as on the web's Thư viện page.
+        _group('Tân nhạc', const [
+          ('Nhạc thiếu nhi', '/tag/nhac-thieu-nhi'),
+          ('Nhạc nước ngoài', '/tag/nhac-nuoc-ngoai'),
+          ('Nhạc nhẹ', '/tag/nhac-nhe'),
+          ('Nhạc tiền chiến', '/tag/nhac-tien-chien'),
+          ('Nhạc phim', '/tag/nhac-phim'),
+          ('Video', '/bai-hat/video'),
+        ]),
+        _group('Dân ca', const [
+          ('Thể loại dân ca', '/the-loai-dan-ca'),
+          ('Làn điệu dân ca', '/lan-dieu'),
+        ]),
         SectionTitle('Thập niên', action: null),
         SizedBox(
           height: 38,

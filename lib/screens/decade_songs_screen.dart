@@ -8,9 +8,12 @@ import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 
+/// Songs of one decade (`/bai-hat/thap-nien/:decade`), or with [video]
+/// every song that has a video (`/bai-hat/video`, as on the web).
 class DecadeSongsScreen extends StatefulWidget {
   final int decade;
-  const DecadeSongsScreen({super.key, required this.decade});
+  final bool video;
+  const DecadeSongsScreen({super.key, this.decade = 0, this.video = false});
 
   @override
   State<DecadeSongsScreen> createState() => _DecadeSongsScreenState();
@@ -66,10 +69,12 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
         final data = await ApiClient.query(q, {
           'page': page,
           'q': _q,
-          'where': {'AND': [
-            {'column': 'year', 'operator': 'GTE', 'value': '$d'},
-            {'column': 'year', 'operator': 'LT', 'value': '${d + 10}'},
-          ]},
+          'where': widget.video
+              ? {'AND': [{'column': 'play_type', 'value': 'video'}]}
+              : {'AND': [
+                  {'column': 'year', 'operator': 'GTE', 'value': '$d'},
+                  {'column': 'year', 'operator': 'LT', 'value': '${d + 10}'},
+                ]},
         });
         return PageResult.fromPaginator(data['songs'], page);
       }, sort: sort, scrollToTop: _scrollCtl, append: append);
@@ -113,7 +118,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
-                title: Text('Thập niên'),
+                title: Text(widget.video ? 'Video' : 'Thập niên'),
                 centerTitle: true,
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
@@ -133,16 +138,16 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
                           width: 56, height: 56,
                           decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)),
                           alignment: Alignment.center,
-                          child: const Icon(Icons.history_toggle_off, color: Colors.white, size: 28),
+                          child: Icon(widget.video ? Icons.smart_display_outlined : Icons.history_toggle_off, color: Colors.white, size: 28),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Thập niên ${widget.decade}', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
+                              Text(widget.video ? 'Video' : 'Thập niên ${widget.decade}', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài hát' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                              Text(_list.allTotal > 0 ? '${_formatInt(_list.allTotal)} ${widget.video ? 'video' : 'bài hát'}' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -157,7 +162,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
                       Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                     ]),
                   const SizedBox(height: 14),
-                  ListSearchField(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}thập niên ${widget.decade}', onChanged: _search),
+                  ListSearchField(hint: widget.video ? 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} ' : ''}video' : 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}thập niên ${widget.decade}', onChanged: _search),
                   ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
                   const SizedBox(height: 14),
                   SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
