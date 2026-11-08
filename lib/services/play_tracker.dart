@@ -17,7 +17,8 @@ import 'dart:math';
 typedef LogListenFn = Future<void> Function(LogListenPayload payload);
 
 class PlayTracker {
-  static const _thresholdSeconds = 30;
+  // Same as the web (playTracker.js): 5 s of listening counts as a play.
+  static const _thresholdSeconds = 5;
   static const _rateLimitMs = 3 * 60 * 1000; // 3 min between logs of same song
 
   final LogListenFn _logFn;
@@ -86,6 +87,23 @@ class PlayTracker {
   /// to "completed" (track played to the end naturally).
   void endSession({String reason = 'skip'}) {
     _finalize(reason);
+  }
+
+  /// The app is going to the background, where it may be killed without
+  /// notice: send the play now if it already counts (the web does this when
+  /// the tab is hidden). The session goes on; it won't be sent twice.
+  void flush() {
+    final s = _session;
+    if (s == null || s.logged) return;
+    if (s.lastResumeMs != null && !s.paused) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      s.accumulatedSec += (now - s.lastResumeMs!) / 1000.0;
+      s.lastResumeMs = now;
+    }
+    if (!s.thresholdReached && s.accumulatedSec >= _threshold(s)) {
+      s.thresholdReached = true;
+    }
+    if (s.thresholdReached) _send(s);
   }
 
   void _finalize(String reason) {
@@ -198,7 +216,8 @@ class LogListenPayload {
         'object_id': objectId,
         'duration_played': durationPlayed,
         if (songDuration != null) 'song_duration': songDuration,
-        'source': source,
+        // Web names: a tap is "direct", the app's own advance "auto-next".
+        'source': const {'manual': 'direct'}[source] ?? source,
         'completed': completed,
       };
 }

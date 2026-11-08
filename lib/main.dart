@@ -318,18 +318,19 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     _life; // start listening
     final player = context.read<PlayerProvider>();
     player.setOnSettingChanged(auth.updatePlayerSetting);
-    // Wire the listen-tracker so PlayTracker can fire `logListen` when a
-    // user-initiated play crosses the 30s threshold. Web does the same via
-    // `PlayerContext` → playTracker.js.
+    // Wire the listen-tracker so PlayTracker can fire `logListen` once a play
+    // crosses 5 s, as the web does via `PlayerContext` → playTracker.js.
+    // Guests count too: the API goes by IP for them (web sends no token).
     player.setLogListenFn((p) async {
-      if (!auth.isAuthenticated) return;
-      try {
-        await auth.authedMutate(
-          r'''mutation($event_id: String!, $object_type: String!, $object_id: ID!, $duration_played: Float!, $song_duration: Float, $source: String, $completed: Boolean) {
+      const m = r'''mutation($event_id: String!, $object_type: String!, $object_id: ID!, $duration_played: Float!, $song_duration: Float, $source: String, $completed: Boolean) {
             logListen(event_id: $event_id, object_type: $object_type, object_id: $object_id, duration_played: $duration_played, song_duration: $song_duration, source: $source, completed: $completed) { id }
-          }''',
-          p.toVariables(),
-        );
+          }''';
+      try {
+        if (auth.isAuthenticated) {
+          await auth.authedMutate(m, p.toVariables());
+        } else {
+          await ApiClient.mutate(m, p.toVariables());
+        }
       } catch (_) {}
     });
     // Lock-screen / Control Center Now Playing card follows this player.

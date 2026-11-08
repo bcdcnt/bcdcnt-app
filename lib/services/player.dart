@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:just_audio/just_audio.dart';
 import 'offline_store.dart';
 import 'play_tracker.dart';
@@ -53,6 +54,8 @@ class PlayerProvider extends ChangeNotifier {
   // (and re-trigger sync to server) on every notifyListeners.
   String? _appliedForUserId;
   PlayTracker? _tracker;
+  // ignore: unused_field
+  late final AppLifecycleListener _life;
   // Sleep timer — either a fixed duration timer (5/10/15/30/60 min) or the
   // sentinel "end of current song" mode (we wait for natural song completion
   // and pause instead of advancing). UI binds to these getters.
@@ -131,6 +134,8 @@ class PlayerProvider extends ChangeNotifier {
   AudioPlayer get audioPlayer => _player;
 
   PlayerProvider() {
+    // Backgrounded: the app may be killed there, so send the current play now.
+    _life = AppLifecycleListener(onPause: () => _tracker?.flush(), onDetach: () => _tracker?.flush());
     _player.playingStream.listen((playing) {
       _isPlaying = playing;
       // Hand pause/resume signals to the play tracker so accumulated time
@@ -254,12 +259,19 @@ class PlayerProvider extends ChangeNotifier {
       return;
     }
     if (_repeat == PlayerRepeatMode.one) {
+      // Each loop is a new listen (the finished one was sent on "completed").
+      final s = _currentSong;
+      final id = s?['id']?.toString();
+      if (s != null && id != null) {
+        final dur = (s['file']?['duration'] is num) ? (s['file']['duration'] as num).toDouble() : null;
+        _tracker?.startSession(songId: id, objectType: songKind(s), songDuration: dur, source: 'repeat-one');
+      }
       await _player.seek(Duration.zero);
       await _player.play();
       return;
     }
     final next = _nextIndex();
-    if (next != null) await playAtIndex(next, source: 'queue');
+    if (next != null) await playAtIndex(next, source: 'auto-next');
   }
 
   /// Index the queue advances to (respecting shuffle / repeat-all), or null
