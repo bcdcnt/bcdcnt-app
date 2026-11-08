@@ -36,6 +36,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   /// Real number of songs in the playlist (the list itself is capped at 200).
   int _itemTotal = 0;
   bool _descOpen = false;
+  /// Long playlists show 20 songs, then 20 more per "Xem thêm".
+  int _shown = 20;
 
   @override
   void initState() {
@@ -107,7 +109,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       };
       final data = await ApiClient.query(r'''query($where: WhereConditions) {
         playlists(first: 8, orderBy: [{column: "id", order: DESC}], where: $where) {
-          data { id slug title event_date thumbnail { url } items(first: 1) { paginatorInfo { total } } }
+          data { id slug title event_date thumbnail { url } user { username } items(first: 1) { paginatorInfo { total } } }
         }
       }''', {'where': where});
       final list = ((data['playlists']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -117,6 +119,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   }
 
   /// The owner, or BQT (manage_playlist), may change the playlist.
+  int get _visible => _shown < _items.length ? _shown : _items.length;
+
   bool _canEdit(Map<String, dynamic> pl) {
     final auth = context.watch<AuthProvider>();
     final me = auth.user?['id']?.toString();
@@ -357,6 +361,20 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(delegate: SliverChildBuilderDelegate(
                   (ctx, i) {
+                    if (i == _visible) {
+                      final more = _items.length - _visible;
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextButton(
+                          style: TextButton.styleFrom(backgroundColor: AppColors.surface, foregroundColor: AppColors.text, minimumSize: const Size.fromHeight(48), shape: const StadiumBorder()),
+                          onPressed: () => setState(() => _shown += 20),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Text('Xem thêm ${more > 20 ? '20' : '$more'} bài', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+                            const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+                          ]),
+                        ),
+                      );
+                    }
                     final song = _items[i];
                     return SongRow(
                       song: song,
@@ -366,7 +384,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       onRemove: canEdit && song['_itemId'] != null ? () => _remove(song) : null,
                     );
                   },
-                  childCount: _items.length,
+                  childCount: _visible + (_visible < _items.length ? 1 : 0),
                 )),
               ),
             SliverPadding(
@@ -476,8 +494,8 @@ class _RelatedCardCompact extends StatelessWidget {
                 const SizedBox(height: 3),
                 if (ev != null && ev.toString().isNotEmpty)
                   Text(formatEventDate(ev), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
-                else if (total > 0)
-                  Text('$total bài', style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
+                else
+                  _OwnerLine(owner: item['user']?['username']?.toString(), total: total, size: 14),
               ],
             ),
           ),
@@ -521,8 +539,8 @@ class _RelatedCard extends StatelessWidget {
             const SizedBox(height: 2),
             if (ev != null && ev.toString().isNotEmpty)
               Text(formatEventDate(ev), maxLines: 1, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.accentLight)))
-            else if (total > 0)
-              Text('$total bài', maxLines: 1, style: body(TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+            else
+              _OwnerLine(owner: item['user']?['username']?.toString(), total: total, size: 13),
           ],
         ),
       ),
@@ -570,5 +588,26 @@ class _Clamped extends StatelessWidget {
         ),
       ]),
     );
+  }
+}
+
+/// "Nguyễn Huy · 3 bài" under a related playlist: a long name is cut, the
+/// count always shows.
+class _OwnerLine extends StatelessWidget {
+  final String? owner;
+  final dynamic total;
+  final double size;
+  const _OwnerLine({this.owner, this.total, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final st = body(TextStyle(fontSize: size, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    final n = total is int ? total as int : 0;
+    final count = n > 0 ? '$n bài' : '';
+    if (owner == null || owner!.isEmpty) return Text(count, maxLines: 1, style: st);
+    return Row(children: [
+      Flexible(child: Text(owner!, maxLines: 1, overflow: TextOverflow.ellipsis, style: st)),
+      if (count.isNotEmpty) Text(' · $count', maxLines: 1, softWrap: false, style: st),
+    ]);
   }
 }
