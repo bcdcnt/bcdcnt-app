@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import '../services/activity.dart' show logShare;
 import '../services/share.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -531,7 +532,10 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song) as
       }
       break;
     case 'share':
-      if (context.mounted) await shareText(context, text: songShareText(song), subject: song['title']?.toString());
+      if (!context.mounted) break;
+      final auth = context.read<AuthProvider>();
+      await shareText(context, text: songShareText(song), subject: song['title']?.toString());
+      logShare(auth, songKind(song), song['id'], 'link');
       break;
   }
 }

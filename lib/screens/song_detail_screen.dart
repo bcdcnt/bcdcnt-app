@@ -59,6 +59,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   bool _isLoved = false;
   // Real number of likes (paginatorInfo.total): the list itself stops at 100.
   int _loveTotal = 0;
+  int _shareTotal = 0;
   bool _loveBusy = false;
   bool _loading = true;
   // Drives the sticky-title appbar — flips to true once the user has
@@ -129,7 +130,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         case 'folk':
           dataKey = 'folk';
           query = r'''query($id: ID!) { folk(id: $id) {
-            id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
+            id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
             file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
@@ -149,14 +150,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         case 'instrumental':
           dataKey = 'instrumental';
           query = r'''query($id: ID!) { instrumental(id: $id) {
-            id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
+            id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
             file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
             uploader { id username }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
-            sheet { id slug title year lyric_type content description }
+            sheet { id slug title year lyric_type content description composers(first: 20) { data { id slug title avatar { url } } } }
             composers(first: 20) { data { id slug title avatar { url } } }
             tags { id name slug }
             artists(first: 100) { data { id title slug avatar { url } } }
@@ -166,7 +167,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         case 'poem':
           dataKey = 'poem';
           query = r'''query($id: ID!) { poem(id: $id) {
-            id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
+            id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
             file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
@@ -182,7 +183,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         case 'karaoke':
           dataKey = 'karaoke';
           query = r'''query($id: ID!) { karaoke(id: $id) {
-            id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
+            id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
             file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
@@ -197,7 +198,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         default:
           dataKey = 'song';
           query = r'''query($id: ID!) { song(id: $id) {
-            id title subtitle slug content description views downloads file_type play_type record_year empty_file created_at
+            id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
             file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
@@ -238,7 +239,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         // Ensure sheet has the meta fields render expects
         final sheet = normalized['sheet'] != null ? Map<String, dynamic>.from(normalized['sheet'] as Map) : <String, dynamic>{};
         // For folk/instrumental/poem, composers/poets/tags live at root level
-        if (normalized['composers'] != null && sheet['composers'] == null) sheet['composers'] = normalized['composers'];
+        // Newer instrumentals keep their composers on the sheet only (the
+        // root list is empty); older ones the other way round.
+        if (normalized['composers'] != null && ((sheet['composers']?['data'] ?? []) as List).isEmpty) sheet['composers'] = normalized['composers'];
         if (normalized['poets'] != null && sheet['poets'] == null) sheet['poets'] = normalized['poets'];
         if (normalized['tags'] != null && sheet['tags'] == null) {
           // Folk/Instrumental/Poem return `tags` as a plain list at root.
@@ -271,6 +274,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         setState(() {
           _song = normalized;
           _loveTotal = loveTotal;
+          _shareTotal = (s['shares'] as num?)?.toInt() ?? 0;
           if (userId != null) _isLoved = lovedInList;
         });
         // The list holds only the first 100 likes: past that, ask directly
@@ -605,7 +609,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final memory = _memberStory?['plain']?.toString();
     final hook = firstLyricLine(_song!['content']) ??
         (memory == null ? null : (memory.length > 140 ? '${memory.substring(0, 138)}…' : memory));
-    await showSongShareSheet(context, _song!, hook: hook, kind: _resolvedType);
+    await showSongShareSheet(context, _song!, hook: hook, kind: _resolvedType, onCount: (n) {
+      if (mounted) setState(() => _shareTotal = n);
+    });
   }
 
   void _showLoversSheet(List loves) {
@@ -883,82 +889,39 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     // RichText so the hero reads like editorial credits rather than a
     // stacked "Label: Value" form. Each fact has a muted tiny label and is
     // separated by mid-dots.
-    Widget? creditsRow;
-    {
-      final segs = <InlineSpan>[];
-      final muted = TextStyle(color: AppColors.textMuted);
-      void addSep() {
-        if (segs.isNotEmpty) segs.add(TextSpan(text: '  ·  ', style: muted));
-      }
-      void addFact(String label, List<InlineSpan> linkSpans) {
-        if (linkSpans.isEmpty) return;
-        addSep();
-        segs.add(TextSpan(text: '$label ', style: muted));
-        segs.addAll(linkSpans);
-      }
-
-      if (composers.isNotEmpty) {
-        addSep();
-        segs.add(TextSpan(text: 'Sáng tác ', style: muted));
-        segs.addAll(_linkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')));
-        if (year != null && isDesktop) segs.add(TextSpan(text: ' ($year)', style: muted));
-      }
-      // Folk extras
-      final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
-      addFact('Soạn giả', _linkRow(rec, 'title', (p) => context.push('/soan-gia/${p['slug']}')));
-      final fcatsRaw = song['sheet']?['fcats'] ?? song['fcats'];
-      final fcats = (fcatsRaw is Map ? (fcatsRaw['data'] ?? []) : (fcatsRaw ?? [])) as List;
-      addFact('Thể loại', _linkRow(fcats, 'title', (f) => context.push('/dan-ca/${f['slug']}')));
-      final melRaw = song['sheet']?['melodies'] ?? song['melodies'];
-      final melodies = (melRaw is Map ? (melRaw['data'] ?? []) : (melRaw ?? [])) as List;
-      addFact('Làn điệu', _linkRow(melodies, 'title', (m) => context.push('/lan-dieu/${m['slug']}')));
-      if (poets.isNotEmpty && (_resolvedType == 'song' || _resolvedType == 'karaoke' || _resolvedType == 'poem')) {
-        final poetLabel = lyricType != null && (lyricType as String).isNotEmpty ? lyricType : 'Thơ';
-        addFact(poetLabel, _linkRow(poets, 'title', (p) => context.push('/nha-tho/${p['slug']}')));
-      }
-      if (recordYear != null && isDesktop) {
-        addSep();
-        segs.add(TextSpan(text: 'Thu ', style: muted));
-        segs.add(TextSpan(text: recordYear, style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
-      }
-      if (song['created_at'] != null && isDesktop) {
-        addSep();
-        segs.add(TextSpan(text: 'Đăng ', style: muted));
-        segs.add(TextSpan(text: _formatDate(song['created_at']), style: TextStyle(color: AppColors.accentLight, fontWeight: FontWeight.w600)));
-      }
-      if (segs.isNotEmpty) {
-        creditsRow = Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: RichText(
-        textScaler: MediaQuery.textScalerOf(context),
-            text: TextSpan(
-              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.6)),
-              children: segs,
-            ),
-          ),
-        );
-      }
-    }
-
+    // Phone credits: one line per role, muted label then red names; a role
+    // with no data has no line. Desktop builds its own (desktopCredits).
+    final rec = (song['sheet']?['recomposers']?['data'] ?? song['recomposers']?['data'] ?? []) as List;
+    final fcatsRaw = song['sheet']?['fcats'] ?? song['fcats'];
+    final fcats = (fcatsRaw is Map ? (fcatsRaw['data'] ?? []) : (fcatsRaw ?? [])) as List;
+    final melRaw = song['sheet']?['melodies'] ?? song['melodies'];
+    final melodies = (melRaw is Map ? (melRaw['data'] ?? []) : (melRaw ?? [])) as List;
+    final accompanists = (song['accompanists']?['data'] ?? []) as List;
+    final instrument = (song['accompaniment_instrument'] ?? '').toString().trim();
+    final isPoem = _resolvedType == 'poem';
+    Widget? line(String label, List items, void Function(Map) onTap, {String? tail}) => items.isEmpty
+        ? null
+        : _MetaLine(label: label, children: [
+            ..._linkRow(items, 'title', onTap),
+            if (tail != null) TextSpan(text: ' ($tail)', style: TextStyle(color: AppColors.textMuted)),
+          ]);
     final metaItems = <Widget>[
-      if (creditsRow != null) creditsRow,
-      // Trình bày — desktop already shows artists in the hero artist row,
-      // so the duplicate meta line is suppressed there. Mobile keeps it
-      // since the mobile hero only carries title + subtitle.
-      if (artists.isNotEmpty && !isDesktop) _MetaLine(
-        label: _resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày',
-        children: [
-          ..._linkRow(artists, 'title', (a) {
-            if (_resolvedType == 'karaoke') {
-              final id = a['id'];
-              if (id != null) context.push('/user/$id');
-            } else {
-              context.push('/nghe-si/${a['slug']}');
-            }
-          }),
-          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: TextStyle(color: AppColors.textMuted)),
-        ],
-      ),
+      // Tiếng thơ: the poet is the author, so "Sáng tác" opens the poet page.
+      ?line('Sáng tác', isPoem ? poets : composers, (c) => context.push('${isPoem ? '/nha-tho' : '/nhac-si'}/${c['slug']}')),
+      ?line('Soạn giả', rec, (p) => context.push('/soan-gia/${p['slug']}')),
+      if (!isPoem && (_resolvedType == 'song' || _resolvedType == 'karaoke'))
+        ?line((lyricType ?? '').toString().trim().isNotEmpty ? lyricType.toString().trim() : 'Thơ', poets, (p) => context.push('/nha-tho/${p['slug']}')),
+      ?line(_resolvedType == 'karaoke' ? 'Thể hiện' : 'Trình bày', artists, (a) {
+        if (_resolvedType == 'karaoke') {
+          final id = a['id'];
+          if (id != null) context.push('/user/$id');
+        } else {
+          context.push('/nghe-si/${a['slug']}');
+        }
+      }, tail: recordYear),
+      ?line('Đệm ${instrument.isEmpty ? 'nhạc' : instrument}', accompanists, (a) => context.push('/nghe-si/${a['slug']}')),
+      ?line('Thể loại', fcats, (f) => context.push('/dan-ca/${f['slug']}')),
+      ?line('Làn điệu', melodies, (m) => context.push('/lan-dieu/${m['slug']}')),
       if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null)
         _MetaLine(
           label: 'Bài gốc',
@@ -1175,6 +1138,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           [
                             if ((song['views'] ?? 0) is num && (song['views'] ?? 0) > 0) '${formatViews((song['views'] as num).toInt())} lượt nghe',
                             if ((song['downloads'] ?? 0) is num && (song['downloads'] ?? 0) > 0) '${formatViews((song['downloads'] as num).toInt())} lượt tải',
+                            // Where the recording came from (VOV, a TV channel…): minor, so it rides on this line.
+                            if ((song['file']?['source'] ?? '').toString().trim().isNotEmpty) 'Nguồn: ${song['file']['source'].toString().trim()}',
                           ].join(' · '),
                           style: AppText.meta,
                         ),
@@ -1250,8 +1215,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           );
                         })),
                         Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Lưu', onTap: _openPlaylistDialog)),
-                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.library_music_outlined, label: 'Bản thu', onTap: _openFileHistory)),
-                        Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: 'Chia sẻ', onTap: _share)),
+                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.history_rounded, label: 'Bản thu', onTap: _openFileHistory)),
+                        Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: _shareTotal > 0 ? '$_shareTotal chia sẻ' : 'Chia sẻ', onTap: _share)),
                       ]),
                       if (mobileTags != null) ...[const SizedBox(height: 18), mobileTags],
                     ],
@@ -1657,7 +1622,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               icon: Icons.mic_outlined,
               title: 'Bản thu của thành viên',
               count: '(${karaokes.length})',
-              onPlayAll: () => _playList(karaokes),
             ),
             ..._relatedRows(shown),
             if (karaokes.length > 5)
@@ -1822,7 +1786,7 @@ class _MetaLine extends StatelessWidget {
         text: TextSpan(
           style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.5)),
           children: [
-            TextSpan(text: '$label '),
+            TextSpan(text: '$label ', style: TextStyle(color: AppColors.textMuted)),
             ...children,
           ],
         ),

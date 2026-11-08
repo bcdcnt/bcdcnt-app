@@ -218,7 +218,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             else
               for (final p in _playlists) _PlaylistRow(playlist: p, onOpen: () => _pushThenRefresh('/playlist/${p['id']}')),
             if (_following.isNotEmpty) ...[
-              SectionTitle('Đang theo dõi', action: null),
+              SectionTitle('Nghệ sĩ yêu thích', action: null),
               Rail(
                 height: 136,
                 gap: 14,

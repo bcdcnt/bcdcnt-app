@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -46,7 +46,7 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> with PagedLoade
           fcats(first: 1, where: { column: "slug", value: \$slug }) {
             data {
               id title slug
-              folks(first: $_perPage, page: \$page, orderBy: [{column: "$col", order: DESC}]) {
+              folks(first: $_perPage, page: \$page, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}]) {
                 data {
                   id title subtitle slug views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration }
                   artists(first: 5) { data { id title slug } }

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -46,7 +46,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
         final d = widget.decade;
         final col = kSongSortColumn[_sorts[sort]]!;
         final q = '''query(\$page: Int, \$where: WhereConditions) {
-          songs(first: $_perPage, page: \$page, orderBy: [{column: "$col", order: DESC}], where: \$where) {
+          songs(first: $_perPage, page: \$page, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}], where: \$where) {
             data { id slug title subtitle views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } artists(first: 5) { data { id slug title avatar { url } } } }
             paginatorInfo { currentPage lastPage total }
           }

@@ -3,8 +3,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../constants/theme.dart';
+import '../services/activity.dart';
+import '../services/api.dart' show formatViews;
+import '../services/auth.dart';
+import '../services/player.dart' show songKind;
 import '../services/share.dart';
 import 'brand_logo.dart';
 import 'ui.dart';
@@ -12,9 +17,74 @@ import 'ui.dart';
 /// Share a song as a picture: cover, a lyric line or member memory, title
 /// and credits on the brand card. Members forward pictures in Zalo groups far
 /// more than links, and the card carries the site's name with it.
-Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, String? kind}) async {
+/// [onCount]: the new share total once the server has counted the share.
+Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, String? kind, ValueChanged<int>? onCount}) {
+  final k = kind ?? songKind(song);
+  final auth = context.read<AuthProvider>();
+  return _showShareSheet(
+    context,
+    title: 'Chia sẻ bài hát',
+    imageLabel: 'Ảnh chia sẻ bài ${song['title'] ?? ''}',
+    fileName: 'bcdcnt-$k-${song['id']}',
+    text: songShareText(song, hook: hook, kind: kind),
+    subject: song['title']?.toString(),
+    card: _Card(song: song, kind: kind, hook: hook ?? firstLyricLine(song['content'])),
+    onShared: (channel) => _count(auth, k, song['id'], channel, onCount),
+  );
+}
+
+/// A person (artist, composer, poet, recomposer) as a picture: photo, years
+/// and birthplace, their best-known songs and the page link.
+Future<void> showPersonShareSheet(
+  BuildContext context, {
+  required Map person,
+  required String type,
+  required String label,
+  required String path,
+  List<String> topSongs = const [],
+  int songCount = 0,
+  int listens = 0,
+  ValueChanged<int>? onCount,
+}) {
+  final name = (person['title'] ?? '').toString();
+  final url = '$siteUrl$path';
+  final text = [
+    '🎵 $label $name',
+    if (topSongs.isNotEmpty) 'Nổi tiếng với: ${topSongs.take(3).join(', ')}',
+    'Nghe trên Bài ca đi cùng năm tháng: $url',
+  ].join('\n');
+  final auth = context.read<AuthProvider>();
+  return _showShareSheet(
+    context,
+    title: 'Chia sẻ ${label.toLowerCase()}',
+    imageLabel: 'Ảnh chia sẻ ${label.toLowerCase()} $name',
+    fileName: 'bcdcnt-$type-${person['id']}',
+    text: text,
+    subject: name,
+    card: _PersonCard(person: person, label: label, path: path, topSongs: topSongs, songCount: songCount, listens: listens),
+    onShared: (channel) => _count(auth, type, person['id'], channel, onCount),
+  );
+}
+
+// Auth is read up front: the page that opened the sheet may be gone by the
+// time the share sheet closes.
+void _count(AuthProvider auth, String type, dynamic id, String channel, ValueChanged<int>? onCount) {
+  logShare(auth, type, id, channel).then((n) {
+    if (n != null) onCount?.call(n);
+  });
+}
+
+Future<void> _showShareSheet(
+  BuildContext context, {
+  required String title,
+  required String imageLabel,
+  required String fileName,
+  required String text,
+  String? subject,
+  required Widget card,
+  required ValueChanged<String> onShared,
+}) async {
   final key = GlobalKey();
-  final text = songShareText(song, hook: hook, kind: kind);
   var busy = false;
   await showModalBottomSheet<void>(
     context: context,
@@ -35,7 +105,7 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, S
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
           image.dispose();
           final dir = await getTemporaryDirectory();
-          final file = File('${dir.path}/bcdcnt-${song['id']}.png');
+          final file = File('${dir.path}/$fileName.png');
           await file.writeAsBytes(bytes!.buffer.asUint8List());
           if (!ctx.mounted) return;
           final box = ctx.findRenderObject() as RenderBox?;
@@ -44,8 +114,10 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, S
             text: text,
             sharePositionOrigin: box != null && box.hasSize ? box.localToGlobal(Offset.zero) & box.size : null,
           ));
+          onShared('image');
         } catch (_) {
-          if (ctx.mounted) await shareText(ctx, text: text, subject: song['title']?.toString());
+          if (ctx.mounted) await shareText(ctx, text: text, subject: subject);
+          onShared('link');
         } finally {
           if (ctx.mounted) setSheet(() => busy = false);
         }
@@ -57,7 +129,7 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, S
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 14),
-            Text('Chia sẻ bài hát', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+            Text(title, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
             const SizedBox(height: 14),
             Center(
               child: ConstrainedBox(
@@ -67,9 +139,9 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, S
                 child: MediaQuery.withNoTextScaling(
                   child: Semantics(
                     image: true,
-                    label: 'Ảnh chia sẻ bài ${song['title'] ?? ''}',
+                    label: imageLabel,
                     excludeSemantics: true,
-                    child: RepaintBoundary(key: key, child: _Card(song: song, kind: kind, hook: hook ?? firstLyricLine(song['content']))),
+                    child: RepaintBoundary(key: key, child: card),
                   ),
                 ),
               ),
@@ -83,7 +155,8 @@ Future<void> showSongShareSheet(BuildContext context, Map song, {String? hook, S
               primary: false,
               onTap: () async {
                 Navigator.pop(ctx);
-                await shareText(context, text: text, subject: song['title']?.toString());
+                await shareText(context, text: text, subject: subject);
+                onShared('link');
               },
             ),
             // Room for the mini player, which floats above sheets.
@@ -154,6 +227,85 @@ class _Card extends StatelessWidget {
             // Zalo often strips the message text: the picture itself says
             // where to find the song.
             Flexible(child: Text('bcdcnt.net${songWebPath(song, kind)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: paper)))),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+class _PersonCard extends StatelessWidget {
+  final Map person;
+  final String label;
+  final String path;
+  final List<String> topSongs;
+  final int songCount;
+  final int listens;
+  const _PersonCard({required this.person, required this.label, required this.path, required this.topSongs, required this.songCount, required this.listens});
+
+  @override
+  Widget build(BuildContext context) {
+    const paper = Color(0xFFF6E8DE);
+    final avatar = person['avatar']?['url']?.toString();
+    final name = '${person['title'] ?? ''}';
+    final yob = '${person['yob'] ?? ''}';
+    // "Lương Ngọc - Bình Giang - Hải Dương" → "Hải Dương": the province is
+    // enough on a picture.
+    final place = '${person['born_address'] ?? ''}'.split(RegExp(r'\s*[-,]\s*')).where((x) => x.trim().isNotEmpty).lastOrNull ?? '';
+    final meta = [if (yob.isNotEmpty && yob != '0' && yob != 'null') yob, if (place.isNotEmpty) place].join(' · ');
+    final stats = [if (songCount > 0) '$songCount bài hát', if (listens > 0) '${formatViews(listens)} lượt nghe'].join(' · ');
+    return AspectRatio(
+      aspectRatio: 4 / 5,
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        ),
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.all(20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Container(
+              width: 92,
+              height: 92,
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white24, width: 2)),
+              child: avatar != null
+                  ? NetImage(url: avatar, width: 88, height: 88, radius: 44, tint: true)
+                  : CircleAvatar(backgroundColor: Colors.white12, child: Text(name.isEmpty ? '' : name[0].toUpperCase(), style: display(const TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: paper)))),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(label.toUpperCase(), style: body(const TextStyle(fontSize: 11, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: paper))),
+                const SizedBox(height: 4),
+                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 22, height: 1.15, fontWeight: FontWeight.w800, color: Colors.white))),
+                if (meta.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: paper))),
+                ],
+              ]),
+            ),
+          ]),
+          const Spacer(),
+          if (topSongs.isNotEmpty) ...[
+            Text('NỔI TIẾNG VỚI', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.9, fontWeight: FontWeight.w800, color: paper))),
+            const SizedBox(height: 8),
+            for (final t in topSongs.take(3))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text('♪ $t', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 16, height: 1.35, fontStyle: FontStyle.italic, fontWeight: FontWeight.w700, color: Colors.white))),
+              ),
+          ],
+          const Spacer(),
+          if (stats.isNotEmpty) Text(stats, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: paper))),
+          const SizedBox(height: 12),
+          Container(height: 1, color: Colors.white24),
+          const SizedBox(height: 12),
+          Row(children: [
+            const BrandLogo(height: 22, onDark: true),
+            const SizedBox(width: 12),
+            const Spacer(),
+            Flexible(child: Text('bcdcnt.net$path', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: paper)))),
           ]),
         ]),
       ),

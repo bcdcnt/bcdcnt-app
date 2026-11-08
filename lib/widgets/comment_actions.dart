@@ -49,8 +49,8 @@ class _A {
 }
 
 /// [type] / [objectId]: what the comment section belongs to (song, folk,
-/// discussion…).
-Future<CommentChange?> showCommentActions(BuildContext context, {required Map<String, dynamic> comment, required String type, required String objectId}) async {
+/// discussion…). [subjectTitle]: that object's name, on a person's page.
+Future<CommentChange?> showCommentActions(BuildContext context, {required Map<String, dynamic> comment, required String type, required String objectId, String? subjectTitle}) async {
   final auth = context.read<AuthProvider>();
   if (!auth.isAuthenticated) return null;
   final id = '${comment['id']}';
@@ -178,7 +178,11 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
       final saved = await _applyLyric(context, auth, comment: comment, type: type, objectId: objectId);
       return saved ? CommentPageChanged() : null;
     case 'tagDocument':
-      await _tagDocument(context, auth, comment);
+      // On a person's page, start with that person picked (as on the web).
+      final seed = const ['artist', 'composer', 'poet', 'recomposer'].contains(type) && subjectTitle != null
+          ? (key: '${type}s', person: <String, dynamic>{'id': objectId, 'title': subjectTitle})
+          : null;
+      await _tagDocument(context, auth, comment, seed: seed);
       return null;
     case 'move':
       final link = await _askText(context, 'Chuyển bình luận', 'Dán link trang đích (bài hát, chủ đề…)', hint: 'https://bcdcnt.net/bai-hat/…');
@@ -344,10 +348,11 @@ Future<bool> _applyLyric(BuildContext context, AuthProvider auth, {required Map 
 
 /// "Đặt làm tư liệu ảnh": the comment's pictures/videos become archive
 /// documents of the chosen composers / singers / poets / recomposers.
-Future<void> _tagDocument(BuildContext context, AuthProvider auth, Map comment) async {
+Future<void> _tagDocument(BuildContext context, AuthProvider auth, Map comment, {({String key, Map<String, dynamic> person})? seed}) async {
   final title = TextEditingController(text: _htmlToText('${comment['content'] ?? ''}').replaceAll('\n', ' ').trim());
   if (title.text.length > 150) title.text = title.text.substring(0, 150);
   final people = <String, List<Map<String, dynamic>>>{'composers': [], 'artists': [], 'poets': [], 'recomposers': []};
+  if (seed != null) people[seed.key] = [seed.person];
   const labels = {'composers': 'Nhạc sĩ', 'artists': 'Nghệ sĩ', 'poets': 'Nhà thơ', 'recomposers': 'Soạn giả'};
   var busy = false;
   final ok = await showModalBottomSheet<bool>(

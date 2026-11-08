@@ -4,7 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_html/flutter_html.dart';
-import '../services/share.dart';
+import '../widgets/share_card.dart' show showPersonShareSheet;
 import '../constants/theme.dart';
 import '../widgets/ui.dart';
 import '../services/api.dart';
@@ -91,9 +91,13 @@ class _SectionState {
   /// Last request failed: show a retry instead of fetching again by itself
   /// (offline, the lazy tab fetch otherwise looped forever).
   final bool failed;
-  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false, this.failed = false});
+  /// The next page is on its way (lists load more as they scroll).
+  final bool loadingMore;
+  /// Loading the next page failed: wait for a tap on "Thử lại".
+  final bool moreFailed;
+  const _SectionState({this.items = const [], this.currentPage = 1, this.lastPage = 1, this.total = 0, this.sort = 'views', this.loading = false, this.failed = false, this.loadingMore = false, this.moreFailed = false});
 
-  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading, bool? failed}) =>
+  _SectionState copyWith({List<dynamic>? items, int? currentPage, int? lastPage, int? total, String? sort, bool? loading, bool? failed, bool? loadingMore, bool? moreFailed}) =>
       _SectionState(
         items: items ?? this.items,
         currentPage: currentPage ?? this.currentPage,
@@ -102,6 +106,8 @@ class _SectionState {
         sort: sort ?? this.sort,
         loading: loading ?? this.loading,
         failed: failed ?? this.failed,
+        loadingMore: loadingMore ?? this.loadingMore,
+        moreFailed: moreFailed ?? this.moreFailed,
       );
 
   /// Appends a page without repeating rows already shown.
@@ -112,21 +118,26 @@ class _SectionState {
 }
 
 // Standard song sorts; every section (songs/folks/instrumentals/poems)
-// has views, likes and downloads columns. Labels come from kSongSorts.
+// has views, likes and downloads columns. Labels come from kSongSorts, in
+// the same order.
 const _sortOptions = [
   ('views', 'views'),
   ('newest', 'id'),
   ('likes', 'likes'),
   ('downloads', 'downloads'),
+  ('title', 'title'),
 ];
 const _perPage = 10;
 
 class _PersonDetailScreenState extends State<PersonDetailScreen> {
   Map<String, dynamic>? _person;
-  // Theo dõi = ♥ on the person page (same `like` data as the web heart).
+  // ♥ Yêu thích (the web heart); fans also hear about new songs.
   bool _following = false;
   int _followers = 0;
   bool _followBusy = false;
+  int _shares = 0;
+  /// The most listened songs, for the share picture.
+  List<String> _topSongs = [];
   final Map<String, _SectionState> _sections = {};
   // Document tabs share the same _SectionState shape (items + total).
   // Sort is fixed (id DESC, newest first) so we don't reuse the sort field.
@@ -215,7 +226,9 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     }
   }
 
-  Future<void> _fetch() async {
+  /// [fresh]: reload after a CTV change (e.g. a comment picture made the
+  /// avatar) — authed POST so the CDN's cached copy is skipped.
+  Future<void> _fetch({bool fresh = false}) async {
     final sectionsQuery = _cfg.sections.map((c) =>
       '${c.key}(first: 10, page: 1, orderBy: [{ column: "views", order: DESC }]) { data { ${c.fields} } paginatorInfo { total currentPage lastPage } }'
     ).join('\n');
@@ -225,10 +238,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final mediaCountsQuery = _mediaSecs.map((m) =>
       '${m.key}Docs: documents(first: 1, page: 1, where: {column: "type", value: "${m.key}"}) { paginatorInfo { total } }'
     ).join('\n');
-    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads loves(first: 1) { paginatorInfo { total } } $sectionsQuery $mediaCountsQuery } }';
+    final q = 'query(\$slug: String!) { ${_cfg.queryName}(slug: \$slug) { id title slug content rank real_name avatar { url user { id username } } dob mob yob dod mod yod born_address views total_listens total_downloads shares loves(first: 1) { paginatorInfo { total } } $sectionsQuery $mediaCountsQuery } }';
     final req = ++_fetchReq;
     try {
-      final data = await ApiClient.query(q, {'slug': widget.slug});
+      final data = fresh
+          ? await context.read<AuthProvider>().authedQuery(q, {'slug': widget.slug})
+          : await ApiClient.query(q, {'slug': widget.slug});
       final p = data[_cfg.queryName];
       if (req != _fetchReq || !mounted) return;
       if (p == null) { setState(() => _loading = false); return; }
@@ -236,6 +251,11 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _person = Map<String, dynamic>.from(p);
         _following = false;
         _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+        _shares = (p['shares'] as num?)?.toInt() ?? 0;
+        _topSongs = [
+          for (final c in _cfg.sections)
+            for (final x in ((p[c.key]?['data'] ?? []) as List).take(3)) '${x['title'] ?? ''}'.trim(),
+        ].where((t) => t.isNotEmpty).take(3).toList();
         for (final c in _cfg.sections) {
           final raw = p[c.key];
           _sections[c.key] = _SectionState(
@@ -253,7 +273,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         }
         _loading = false;
       });
-      logActivity(context.read<AuthProvider>(), 'view', _cfg.queryName, p['id']);
+      if (!fresh) logActivity(context.read<AuthProvider>(), 'view', _cfg.queryName, p['id']);
       _fetchFollowing(p['id']);
     } catch (_) {
       if (req == _fetchReq && mounted) setState(() { _loading = false; _failed = true; });
@@ -278,30 +298,33 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
 
   bool _failed = false;
 
-  Future<void> _fetchPage(String key, int page, {String? sort}) async {
+  /// [append]: the next page, added under the rows already shown (the
+  /// lists load more as they scroll; a person has few songs).
+  Future<void> _fetchPage(String key, int page, {String? sort, bool append = false}) async {
     final cfg = _cfg.sections.firstWhere((c) => c.key == key);
     final personId = _person?['id']?.toString();
     if (personId == null) return;
     final prev = _sections[key]!;
     final useSort = sort ?? prev.sort;
     final sortCol = _sortOptions.firstWhere((o) => o.$1 == useSort, orElse: () => _sortOptions.first).$2;
+    final order = useSort == 'title' ? 'ASC' : 'DESC';
     final req = (_reqIds[key] ?? 0) + 1;
     _reqIds[key] = req;
     setState(() {
-      // Skeleton while the page loads; the old page stays in [items] so a
+      // Skeleton while a new list loads; the old one stays in [items] so a
       // failed request can fall back to it.
-      _sections[key] = prev.copyWith(loading: true, sort: useSort, failed: false);
+      _sections[key] = append ? prev.copyWith(loadingMore: true, moreFailed: false) : prev.copyWith(loading: true, sort: useSort, failed: false);
     });
     try {
       final queryById = '${_cfg.queryName}ByID';
-      final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: $_perPage, page: \$page, orderBy: [{ column: "$sortCol", order: DESC }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
+      final q = 'query(\$id: ID!, \$page: Int) { $queryById(id: \$id) { $key(first: $_perPage, page: \$page, orderBy: [{ column: "$sortCol", order: $order }]) { data { ${cfg.fields} } paginatorInfo { total currentPage lastPage } } } }';
       final data = await ApiClient.query(q, {'id': personId, 'page': page});
       final raw = data[queryById]?[key];
       if (req != _reqIds[key] || !mounted) return;
       final newItems = (raw?['data'] ?? []) as List;
       setState(() {
         _sections[key] = _SectionState(
-          items: newItems,
+          items: append ? prev.appended(newItems) : newItems,
           total: raw?['paginatorInfo']?['total'] ?? prev.total,
           currentPage: raw?['paginatorInfo']?['currentPage'] ?? page,
           lastPage: raw?['paginatorInfo']?['lastPage'] ?? prev.lastPage,
@@ -309,9 +332,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           loading: false,
         );
       });
-      _scrollListToTop();
+      if (!append) _scrollListToTop();
     } catch (e) {
       if (req != _reqIds[key] || !mounted) return;
+      if (append) {
+        setState(() => _sections[key] = prev.copyWith(loadingMore: false, moreFailed: true));
+        return;
+      }
       final kept = prev.items.isNotEmpty;
       setState(() {
         // Keep the page already on screen (and its sort tab) when there is one.
@@ -440,7 +467,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         {'id': _person!['id'].toString()},
       );
       if (mounted && next) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đang theo dõi ${_person!['title']} — bạn sẽ được báo khi có bài mới'), duration: const Duration(seconds: 3)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã yêu thích ${_person!['title']} — bạn sẽ được báo khi có bài mới'), duration: const Duration(seconds: 3)));
         PushService.instance.maybeAsk(context, reason: 'Nhận thông báo khi ${_person!['title']} có bài mới.');
       }
     } catch (e) {
@@ -449,7 +476,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           _following = !next;
           _followers = (_followers + (next ? -1 : 1)).clamp(0, 1 << 30);
         });
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${next ? 'Chưa theo dõi được' : 'Chưa bỏ theo dõi được'}. ${friendlyError(e)}'), backgroundColor: AppColors.error));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${next ? 'Chưa yêu thích được' : 'Chưa bỏ yêu thích được'}. ${friendlyError(e)}'), backgroundColor: AppColors.error));
       }
     } finally {
       if (mounted) setState(() => _followBusy = false);
@@ -457,9 +484,22 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   Future<void> _share() async {
-    if (_person == null) return;
-    final url = '$siteUrl${_cfg.routePrefix}${_person!['slug']}';
-    await shareText(context, text: '🎵 ${_person!['title']} — các bài hát trên Bài ca đi cùng năm tháng: $url', subject: _person!['title']?.toString());
+    final p = _person;
+    if (p == null) return;
+    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.total ?? 0) > 0, orElse: () => _cfg.sections.first);
+    await showPersonShareSheet(
+      context,
+      person: p,
+      type: _cfg.queryName,
+      label: _cfg.label,
+      path: '${_cfg.routePrefix}${p['slug']}',
+      topSongs: _topSongs,
+      songCount: _sections[first.key]?.total ?? 0,
+      listens: ((p['total_listens'] ?? 0) as num).toInt(),
+      onCount: (n) {
+        if (mounted) setState(() => _shares = n);
+      },
+    );
   }
 
   @override
@@ -877,8 +917,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               right: 12,
               child: Row(children: [
                 circle(Icons.arrow_back_ios_new_rounded, 'Quay lại', () => goBack(context)),
-                const Spacer(),
-                circle(Icons.ios_share_rounded, 'Chia sẻ', _share),
               ]),
             ),
             Positioned(
@@ -951,31 +989,22 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              Material(
-                color: _following ? AppColors.accentSoft : AppColors.surface,
-                shape: const StadiumBorder(),
-                child: InkWell(
-                  customBorder: const StadiumBorder(),
-                  onTap: _toggleFollow,
-                  child: Container(
-                    height: 50,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    alignment: Alignment.center,
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(_following ? Icons.check_rounded : Icons.person_add_alt_1_rounded, size: 20, color: _following ? AppColors.accentLight : AppColors.text),
-                      const SizedBox(width: 6),
-                      Text(_following ? 'Đã theo dõi' : 'Theo dõi', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _following ? AppColors.accentLight : AppColors.text))),
-                    ]),
-                  ),
-                ),
+              _CountPill(
+                icon: _following ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                count: _followers,
+                active: _following,
+                semantics: '${_following ? 'Đã yêu thích' : 'Yêu thích'}, $_followers người yêu thích',
+                onTap: _toggleFollow,
+              ),
+              const SizedBox(width: 10),
+              _CountPill(
+                icon: Icons.ios_share_rounded,
+                count: _shares,
+                semantics: 'Chia sẻ, $_shares lượt chia sẻ',
+                onTap: _share,
               ),
             ],
           ),
-          if (_followers >= 20)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text('$_followers người đang theo dõi', textAlign: TextAlign.right, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-            ),
         ],
       ),
     );
@@ -1010,7 +1039,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: Builder(
             builder: (rowCtx) => SongRow(
               song: queue[i],
-              index: (state.currentPage - 1) * _perPage + i,
+              index: i,
               showIndex: true,
               metricKey: metric,
               // Same id *and* kind: song 12 and folk 12 are different rows.
@@ -1018,19 +1047,37 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               onTap: () => playOrOpen(context, queue[i], queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
             ),
           )),
-        if (state.lastPage > 1)
+        if (state.loadingMore)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Pager(page: state.currentPage, lastPage: state.lastPage, loading: state.loading, onPage: (p) => _fetchPage(cfg.key, p)),
+            padding: const EdgeInsets.only(top: 14),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.accent)),
+              const SizedBox(width: 10),
+              Text('Đang tải thêm…', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            ]),
+          )
+        else if (state.moreFailed)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(child: TextButton(onPressed: () => _fetchPage(cfg.key, state.currentPage + 1, append: true), child: const Text('Chưa tải được thêm · Thử lại'))),
           ),
       ]);
     }
-    return ListView(
+    return NotificationListener<ScrollNotification>(
+      // Near the bottom: fetch the next page under the rows already shown.
+      onNotification: (n) {
+        if (n.metrics.axis == Axis.vertical && n.metrics.extentAfter < 600 && !state.loading && !state.loadingMore && !state.moreFailed && state.currentPage < state.lastPage && state.items.isNotEmpty) {
+          _fetchPage(cfg.key, state.currentPage + 1, append: true);
+        }
+        return false;
+      },
+      child: ListView(
       key: PageStorageKey('person-${cfg.key}'),
       // No side padding on the list: the sort chips run edge to edge,
       // rows add their own 20px.
       padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
       children: [_buildSortBar(cfg.key, state), content],
+    ),
     );
   }
 
@@ -1110,7 +1157,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Center(child: Text('Chưa có tiểu sử', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
           ),
-        CommentSection(type: _cfg.queryName, id: p['id'].toString()),
+        CommentSection(type: _cfg.queryName, id: p['id'].toString(), subjectTitle: p['title']?.toString(), onPageChanged: () => _fetch(fresh: true)),
       ],
     );
   }
@@ -1225,3 +1272,46 @@ class _StatCell extends StatelessWidget {
   }
 }
 
+
+/// ♥ / share button on the person page: icon plus the count, as on the
+/// song page ("42 thích", "12 chia sẻ").
+class _CountPill extends StatelessWidget {
+  final IconData icon;
+  final int count;
+  final bool active;
+  final String semantics;
+  final VoidCallback onTap;
+  const _CountPill({required this.icon, required this.count, this.active = false, required this.semantics, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = active ? AppColors.accentLight : AppColors.text;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: semantics,
+      excludeSemantics: true,
+      child: Material(
+        color: active ? AppColors.accentSoft : AppColors.surface,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Container(
+            height: 50,
+            constraints: const BoxConstraints(minWidth: 50),
+            padding: EdgeInsets.symmetric(horizontal: count > 0 ? 16 : 13),
+            alignment: Alignment.center,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 20, color: color),
+              if (count > 0) ...[
+                const SizedBox(width: 6),
+                Text(formatViews(count), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color))),
+              ],
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}

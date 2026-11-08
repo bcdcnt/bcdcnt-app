@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -72,7 +72,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
           ? 'users(first: 5) { data { id username } }'
           : 'artists(first: 5) { data { id title slug avatar { url } } }';
       final composerNested = '${cfg.composerField}(first: 20) { data { id slug title } }';
-      final q = 'query(\$page: Int) { ${cfg.query}(first: $_perPage, page: \$page, orderBy: [{column: "$sortCol", order: DESC}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
+      final q = 'query(\$page: Int) { ${cfg.query}(first: $_perPage, page: \$page, orderBy: [{column: "$sortCol", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id title subtitle slug views downloads likes created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } $artistNested $composerNested } paginatorInfo { total currentPage lastPage } } }';
       final data = await ApiClient.query(q, {'page': page});
       return PageResult.fromPaginator(data[cfg.query], page, (m) {
         m['file_type'] = cfg.fileType;

@@ -31,7 +31,10 @@ class CommentSection extends StatefulWidget {
   final VoidCallback? onPageChanged;
   /// Locked discussion: comments stay readable, the composer is replaced by a note.
   final bool readOnly;
-  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false});
+  /// Name of the person whose page this is: "Đặt làm tư liệu ảnh" starts
+  /// with them already picked.
+  final String? subjectTitle;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false, this.subjectTitle});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -708,7 +711,7 @@ class _CommentSectionState extends State<CommentSection> {
   }
 
   Future<void> _openActions(Map<String, dynamic> c) async {
-    final change = await showCommentActions(context, comment: c, type: widget.type, objectId: widget.id);
+    final change = await showCommentActions(context, comment: c, type: widget.type, objectId: widget.id, subjectTitle: widget.subjectTitle);
     if (!mounted || change == null) return;
     final cid = c['id'].toString();
     switch (change) {

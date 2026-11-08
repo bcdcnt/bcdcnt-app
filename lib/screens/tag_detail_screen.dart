@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -141,7 +141,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
         : 'artists(first: 5) { data { id slug title avatar { url } } }';
     await loadPage(_tabs[type]!, page, (page, sort) async {
       final col = kSongSortColumn[_sorts[sort]]!;
-      final q = 'query(\$tag: String!, \$page: Int) { $dataKey(first: $_perPage, page: \$page, tag: \$tag, orderBy: [{column: "$col", order: DESC}]) { data { id slug title views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } $people } paginatorInfo { currentPage lastPage total } } }';
+      final q = 'query(\$tag: String!, \$page: Int) { $dataKey(first: $_perPage, page: \$page, tag: \$tag, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}]) { data { id slug title views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } $people } paginatorInfo { currentPage lastPage total } } }';
       final data = await ApiClient.query(q, {'tag': tag['name'], 'page': page});
       return PageResult.fromPaginator(data[dataKey], page, (m) {
         m['file_type'] = type;

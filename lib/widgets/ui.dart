@@ -831,7 +831,7 @@ class SubPageBar extends StatelessWidget implements PreferredSizeWidget {
 
 /// The four standard sort tabs for song lists, in display order. A screen
 /// shows only the ones its query can order by (see [kSongSortColumn]).
-const kSongSorts = <String>['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất', 'Tải nhiều nhất'];
+const kSongSorts = <String>['Nghe nhiều nhất', 'Mới cập nhật', 'Yêu thích nhất', 'Tải nhiều nhất', 'Tên A–Z'];
 
 /// `orderBy` column for each label in [kSongSorts]. "Mới cập nhật" orders
 /// by id (newest upload first), same as the web.
@@ -840,6 +840,17 @@ const kSongSortColumn = <String, String>{
   'Mới cập nhật': 'id',
   'Yêu thích nhất': 'likes',
   'Tải nhiều nhất': 'downloads',
+  'Tên A–Z': 'title',
+};
+
+/// `orderBy` direction for each label in [kSongSorts]: only the name list
+/// runs upwards (A → Z).
+const kSongSortOrder = <String, String>{
+  'Nghe nhiều nhất': 'DESC',
+  'Mới cập nhật': 'DESC',
+  'Yêu thích nhất': 'DESC',
+  'Tải nhiều nhất': 'DESC',
+  'Tên A–Z': 'ASC',
 };
 
 /// [SongRow.metricKey] matching each sort, so the row shows the number
@@ -849,6 +860,7 @@ const kSongSortMetric = <String, String>{
   'Mới cập nhật': 'time',
   'Yêu thích nhất': 'likes',
   'Tải nhiều nhất': 'downloads',
+  'Tên A–Z': 'views',
 };
 
 /// Sort row ("Nghe nhiều nhất · Mới cập nhật · ..."): [BrandChip] pills,

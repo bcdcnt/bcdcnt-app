@@ -40,8 +40,10 @@ def tabbar(active):
     items = ''
     for d in json.loads(out):
         on = d['key'] == active
-        v = {'t.href': d['href'], 't.label': d['label'],
-             't.color': '#711313' if on else '#665C5E', 't.d': d['on'] if on else d['off']}
+        badge = '1' if d['key'] == 'me' else ''
+        v = {'t.href': d['href'], 't.label': d['label'], 't.aria': d['label'],
+             't.color': '#711313' if on else '#665C5E', 't.d': d['on'] if on else d['off'],
+             't.badge': badge, 't.badgeDisplay': 'block' if badge else 'none'}
         items += re.sub(r'\{\{(.*?)\}\}', lambda m: v[m.group(1).strip()], tpl)
     return re.sub(r'<sc-for.*?</sc-for>', items, body, flags=re.S)
 
