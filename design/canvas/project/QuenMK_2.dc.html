@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Quên mật khẩu · Bước 2 (OTP)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
+</style>
+</helmet>
+<div style="width: 390px; height: 958px; position: relative; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; display: flex; flex-direction: column; overflow: hidden">
+
+<div style="flex: 1"></div>
+<dc-import name="TabBar" active="me" hint-size="390px,61px"></dc-import>
+
+<div style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); display: flex; align-items: center; justify-content: center; padding: 24px 20px; box-sizing: border-box">
+<div role="dialog" aria-modal="true" aria-labelledby="dn-title" style="width: 350px; box-sizing: border-box; padding: 16px 20px; border-radius: 20px; background: #F4F1F0; display: flex; flex-direction: column; box-shadow: 0 11px 15px rgba(0,0,0,0.2)">
+
+<div style="display: flex; align-items: center">
+<span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 20px; background: linear-gradient(90deg, #4A0C0C, #8E1F1F); box-shadow: 0 0 12px -2px rgba(113,19,19,0.3); display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#FFFFFF" d="M13 3a9 9 0 0 0-9 9H1l4 4 4-4H6c0-3.86 3.14-7 7-7s7 3.14 7 7-3.14 7-7 7c-1.9 0-3.62-.76-4.88-1.99L6.7 18.42A8.94 8.94 0 0 0 13 21a9 9 0 0 0 0-18zm2 8v-1c0-1.1-.9-2-2-2s-2 .9-2 2v1c-.55 0-1 .45-1 1v3c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-3c0-.55-.45-1-1-1zm-1 0h-2v-1c0-.55.45-1 1-1s1 .45 1 1v1z"></path></svg></span>
+<span style="margin-left: 12px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span id="dn-title" style="font-size: 20px; line-height: 29px; font-weight: 800; letter-spacing: -0.4px; color: #161112">Nhập mã xác thực</span><span style="font-size: 15px; line-height: 21px; font-weight: 400; letter-spacing: 0.25px; color: #4F4547">Mã 6 số đã gửi tới email của bạn</span></span>
+<a href="DangNhap.dc.html" aria-label="Đóng" style="width: 48px; height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4F4547" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg></a>
+</div>
+<div style="height: 18px"></div>
+<div style="display: flex; gap: 4px; margin-bottom: 14px"><span style="flex: 1; height: 4px; border-radius: 2px; background: #711313"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: #711313"></span><span style="flex: 1; height: 4px; border-radius: 2px; background: #ECE4E4"></span></div>
+<div style="padding: 10px; border-radius: 8px; border: 1px solid #ECE4E4; background: #FFFFFF; display: flex; align-items: center; gap: 8px"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="#665C5E" d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 14H4V8l8 5 8-5v10zm-8-7L4 6h16l-8 5z"></path></svg><span style="flex: 1; font-size: 15px">an***@gmail.com</span><a href="QuenMK_1.dc.html" style="font-size: 14px; font-weight: 700; color: #711313">Đổi</a></div>
+<div role="group" aria-label="Mã xác thực 6 số" style="margin-top: 14px; display: flex; gap: 8px"><span style="flex: 1; height: 56px; border-radius: 10px; border: 1px solid #ECE4E4; background: #EDE9E8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112">4</span><span style="flex: 1; height: 56px; border-radius: 10px; border: 1px solid #ECE4E4; background: #EDE9E8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112">8</span><span style="flex: 1; height: 56px; border-radius: 10px; border: 1px solid #ECE4E4; background: #EDE9E8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112">2</span><span style="flex: 1; height: 56px; border-radius: 10px; border: 1px solid #ECE4E4; background: #EDE9E8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112">1</span><span style="flex: 1; height: 56px; border-radius: 10px; border: 2px solid #711313; background: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112"></span><span style="flex: 1; height: 56px; border-radius: 10px; border: 1px solid #ECE4E4; background: #EDE9E8; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 800; color: #161112"></span></div>
+<div style="margin-top: 10px; font-size: 13px; color: #665C5E; text-align: center">Mã có hiệu lực 30 phút</div>
+<div style="height: 14px"></div><a href="QuenMK_3.dc.html" style="height: 44px; border: none; border-radius: 10px; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 0.1px; display: flex; align-items: center; justify-content: center; color: #FFFFFF">Xác thực</a>
+<div style="margin-top: 10px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 15px; color: #665C5E">Gửi lại mã sau <b style="margin-left: 4px; color: #161112; font-variant-numeric: tabular-nums">0:42</b></div>
+
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

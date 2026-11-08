@@ -242,7 +242,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ListItem(icon: Icons.notifications_none_rounded, title: 'Thông báo', trailingText: (user['unread'] ?? 0) > 0 ? '${user['unread']}' : null, onTap: () => context.push('/thong-bao')),
           ],
           const GroupLabel('Khác'),
-          ListItem(icon: Icons.info_outline_rounded, title: 'Giới thiệu BCĐCNT', onTap: () => context.push('/gioi-thieu')),
+          ListItem(icon: Icons.info_outline_rounded, title: 'Giới thiệu BCĐCNT', subtitle: 'Giới thiệu về trang nhạc', onTap: () => context.push('/gioi-thieu')),
           ListItem(icon: Icons.help_outline_rounded, title: 'Câu hỏi thường gặp', subtitle: 'Nghe, tải nhạc, tài khoản, đóng góp', onTap: () => context.push('/faq')),
           ListItem(icon: Icons.support_agent_rounded, title: 'Góp ý & hỗ trợ', subtitle: 'Gửi riêng cho BQT', onTap: () => context.push('/ho-tro')),
           ListItem(icon: Icons.policy_outlined, title: 'Chính sách & điều khoản', subtitle: 'Quyền riêng tư, điều khoản sử dụng', onTap: () => context.push('/p/dieu-khoan')),
@@ -256,11 +256,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 final ok = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
-                    title: const Text('Đăng xuất'),
-                    content: const Text('Bạn có chắc muốn đăng xuất?'),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: Text('Đăng xuất?', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    // Downloads live in OfflineStore, which logout leaves alone.
+                    content: Text('Bài đã tải về vẫn nghe được khi không có mạng. Đăng nhập lại để đồng bộ yêu thích và playlist.',
+                        style: body(TextStyle(fontSize: 16, height: 1.5, color: AppColors.textSecondary))),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
-                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Đăng xuất', style: TextStyle(color: AppColors.errorText))),
+                      TextButton(
+                        style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: Text('Huỷ', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+                      ),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFA32020),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text('Đăng xuất', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+                        ),
+                      ),
                     ],
                   ),
                 );

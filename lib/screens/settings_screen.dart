@@ -329,31 +329,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // Step 1: explain what happens.
     final go = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Xoá tài khoản?', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text))),
-        content: SingleChildScrollView(
-          child: Text(
-            'Tài khoản của bạn sẽ bị xoá vĩnh viễn:\n\n'
-            '• Tên, email, số điện thoại, địa chỉ, ngày sinh, ảnh đại diện và ảnh nền bị xoá.\n'
-            '• Bạn sẽ bị đăng xuất trên mọi thiết bị và không đăng nhập lại được.\n'
-            '• Bình luận, bài gửi đã đăng vẫn được giữ trên trang nhưng hiện dưới tên ẩn danh.\n\n'
-            'Việc này KHÔNG THỂ hoàn tác.',
-            style: body(TextStyle(fontSize: 16, height: 1.5, color: AppColors.text)),
-          ),
-        ),
-        actions: [
-          TextButton(
-            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Giữ tài khoản', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Tiếp tục', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.errorText))),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final err = AppColors.errorText;
+        Widget bullet(String t) => Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('•  ', style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
+                Expanded(child: Text(t, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary)))),
+              ]),
+            );
+        return _DeleteDialogShell(
+          content: [
+            Semantics(
+              excludeSemantics: true,
+              child: Container(
+                width: 48, height: 48,
+                margin: const EdgeInsets.only(bottom: 14),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: err.withValues(alpha: 0.12)),
+                child: Icon(Icons.warning_amber_rounded, color: err, size: 26),
+              ),
+            ),
+            Semantics(
+              header: true,
+              child: Text('Xoá tài khoản?', style: display(TextStyle(fontSize: 22, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+            ),
+            const SizedBox(height: 10),
+            Text('Tài khoản của bạn sẽ bị xoá vĩnh viễn:', style: body(TextStyle(fontSize: 16, height: 1.5, color: AppColors.text))),
+            const SizedBox(height: 4),
+            bullet('Tên, email, số điện thoại, địa chỉ, ngày sinh, ảnh đại diện và ảnh nền bị xoá.'),
+            bullet('Bạn sẽ bị đăng xuất trên mọi thiết bị và không đăng nhập lại được.'),
+            bullet('Bình luận, bài gửi đã đăng vẫn được giữ nhưng hiện dưới tên ẩn danh.'),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(color: err.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
+              child: Text('Việc này không thể hoàn tác.', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: err))),
+            ),
+          ],
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.symmetric(horizontal: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Giữ tài khoản', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+            ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(48, 48),
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                foregroundColor: err,
+                side: BorderSide(color: err, width: 1.5),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Tiếp tục', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: err))),
+            ),
+          ],
+        );
+      },
     );
     if (go != true || !mounted) return;
 
@@ -980,50 +1013,68 @@ class _DeleteConfirmDialogState extends State<_DeleteConfirmDialog> {
   @override
   Widget build(BuildContext context) {
     final social = widget.socialOnly;
-    return AlertDialog(
-      title: Text('Xác nhận xoá tài khoản', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text))),
-      content: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(
-            social ? 'Gõ chữ XOÁ vào ô dưới để xác nhận.' : 'Nhập mật khẩu của bạn để xác nhận.',
+    return _DeleteDialogShell(
+      content: [
+        Semantics(
+          header: true,
+          child: Text('Xác nhận xoá tài khoản', style: display(TextStyle(fontSize: 22, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+        ),
+        const SizedBox(height: 10),
+        if (social)
+          Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'Tài khoản đăng nhập bằng Google/Apple không có mật khẩu. Gõ chữ '),
+              const TextSpan(text: 'XOÁ', style: TextStyle(fontWeight: FontWeight.w800)),
+              const TextSpan(text: ' vào ô dưới để xác nhận.'),
+            ]),
             style: body(TextStyle(fontSize: 16, height: 1.4, color: AppColors.text)),
+          )
+        else
+          Text('Nhập mật khẩu của bạn để xác nhận.', style: body(TextStyle(fontSize: 16, height: 1.4, color: AppColors.text))),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _ctl,
+          autofocus: true,
+          enabled: !_busy,
+          obscureText: !social && !_show,
+          autocorrect: false,
+          enableSuggestions: false,
+          autofillHints: social ? null : const [AutofillHints.password],
+          textCapitalization: social ? TextCapitalization.characters : TextCapitalization.none,
+          textInputAction: TextInputAction.done,
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _submit(),
+          style: body(TextStyle(fontSize: 17, color: AppColors.text)),
+          decoration: InputDecoration(
+            labelText: social ? 'Gõ XOÁ' : 'Mật khẩu',
+            labelStyle: body(TextStyle(fontSize: 16, color: AppColors.textSecondary)),
+            floatingLabelStyle: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.accentFg)),
+            filled: true,
+            fillColor: AppColors.bg,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: AppColors.accentFg, width: 2)),
+            suffixIcon: social
+                ? null
+                : IconButton(
+                    tooltip: _show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                    onPressed: () => setState(() => _show = !_show),
+                  ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _ctl,
-            autofocus: true,
-            enabled: !_busy,
-            obscureText: !social && !_show,
-            autocorrect: false,
-            enableSuggestions: false,
-            autofillHints: social ? null : const [AutofillHints.password],
-            textCapitalization: social ? TextCapitalization.characters : TextCapitalization.none,
-            textInputAction: TextInputAction.done,
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
-            style: body(TextStyle(fontSize: 17, color: AppColors.text)),
-            decoration: InputDecoration(
-              labelText: social ? 'Gõ XOÁ' : 'Mật khẩu',
-              labelStyle: body(TextStyle(fontSize: 16, color: AppColors.textSecondary)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              suffixIcon: social
-                  ? null
-                  : IconButton(
-                      tooltip: _show ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
-                      icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                      onPressed: () => setState(() => _show = !_show),
-                    ),
-            ),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          Semantics(
+            liveRegion: true,
+            child: Text(_error!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.errorText))),
           ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(_error!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.errorText))),
-          ],
-        ]),
-      ),
+        ],
+      ],
       actions: [
         TextButton(
-          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.symmetric(horizontal: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
           onPressed: _busy ? null : () => Navigator.pop(context, false),
           child: Text('Huỷ', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
         ),
@@ -1034,6 +1085,11 @@ class _DeleteConfirmDialogState extends State<_DeleteConfirmDialog> {
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFA32020),
               foregroundColor: Colors.white,
+              // Greyed until the password / "XOÁ" is entered.
+              disabledBackgroundColor: AppColors.surfaceHover,
+              disabledForegroundColor: AppColors.textMuted,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
             child: _busy
@@ -1042,6 +1098,38 @@ class _DeleteConfirmDialogState extends State<_DeleteConfirmDialog> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Rounded dialog chrome for the delete-account steps — same shell as the
+/// login dialog (radius 20, surface bg), body scrolls at large text sizes.
+class _DeleteDialogShell extends StatelessWidget {
+  final List<Widget> content;
+  final List<Widget> actions;
+  const _DeleteDialogShell({required this.content, required this.actions});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(22, 24, 22, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ...content,
+              const SizedBox(height: 20),
+              Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: actions),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1245,7 +1333,11 @@ class _ThemePicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProv = context.watch<ThemeProvider>();
-    const modes = [('sang', 'Sáng'), ('toi', 'Tối'), ('system', 'Theo máy')];
+    const modes = [
+      ('sang', 'Sáng', Icons.light_mode_outlined),
+      ('toi', 'Tối', Icons.dark_mode_outlined),
+      ('system', 'Theo máy', Icons.smartphone_outlined),
+    ];
     final scales = kTextScaleLabels.entries.toList();
     Widget label(String s, [String? sub]) => Padding(
           padding: const EdgeInsets.only(bottom: 10, top: 4),
@@ -1258,7 +1350,7 @@ class _ThemePicker extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         label('Giao diện'),
-        _Seg(labels: [for (final m in modes) m.$2], selected: modes.indexWhere((m) => m.$1 == themeProv.mode), onSelect: (i) => themeProv.setTheme(modes[i].$1)),
+        _Seg(labels: [for (final m in modes) m.$2], icons: [for (final m in modes) m.$3], selected: modes.indexWhere((m) => m.$1 == themeProv.mode), onSelect: (i) => themeProv.setTheme(modes[i].$1)),
         const SizedBox(height: 20),
         label('Cỡ chữ', 'Áp dụng cho toàn ứng dụng'),
         _Seg(labels: [for (final s in scales) s.value], selected: scales.indexWhere((s) => s.key == themeProv.textScaleKey), onSelect: (i) => themeProv.setTextScale(scales[i].key)),
@@ -1279,9 +1371,11 @@ class _ThemePicker extends StatelessWidget {
 
 class _Seg extends StatelessWidget {
   final List<String> labels;
+  /// Optional leading icon per segment (same length as [labels]).
+  final List<IconData>? icons;
   final int selected;
   final ValueChanged<int> onSelect;
-  const _Seg({required this.labels, required this.selected, required this.onSelect});
+  const _Seg({required this.labels, this.icons, required this.selected, required this.onSelect});
   @override
   Widget build(BuildContext context) => Container(
         padding: const EdgeInsets.all(4),
@@ -1289,18 +1383,30 @@ class _Seg extends StatelessWidget {
         child: Row(children: [
           for (var i = 0; i < labels.length; i++)
             Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onSelect(i),
-                child: Container(
-                  height: 42,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: i == selected ? AppColors.bg : Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: i == selected ? [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 4, offset: const Offset(0, 1))] : null,
+              child: Semantics(
+                button: true,
+                selected: i == selected,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelect(i),
+                  child: Container(
+                    height: 42,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == selected ? AppColors.bg : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: i == selected ? [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 4, offset: const Offset(0, 1))] : null,
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (icons != null) ...[
+                        Icon(icons![i], size: 18, color: i == selected ? AppColors.text : AppColors.textSecondary),
+                        const SizedBox(width: 6),
+                      ],
+                      Flexible(
+                        child: Text(labels[i], overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
+                      ),
+                    ]),
                   ),
-                  child: Text(labels[i], style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
                 ),
               ),
             ),

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Quên mật khẩu · Hoàn tất</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
+</style>
+</helmet>
+<div style="width: 390px; height: 958px; position: relative; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; display: flex; flex-direction: column; overflow: hidden">
+
+<div style="flex: 1"></div>
+<dc-import name="TabBar" active="me" hint-size="390px,61px"></dc-import>
+
+<div style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); display: flex; align-items: center; justify-content: center; padding: 24px 20px; box-sizing: border-box">
+<div role="dialog" aria-modal="true" aria-labelledby="dn-title" style="width: 350px; box-sizing: border-box; padding: 16px 20px; border-radius: 20px; background: #F4F1F0; display: flex; flex-direction: column; box-shadow: 0 11px 15px rgba(0,0,0,0.2)">
+
+<div style="display: flex; align-items: center">
+<span style="width: 40px; height: 40px; flex-shrink: 0; border-radius: 20px; background: linear-gradient(90deg, #4A0C0C, #8E1F1F); box-shadow: 0 0 12px -2px rgba(113,19,19,0.3); display: flex; align-items: center; justify-content: center"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#FFFFFF" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span>
+<span style="margin-left: 12px; flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span id="dn-title" style="font-size: 20px; line-height: 29px; font-weight: 800; letter-spacing: -0.4px; color: #161112">Hoàn tất</span><span style="font-size: 15px; line-height: 21px; font-weight: 400; letter-spacing: 0.25px; color: #4F4547">Đổi mật khẩu thành công</span></span>
+<a href="DangNhap.dc.html" aria-label="Đóng" style="width: 48px; height: 48px; flex-shrink: 0; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4F4547" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path></svg></a>
+</div>
+<div style="height: 18px"></div>
+<div style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 8px 0 4px 0"><span style="width: 72px; height: 72px; border-radius: 36px; background: #F8EDED; display: flex; align-items: center; justify-content: center"><svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><path fill="#711313" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"></path></svg></span><div style="margin-top: 14px; font-size: 17px; font-weight: 800">Đã đổi mật khẩu</div><div style="margin-top: 6px; font-size: 15px; line-height: 1.5; color: #4F4547">Từ giờ hãy đăng nhập bằng mật khẩu mới.</div></div>
+<div style="height: 16px"></div><a href="DangNhap.dc.html" style="height: 44px; border: none; border-radius: 10px; background: #711313; color: #FFFFFF; font-family: Montserrat, sans-serif; font-size: 17px; font-weight: 700; letter-spacing: 0.1px; display: flex; align-items: center; justify-content: center; color: #FFFFFF">Đăng nhập ngay</a>
+
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

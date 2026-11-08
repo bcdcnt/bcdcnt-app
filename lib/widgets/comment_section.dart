@@ -9,7 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:pasteboard/pasteboard.dart';
 import '../constants/theme.dart';
-import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow;
+import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow, UserAvatar;
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
@@ -814,13 +814,13 @@ class _CommentSectionState extends State<CommentSection> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 18, color: AppColors.accent),
-            const SizedBox(width: 8),
-            Text('Bình luận', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)),
+            Text('Bình luận', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2))),
             if (_total > 0) ...[
-              const SizedBox(width: 6),
-              Text('($_total)', style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
+              const SizedBox(width: 8),
+              Text('$_total', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
             ],
           ],
         ),
@@ -864,12 +864,7 @@ class _CommentSectionState extends State<CommentSection> {
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                       child: Row(children: [
-                                        CircleAvatar(
-                                          radius: 12,
-                                          backgroundColor: AppColors.surface,
-                                          backgroundImage: avatar != null ? CachedNetworkImageProvider(cdnImg((avatar).toString(), 160)) : null,
-                                          child: avatar == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
-                                        ),
+                                        UserAvatar(url: avatar, name: username, size: 24),
                                         const SizedBox(width: 8),
                                         Text('@$username', style: body(TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w600))),
                                       ]),
@@ -895,9 +890,9 @@ class _CommentSectionState extends State<CommentSection> {
                     Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                       CircleAvatar(
                         radius: 14,
-                        backgroundColor: AppColors.surface,
+                        backgroundColor: AppColors.accentSoft,
                         backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(cdnImg((auth.user!['avatar']).toString(), 160)) : null,
-                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 12, color: AppColors.textMuted) : null,
+                        child: auth.user?['avatar'] == null ? Icon(Icons.person, size: 16, color: AppColors.accentLight) : null,
                       ),
                       const SizedBox(width: 4),
                       _attachMenuButton(),
@@ -998,12 +993,7 @@ class _CommentSectionState extends State<CommentSection> {
                   InkWell(
                     onTap: user['id'] != null ? () => context.push('/user/${user['id']}') : null,
                     borderRadius: BorderRadius.circular(20),
-                    child: CircleAvatar(
-                      radius: 18,
-                      backgroundColor: AppColors.surfaceLight,
-                      backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
-                      child: user['avatar']?['url'] == null ? Icon(Icons.person, size: 16, color: AppColors.textMuted) : null,
-                    ),
+                    child: UserAvatar(url: user['avatar']?['url']?.toString(), name: (user['username'] ?? '').toString(), size: 36),
                   ),
                   const SizedBox(width: 10),
                   Expanded(

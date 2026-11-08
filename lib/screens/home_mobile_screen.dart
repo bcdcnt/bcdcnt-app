@@ -31,7 +31,9 @@ const _mainQuery = '''query {
 
 /// The fast-changing blocks, asked separately so a slow or failing one
 /// never holds up the rest of the page.
-const _liveQuery = '''query {
+// Named so its GET URL differs from the one Cloudflare pinned for ~a day
+// before the API sent s-maxage=60 (2026-11-08).
+const _liveQuery = '''query HomeLive {
   nowListening(limit: 12) { listeners song { $_songFields } }
   topSongsToday(limit: 5) { $_songFields }
 }''';
@@ -552,9 +554,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             ] else if (picks.isNotEmpty) ...[
               if (occasionOn)
                 _EyebrowTitle(
-                  eyebrow: occ.days == 0 ? 'Hôm nay · ${occ.day}/${occ.month}' : '${occ.day}/${occ.month} · còn ${occ.days} ngày',
-                  eyebrowStrong: occ.days == 0,
-                  title: occ.label,
+                  eyebrow: 'Kỷ niệm ngày lễ, sự kiện',
+                  title: '${occ.label} ${occ.day}/${occ.month}',
                   chevron: _occasionPlaylistId != null,
                   onTap: _occasionPlaylistId == null ? null : () => context.push('/playlist/$_occasionPlaylistId'),
                 )
@@ -687,21 +688,19 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       );
 }
 
-/// Section title with a small line above it: "20/11 · còn 14 ngày" over
-/// "Ngày Nhà giáo Việt Nam ›".
+/// Section title with a small line above it: "Kỷ niệm ngày lễ, sự kiện" over
+/// "Ngày Nhà giáo Việt Nam 20/11 ›".
 class _EyebrowTitle extends StatelessWidget {
   final String eyebrow;
-  /// Red instead of grey: only for "Hôm nay · 20/11".
-  final bool eyebrowStrong;
   final String title;
   final bool chevron;
   final VoidCallback? onTap;
-  const _EyebrowTitle({required this.eyebrow, required this.title, this.eyebrowStrong = false, this.chevron = false, this.onTap});
+  const _EyebrowTitle({required this.eyebrow, required this.title, this.chevron = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final text = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Text(eyebrow, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: eyebrowStrong ? FontWeight.w800 : FontWeight.w600, color: eyebrowStrong ? AppColors.accentLight : AppColors.textMuted))),
+      Text(eyebrow, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
       const SizedBox(height: 2),
       Row(mainAxisSize: MainAxisSize.min, children: [
         Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),

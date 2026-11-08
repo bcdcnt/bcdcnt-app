@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Xoá tài khoản · Cảnh báo</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#8E1F1F;text-decoration:none}a:hover{color:#711313}
+</style>
+</helmet>
+<div style="width: 390px; height: 958px; position: relative; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; overflow: hidden">
+<dc-import name="CaiDat_TaiKhoan" hint-size="390px,958px"></dc-import>
+<div style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); display: flex; align-items: center; justify-content: center; padding: 24px 20px; box-sizing: border-box">
+<div role="alertdialog" aria-modal="true" style="width: 350px; box-sizing: border-box; padding: 24px 22px 16px 22px; border-radius: 20px; background: #F4F1F0; display: flex; flex-direction: column; box-shadow: 0 11px 15px rgba(0,0,0,0.2)">
+<span style="width: 48px; height: 48px; border-radius: 24px; background: rgba(179,38,30,0.12); display: flex; align-items: center; justify-content: center; margin-bottom: 14px"><svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path fill="#B3261E" d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"></path></svg></span><h2 style="margin: 0; font-size: 22px; line-height: 1.3; font-weight: 800; letter-spacing: -0.4px">Xoá tài khoản?</h2>
+<p style="margin: 10px 0 0 0; font-size: 16px; line-height: 1.5">Tài khoản của bạn sẽ bị xoá vĩnh viễn:</p><ul style="margin: 4px 0 0 0; padding-left: 20px; font-size: 15px; line-height: 1.5; color: #4F4547"><li style="margin-top: 8px">Tên, email, số điện thoại, địa chỉ, ngày sinh, ảnh đại diện và ảnh nền bị xoá.</li><li style="margin-top: 8px">Bạn sẽ bị đăng xuất trên mọi thiết bị và không đăng nhập lại được.</li><li style="margin-top: 8px">Bình luận, bài gửi đã đăng vẫn được giữ nhưng hiện dưới tên ẩn danh.</li></ul><p style="margin: 12px 0 0 0; padding: 10px 12px; border-radius: 8px; background: rgba(179,38,30,0.10); font-size: 15px; font-weight: 700; color: #B3261E">Việc này không thể hoàn tác.</p>
+<div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px"><a href="CaiDat_TaiKhoan.dc.html" style="min-height: 48px; padding: 0 16px; border-radius: 10px; display: flex; align-items: center; font-size: 16px; font-weight: 700; color: #161112">Giữ tài khoản</a><a href="XoaTK_MatKhau.dc.html" style="min-height: 48px; padding: 0 18px; border-radius: 10px; background: transparent; color: #B3261E; border: 1.5px solid #B3261E; display: flex; align-items: center; font-size: 16px; font-weight: 800">Tiếp tục</a></div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, EmptyBlock, PagedLoader, PagedList, PageResult, pagedListBody;
+import '../widgets/ui.dart' show goBack, PillButton, EmptyBlock, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd;
 import '../widgets/shimmer.dart' show SongListSkeleton;
 import '../services/friendly_error.dart' show askLogin;
 import 'package:provider/provider.dart';
@@ -23,7 +23,8 @@ class UserSongListScreen extends StatefulWidget {
 
 // No sort tabs here: loves / recentListens rows only carry their own id
 // and time (the song is a polymorphic `object`), so the API can't order
-// them by listens, likes or downloads. Newest first, page by page.
+// them by listens, likes or downloads. Newest first; the next page loads
+// as the reader nears the bottom (personal lists are short — no pager).
 class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoader {
   static const _perPage = 20;
   final _scrollCtl = ScrollController();
@@ -50,6 +51,11 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
       _authRef!.addListener(_initialFetch);
       _initialFetch();
     });
+    _scrollCtl.addListener(_maybeMore);
+  }
+
+  void _maybeMore() {
+    if (nearListEnd(_scrollCtl, _list)) _fetch(_list.page + 1, append: true);
   }
 
   void _initialFetch() {
@@ -72,7 +78,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
     super.dispose();
   }
 
-  Future<void> _fetch(int page) async {
+  Future<void> _fetch(int page, {bool append = false}) async {
     final auth = context.read<AuthProvider>();
     final userId = auth.user?['id']?.toString();
     if (!auth.isAuthenticated || userId == null) {
@@ -127,7 +133,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
         lastPage: (pi['lastPage'] as num?)?.toInt() ?? 1,
         total: (pi['total'] as num?)?.toInt() ?? fresh.length,
       );
-    }, scrollToTop: _scrollCtl);
+    }, scrollToTop: _scrollCtl, append: append);
   }
 
   void _playAll({bool shuffle = false}) {
@@ -230,16 +236,15 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                   if (_items.isNotEmpty)
                     Padding(
                     padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: _list.lastPage > 1 ? 'Tải về máy cả trang này' : 'Tải tất cả về máy', primary: false)),
+                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: _list.page < _list.lastPage ? 'Tải ${_items.length} bài đang hiện về máy' : 'Tải tất cả về máy', primary: false)),
                   ),
                   const SizedBox(height: 8),
 
-                  // List / loader / empty, then the pager
-                  ...pagedListBody<Map<String, dynamic>>(
+                  // List / loader / empty; more rows load on scroll
+                  ...infiniteListBody<Map<String, dynamic>>(
                     _list,
-                    perPage: _perPage,
-                    onRetry: () => _fetch(_list.page),
-                    onPage: (p) => _fetch(p),
+                    onRetry: () => _fetch(1),
+                    onMore: () => _fetch(_list.page + 1, append: true),
                     skeleton: SongListSkeleton(rows: 8, showIndex: widget.kind != UserListKind.history),
                     empty: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),

@@ -829,7 +829,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   }
 
   // Phone header (2026-11 redesign): avatar beside name, one meta line
-  // (years · quê), a single stats strip, and "Phát tất cả" as the main action.
+  // (years · quê), a single stats strip, and "Phát" as the main action.
   /// Phone hero: the person's photo fills the top (brand-tinted), name and
   /// life line on it; collapses into a wine bar with the name.
   Widget _mobileHero(Map<String, dynamic> p) {
@@ -934,7 +934,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           // rows pushing the songs below the fold).
           Row(
             children: [
-              Expanded(child: PillButton(label: 'Phát tất cả', icon: Icons.play_arrow_rounded, onTap: canPlay ? () => _playSection(first, shuffle: false) : null)),
+              Expanded(child: PillButton(label: 'Phát', icon: Icons.play_arrow_rounded, onTap: canPlay ? () => _playSection(first, shuffle: false) : null)),
               const SizedBox(width: 10),
               Semantics(
                 button: true,

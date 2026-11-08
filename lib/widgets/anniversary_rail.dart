@@ -174,7 +174,12 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
             : '${a.years} năm ngày mất';
     final origin = alive
         ? 'Sinh ${a.date.day}/${a.date.month}/${born ?? ''}'
-        : [if (born != null) '$born', if (died != null) '$died'].join('\u2060–\u2060');
+        // The day being remembered gets its full date, the other end just
+        // its year: "7/11/1951 – 2001" for a birthday, "1951 – 29/1/2001" for a death.
+        : [
+            if (born != null) a.birth ? '${a.date.day}/${a.date.month}/$born' : '$born',
+            if (died != null) a.birth ? '$died' : '${a.date.day}/${a.date.month}/$died',
+          ].join('\u00a0– ');
     final loading = _playing == '${p['slug']}';
     return Material(
       color: today ? AppColors.accent : AppColors.surface,
@@ -210,7 +215,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                      Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.accentLight))),
+                      Text(_when(a).toUpperCase(), style: body(TextStyle(fontSize: 14, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: today ? Colors.white70 : AppColors.textMuted))),
                       const SizedBox(height: 2),
                       // Name only (the role stays in the VoiceOver label): long names fit.
                       Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: today ? Colors.white : AppColors.text))),

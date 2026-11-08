@@ -1125,6 +1125,7 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
         ListItem(icon: Icons.photo_outlined, title: 'Ảnh tư liệu', onTap: () => context.push('/tu-lieu/hinh-anh')),
         ListItem(icon: Icons.videocam_outlined, title: 'Video tư liệu', onTap: () => context.push('/tu-lieu/video')),
         ListItem(icon: Icons.graphic_eq_rounded, title: 'Tư liệu âm thanh', onTap: () => context.push('/tu-lieu/am-thanh')),
+        ListItem(icon: Icons.article_outlined, title: 'Tư liệu bài viết', onTap: () => context.push('/tu-lieu/bai-viet')),
         ListItem(icon: Icons.emoji_events_outlined, title: 'Bảng xếp hạng', onTap: () => context.push('/bang-xep-hang')),
         ListItem(icon: Icons.person_search_outlined, title: 'Nhạc sĩ', onTap: () => context.push('/nhac-si')),
         ListItem(icon: Icons.mic_none_rounded, title: 'Nghệ sĩ', onTap: () => context.push('/nghe-si')),

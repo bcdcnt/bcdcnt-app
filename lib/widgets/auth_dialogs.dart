@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
@@ -172,9 +175,9 @@ class _LoginDialogState extends State<LoginDialog> {
           const SizedBox(height: 14),
           const _OrDivider(),
           const SizedBox(height: 14),
-          if (_appleAvailable) _AppleButton(loading: _loading, onTap: _apple),
-          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
           if (_googleAvailable) _GoogleButton(loading: _loading, onTap: _google),
+          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
+          if (_appleAvailable) _AppleButton(loading: _loading, onTap: _apple),
         ],
         const SizedBox(height: 10),
         _AuthSwitch(
@@ -277,13 +280,36 @@ class _RegisterDialogState extends State<RegisterDialog> {
   @override
   Widget build(BuildContext context) {
     if (_success) {
+      final secondary = body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary));
       return _AuthShell(
         icon: Icons.check_circle_outline,
         title: 'Đăng ký thành công',
-        subtitle: _needsActivation
-            ? 'Kiểm tra email để kích hoạt tài khoản, rồi đăng nhập.'
-            : 'Đăng ký xong, vui lòng đăng nhập.',
+        subtitle: _needsActivation ? 'Còn một bước nữa' : 'Đăng ký xong, vui lòng đăng nhập.',
         children: [
+          if (_needsActivation) ...[
+            _StatusBlock(
+              icon: Icons.mail_outline,
+              title: 'Kiểm tra email của bạn',
+              children: [
+                Text.rich(
+                  TextSpan(children: [
+                    const TextSpan(text: 'Chúng tôi đã gửi link kích hoạt tới\n'),
+                    TextSpan(text: _maskEmail(_email.text.trim()), style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+                    const TextSpan(text: '.\nBấm vào link rồi quay lại đăng nhập.'),
+                  ]),
+                  textAlign: TextAlign.center,
+                  style: secondary,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Link có hiệu lực 48 giờ. Không thấy? Xem thư mục Spam.',
+                  textAlign: TextAlign.center,
+                  style: body(TextStyle(fontSize: 13, height: 1.4, color: AppColors.textMuted)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           _AuthPrimaryButton(
             label: 'Quay về đăng nhập',
             onTap: () {
@@ -344,9 +370,9 @@ class _RegisterDialogState extends State<RegisterDialog> {
           const SizedBox(height: 14),
           const _OrDivider(),
           const SizedBox(height: 14),
-          if (_appleAvailable) _AppleButton(label: 'Đăng ký bằng Apple', loading: _loading, onTap: _apple),
-          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
           if (_googleAvailable) _GoogleButton(label: 'Đăng ký bằng Google', loading: _loading, onTap: _google),
+          if (_appleAvailable && _googleAvailable) const SizedBox(height: 10),
+          if (_appleAvailable) _AppleButton(label: 'Đăng ký bằng Apple', loading: _loading, onTap: _apple),
         ],
         const SizedBox(height: 10),
         _AuthSwitch(
@@ -404,37 +430,59 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
   String? _error;
   bool _loading = false;
   bool _obscure = true;
+  // "Gửi lại mã" cooldown, restarted every time a code is sent.
+  Timer? _resendTimer;
+  int _resendLeft = 0;
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
     _identity.dispose(); _code.dispose(); _newPassword.dispose(); _confirmPassword.dispose();
     super.dispose();
+  }
+
+  void _startResendCountdown() {
+    _resendTimer?.cancel();
+    _resendLeft = 60;
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() => _resendLeft--);
+      if (_resendLeft <= 0) t.cancel();
+    });
   }
 
   Future<void> _sendCode() async {
     if (_loading) return;
     final id = _identity.text.trim();
-    if (id.isEmpty) { setState(() => _error = 'Nhập email/username'); return; }
+    if (id.isEmpty) { setState(() => _error = 'Nhập email hoặc tên đăng nhập'); return; }
     setState(() { _loading = true; _error = null; });
     final err = await context.read<AuthProvider>().forgotPassword(id);
     if (!mounted) return;
     setState(() { _loading = false; });
     if (err == null) {
-      setState(() { _step = 2; _error = null; });
+      setState(() { _step = 2; _error = null; _code.clear(); _startResendCountdown(); });
     } else {
       setState(() => _error = err);
     }
+  }
+
+  /// "Đổi" on the identity row: back to step 1 to fix a typo.
+  void _changeIdentity() {
+    _resendTimer?.cancel();
+    setState(() { _step = 1; _error = null; _resendLeft = 0; _code.clear(); });
   }
 
   Future<void> _verifyCode() async {
     if (_loading) return;
     final code = _code.text.trim();
     if (code.isEmpty) { setState(() => _error = 'Nhập mã xác thực'); return; }
+    if (code.length < 6) { setState(() => _error = 'Nhập đủ 6 số'); return; }
     setState(() { _loading = true; _error = null; });
     final err = await context.read<AuthProvider>().validateCode(_identity.text.trim(), code);
     if (!mounted) return;
     setState(() { _loading = false; });
     if (err == null) {
+      _resendTimer?.cancel();
       setState(() { _step = 3; _error = null; });
     } else {
       setState(() => _error = err);
@@ -458,13 +506,43 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
     }
   }
 
+  String _stepTitle() {
+    switch (_step) {
+      case 1: return 'Quên mật khẩu';
+      case 2: return 'Nhập mã xác thực';
+      default: return 'Đặt mật khẩu mới';
+    }
+  }
+
   String _stepDesc() {
     switch (_step) {
-      case 1: return 'Nhập email hoặc username để nhận mã khôi phục';
-      case 2: return 'Mã xác thực đã gửi. Kiểm tra email của bạn.';
-      case 3: return 'Đặt mật khẩu mới';
-      default: return 'Đổi mật khẩu thành công!';
+      case 1: return 'Nhập email hoặc tên đăng nhập để nhận mã khôi phục';
+      case 2: return 'Mã 6 số đã gửi tới email của bạn';
+      default: return 'Mật khẩu từ 6 ký tự';
     }
+  }
+
+  Widget _resendRow() {
+    if (_resendLeft > 0) {
+      final m = _resendLeft ~/ 60;
+      final sec = (_resendLeft % 60).toString().padLeft(2, '0');
+      return SizedBox(
+        height: 48,
+        child: Center(
+          child: Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'Gửi lại mã sau '),
+              TextSpan(
+                text: '$m:$sec',
+                style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text, fontFeatures: const [FontFeature.tabularFigures()]),
+              ),
+            ]),
+            style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)),
+          ),
+        ),
+      );
+    }
+    return Center(child: _LinkButton(label: 'Gửi lại mã', onTap: _loading ? null : _sendCode));
   }
 
   @override
@@ -473,8 +551,20 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       return _AuthShell(
         icon: Icons.check_circle_outline,
         title: 'Hoàn tất',
-        subtitle: _stepDesc(),
+        subtitle: 'Đổi mật khẩu thành công',
         children: [
+          _StatusBlock(
+            icon: Icons.check,
+            title: 'Đã đổi mật khẩu',
+            children: [
+              Text(
+                'Từ giờ hãy đăng nhập bằng mật khẩu mới.',
+                textAlign: TextAlign.center,
+                style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
           _AuthPrimaryButton(
             label: 'Đăng nhập ngay',
             onTap: () {
@@ -487,7 +577,7 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
     }
     return _AuthShell(
       icon: Icons.lock_reset,
-      title: 'Quên mật khẩu',
+      title: _stepTitle(),
       subtitle: _stepDesc(),
       children: [
         // Stepper indicator
@@ -520,25 +610,32 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
           _AuthPrimaryButton(label: 'Gửi mã', loading: _loading, onTap: _sendCode),
         ] else if (_step == 2) ...[
           Container(
-            padding: const EdgeInsets.all(10),
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
+            padding: const EdgeInsets.only(left: 10),
+            decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border)),
             child: Row(children: [
               Icon(Icons.mail_outline, color: AppColors.textMuted, size: 18),
               const SizedBox(width: 8),
               Expanded(child: Text(_identity.text.trim(), style: body(TextStyle(fontSize: 15, color: AppColors.text)), overflow: TextOverflow.ellipsis)),
+              Semantics(
+                hint: 'Đổi email hoặc tên đăng nhập',
+                child: _LinkButton(label: 'Đổi', onTap: _loading ? null : _changeIdentity),
+              ),
             ]),
           ),
-          _AuthField(
-            controller: _code, label: 'Mã xác thực', icon: Icons.pin_outlined,
-            keyboardType: TextInputType.number, autofillHints: const [AutofillHints.oneTimeCode],
-            plain: true, textInputAction: TextInputAction.done, onSubmitted: (_) => _verifyCode(),
+          const SizedBox(height: 14),
+          _OtpField(
+            controller: _code,
+            enabled: !_loading,
+            // Auto-submit once all 6 digits are in (typed, pasted or autofilled).
+            onCompleted: _verifyCode,
           ),
+          const SizedBox(height: 10),
+          Text('Mã có hiệu lực 30 phút', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
           if (_error != null) _AuthError(_error!),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           _AuthPrimaryButton(label: 'Xác thực', loading: _loading, onTap: _verifyCode),
-          const SizedBox(height: 8),
-          Center(child: _LinkButton(label: 'Gửi lại mã', onTap: _loading ? null : _sendCode)),
+          const SizedBox(height: 4),
+          _resendRow(),
         ] else ...[
           _AuthField(
             controller: _newPassword, label: 'Mật khẩu mới', icon: Icons.lock_outline, obscure: _obscure,
@@ -567,6 +664,143 @@ class _ForgotPasswordDialogState extends State<ForgotPasswordDialog> {
       ],
     );
   }
+}
+
+/// 6-digit code input: one invisible TextField laid over six boxes, so
+/// paste, SMS/email one-time-code autofill and backspace all just work.
+class _OtpField extends StatefulWidget {
+  final TextEditingController controller;
+  final bool enabled;
+  final VoidCallback? onCompleted;
+  const _OtpField({required this.controller, this.enabled = true, this.onCompleted});
+
+  @override
+  State<_OtpField> createState() => _OtpFieldState();
+}
+
+class _OtpFieldState extends State<_OtpField> {
+  static const _length = 6;
+  final _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    // Open the keyboard straight away on the code step.
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _focus.requestFocus(); });
+  }
+
+  @override
+  void dispose() { _focus.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 56,
+      child: Stack(
+        children: [
+          ExcludeSemantics(
+            child: ListenableBuilder(
+              listenable: Listenable.merge([widget.controller, _focus]),
+              builder: (context, _) {
+                final code = widget.controller.text;
+                final active = _focus.hasFocus ? code.length.clamp(0, _length - 1) : -1;
+                return Row(
+                  children: [
+                    for (var i = 0; i < _length; i++) ...[
+                      if (i > 0) const SizedBox(width: 8),
+                      Expanded(
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: i == active ? AppColors.bg : AppColors.surfaceLight,
+                            borderRadius: BorderRadius.circular(10),
+                            border: i == active
+                                ? Border.all(color: AppColors.accentFg, width: 2)
+                                : Border.all(color: AppColors.border),
+                          ),
+                          child: Text(
+                            i < code.length ? code[i] : '',
+                            style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+          // The real input: transparent text/cursor, covers the boxes so a
+          // tap focuses it and a long-press offers Paste.
+          Positioned.fill(
+            child: Semantics(
+              label: 'Mã xác thực 6 số',
+              child: TextField(
+                controller: widget.controller,
+                focusNode: _focus,
+                enabled: widget.enabled,
+                keyboardType: TextInputType.number,
+                autofillHints: const [AutofillHints.oneTimeCode],
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                maxLength: _length,
+                buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                autocorrect: false,
+                enableSuggestions: false,
+                showCursor: false,
+                textInputAction: TextInputAction.done,
+                style: const TextStyle(color: Colors.transparent, fontSize: 1),
+                decoration: const InputDecoration(border: InputBorder.none, isCollapsed: true, contentPadding: EdgeInsets.zero),
+                onChanged: (v) { if (v.length == _length) widget.onCompleted?.call(); },
+                onSubmitted: (_) => widget.onCompleted?.call(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Centered confirmation block (72pt tinted circle + heading + text) used by
+/// the register / reset-password done states.
+class _StatusBlock extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final List<Widget> children;
+  const _StatusBlock({required this.icon, required this.title, this.children = const []});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentSoft),
+            child: Icon(icon, size: 40, color: AppColors.accentFg),
+          ),
+          const SizedBox(height: 14),
+          Semantics(
+            header: true,
+            child: Text(title, textAlign: TextAlign.center, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
+          ),
+          const SizedBox(height: 6),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+/// "anhtuan@gmail.com" → "an***@gmail.com" (keeps the domain so the user
+/// can tell which inbox to check).
+String _maskEmail(String email) {
+  final at = email.indexOf('@');
+  if (at < 0) return email;
+  final local = email.substring(0, at);
+  return '${local.substring(0, local.length < 2 ? local.length : 2)}***${email.substring(at)}';
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -804,6 +1038,16 @@ class _OrDivider extends StatelessWidget {
   }
 }
 
+/// Official 4-colour Google "G" (viewBox 48×48).
+const _googleLogoSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">'
+    '<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>'
+    '<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>'
+    '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>'
+    '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>'
+    '</svg>';
+
+/// Google sign-in button per Google's branding: white in both themes,
+/// #747775 outline, official "G" mark.
 class _GoogleButton extends StatelessWidget {
   final String label;
   final bool loading;
@@ -812,23 +1056,30 @@ class _GoogleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 50,
-      child: OutlinedButton(
-        onPressed: loading ? null : onTap,
-        style: OutlinedButton.styleFrom(
-          backgroundColor: Colors.white,
-          side: const BorderSide(color: Color(0xFFDADCE0)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Blue "G" — recognizable without bundling an asset.
-            const Text('G', style: TextStyle(fontSize: 20, height: 1, fontWeight: FontWeight.w800, color: Color(0xFF4285F4))),
-            const SizedBox(width: 10),
-            Text(label, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1F1F1F)))),
-          ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 3, offset: Offset(0, 1))],
+      ),
+      child: SizedBox(
+        height: 50,
+        child: OutlinedButton(
+          onPressed: loading ? null : onTap,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: Colors.white,
+            disabledBackgroundColor: Colors.white,
+            foregroundColor: const Color(0xFF1F1F1F),
+            side: const BorderSide(color: Color(0xFF747775)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SvgPicture.string(_googleLogoSvg, width: 20, height: 20, excludeFromSemantics: true),
+              const SizedBox(width: 10),
+              Text(label, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1F1F1F)))),
+            ],
+          ),
         ),
       ),
     );

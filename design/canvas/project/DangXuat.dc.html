@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Đăng xuất</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>body{margin:0} a{text-decoration:none}</style>
+</helmet>
+<div style="width: 390px; height: 958px; position: relative; background: #FFFFFF; font-family: Montserrat, sans-serif; color: #161112; overflow: hidden">
+<dc-import name="CaNhan" hint-size="390px,2287px"></dc-import>
+<div style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.54); display: flex; align-items: center; justify-content: center; padding: 24px 20px; box-sizing: border-box">
+<div role="alertdialog" aria-modal="true" style="width: 330px; box-sizing: border-box; padding: 24px 22px 16px 22px; border-radius: 20px; background: #F4F1F0; box-shadow: 0 11px 15px rgba(0,0,0,0.2)">
+<h2 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.4px">Đăng xuất?</h2>
+<p style="margin: 10px 0 0 0; font-size: 16px; line-height: 1.5; color: #4F4547">Bài đã tải về vẫn nghe được khi không có mạng. Đăng nhập lại để đồng bộ yêu thích và playlist.</p>
+<div style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 8px">
+<a href="CaNhan.dc.html" style="min-height: 48px; padding: 0 16px; border-radius: 10px; display: flex; align-items: center; font-size: 16px; font-weight: 700; color: #161112">Huỷ</a>
+<a href="CaNhan_Khach.dc.html" style="min-height: 48px; padding: 0 18px; border-radius: 10px; background: #A32020; color: #FFFFFF; display: flex; align-items: center; font-size: 16px; font-weight: 800">Đăng xuất</a>
+</div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":958}}'>
+class Component extends DCLogic {
+renderVals() {
+return {};
+}
+}
+</script>
+</body>
+</html>

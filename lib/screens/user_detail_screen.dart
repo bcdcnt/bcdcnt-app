@@ -726,10 +726,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
   }
 
   String _tabLabel(String k) => switch (k) {
-        'karaoke' => 'Bản thu (${formatInt(_karaokeTotal)})',
-        'upload' => 'Bài gửi (${formatInt(_uploadTotal)})',
-        'comment' => 'Bình luận (${formatInt(_commentTotal)})',
-        'point' => 'Cống hiến (${formatInt(_contribTotal)})',
+        'karaoke' => 'Bản thu · ${formatInt(_karaokeTotal)}',
+        'upload' => 'Bài gửi · ${formatInt(_uploadTotal)}',
+        'comment' => 'Bình luận · ${formatInt(_commentTotal)}',
+        'point' => 'Cống hiến · ${formatInt(_contribTotal)}',
         _ => 'Tổng quan',
       };
 
@@ -754,12 +754,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: Row(children: [
-                for (int i = 0; i < 4; i++) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  const Expanded(child: Skeleton(height: 72, radius: 12)),
-                ],
-              ]),
+              child: const Skeleton(height: 72, radius: 18),
             ),
             for (int i = 0; i < 5; i++) const SkeletonSongRow(),
           ],
@@ -822,32 +817,42 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           )
         else ...[
           // Stats — every tile jumps to its tab.
-          Row(children: [
-            Expanded(child: _statTile('Điểm', point, _tabTap('point'))),
-            const SizedBox(width: 8),
-            Expanded(child: _statTile('Bài gửi', _uploadTotal, _tabTap('upload'))),
-            const SizedBox(width: 8),
-            Expanded(child: _statTile('Bản thu', _karaokeTotal, _tabTap('karaoke'))),
-            const SizedBox(width: 8),
-            Expanded(child: _statTile('Bình luận', _commentTotal, _tabTap('comment'))),
-          ]),
+          // One rounded panel, four equal columns split by hairlines
+          // (same strip as the person detail screen).
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Material(
+              color: AppColors.surface,
+              child: IntrinsicHeight(
+                child: Row(children: [
+                  _statTile('điểm', point, _tabTap('point')),
+                  Container(width: 1, margin: const EdgeInsets.symmetric(vertical: 14), color: AppColors.border),
+                  _statTile('bài gửi', _uploadTotal, _tabTap('upload')),
+                  Container(width: 1, margin: const EdgeInsets.symmetric(vertical: 14), color: AppColors.border),
+                  _statTile('bản thu', _karaokeTotal, _tabTap('karaoke')),
+                  Container(width: 1, margin: const EdgeInsets.symmetric(vertical: 14), color: AppColors.border),
+                  _statTile('bình luận', _commentTotal, _tabTap('comment')),
+                ]),
+              ),
+            ),
+          ),
           const SizedBox(height: 22),
         ],
 
         if (_karaokes.isNotEmpty) ...[
-          _previewHeader(Icons.mic, 'Bản thu', () => _goTab('karaoke')),
+          _previewHeader('Bản thu', () => _goTab('karaoke')),
           for (int i = 0; i < _karaokes.length && i < 3; i++) _karaokeRow(i),
           const SizedBox(height: 22),
         ],
 
         if (_previewUploads.isNotEmpty) ...[
-          _previewHeader(Icons.upload_file_outlined, 'Bài gửi', () => _goTab('upload')),
+          _previewHeader('Bài gửi', () => _goTab('upload')),
           ..._previewUploads.map(_uploadRow),
           const SizedBox(height: 22),
         ],
 
         if (_playlists.isNotEmpty) ...[
-          _previewHeader(Icons.queue_music_rounded, 'Playlist', null),
+          _previewHeader('Playlist', null),
           const SizedBox(height: 6),
           BleedRow(
             height: 130 + 10 + MediaQuery.textScalerOf(context).scale(44),
@@ -872,14 +877,14 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
         ],
 
         if (_previewComments.isNotEmpty) ...[
-          _previewHeader(Icons.chat_bubble_outline, 'Bình luận', () => _goTab('comment')),
+          _previewHeader('Bình luận', () => _goTab('comment')),
           const SizedBox(height: 4),
           ..._previewComments.map(_commentCard),
           const SizedBox(height: 22),
         ],
 
         if (_visiblePoints(_previewPoints, auth).isNotEmpty) ...[
-          _previewHeader(Icons.workspace_premium_outlined, 'Cống hiến', () => _goTab('point')),
+          _previewHeader('Cống hiến', () => _goTab('point')),
           ..._visiblePoints(_previewPoints, auth).map(_pointRow),
         ],
 
@@ -1092,48 +1097,45 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     );
   }
 
-  Widget _previewHeader(IconData icon, String title, VoidCallback? onSeeAll) {
+  Widget _previewHeader(String title, VoidCallback? onSeeAll) {
     return SizedBox(
       height: 48,
       child: Row(children: [
-        Icon(icon, size: 20, color: AppColors.textSecondary),
-        const SizedBox(width: 8),
-        Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)))),
+        Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2)))),
         if (onSeeAll != null)
           TextButton(
             onPressed: onSeeAll,
-            style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.only(left: 10, right: 4), foregroundColor: AppColors.accentLight),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('Xem tất cả', style: body(TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
-              Icon(Icons.chevron_right, size: 20, color: AppColors.accentLight),
-            ]),
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.symmetric(horizontal: 8), foregroundColor: AppColors.accentLight),
+            child: Text('Xem tất cả', style: body(TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w700))),
           ),
       ]),
     );
   }
 
+  /// One column of the stats panel: 19/800 number over a 12/700 muted label.
   Widget _statTile(String label, int value, VoidCallback? onTap) {
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 72),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(formatInt(value), maxLines: 1, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text))),
-            ),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(label, maxLines: 1, style: body(TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-            ),
-          ]),
+    return Expanded(
+      child: Semantics(
+        button: onTap != null,
+        label: '${formatInt(value)} $label',
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 14),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(formatInt(value), maxLines: 1, style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text))),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(label, maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+              ),
+            ]),
+          ),
         ),
       ),
     );

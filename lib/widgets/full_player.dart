@@ -1663,7 +1663,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                   UserAvatar(url: _topComment!['user']?['avatar']?['url']?.toString(), name: (_topComment!['user']?['username'] ?? '').toString(), size: 26),
                                   const SizedBox(width: 8),
                                   Expanded(child: Text((_topComment!['user']?['username'] ?? '').toString(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF))))),
-                                  Text('Xem tất cả ›', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
+                                  Text('Xem tất cả', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
                                 ]),
                               ],
                             ),

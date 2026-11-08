@@ -648,15 +648,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                       child: Row(children: [
-                        Container(
-                          width: 36, height: 36,
-                          decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight),
-                          child: ClipOval(
-                            child: avatar != null
-                                ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => Icon(Icons.person, size: 18, color: AppColors.textMuted))
-                                : Icon(Icons.person, size: 18, color: AppColors.textMuted),
-                          ),
-                        ),
+                        UserAvatar(url: avatar, name: username, size: 36),
                         const SizedBox(width: 12),
                         Expanded(child: Text(username, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.text)))),
                         Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
@@ -1578,11 +1570,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     left: i * 16.0,
                     child: Container(
                       decoration: BoxDecoration(border: Border.all(color: AppColors.bg, width: 1.5), borderRadius: BorderRadius.circular(12)),
-                      child: ClipOval(
-                        child: _lyricEditors[i]['avatar']?['url'] != null
-                            ? CachedNetworkImage(imageUrl: cdnImg((_lyricEditors[i]['avatar']['url']).toString(), 60), width: 24, height: 24, fit: BoxFit.cover)
-                            : Container(width: 24, height: 24, color: AppColors.surfaceLight, child: Icon(Icons.person, size: 12, color: AppColors.textMuted)),
-                      ),
+                      child: UserAvatar(url: _lyricEditors[i]['avatar']?['url']?.toString(), name: (_lyricEditors[i]['username'] ?? '').toString(), size: 24),
                     ),
                   ),
               ],
@@ -1645,8 +1633,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             SectionHeader(
               icon: Icons.album_outlined,
               title: _resolvedType == 'karaoke' ? 'Nghệ sĩ trình bày' : 'Nghệ sĩ khác trình bày',
-              count: '(${filtered.length})',
-              onPlayAll: () => _playList(filtered),
+              count: '${filtered.length}',
             ),
             ..._relatedRows(shown),
             if (filtered.length > 5)
@@ -1692,7 +1679,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           SectionHeader(
             icon: Icons.auto_awesome_outlined,
             title: 'Có thể bạn muốn nghe',
-            onPlayAll: () => _playList(_suggestions),
           ),
           ..._relatedRows(_suggestions),
         ]),
@@ -1711,7 +1697,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           _ArtistBanner(
             name: title,
             role: 'trình bày',
-            icon: Icons.mic_none_outlined,
             onTap: slug != null ? () => context.push('/nghe-si/$slug') : null,
           ),
           ..._relatedRows(songs),
@@ -1734,7 +1719,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           _ArtistBanner(
             name: title,
             role: role,
-            icon: Icons.music_note_outlined,
             onTap: slug != null ? () => context.push('$routePrefix/$slug') : null,
           ),
           ..._relatedRows(songs),
@@ -1847,60 +1831,42 @@ class _MetaLine extends StatelessWidget {
   }
 }
 
-/// Banner header for "Do X trình bày / sáng tác" sections — shows the
-/// person's avatar + name (clickable) + role label, plus a play-all CTA
-/// and the song count. Replaces the plain icon+text section header so
-/// users see who X is at a glance.
-/// Header nhóm bài theo nghệ sĩ/nhạc sĩ — kiểu web: icon + "Do [tên] trình
-/// bày / sáng tác" + nút tròn "→" mở trang người đó, kèm đường kẻ mảnh.
+/// Header nhóm bài theo nghệ sĩ/nhạc sĩ: tiêu đề mục chuẩn 20/800 "Do [tên]
+/// trình bày / sáng tác" + link đỏ "Xem tất cả" mở trang người đó.
 class _ArtistBanner extends StatelessWidget {
   final String name;
   final String role; // "trình bày" (ca sĩ) | "sáng tác" (nhạc sĩ)
-  final IconData icon;
   final VoidCallback? onTap;
 
   const _ArtistBanner({
     required this.name,
     required this.role,
-    required this.icon,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final row = ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
-      child: Row(children: [
-        Icon(icon, size: 20, color: AppColors.text),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text('Do $name $role', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.2))),
-        ),
-        const SizedBox(width: 8),
-        if (onTap != null)
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight, border: Border.all(color: AppColors.border)),
-            child: Icon(Icons.arrow_forward, size: 18, color: AppColors.text),
-          ),
-      ]),
-    );
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4, top: 4),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // The whole line opens the person's page, not just the small arrow.
-        if (onTap != null)
-          Semantics(
-            button: true,
-            label: 'Do $name $role, mở trang $name',
-            excludeSemantics: true,
-            child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(10), child: row),
-          )
-        else
-          row,
-        const SizedBox(height: 6),
-        Divider(height: 1, color: AppColors.border),
-      ]),
+      padding: const EdgeInsets.only(bottom: 4),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(children: [
+          Expanded(
+            child: Text('Do $name $role', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text, height: 1.2))),
+          ),
+          if (onTap != null)
+            Semantics(
+              button: true,
+              label: 'Xem tất cả bài $name $role',
+              excludeSemantics: true,
+              child: TextButton(
+                onPressed: onTap,
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48), padding: const EdgeInsets.symmetric(horizontal: 8), foregroundColor: AppColors.accentLight),
+                child: Text('Xem tất cả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+              ),
+            ),
+        ]),
+      ),
     );
   }
 }

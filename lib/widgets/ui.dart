@@ -877,9 +877,11 @@ class SortTabs extends StatelessWidget {
   }
 }
 
-/// Big pager for older users: "‹ Trước" / "Sau ›" buttons (48pt), the
-/// current position "Trang X / Y" in words, and numbered pages above when
-/// the screen is wide enough. Hidden when there is only one page.
+/// One-row pager: round ‹ › arrows (44pt) around the page numbers — first,
+/// last, and a window around the current page. Narrow or large-text screens
+/// shrink the window to the current page, and finally to "X / Y" between the
+/// arrows, rather than wrap into a second row. Hidden when there is only one
+/// page.
 class Pager extends StatelessWidget {
   final int page;
   final int lastPage;
@@ -888,60 +890,74 @@ class Pager extends StatelessWidget {
   final bool loading;
   const Pager({super.key, required this.page, required this.lastPage, required this.onPage, this.loading = false});
 
+  static const double _cell = 44;
+  static const double _gap = 6;
+  static const double _dots = 16;
+
   @override
   Widget build(BuildContext context) {
     if (lastPage <= 1) return const SizedBox.shrink();
     final cur = page.clamp(1, lastPage);
     return LayoutBuilder(builder: (context, c) {
-      final scale = MediaQuery.textScalerOf(context).scale(1);
-      // Five 48pt numbers + gaps need ~300pt; skip them on narrow or
-      // large-text screens rather than wrap into a messy second row.
-      final showNumbers = c.maxWidth >= 300 * scale.clamp(1.0, 2.0);
-      final nums = <Widget>[];
-      if (showNumbers) {
-        final pages = <int>{1, lastPage, for (var i = -1; i <= 1; i++) if (cur + i >= 1 && cur + i <= lastPage) cur + i}.toList()..sort();
+      final scale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
+      List<int> pagesFor(int radius) {
+        // Keep the window full width at the ends: page 1 shows 1 2 3 … N.
+        var lo = cur - radius, hi = cur + radius;
+        if (lo < 1) { hi += 1 - lo; lo = 1; }
+        if (hi > lastPage) { lo -= hi - lastPage; hi = lastPage; }
+        return <int>{1, lastPage, for (var p = lo < 1 ? 1 : lo; p <= hi; p++) p}.toList()..sort();
+      }
+      double widthOf(List<int> pages) {
+        var gaps = 0;
+        for (var i = 1; i < pages.length; i++) {
+          if (pages[i] - pages[i - 1] > 1) gaps++;
+        }
+        final items = 2 + pages.length + gaps;
+        return 2 * _cell + pages.length * _cell * scale + gaps * _dots + (items - 1) * _gap;
+      }
+      List<int>? pages = pagesFor(1);
+      if (widthOf(pages) > c.maxWidth) pages = pagesFor(0);
+      if (widthOf(pages) > c.maxWidth) pages = null;
+
+      final row = <Widget>[];
+      if (pages == null) {
+        row.add(Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text('$cur / $lastPage', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+        ));
+      } else {
         var prev = 0;
         for (final p in pages) {
           if (prev != 0 && p - prev > 1) {
-            nums.add(ExcludeSemantics(child: Text('…', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
+            row.add(SizedBox(width: _dots, child: ExcludeSemantics(child: Text('…', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted))))));
           }
-          nums.add(_PagerNumber(page: p, active: p == cur, enabled: !loading && p != cur, onTap: () => onPage(p)));
+          row.add(_PagerNumber(page: p, active: p == cur, enabled: !loading && p != cur, onTap: () => onPage(p)));
           prev = p;
         }
       }
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (nums.isNotEmpty) ...[
-            Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: 6, runSpacing: 6, children: nums),
-            const SizedBox(height: 10),
+      return Semantics(
+        liveRegion: true,
+        label: 'Trang $cur trên $lastPage',
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _PagerArrow(icon: Icons.chevron_left_rounded, semantic: 'Trang trước', enabled: !loading && cur > 1, onTap: () => onPage(cur - 1)),
+            for (final w in row) Padding(padding: const EdgeInsets.only(left: _gap), child: w),
+            const SizedBox(width: _gap),
+            _PagerArrow(icon: Icons.chevron_right_rounded, semantic: 'Trang sau', enabled: !loading && cur < lastPage, onTap: () => onPage(cur + 1)),
           ],
-          Row(
-            children: [
-              _PagerStep(label: '‹ Trước', semantic: 'Trang trước', enabled: !loading && cur > 1, onTap: () => onPage(cur - 1)),
-              Expanded(
-                child: Semantics(
-                  liveRegion: true,
-                  label: 'Trang $cur trên $lastPage',
-                  excludeSemantics: true,
-                  child: Text('Trang $cur / $lastPage', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                ),
-              ),
-              _PagerStep(label: 'Sau ›', semantic: 'Trang sau', enabled: !loading && cur < lastPage, onTap: () => onPage(cur + 1)),
-            ],
-          ),
-        ],
+        ),
       );
     });
   }
 }
 
-class _PagerStep extends StatelessWidget {
-  final String label;
+class _PagerArrow extends StatelessWidget {
+  final IconData icon;
   final String semantic;
   final bool enabled;
   final VoidCallback onTap;
-  const _PagerStep({required this.label, required this.semantic, required this.enabled, required this.onTap});
+  const _PagerArrow({required this.icon, required this.semantic, required this.enabled, required this.onTap});
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -949,23 +965,20 @@ class _PagerStep extends StatelessWidget {
         enabled: enabled,
         label: semantic,
         excludeSemantics: true,
-        child: Material(
-          color: enabled ? AppColors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: enabled
-                ? () {
-                    HapticFeedback.selectionClick();
-                    onTap();
-                  }
-                : null,
-            child: Container(
-              constraints: const BoxConstraints(minHeight: 48, minWidth: 96),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)),
-              child: Text(label, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: enabled ? AppColors.text : AppColors.textMuted))),
+        child: Opacity(
+          opacity: enabled ? 1 : 0.35,
+          child: Material(
+            color: AppColors.surface,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: enabled
+                  ? () {
+                      HapticFeedback.selectionClick();
+                      onTap();
+                    }
+                  : null,
+              child: SizedBox(width: Pager._cell, height: Pager._cell, child: Icon(icon, size: 26, color: AppColors.text)),
             ),
           ),
         ),
@@ -1001,7 +1014,7 @@ class _PagerNumber extends StatelessWidget {
                 }
               : null,
           child: Container(
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            constraints: const BoxConstraints(minWidth: Pager._cell, minHeight: Pager._cell),
             padding: const EdgeInsets.symmetric(horizontal: 6),
             alignment: Alignment.center,
             child: Text('$page', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: fg))),
@@ -1050,6 +1063,10 @@ class PagedList<T> {
   int total = 0;
   int sort;
   bool loading = false;
+  /// [loadPage] with `append`: the next page is on its way below the rows.
+  bool loadingMore = false;
+  /// The last appended page failed: stop auto-loading until "Thử lại".
+  bool moreFailed = false;
   bool failed = false;
   /// A page has arrived at least once (header shows the total, not "Đang tải...").
   bool loaded = false;
@@ -1063,6 +1080,8 @@ class PagedList<T> {
     total = 0;
     this.sort = sort;
     loading = false;
+    loadingMore = false;
+    moreFailed = false;
     failed = false;
     loaded = false;
     _req++;
@@ -1081,28 +1100,37 @@ mixin PagedLoader<W extends StatefulWidget> on State<W> {
     int? sort,
     ScrollController? scrollToTop,
     VoidCallback? onLoaded,
+    /// Infinite scroll: add the page under the rows already shown instead
+    /// of replacing them (no skeleton, no jump to the top).
+    bool append = false,
   }) async {
     final useSort = sort ?? list.sort;
     final prevSort = list.sort;
     final req = ++list._req;
     setState(() {
       list.sort = useSort;
-      list.loading = true;
+      list.moreFailed = false;
+      if (append) {
+        list.loadingMore = true;
+      } else {
+        list.loading = true;
+      }
       list.failed = false;
     });
     try {
       final r = await fetch(page, useSort);
       if (req != list._req || !mounted) return;
       setState(() {
-        list.items = r.items;
+        list.items = append ? [...list.items, ...r.items] : r.items;
         list.page = r.page;
         list.lastPage = r.lastPage < 1 ? 1 : r.lastPage;
         list.total = r.total;
         list.loading = false;
+        list.loadingMore = false;
         list.loaded = true;
       });
       // New page / sort: read from the top, not from where the pager was.
-      final c = scrollToTop;
+      final c = append ? null : scrollToTop;
       if (c != null && c.hasClients && c.offset > 0) {
         c.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
       }
@@ -1112,6 +1140,8 @@ mixin PagedLoader<W extends StatefulWidget> on State<W> {
       final kept = list.items.isNotEmpty;
       setState(() {
         list.loading = false;
+        list.loadingMore = false;
+        if (append) list.moreFailed = true;
         if (kept) {
           list.sort = prevSort; // tab must match the list still shown
         } else {
@@ -1121,7 +1151,7 @@ mixin PagedLoader<W extends StatefulWidget> on State<W> {
       if (kept) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
           content: Text(friendlyError(e)),
-          action: SnackBarAction(label: 'Thử lại', onPressed: () => loadPage(list, page, fetch, sort: useSort, scrollToTop: scrollToTop, onLoaded: onLoaded)),
+          action: SnackBarAction(label: 'Thử lại', onPressed: () => loadPage(list, page, fetch, sort: useSort, scrollToTop: scrollToTop, onLoaded: onLoaded, append: append)),
         ));
       }
     }
@@ -1164,3 +1194,68 @@ List<Widget> pagedListBody<T>(
       ),
   ];
 }
+
+/// Infinite-scroll variant of [pagedListBody] for short personal lists
+/// (Yêu thích, Nghe gần đây, Bài gửi): no pager — the next page loads when
+/// [nearListEnd] says the reader is close to the bottom, with a small
+/// "Đang tải thêm…" row meanwhile.
+List<Widget> infiniteListBody<T>(
+  PagedList<T> list, {
+  required Widget Function(T item, int index) itemBuilder,
+  required VoidCallback onRetry,
+  required VoidCallback onMore,
+  String emptyText = 'Chưa có bài',
+  Widget? skeleton,
+  Widget? empty,
+}) {
+  if (list.loading || (!list.loaded && !list.failed)) {
+    return [skeleton ?? const SongListSkeleton(rows: 8, showIndex: true)];
+  }
+  if (list.failed && list.items.isEmpty) return [OfflineBlock(onRetry: onRetry)];
+  if (list.items.isEmpty) {
+    return [
+      empty ??
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: Text(emptyText, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
+          ),
+    ];
+  }
+  return [
+    for (var i = 0; i < list.items.length; i++) itemBuilder(list.items[i], i),
+    if (list.page < list.lastPage && list.moreFailed)
+      Center(
+        child: TextButton(
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          onPressed: onMore,
+          child: Text('Chưa tải được thêm · Thử lại', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        ),
+      )
+    else if (list.page < list.lastPage)
+      Semantics(
+        liveRegion: true,
+        label: 'Đang tải thêm',
+        excludeSemantics: true,
+        child: SizedBox(
+          height: 64,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.accentFg, backgroundColor: AppColors.border)),
+            const SizedBox(width: 10),
+            Text('Đang tải thêm…', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          ]),
+        ),
+      ),
+  ];
+}
+
+/// True when an infinite list should fetch its next page: within ~2 screens
+/// of the end, nothing already loading, and pages left.
+bool nearListEnd(ScrollController c, PagedList list) =>
+    c.hasClients &&
+    c.position.extentAfter < 800 &&
+    !list.loading &&
+    !list.loadingMore &&
+    !list.moreFailed &&
+    !list.failed &&
+    list.loaded &&
+    list.page < list.lastPage;
