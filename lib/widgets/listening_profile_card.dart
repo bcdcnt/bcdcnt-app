@@ -10,7 +10,9 @@ import '../services/auth.dart';
 /// members this month. Falls back to all-time when this month is empty;
 /// hides itself when the API doesn't offer myListeningProfile yet.
 class ListeningProfileCard extends StatefulWidget {
-  const ListeningProfileCard({super.key});
+  /// Side margin; the desktop Cá nhân page lays it out itself (0).
+  final double inset;
+  const ListeningProfileCard({super.key, this.inset = 20});
   @override
   State<ListeningProfileCard> createState() => _ListeningProfileCardState();
 }
@@ -65,7 +67,7 @@ class _ListeningProfileCardState extends State<ListeningProfileCard> {
     ].join(' · ');
     const white = Colors.white;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: widget.inset),
       child: Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
