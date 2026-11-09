@@ -26,8 +26,8 @@ def xdc(name):
     helm = re.search(r'<helmet>(.*?)</helmet>', body, re.S)
     head = helm.group(1) if helm else ''
     body = re.sub(r'<helmet>.*?</helmet>', '', body, flags=re.S)
-    h = json.loads(re.search(r"data-props='([^']*)'", t).group(1))['$preview']['height']
-    return head, body, h
+    pv = json.loads(re.search(r"data-props='([^']*)'", t).group(1))['$preview']
+    return head, body, (pv.get('width', 390), pv['height'])
 
 
 def tabbar(active):
@@ -60,7 +60,7 @@ def expand(body):
 
 
 def render(b):
-    head, body, h = xdc(b)
+    head, body, (w, h) = xdc(b)
     body = expand(body)
     body = re.sub(r'/_blob/([0-9a-f]{32})', lambda m: 'file://' + blobs[m.group(1)], body)
     html = (f'<!doctype html><html lang="vi"><head><meta charset="utf-8">{head}'
@@ -68,7 +68,7 @@ def render(b):
     hp = f'{O}/.{b}.html'
     open(hp, 'w').write(html)
     subprocess.run([CHROME, '--headless=new', '--disable-gpu', '--hide-scrollbars',
-                    f'--force-device-scale-factor={SCALE}', f'--window-size=390,{h}',
+                    f'--force-device-scale-factor={SCALE}', f'--window-size={w},{h}',
                     '--virtual-time-budget=4000', '--allow-file-access-from-files',
                     f'--screenshot={O}/{b}.png', f'file://{hp}'], capture_output=True)
     os.remove(hp)
