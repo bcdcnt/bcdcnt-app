@@ -349,7 +349,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           Text(title, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
           if (tabs != null) ...[
             const SizedBox(width: 18),
-            Flexible(
+            Expanded(
               child: SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(children: [
@@ -374,8 +374,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ]),
               ),
             ),
-          ],
-          const Spacer(),
+          ] else
+            const Spacer(),
           if (action != null) TextButton(onPressed: onAction, child: Text(action, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
         ]),
       );
