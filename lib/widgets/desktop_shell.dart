@@ -337,6 +337,7 @@ class _TopBar extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final router = GoRouter.of(context);
     final compact = MediaQuery.sizeOf(context).width < 1280;
+    final onSearch = GoRouterState.of(context).uri.path == '/search';
     Widget round(Widget child) => Container(
           width: 44, height: 44,
           decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
@@ -357,6 +358,8 @@ class _TopBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 14),
+        // The Tìm kiếm page has its own big box; one search box at a time.
+        if (!onSearch)
         Flexible(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 480),

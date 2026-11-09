@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../main.dart' show TabReselect;
@@ -195,7 +196,9 @@ class _SearchScreenState extends State<SearchScreen> {
     final seq = ++_searchSeq;
     setState(() => _loading = true);
     try {
-      final limit = _filter == 'all' ? 5 : 50;
+      // Desktop shows more per group: recordings of one song fold into a row.
+      final desk = MediaQuery.sizeOf(context).width >= 900;
+      final limit = _filter == 'all' ? (desk ? 12 : 5) : 50;
       // "Lời bài hát": the same search over song lyrics (people often
       // remember a line, not the title). Needs the API's `lyric` flag.
       final byLyric = _filter == 'lyric';
@@ -217,7 +220,8 @@ class _SearchScreenState extends State<SearchScreen> {
       // In "Tất cả", also look the words up inside lyrics and add the songs
       // whose lyrics match as a "Lời bài hát" group (silently skipped if
       // the server doesn't support it yet).
-      if (_filter == 'all' && q.split(' ').length >= 3) {
+      // Desktop has a column for it, so two words are enough there.
+      if (_filter == 'all' && q.split(' ').length >= (desk ? 2 : 3)) {
         try {
           final wide = mounted && MediaQuery.sizeOf(context).width >= 1100;
           final ld = await ApiClient.query(r'query($q: String!, $limit: Int) { search(q: $q, limit: $limit, type: "song", lyric: true) }', {'q': q, 'limit': wide ? 12 : 5});
@@ -229,6 +233,7 @@ class _SearchScreenState extends State<SearchScreen> {
       // Recent keywords are recorded on submit / result tap, not here: a
       // debounce fires on half-typed words ("bá", "bác h").
       setState(() { _groups = filtered; _loading = false; _searchFailed = false; });
+      if (desk) _loadPersonTop();
     } catch (_) {
       if (mounted && seq == _searchSeq) setState(() { _groups = []; _loading = false; _searchFailed = true; });
     }
@@ -347,6 +352,9 @@ class _SearchScreenState extends State<SearchScreen> {
       case 'user':
         context.push('/user/$id');
         break;
+      case 'tag':
+        context.push('/tag/$slug');
+        break;
       default: break;
     }
     _trackKeyword(_query);
@@ -422,6 +430,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final hasQuery = _query.trim().isNotEmpty;
+    if (MediaQuery.sizeOf(context).width >= 900) return _buildDesktop(auth.isAuthenticated);
 
     return ColoredBox(
       color: AppColors.bg,
@@ -601,6 +610,510 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // ------------------------------------------------------------ Desktop
+  // Canvas "Desktop · Tìm kiếm": one big box (the top bar hides its own),
+  // no "Huỷ"; results in two columns with recordings of one song folded
+  // into a row; a person on top brings their most played songs.
+
+  static const _personTypes = ['composer', 'artist', 'poet', 'recomposer'];
+  static const _personRoute = {'composer': '/nhac-si/', 'artist': '/nghe-si/', 'poet': '/nha-tho/', 'recomposer': '/soan-gia/'};
+  static const _personRole = {'composer': 'Nhạc sĩ', 'artist': 'Nghệ sĩ', 'poet': 'Nhà thơ', 'recomposer': 'Soạn giả'};
+  static const _mainFilters = ['all', 'lyric', 'song', 'folk', 'instrumental', 'document'];
+  final Set<String> _openRec = {};
+  Map<String, dynamic>? _personTop;
+
+  static String _norm(Object? v) => (v ?? '').toString().toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  /// One entry per name: "Phạm Tuyên" as Nhạc sĩ, Nghệ sĩ and Nhà thơ is
+  /// one person with three roles (and the photo any of them has).
+  List<Map<String, dynamic>> _mergedPeople() {
+    final byName = <String, Map<String, dynamic>>{};
+    for (final t in _personTypes) {
+      for (final g in _groups.where((g) => g['type'] == t)) {
+        for (final h in ((g['hits'] as List?) ?? const []).whereType<Map>()) {
+          final e = byName.putIfAbsent(_norm(h['title']), () => {...Map<String, dynamic>.from(h), 'types': <String>[], '_score': 0.0});
+          (e['types'] as List<String>).add(t);
+          if ('${e['image'] ?? ''}'.isEmpty && '${h['image'] ?? ''}'.isNotEmpty) e['image'] = h['image'];
+          final sc = (h['_score'] as num?)?.toDouble() ?? 0;
+          if (sc > (e['_score'] as double)) e['_score'] = sc;
+        }
+      }
+    }
+    return byName.values.toList()..sort((a, b) => (b['_score'] as double).compareTo(a['_score'] as double));
+  }
+
+  Map<String, dynamic>? _deskTopHit() {
+    final top = _findTopHit();
+    if (top == null || !_personTypes.contains(top['_search_type'])) return top;
+    return _mergedPeople().firstWhere((p) => _norm(p['title']) == _norm(top['title']), orElse: () => top);
+  }
+
+  /// Songs of the person on top, most played first.
+  Future<void> _loadPersonTop() async {
+    final top = _filter == 'all' ? _deskTopHit() : null;
+    final types = (top?['types'] as List?)?.cast<String>() ?? const <String>[];
+    if (top == null || types.isEmpty) {
+      if (_personTop != null) setState(() => _personTop = null);
+      return;
+    }
+    final type = _personTypes.firstWhere(types.contains);
+    final key = '$type:${top['slug']}';
+    if (_personTop?['key'] == key) return;
+    _personTop = {'key': key, 'type': type, 'songs': null};
+    final field = type == 'recomposer' ? 'folks' : 'songs';
+    try {
+      final d = await ApiClient.query('query(\$s: String!) { $type(slug: \$s) { yob yod $field(first: 12, orderBy: [{column: "views", order: DESC}]) { paginatorInfo { total } data { id title slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug } } } } } }', {'s': top['slug']});
+      final p = d[type];
+      if (!mounted || _personTop?['key'] != key || p is! Map) return;
+      final ft = field == 'folks' ? 'folk' : 'song';
+      setState(() => _personTop = {
+            'key': key, 'type': type, 'yob': p['yob'], 'yod': p['yod'],
+            'total': p[field]?['paginatorInfo']?['total'],
+            'songs': [for (final s in ((p[field]?['data'] ?? const []) as List).whereType<Map>()) {...Map<String, dynamic>.from(s), 'file_type': ft}],
+          });
+    } catch (_) {
+      if (mounted && _personTop?['key'] == key) setState(() => _personTop = {..._personTop!, 'songs': const []});
+    }
+  }
+
+  Map<String, dynamic> _hitSong(Map h) {
+    final t = h['_search_type']?.toString() ?? 'song';
+    return {
+      'id': h['id'], 'title': h['title'], 'slug': h['slug'], 'file_type': t,
+      if ('${h['image'] ?? ''}'.isNotEmpty) 'thumbnail': {'url': h['image']},
+      if (h['artist'] != null) 'artists': {'data': [{'title': h['artist']}]},
+      if (h['audio_url'] != null || h['video_url'] != null) 'file': {'audio_url': h['audio_url'], 'video_url': h['video_url']},
+      'play_type': h['play_type'] ?? 'audio',
+    };
+  }
+
+  void _queue(Map<String, dynamic> song) {
+    final player = context.read<PlayerProvider>();
+    if (player.currentSong == null) {
+      player.playSong(song, [song], 'manual');
+      return;
+    }
+    if (!player.queue.any((s) => sameSong(s, song))) player.setQueue([...player.queue, song]);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('Đã thêm "${song['title']}" vào danh sách phát'), duration: const Duration(seconds: 2)));
+  }
+
+  Widget _buildDesktop(bool authed) {
+    final hasQuery = _query.trim().isNotEmpty;
+    return ColoredBox(
+      color: AppColors.bg,
+      child: LayoutBuilder(builder: (context, c) {
+        final pad = c.maxWidth < 1000 ? 28.0 : 40.0;
+        Widget frame(Widget child) => Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: 1240 + pad * 2), child: Padding(padding: EdgeInsets.symmetric(horizontal: pad), child: child)),
+            );
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SizedBox(height: 24),
+          frame(_deskBox(hasQuery)),
+          if (hasQuery) frame(_deskFilters()),
+          Expanded(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: 1240 + pad * 2),
+                child: hasQuery ? _deskResults(pad, c.maxWidth) : _deskEmpty(authed, pad),
+              ),
+            ),
+          ),
+        ]);
+      }),
+    );
+  }
+
+  Widget _deskBox(bool hasQuery) {
+    final ring = !hasQuery || _focus.hasFocus;
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.only(left: 20, right: 8),
+      decoration: BoxDecoration(
+        color: ring ? AppColors.bg : AppColors.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: ring ? AppColors.wine : Colors.transparent, width: 2),
+      ),
+      child: Row(children: [
+        Icon(Icons.search_rounded, size: 24, color: AppColors.textMuted),
+        const SizedBox(width: 12),
+        Expanded(
+          child: TextField(
+            controller: _ctrl,
+            focusNode: _focus,
+            textInputAction: TextInputAction.search,
+            style: body(TextStyle(color: AppColors.text, fontSize: 18, fontWeight: FontWeight.w700)),
+            decoration: InputDecoration(
+              hintText: 'Tìm bài, nhạc sĩ, nghệ sĩ, hoặc một câu hát…',
+              hintStyle: body(TextStyle(color: AppColors.textMuted, fontSize: 18, fontWeight: FontWeight.w600)),
+              border: InputBorder.none,
+              isDense: true,
+            ),
+            onTap: () => setState(() {}),
+            onTapOutside: (_) => setState(() {}),
+            onSubmitted: (v) {
+              _debounce?.cancel();
+              _runSearch(v.trim());
+              _trackKeyword(v);
+            },
+            onChanged: _onChanged,
+          ),
+        ),
+        if (hasQuery)
+          IconButton(
+            tooltip: 'Xoá (Esc)',
+            icon: Icon(Icons.cancel_rounded, size: 22, color: AppColors.textMuted),
+            onPressed: () {
+              _ctrl.clear();
+              _onChanged('');
+              _focus.requestFocus();
+            },
+          )
+        else
+          IconButton(
+            tooltip: 'Tìm bằng giọng nói',
+            icon: Icon(Icons.mic_none_rounded, size: 24, color: AppColors.accentLight),
+            onPressed: () async {
+              final heard = await showVoiceSearch(context);
+              if (heard == null || heard.isEmpty || !mounted) return;
+              _ctrl.text = heard;
+              setState(() => _query = heard);
+              _runSearch(heard);
+            },
+          ),
+      ]),
+    );
+  }
+
+  Widget _deskFilters() {
+    final more = _filterOptions.where((o) => !_mainFilters.contains(o.$1)).toList();
+    final inMore = more.where((o) => o.$1 == _filter).firstOrNull;
+    final total = _groups.fold<int>(0, (s, g) => s + ((g['hits'] as List?)?.length ?? 0));
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Row(children: [
+        Expanded(
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final o in _filterOptions.where((o) => _mainFilters.contains(o.$1))) _DeskChip(label: o.$2, on: o.$1 == _filter, onTap: () => _setFilter(o.$1)),
+            PopupMenuButton<String>(
+              tooltip: 'Thêm bộ lọc',
+              position: PopupMenuPosition.under,
+              onSelected: _setFilter,
+              itemBuilder: (_) => [for (final o in more) PopupMenuItem(value: o.$1, child: Text(o.$2, style: body(TextStyle(fontSize: 15, fontWeight: o.$1 == _filter ? FontWeight.w800 : FontWeight.w600, color: AppColors.text))))],
+              child: _DeskChip(label: inMore?.$2 ?? 'Thêm', on: inMore != null, trailing: Icons.expand_more_rounded),
+            ),
+          ]),
+        ),
+        if (_groups.isNotEmpty) Text('$total kết quả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      ]),
+    );
+  }
+
+  Widget _deskEmpty(bool authed, double pad) {
+    final serverRecent = authed && _recentLoaded && _recent.isNotEmpty;
+    final recent = <Widget>[
+      if (serverRecent) ...[
+        _DeskTitle('Tìm gần đây', action: 'Xoá', onAction: _clearAllRecent, top: 0),
+        for (final r in _dedupedRecent().take(5))
+          if (r['object'] is Map)
+            _RecentObjectRow(
+              obj: Map<String, dynamic>.from(r['object'] as Map),
+              onTap: () => _openRecentObject(Map<String, dynamic>.from(r['object'] as Map)),
+              onDelete: () => _deleteRecent(r['id'].toString()),
+              iconFor: _typeIcon,
+              typeLabel: _objTypeLabel((r['object'] as Map)['__typename']?.toString()),
+              inset: 0,
+            )
+          else if ('${r['q'] ?? ''}'.isNotEmpty)
+            _RecentRow(keyword: '${r['q']}', onTap: () => _useKeyword('${r['q']}'), onDelete: () => _deleteRecent(r['id'].toString()), inset: 0),
+      ] else if (_localRecent.isNotEmpty) ...[
+        _DeskTitle('Tìm gần đây', action: 'Xoá', onAction: _clearLocalRecent, top: 0),
+        Wrap(spacing: 8, runSpacing: 8, children: [for (final q in _localRecent.take(8)) BrandChip(label: q, icon: Icons.history_rounded, onTap: () => _useKeyword(q))]),
+      ],
+    ];
+    final trending = <Widget>[
+      if (_trendingLoaded && _trending.isNotEmpty) ...[
+        _DeskTitle('Đang được tìm', top: 0),
+        Wrap(spacing: 10, runSpacing: 10, children: [for (final kw in _trending.take(10)) BrandChip(label: kw['name']?.toString() ?? '', onTap: () => _useKeyword(kw['name']?.toString() ?? ''))]),
+      ],
+    ];
+    return ListView(
+      controller: _browseScroll,
+      padding: EdgeInsets.fromLTRB(pad, 32, pad, 56),
+      children: [
+        if (recent.isNotEmpty || trending.isNotEmpty)
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: recent.isNotEmpty ? recent : trending)),
+            const SizedBox(width: 48),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: recent.isNotEmpty ? trending : const [])),
+          ]),
+        const _BrowseBlocks(desktop: true),
+      ],
+    );
+  }
+
+  Widget _deskResults(double pad, double width) {
+    if (_groups.isEmpty) return _buildResults();
+    final songTypes = ['song', 'folk', 'instrumental', 'poem', 'karaoke'];
+    Widget list(List<Widget> children) => ListView(padding: EdgeInsets.fromLTRB(pad, 24, pad, 56), children: children);
+    List hitsOf(String t) => _groups.where((g) => g['type'] == t).expand((g) => (g['hits'] as List?) ?? const []).toList();
+
+    if (_filter != 'all') {
+      if (songTypes.contains(_filter)) return list([_deskSongTable(hitsOf(_filter), max: 60)]);
+      if (_filter == 'lyric') return list([for (final g in _groups) ...((g['hits'] as List?) ?? const []).whereType<Map>().map((h) => _lyricRow(Map<String, dynamic>.from(h)))]);
+      return list([for (final g in _groups) ...((g['hits'] as List?) ?? const []).whereType<Map>().map((h) => _deskMini(Map<String, dynamic>.from(h)))]);
+    }
+
+    final top = _deskTopHit();
+    final topTypes = (top?['types'] as List?)?.cast<String>();
+    final personTop = topTypes != null;
+    bool isTop(Map h) => top != null && !personTop && h['id'].toString() == top['id'].toString() && h['_search_type'] == top['_search_type'];
+
+    final left = <Widget>[
+      if (top != null && !personTop) _DeskTopSong(hit: top, typeLabel: _typeLabel(top['_search_type']?.toString()), onPlay: () => _openHit(top), onQueue: () => _queue(_hitSong(top))),
+      if (personTop) ..._personSongsTable(top!),
+      for (final t in songTypes)
+        if (hitsOf(t).where((h) => !isTop(h as Map)).isNotEmpty) ...[
+          _DeskTitle(_typeLabel(t), action: 'Xem tất cả', onAction: () => _setFilter(t)),
+          _deskSongTable(hitsOf(t).where((h) => !isTop(h as Map)).toList()),
+        ],
+    ];
+    final people = _mergedPeople().where((p) => !personTop || _norm(p['title']) != _norm(top!['title'])).toList();
+    final lyric = hitsOf('lyric');
+    final right = <Widget>[
+      if (lyric.isNotEmpty) ...[
+        _DeskTitle('Khớp lời bài hát', action: 'Xem tất cả', onAction: () => _setFilter('lyric'), top: 0),
+        Text('Bài có câu hát chứa chữ bạn gõ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+        for (final h in lyric.whereType<Map>()) _lyricRow(Map<String, dynamic>.from(h)),
+      ],
+      if (people.isNotEmpty) ...[_DeskTitle('Người', top: lyric.isEmpty ? 0 : 32), for (final p in people.take(6)) _deskMini(p)],
+      for (final (t, label) in const [('tag', 'Chủ đề'), ('document', 'Tư liệu'), ('user', 'Thành viên')])
+        if (hitsOf(t).isNotEmpty) ...[
+          _DeskTitle(label, action: t == 'tag' ? null : 'Xem tất cả', onAction: () => _setFilter(t), top: 32),
+          for (final h in hitsOf(t).take(5).whereType<Map>()) _deskMini(Map<String, dynamic>.from(h)),
+        ],
+    ];
+    // The first title on the right sits level with the first on the left.
+    if (right.isNotEmpty && right.first is _DeskTitle) right[0] = (right.first as _DeskTitle).withTop(0);
+    final head = personTop ? <Widget>[_personCard(top!), const SizedBox(height: 8)] : const <Widget>[];
+    if (left.isEmpty) return list([...head, ...right]);
+    if (right.isEmpty || width < 1100) return list([...head, ...left, if (right.isNotEmpty) const SizedBox(height: 32), ...right]);
+    return list([
+      ...head,
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(flex: 7, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: left)),
+        const SizedBox(width: 40),
+        Expanded(flex: 5, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: right)),
+      ]),
+    ]);
+  }
+
+  /// Song table: recordings of one song (same title and composer) are one
+  /// row with "N bản thu"; the row plays the most relevant one.
+  Widget _deskSongTable(List hits, {int max = 6}) {
+    final order = <String>[];
+    final byKey = <String, List<Map<String, dynamic>>>{};
+    for (final h in hits.whereType<Map>()) {
+      final k = '${h['_search_type']}|${_norm(h['title'])}|${_norm(h['composer'])}';
+      byKey.putIfAbsent(k, () {
+        order.add(k);
+        return [];
+      }).add(Map<String, dynamic>.from(h));
+    }
+    final rows = <Widget>[const _DeskTableHead()];
+    for (final k in order.take(max)) {
+      final g = byKey[k]!;
+      final first = g.first;
+      final open = _openRec.contains(k);
+      final artists = <String>{for (final h in g) if ('${h['artist'] ?? ''}'.isNotEmpty && h['artist'] != 'Đang cập nhật') '${h['artist']}'};
+      rows.add(_DeskSongRow(
+        song: _hitSong(first),
+        title: '${first['title'] ?? ''}',
+        sub: artists.join(', '),
+        composer: '${first['composer'] ?? ''}',
+        views: g.fold<int>(0, (s, h) => s + ((h['views'] as num?)?.toInt() ?? 0)),
+        recordings: g.length,
+        open: open,
+        onToggle: () => setState(() => open ? _openRec.remove(k) : _openRec.add(k)),
+        onTap: () => _openHit(first),
+      ));
+      if (open && g.length > 1) {
+        for (final h in g) {
+          rows.add(_DeskSongRow(song: _hitSong(h), title: '${h['artist'] ?? 'Bản thu'}', sub: '', composer: '', views: (h['views'] as num?)?.toInt() ?? 0, nested: true, onTap: () => _openHit(h)));
+        }
+      }
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rows);
+  }
+
+  List<Widget> _personSongsTable(Map<String, dynamic> p) {
+    final songs = ((_personTop?['songs'] as List?) ?? const []).cast<Map<String, dynamic>>();
+    if (songs.length <= 5) return const [];
+    final route = '${_personRoute[_personTop?['type']] ?? '/nhac-si/'}${p['slug']}';
+    return [
+      _DeskTitle('Bài hát của ${p['title']}', action: 'Xem tất cả', onAction: () => context.push(route), top: 24),
+      const _DeskTableHead(),
+      for (var i = 5; i < songs.length; i++)
+        _DeskSongRow(
+          song: songs[i],
+          title: '${songs[i]['title'] ?? ''}',
+          sub: songByline(songs[i]),
+          composer: _personTop?['type'] == 'composer' ? '${p['title']}' : '',
+          views: (songs[i]['views'] as num?)?.toInt() ?? 0,
+          onTap: () => playOrOpen(context, songs[i], songs, '${_personRole[_personTop?['type']] ?? ''} ${p['title']}'),
+        ),
+    ];
+  }
+
+  Widget _personCard(Map<String, dynamic> p) {
+    final types = (p['types'] as List).cast<String>();
+    final songs = (_personTop?['songs'] as List?)?.cast<Map<String, dynamic>>();
+    final label = '${_personRole[_personTop?['type'] ?? types.first]} ${p['title']}';
+    final route = '${_personRoute[types.first]}${p['slug']}';
+    final life = [
+      if (_personTop?['yob'] != null && '${_personTop?['yob']}' != '0') '${_personTop!['yob']}${_personTop?['yod'] != null && '${_personTop?['yod']}' != '0' ? ' – ${_personTop!['yod']}' : ''}',
+      if (_personTop?['total'] != null) '${_personTop!['total']} bài trong kho',
+    ].join(' · ');
+    final info = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      NetImage(url: '${p['image'] ?? ''}'.isEmpty ? null : '${p['image']}', width: 132, height: 132, circle: true, tint: true, fallback: GeneratedCover(title: '${p['title']}', size: 132, radius: 66)),
+      const SizedBox(height: 14),
+      Text('KẾT QUẢ HÀNG ĐẦU', style: AppText.eyebrow),
+      const SizedBox(height: 4),
+      Text('${p['title']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 32, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: AppColors.text))),
+      const SizedBox(height: 8),
+      Wrap(spacing: 6, runSpacing: 6, children: [
+        for (final t in types)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14)),
+            child: Text(_personRole[t] ?? t, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textSecondary))),
+          ),
+      ]),
+      if (life.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(life, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+      const SizedBox(height: 16),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        if (songs != null && songs.isNotEmpty) PillButton(label: 'Phát toàn bộ', icon: Icons.play_arrow_rounded, height: 44, onTap: () => playOrOpen(context, songs.first, songs, label)),
+        PillButton(label: 'Xem trang', height: 44, primary: false, onTap: () => context.push(route)),
+      ]),
+    ]);
+    final top5 = songs == null
+        ? Column(children: [for (var i = 0; i < 5; i++) const SkeletonSongRow()])
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('NGHE NHIỀU NHẤT', style: body(TextStyle(fontSize: 13, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+            const SizedBox(height: 4),
+            for (var i = 0; i < songs.length && i < 5; i++)
+              draggableSong(context, songs[i], InkWell(
+                onTap: () => playOrOpen(context, songs[i], songs, label),
+                onSecondaryTap: () => showSongActions(context, songs[i]),
+                child: Container(
+                  height: 56,
+                  decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+                  child: Row(children: [
+                    SizedBox(width: 28, child: Text('${i + 1}', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w300, color: AppColors.textMuted)))),
+                    SongCover(song: songs[i], size: 40, radius: 8),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${songs[i]['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+                        Text(songByline(songs[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                      ]),
+                    ),
+                    Text(formatViews((songs[i]['views'] as num?)?.toInt()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                    const SizedBox(width: 8),
+                  ]),
+                ),
+              )),
+          ]);
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(22),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          SizedBox(width: 300, child: info),
+          if (songs == null || songs.isNotEmpty) ...[const SizedBox(width: 28), Expanded(child: top5)],
+        ]),
+      ),
+    );
+  }
+
+  Widget _lyricRow(Map<String, dynamic> h) {
+    final snippet = '${h['lyric_snippet'] ?? ''}';
+    final meta = [if ('${h['composer'] ?? ''}'.isNotEmpty) '${h['composer']}', if ('${h['artist'] ?? ''}'.isNotEmpty) '${h['artist']}'].join(' · ');
+    return InkWell(
+      onTap: () => _openHit(h),
+      onSecondaryTap: () => showSongActions(context, _hitSong(h)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${h['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+              if (meta.isNotEmpty) Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              if (snippet.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text.rich(_highlight('…$snippet…', _query.trim()), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.45, fontStyle: FontStyle.italic, color: AppColors.textSecondary))),
+                ),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.play_arrow_rounded, size: 26, color: AppColors.accentFg),
+        ]),
+      ),
+    );
+  }
+
+  /// The typed words in bold inside a lyric line.
+  TextSpan _highlight(String text, String q) {
+    final words = q.toLowerCase().split(RegExp(r'\s+')).where((w) => w.length > 1).toList();
+    if (words.isEmpty) return TextSpan(text: text);
+    final re = RegExp(words.map(RegExp.escape).join('|'), caseSensitive: false);
+    final spans = <TextSpan>[];
+    var at = 0;
+    for (final m in re.allMatches(text)) {
+      if (m.start > at) spans.add(TextSpan(text: text.substring(at, m.start)));
+      spans.add(TextSpan(text: m.group(0), style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)));
+      at = m.end;
+    }
+    if (at < text.length) spans.add(TextSpan(text: text.substring(at)));
+    return TextSpan(children: spans);
+  }
+
+  /// A person, document, topic or member: picture, name, what it is.
+  Widget _deskMini(Map<String, dynamic> h) {
+    final t = h['_search_type']?.toString();
+    final types = (h['types'] as List?)?.cast<String>();
+    final person = types != null || _personTypes.contains(t) || t == 'user';
+    const docKinds = {'news': 'Tư liệu bài viết', 'image': 'Ảnh tư liệu', 'video': 'Video tư liệu', 'audio': 'Tư liệu âm thanh'};
+    final sub = types != null
+        ? types.map((x) => _personRole[x]).join(' · ')
+        : t == 'document'
+            ? (docKinds[h['type']] ?? 'Tư liệu')
+            : _typeLabel(t);
+    final image = '${h['image'] ?? ''}';
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => types != null ? context.push('${_personRoute[types.first]}${h['slug']}') : _openHit(h),
+      child: SizedBox(
+        height: 60,
+        child: Row(children: [
+          NetImage(url: image.isEmpty ? null : image, width: 44, height: 44, circle: person, radius: person ? 0 : 8, tint: person, fallback: GeneratedCover(title: '${h['title'] ?? ''}', size: 44, radius: person ? 22 : 8)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${h['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+              if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            ]),
+          ),
+          Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+        ]),
+      ),
+    );
+  }
+
   Map<String, dynamic>? _findTopHit() {
     if (_filter != 'all' || _groups.isEmpty) return null;
     Map<String, dynamic>? best;
@@ -615,6 +1128,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   String _typeLabel(String? t) {
+    if (t == 'tag') return 'Chủ đề';
     final found = _filterOptions.firstWhere((o) => o.$1 == t, orElse: () => ('', '', null));
     return found.$2.isNotEmpty ? found.$2 : (t ?? '');
   }
@@ -756,6 +1270,181 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 }
 
+// ------------------------------------------------------------ Desktop parts
+
+class _DeskChip extends StatelessWidget {
+  final String label;
+  final bool on;
+  final VoidCallback? onTap;
+  final IconData? trailing;
+  const _DeskChip({required this.label, this.on = false, this.onTap, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Container(
+      height: 38,
+      padding: EdgeInsets.only(left: 16, right: trailing != null ? 10 : 16),
+      decoration: BoxDecoration(color: on ? AppColors.text : AppColors.surface, borderRadius: BorderRadius.circular(19)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text))),
+        if (trailing != null) Icon(trailing, size: 20, color: on ? AppColors.bg : AppColors.text),
+      ]),
+    );
+    if (onTap == null) return chip;
+    return InkWell(borderRadius: BorderRadius.circular(19), onTap: onTap, child: chip);
+  }
+}
+
+class _DeskTitle extends StatelessWidget {
+  final String title;
+  final String? action;
+  final VoidCallback? onAction;
+  final double top;
+  const _DeskTitle(this.title, {this.action, this.onAction, this.top = 32});
+  _DeskTitle withTop(double t) => _DeskTitle(title, action: action, onAction: onAction, top: t);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: top, bottom: 10),
+        child: Row(children: [
+          Expanded(child: Text(title, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text)))),
+          if (action != null) TextButton(onPressed: onAction, child: Text(action!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+        ]),
+      );
+}
+
+class _DeskTableHead extends StatelessWidget {
+  const _DeskTableHead();
+  @override
+  Widget build(BuildContext context) {
+    final st = body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted));
+    return Container(
+      height: 34,
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: Row(children: [
+        const SizedBox(width: 62),
+        Expanded(child: Text('BÀI HÁT · TRÌNH BÀY', style: st)),
+        SizedBox(width: 170, child: Text('SÁNG TÁC', style: st)),
+        SizedBox(width: 90, child: Text('LƯỢT NGHE', textAlign: TextAlign.right, style: st)),
+        const SizedBox(width: 48),
+      ]),
+    );
+  }
+}
+
+class _DeskSongRow extends StatelessWidget {
+  final Map<String, dynamic> song;
+  final String title;
+  final String sub;
+  final String composer;
+  final int views;
+  final int recordings;
+  final bool open;
+  final bool nested;
+  final VoidCallback onTap;
+  final VoidCallback? onToggle;
+  const _DeskSongRow({required this.song, required this.title, required this.sub, required this.composer, required this.views, required this.onTap, this.recordings = 1, this.open = false, this.nested = false, this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    final size = nested ? 36.0 : 48.0;
+    final badge = recordings > 1
+        ? InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onToggle,
+            child: Container(
+              height: 24,
+              padding: const EdgeInsets.only(left: 9, right: 4),
+              decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('$recordings bản thu', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 18, color: AppColors.accentFg),
+              ]),
+            ),
+          )
+        : null;
+    return draggableSong(context, song, InkWell(
+      onTap: onTap,
+      onSecondaryTap: () => showSongActions(context, song),
+      child: Container(
+        height: nested ? 52 : 66,
+        padding: EdgeInsets.only(left: nested ? 62 : 0),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+        child: Row(children: [
+          SongCover(song: song, size: size, radius: nested ? 8 : 10),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: nested ? 15 : 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+              if (badge != null || sub.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(children: [
+                    if (badge != null) ...[badge, const SizedBox(width: 8)],
+                    Expanded(child: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+                  ]),
+                ),
+            ]),
+          ),
+          SizedBox(width: 170, child: Text(composer, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+          SizedBox(width: 90, child: Text(views > 0 ? formatViews(views) : '', textAlign: TextAlign.right, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+          IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, song), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
+        ]),
+      ),
+    ));
+  }
+}
+
+class _DeskTopSong extends StatelessWidget {
+  final Map<String, dynamic> hit;
+  final String typeLabel;
+  final VoidCallback onPlay;
+  final VoidCallback onQueue;
+  const _DeskTopSong({required this.hit, required this.typeLabel, required this.onPlay, required this.onQueue});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = hit['_search_type']?.toString();
+    final song = t == 'song' || t == 'folk' || t == 'instrumental' || t == 'poem' || t == 'karaoke';
+    final image = '${hit['image'] ?? ''}';
+    final title = '${hit['title'] ?? ''}';
+    final views = (hit['views'] as num?)?.toInt() ?? 0;
+    final meta = [
+      if (song && '${hit['artist'] ?? ''}'.isNotEmpty) '${hit['artist']}',
+      if (song && '${hit['composer'] ?? ''}'.isNotEmpty) 'Nhạc: ${hit['composer']}',
+      if (views > 0) '${formatViews(views)} lượt nghe',
+    ].join(' · ');
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onPlay,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Row(children: [
+            NetImage(url: image.isEmpty ? null : image, width: 112, height: 112, radius: 14, fallback: GeneratedCover(title: title, size: 112, radius: 14)),
+            const SizedBox(width: 20),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('KẾT QUẢ HÀNG ĐẦU · ${typeLabel.toUpperCase()}', style: AppText.eyebrow),
+                const SizedBox(height: 6),
+                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: AppColors.text))),
+                if (meta.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+                const SizedBox(height: 14),
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  PillButton(label: song ? 'Phát' : 'Mở', icon: song ? Icons.play_arrow_rounded : Icons.arrow_forward_rounded, height: 44, onTap: onPlay),
+                  if (song) PillButton(label: 'Thêm vào danh sách phát', icon: Icons.queue_music_rounded, height: 44, primary: false, onTap: onQueue),
+                ]),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 class _TopResultCard extends StatelessWidget {
   final Map<String, dynamic> hit;
   final String typeLabel;
@@ -831,7 +1520,8 @@ class _RecentObjectRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final IconData Function(String?) iconFor;
-  const _RecentObjectRow({required this.obj, required this.typeLabel, required this.onTap, required this.onDelete, required this.iconFor});
+  final double inset;
+  const _RecentObjectRow({required this.obj, required this.typeLabel, required this.onTap, required this.onDelete, required this.iconFor, this.inset = 20});
 
   @override
   Widget build(BuildContext context) {
@@ -842,7 +1532,7 @@ class _RecentObjectRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 6, 8, 6),
+        padding: EdgeInsets.fromLTRB(inset, 6, 8, 6),
         child: Row(
           children: [
             NetImage(url: image, width: 48, height: 48, circle: isPerson, radius: isPerson ? 0 : 10, fallback: GeneratedCover(title: title, size: 48, radius: isPerson ? 24 : 10)),
@@ -869,13 +1559,14 @@ class _RecentRow extends StatelessWidget {
   final String keyword;
   final VoidCallback onTap;
   final VoidCallback onDelete;
-  const _RecentRow({required this.keyword, required this.onTap, required this.onDelete});
+  final double inset;
+  const _RecentRow({required this.keyword, required this.onTap, required this.onDelete, this.inset = 20});
 
   @override
   Widget build(BuildContext context) => InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
+          padding: EdgeInsets.fromLTRB(inset, 4, 8, 4),
           child: Row(
             children: [
               Container(
@@ -968,7 +1659,9 @@ List<String> _plThumbs(Map p) => (((p['items']?['data']) ?? const []) as List)
     .whereType<String>()
     .toList();
 class _BrowseBlocks extends StatefulWidget {
-  const _BrowseBlocks();
+  /// Desktop: grids instead of rails, no decades (Dòng thời gian has them).
+  final bool desktop;
+  const _BrowseBlocks({this.desktop = false});
   @override
   State<_BrowseBlocks> createState() => _BrowseBlocksState();
 }
@@ -1053,8 +1746,146 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
     ('Làn điệu dân ca', '/lan-dieu', Icons.headphones_outlined, Color(0xFFA89060)),
   ];
 
+  Widget _kindTile(int i, List<String> imgs) => Material(
+        color: _kinds[i].$3,
+        borderRadius: BorderRadius.circular(widget.desktop ? 16 : 18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => context.push(_kinds[i].$2),
+          child: Stack(children: [
+            if (i < imgs.length)
+              Positioned(
+                right: -16,
+                bottom: -12,
+                child: Transform.rotate(
+                  angle: 0.3,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Color(0x59000000), blurRadius: 16, offset: Offset(0, 6))]),
+                    child: NetImage(url: imgs[i], width: 84, height: 84, radius: 12, tint: true),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: EdgeInsets.all(widget.desktop ? 16 : 14),
+              child: Text(_kinds[i].$1, style: display(TextStyle(fontSize: widget.desktop ? 18 : 17, fontWeight: FontWeight.w800, color: Colors.white))),
+            ),
+          ]),
+        ),
+      );
+
+  /// Desktop playlist row: as many ~170px cards as fit, one line.
+  Widget _cardRow(List<Map<String, dynamic>> list, {bool owner = false}) => LayoutBuilder(builder: (context, c) {
+        final cols = ((c.maxWidth + 18) / 188).floor().clamp(4, 8);
+        final w = (c.maxWidth - (cols - 1) * 18) / cols;
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (var i = 0; i < cols && i < list.length; i++) ...[
+            if (i > 0) const SizedBox(width: 18),
+            SizedBox(
+              width: w,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => context.push('/playlist/${list[i]['id']}'),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ClipRRect(borderRadius: BorderRadius.circular(16), child: SizedBox(width: w, height: w, child: _PlaylistCover(playlist: list[i]))),
+                  const SizedBox(height: 8),
+                  Text('${list[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  Text(
+                    [
+                      if (list[i]['items']?['paginatorInfo']?['total'] != null) '${list[i]['items']['paginatorInfo']['total']} bài',
+                      if (owner && list[i]['user']?['username'] != null) '${list[i]['user']['username']}',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                  ),
+                ]),
+              ),
+            ),
+          ],
+        ]);
+      });
+
+  static const _archive = [
+    (Icons.photo_outlined, 'Ảnh tư liệu', '/tu-lieu/hinh-anh'),
+    (Icons.videocam_outlined, 'Video tư liệu', '/tu-lieu/video'),
+    (Icons.graphic_eq_rounded, 'Tư liệu âm thanh', '/tu-lieu/am-thanh'),
+    (Icons.article_outlined, 'Tư liệu bài viết', '/tu-lieu/bai-viet'),
+    (Icons.emoji_events_outlined, 'Bảng xếp hạng', '/bang-xep-hang'),
+    (Icons.person_search_outlined, 'Nhạc sĩ', '/nhac-si'),
+    (Icons.mic_none_rounded, 'Nghệ sĩ', '/nghe-si'),
+    (Icons.edit_note_rounded, 'Soạn giả', '/soan-gia'),
+    (Icons.menu_book_outlined, 'Nhà thơ', '/nha-tho'),
+  ];
+
+  Widget _desktop() {
+    final imgs = _images;
+    Widget title(String t, {String? action, VoidCallback? onAction}) => _DeskTitle(t, action: action, onAction: onAction, top: 40);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      title('Thể loại'),
+      GridView.count(
+        crossAxisCount: 6,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        mainAxisExtent: 112,
+        children: [for (var i = 0; i < _kinds.length; i++) _kindTile(i, imgs)],
+      ),
+      const SizedBox(height: 14),
+      GridView.count(
+        crossAxisCount: 4,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        mainAxisExtent: 56,
+        children: [for (final k in _subKinds) _SubKindTile(label: k.$1, route: k.$2, icon: k.$3, color: k.$4)],
+      ),
+      if (_collections.isNotEmpty) ...[title('Tuyển tập', action: 'Xem tất cả', onAction: () => context.push('/playlist')), _cardRow(_collections)],
+      if (_tags.isNotEmpty) ...[
+        title('Chủ đề', action: 'Tất cả', onAction: () => context.push('/tag')),
+        Wrap(spacing: 10, runSpacing: 10, children: [for (final t in _tags) BrandChip(label: '${t['name']}', onTap: () => context.push('/tag/${t['slug']}'))]),
+      ],
+      if (_playlists.isNotEmpty) ...[title('Playlist cộng đồng', action: 'Xem tất cả', onAction: () => context.push('/playlist')), _cardRow(_playlists, owner: true)],
+      title('Kho tư liệu'),
+      GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        mainAxisExtent: 72,
+        children: [
+          for (final (icon, label, route) in _archive)
+            Material(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => context.push(route),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(12)),
+                      child: Icon(icon, size: 22, color: AppColors.accentFg),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(child: Text(label, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                    Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+                  ]),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.desktop) return _desktop();
     final imgs = _images;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
