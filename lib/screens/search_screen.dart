@@ -217,8 +217,9 @@ class _SearchScreenState extends State<SearchScreen> {
       // the server doesn't support it yet).
       if (_filter == 'all' && q.split(' ').length >= 3) {
         try {
-          final ld = await ApiClient.query(r'query($q: String!) { search(q: $q, limit: 5, type: "song", lyric: true) }', {'q': q});
-          final hits = _lyricHits(((ld['search'] ?? []) as List).expand((g) => ((g['hits'] as List?) ?? [])).toList()).take(3).toList();
+          final wide = mounted && MediaQuery.sizeOf(context).width >= 1100;
+          final ld = await ApiClient.query(r'query($q: String!, $limit: Int) { search(q: $q, limit: $limit, type: "song", lyric: true) }', {'q': q, 'limit': wide ? 12 : 5});
+          final hits = _lyricHits(((ld['search'] ?? []) as List).expand((g) => ((g['hits'] as List?) ?? [])).toList()).take(wide ? 8 : 3).toList();
           if (hits.isNotEmpty) filtered.add({'type': 'lyric', 'name': 'Lời bài hát', 'hits': hits});
         } catch (_) {}
       }
@@ -665,9 +666,55 @@ class _SearchScreenState extends State<SearchScreen> {
         : _groups;
     final totalHits = _groups.fold<int>(0, (s, g) => s + ((g['hits'] as List?)?.length ?? 0));
 
-    return ListView.builder(
+    Widget groupBlock(Map g) {
+      final hits = (g['hits'] as List? ?? []);
+      final type = g['type']?.toString();
+      final label = _typeLabel(type);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(2, 10, 0, 2),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label.toUpperCase(),
+                    style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.2)),
+                  ),
+                ),
+                if (_filter == 'all' && type != null && type.isNotEmpty)
+                  InkWell(
+                    onTap: () => _setFilter(type),
+                    borderRadius: BorderRadius.circular(8),
+                    // 48pt target; the text itself is small.
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Text('Xem tất cả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
+                          Icon(Icons.chevron_right, size: 18, color: AppColors.accentLight),
+                        ]),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ...hits.map((h) => _HitRow(hit: Map<String, dynamic>.from(h as Map), onTap: () => _openHit(Map<String, dynamic>.from(h)), iconFor: _typeIcon, isSongLike: _isSongLike)),
+        ],
+      );
+    }
+
+    // Desktop, "Tất cả": what matched the lyrics gets its own column beside
+    // the title matches (people remember a line, not the name).
+    final wide = MediaQuery.sizeOf(context).width >= 1100;
+    final lyricGroup = wide && _filter == 'all' ? displayGroups.cast<Map>().where((g) => g['type'] == 'lyric').firstOrNull : null;
+    final mainGroups = lyricGroup == null ? displayGroups.cast<Map>().toList() : displayGroups.cast<Map>().where((g) => g['type'] != 'lyric').toList();
+    final left = ListView.builder(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
-      itemCount: displayGroups.length + (topHit != null ? 2 : 1), // +1 result count, +1 if topHit
+      itemCount: mainGroups.length + (topHit != null ? 2 : 1), // +1 result count, +1 if topHit
       itemBuilder: (ctx, idx) {
         if (idx == 0) {
           return Padding(
@@ -684,48 +731,26 @@ class _SearchScreenState extends State<SearchScreen> {
             isSongLike: _isSongLike,
           );
         }
-        final gi = idx - (topHit != null ? 2 : 1);
-        final g = displayGroups[gi];
-        final hits = (g['hits'] as List? ?? []);
-        final type = g['type']?.toString();
-        final label = _typeLabel(type);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(2, 10, 0, 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      label.toUpperCase(),
-                      style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentLight, letterSpacing: 1.2)),
-                    ),
-                  ),
-                  if (_filter == 'all' && type != null && type.isNotEmpty)
-                    InkWell(
-                      onTap: () => _setFilter(type),
-                      borderRadius: BorderRadius.circular(8),
-                      // 48pt target; the text itself is small.
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Text('Xem tất cả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentLight))),
-                            Icon(Icons.chevron_right, size: 18, color: AppColors.accentLight),
-                          ]),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            ...hits.map((h) => _HitRow(hit: Map<String, dynamic>.from(h as Map), onTap: () => _openHit(Map<String, dynamic>.from(h)), iconFor: _typeIcon, isSongLike: _isSongLike)),
-          ],
-        );
+        return groupBlock(mainGroups[idx - (topHit != null ? 2 : 1)]);
       },
     );
+    if (lyricGroup == null) return left;
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(flex: 6, child: left),
+      VerticalDivider(width: 1, color: AppColors.borderSubtle),
+      Expanded(
+        flex: 5,
+        child: ListView(padding: const EdgeInsets.fromLTRB(24, 12, 24, 40), children: [
+          Text('KHỚP LỜI BÀI HÁT · ${(lyricGroup['hits'] as List).length}', style: AppText.eyebrow),
+          const SizedBox(height: 4),
+          Text('Những bài có câu hát giống chữ bạn gõ', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+          const SizedBox(height: 8),
+          ...((lyricGroup['hits'] as List).map((h) => _HitRow(hit: Map<String, dynamic>.from(h as Map), onTap: () => _openHit(Map<String, dynamic>.from(h)), iconFor: _typeIcon, isSongLike: _isSongLike))),
+          if (_filter == 'all')
+            Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: () => _setFilter('lyric'), child: Text('Xem tất cả bài khớp lời', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))))),
+        ]),
+      ),
+    ]);
   }
 }
 
