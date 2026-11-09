@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1251,7 +1252,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         const SizedBox(height: 28),
                         CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true)),
                       ];
-                      final rightItems = _buildRelatedSections(artists, composers);
+                      final rightItems = [
+                        // Desktop: the facts the phone keeps behind ⋯ stay on show.
+                        if (isDesktop) ...[SongArchiveCard(song: Map<String, dynamic>.from(song)), const SizedBox(height: 28)],
+                        ..._buildRelatedSections(artists, composers),
+                      ];
 
                       if (isDesktop && rightItems.isNotEmpty) {
                         return Padding(
@@ -2038,169 +2043,157 @@ class _DesktopHero extends StatelessWidget {
     final downloads = song['downloads'] ?? 0;
     final showPause = isCurrent && isPlaying;
 
+    final year = '${song['sheet']?['year'] ?? ''}'.trim();
+    // "Hồ sơ hiện vật": a dark band made from the song's own picture
+    // (blurred, tinted) with the cover, title and the main actions on it;
+    // credits, figures and tags follow on the page below.
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Bài video → trình phát video thay đúng ô artwork (giống web).
-          if (videoPlayer != null)
-            SizedBox(
-              width: 440,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: videoPlayer!,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Stack(children: [
+            Positioned.fill(child: Container(color: const Color(0xFF2E080A))),
+            if (thumb != null)
+              Positioned.fill(
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                  child: NetImage(url: thumb.toString(), tint: true),
+                ),
               ),
-            )
-          else
-          // Artwork — tap to open lightbox with credit caption.
-          MouseRegion(
-            cursor: onArtworkTap != null ? SystemMouseCursors.click : MouseCursor.defer,
-            child: GestureDetector(
-              onTap: onArtworkTap,
-              child: Container(
-                width: 300, height: 300,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 24, offset: const Offset(0, 10))],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: thumb != null
-                      ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight, child: const Center(child: Icon(Icons.music_note, size: 56, color: Colors.white24))))
-                      : Container(
-                          decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                          child: const Center(child: Icon(Icons.music_note, size: 64, color: Colors.white38)),
-                        ),
-                ),
+            const Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x592E080A), Color(0xE62E080A)])),
               ),
             ),
-          ),
-          const SizedBox(width: 28),
-          // Info column
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Vertical rhythm follows golden ratio (φ ≈ 1.618):
-                //   font tier   36 → 22 → 14 → 11 (anchor = title)
-                //   space tier   6 → 14 → 22 → 26 (within / between groups)
-                // Groups: [TYPE] · [TITLE] · [ARTIST + STATS] · [ACTIONS] · [META].
-                Text(
-                  _typeLabelFor(resolvedType).toUpperCase(),
-                  style: body(TextStyle(fontSize: 12, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
-                ),
-                const SizedBox(height: 6),
-                // Title with subtitle inlined as a smaller muted suffix —
-                // matches editorial layouts (Apple Music / Spotify) where
-                // disambiguators like "(bản 1)" sit beside the title rather
-                // than claiming a full 20px line of their own.
-                RichText(
-        textScaler: MediaQuery.textScalerOf(context),
-                  maxLines: 2, overflow: TextOverflow.ellipsis,
-                  text: TextSpan(
-                    style: display(TextStyle(fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.text, height: 1.1, letterSpacing: -0.5)),
-                    children: [
-                      TextSpan(text: song['title'] ?? ''),
-                      if (subtitle != null && subtitle.isNotEmpty)
-                        TextSpan(text: ' $subtitle', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w400, color: AppColors.textMuted, letterSpacing: -0.2))),
-                    ],
+            Padding(
+              padding: const EdgeInsets.all(28),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                if (videoPlayer != null)
+                  SizedBox(width: 400, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: videoPlayer!))
+                else
+                  MouseRegion(
+                    cursor: onArtworkTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+                    child: GestureDetector(
+                      onTap: onArtworkTap,
+                      child: Container(
+                        width: 220, height: 220,
+                        decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 30, offset: const Offset(0, 14))]),
+                        child: ClipRRect(borderRadius: BorderRadius.circular(18), child: SongCover(song: song, size: 220, radius: 0)),
+                      ),
+                    ),
                   ),
-                ),
-                // Credits kiểu web (Sáng tác / Thơ / Trình bày…) — giữa tiêu đề
-                // và stats, thay cho dòng nghệ sĩ đơn lẻ trước đây.
-                if (credits != null) ...[
-                  const SizedBox(height: 16),
-                  credits!,
-                ],
-                const SizedBox(height: 10),
-                // Stat strip — Wrap so the 3 metric chunks reflow onto a
-                // second line when the info column gets squeezed (narrow
-                // desktop window). Row would just print "RenderFlex
-                // overflowed by N pixels" + clip the rightmost stat.
-                Wrap(
-                  spacing: 14, runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
-                      const SizedBox(width: 4),
-                      Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+                const SizedBox(width: 28),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text(
+                      [_typeLabelFor(resolvedType), if (year.isNotEmpty && year != '0') 'sáng tác $year'].join(' · ').toUpperCase(),
+                      style: body(const TextStyle(fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE))),
+                    ),
+                    const SizedBox(height: 8),
+                    RichText(
+                      textScaler: MediaQuery.textScalerOf(context),
+                      maxLines: 3, overflow: TextOverflow.ellipsis,
+                      text: TextSpan(
+                        style: display(const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white, height: 1.08, letterSpacing: -0.9)),
+                        children: [
+                          TextSpan(text: song['title'] ?? ''),
+                          if (subtitle != null && subtitle.isNotEmpty)
+                            TextSpan(text: ' $subtitle', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w400, color: Color(0xCCFFFFFF), letterSpacing: -0.2))),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    // Action cluster
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      _PrimaryActionPill(
+                        icon: showPause ? Icons.pause : Icons.play_arrow,
+                        label: showPause ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
+                        onTap: onPlay,
+                        primary: true,
+                      ),
+                      _PrimaryActionPill(
+                        icon: isLoved ? Icons.favorite : Icons.favorite_border,
+                        label: loveCount > 0 ? '$loveCount yêu thích' : 'Yêu thích',
+                        onTap: onLove,
+                        activeAccent: isLoved,
+                      ),
+                      _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải về', onTap: onDownload),
+                      // Overflow — Playlist + Chia sẻ + Lịch sử vào menu "..." để
+                      // hàng nút gọn 4 nút giống web.
+                      _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist),
                     ]),
-                    if (downloads > 0)
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.download, size: 13, color: AppColors.textMuted),
-                        const SizedBox(width: 4),
-                        Text('${_formatIntStatic(downloads)} tải về', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-                      ]),
-                    if (uploadDate != null)
-                      Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
-                        const SizedBox(width: 5),
-                        Text('đăng $uploadDate', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-                      ]),
-                  ],
+                  ]),
                 ),
-                const SizedBox(height: 22),
-                // Action cluster
-                Wrap(spacing: 10, runSpacing: 10, children: [
-                  _PrimaryActionPill(
-                    icon: showPause ? Icons.pause : Icons.play_arrow,
-                    label: showPause ? 'Tạm dừng' : (isCurrent ? 'Tiếp tục' : 'Phát'),
-                    onTap: onPlay,
-                    primary: true,
-                  ),
-                  _PrimaryActionPill(
-                    icon: isLoved ? Icons.favorite : Icons.favorite_border,
-                    label: loveCount > 0 ? '$loveCount yêu thích' : 'Yêu thích',
-                    onTap: onLove,
-                    activeAccent: isLoved,
-                  ),
-                  _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải về', onTap: onDownload),
-                  // Overflow — Playlist + Chia sẻ + Lịch sử vào menu "..." để
-                  // hàng nút gọn 4 nút giống web.
-                  _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist),
-                ]),
-                // Hàng "đã thích" — avatar chồng của những người đã thích + chữ
-                // "đã thích" (bấm mở danh sách), khớp web.
-                if (loves.isNotEmpty) ...[
-                  const SizedBox(height: 14),
-                  InkWell(
-                    onTap: onShowLovers,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      SizedBox(
-                        height: 28,
-                        width: 28 + (loves.length.clamp(1, 4) - 1) * 20.0,
-                        child: Stack(
-                          children: [
-                            for (int i = 0; i < loves.length.clamp(0, 4); i++)
-                              Positioned(
-                                left: i * 20.0,
-                                child: Container(
-                                  width: 28, height: 28,
-                                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2), color: AppColors.surfaceLight),
-                                  child: ClipOval(child: _LoverAvatar(love: loves[i])),
-                                ),
-                              ),
-                          ],
+              ]),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 18),
+        if (credits != null) credits!,
+        const SizedBox(height: 10),
+        // Stat strip — Wrap so the 3 metric chunks reflow onto a
+        // second line when the info column gets squeezed (narrow
+        // desktop window). Row would just print "RenderFlex
+        // overflowed by N pixels" + clip the rightmost stat.
+        Wrap(
+          spacing: 14, runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
+              const SizedBox(width: 4),
+              Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+            ]),
+            if (downloads > 0)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.download, size: 13, color: AppColors.textMuted),
+                const SizedBox(width: 4),
+                Text('${_formatIntStatic(downloads)} tải về', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+              ]),
+            if (uploadDate != null)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
+                const SizedBox(width: 5),
+                Text('đăng $uploadDate', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
+              ]),
+          ],
+        ),
+        // Hàng "đã thích" — avatar chồng của những người đã thích + chữ
+        // "đã thích" (bấm mở danh sách), khớp web.
+        if (loves.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          InkWell(
+            onTap: onShowLovers,
+            borderRadius: BorderRadius.circular(6),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              SizedBox(
+                height: 28,
+                width: 28 + (loves.length.clamp(1, 4) - 1) * 20.0,
+                child: Stack(
+                  children: [
+                    for (int i = 0; i < loves.length.clamp(0, 4); i++)
+                      Positioned(
+                        left: i * 20.0,
+                        child: Container(
+                          width: 28, height: 28,
+                          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2), color: AppColors.surfaceLight),
+                          child: ClipOval(child: _LoverAvatar(love: loves[i])),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      Text('đã thích', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: AppColors.textMuted))),
-                    ]),
-                  ),
-                ],
-                if (metaContent != null) ...[
-                  const SizedBox(height: 22),
-                  metaContent!,
-                ],
-              ],
-            ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text('đã thích', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: AppColors.textMuted))),
+            ]),
           ),
         ],
-      ),
+        if (metaContent != null) ...[
+          const SizedBox(height: 22),
+          metaContent!,
+        ],
+      ]),
     );
   }
 }

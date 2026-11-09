@@ -7,6 +7,7 @@ import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'command_palette.dart';
 import 'desktop_shell.dart' show desktopPanelOpen;
+import 'desktop_player_bar.dart' show desktopPanelTab;
 
 typedef AncestorMatcher = bool Function(Widget widget);
 
@@ -151,6 +152,23 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
       }
       return true;
     }
+    if (shift) return false;
+    // Single letters (desktop): S trộn bài, R lặp, M tắt tiếng, and the side
+    // panel on Y lời / C bình luận / Q hàng đợi (again to close).
+    void panel(String tab) {
+      if (desktopPanelOpen.value && desktopPanelTab.value == tab) {
+        desktopPanelOpen.value = false;
+      } else {
+        desktopPanelTab.value = tab;
+        desktopPanelOpen.value = true;
+      }
+    }
+    if (key == LogicalKeyboardKey.keyS) { player.toggleShuffle(); return true; }
+    if (key == LogicalKeyboardKey.keyR) { player.toggleRepeat(); return true; }
+    if (key == LogicalKeyboardKey.keyM) { player.toggleMute(); return true; }
+    if (key == LogicalKeyboardKey.keyY) { panel('lyric'); return true; }
+    if (key == LogicalKeyboardKey.keyC) { panel('comment'); return true; }
+    if (key == LogicalKeyboardKey.keyQ) { panel('queue'); return true; }
     return false;
   }
 

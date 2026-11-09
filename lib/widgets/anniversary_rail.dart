@@ -5,6 +5,102 @@ import '../services/api.dart';
 import 'song_row.dart' show playOrOpen;
 import 'ui.dart';
 
+/// Birthdays and death anniversaries in the next [window] days (today
+/// first, then round years, then the best known). Empty on error.
+Future<List<Anniv>> loadAnniversaries({int window = 7}) async {
+  final today = DateTime.now();
+  final start = DateTime(today.year, today.month, today.day);
+  final end = start.add(Duration(days: window));
+  final months = {start.month, end.month};
+  final mVals = [for (final m in months) ...['$m', m.toString().padLeft(2, '0')]];
+  const f = 'id title slug views dob mob yob dod mod yod avatar { url }';
+  String q(String type, String col) =>
+      '$type$col: $type(first: 100, where: {AND: [{column: "$col", operator: IN, value: \$m}]}, orderBy: [{column: "views", order: DESC}]) { data { $f } }';
+  try {
+    final d = await ApiClient.query(
+      'query(\$m: Mixed) { ${q('composers', 'mob')} ${q('composers', 'mod')} ${q('artists', 'mob')} ${q('artists', 'mod')} }',
+      {'m': mVals},
+    );
+    final out = <Anniv>[];
+    final seen = <String>{};
+    void scan(String key, String route, String role, bool birth) {
+      for (final raw in ((d[key]?['data'] as List?) ?? const []).whereType<Map>()) {
+        final p = Map<String, dynamic>.from(raw);
+        final day = int.tryParse('${p[birth ? 'dob' : 'dod']}'.trim());
+        final month = int.tryParse('${p[birth ? 'mob' : 'mod']}'.trim());
+        final year = int.tryParse('${p[birth ? 'yob' : 'yod']}'.trim());
+        if (day == null || month == null || day < 1 || day > 31 || month < 1 || month > 12) continue;
+        // Only people listeners will recognise: a photo, a known year, and
+        // some listening history (skips obscure foreign entries).
+        if ((p['avatar']?['url']?.toString() ?? '').isEmpty || year == null || year < 1800) continue;
+        if (((p['views'] as num?) ?? 0) < 3000) continue;
+        // Try this year's date, and next year's when the week crosses New Year.
+        for (final y in [start.year, start.year + 1]) {
+          final date = DateTime(y, month, day);
+          // 29/2 in a non-leap year (or a typo like 31/11) rolls into the
+          // next month: skip instead of showing the wrong day.
+          if (date.month != month) break;
+          final diff = date.difference(start).inDays;
+          if (diff < 0 || date.isAfter(end)) continue;
+          if (!seen.add('$route${p['id']}$birth')) break;
+          out.add(Anniv(p, route, role, birth, date, year > 1800 ? y - year : 0, diff));
+          break;
+        }
+      }
+    }
+
+    scan('composersmob', '/nhac-si/', 'Nhạc sĩ', true);
+    scan('composersmod', '/nhac-si/', 'Nhạc sĩ', false);
+    scan('artistsmob', '/nghe-si/', 'Nghệ sĩ', true);
+    scan('artistsmod', '/nghe-si/', 'Nghệ sĩ', false);
+    int views(Anniv a) => (a.person['views'] as num?)?.toInt() ?? 0;
+    // Today first, then round anniversaries (100, 90… năm), then the best known.
+    out.sort((a, b) {
+      if (a.inDays != b.inDays) return a.inDays.compareTo(b.inDays);
+      final ra = a.years > 0 && a.years % 10 == 0 ? 1 : 0, rb = b.years > 0 && b.years % 10 == 0 ? 1 : 0;
+      if (ra != rb) return rb - ra;
+      return views(b).compareTo(views(a));
+    });
+    return out.take(10).toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// "Hôm nay" / "Ngày mai" / "12/11".
+String annivWhen(Anniv a) {
+  if (a.inDays == 0) return 'Hôm nay';
+  if (a.inDays == 1) return 'Ngày mai';
+  return '${a.date.day}/${a.date.month}';
+}
+
+/// "75 năm ngày sinh" / "Tròn 80 tuổi" / "30 năm ngày mất".
+String annivYears(Anniv a) {
+  final p = a.person;
+  final alive = ('${p['yod'] ?? ''}'.trim().isEmpty || '${p['yod']}' == '0') && a.years < 100;
+  if (a.years <= 0) return a.birth ? 'Ngày sinh' : 'Ngày mất';
+  if (a.birth) return alive ? 'Tròn ${a.years} tuổi' : '${a.years} năm ngày sinh';
+  return '${a.years} năm ngày mất';
+}
+
+/// A person's best-known songs, most listened first ([] on error).
+Future<List<Map<String, dynamic>>> annivSongs(Anniv a) async {
+  final slug = '${a.person['slug'] ?? ''}';
+  if (slug.isEmpty) return const [];
+  final type = a.route == '/nhac-si/' ? 'composer' : 'artist';
+  const f = 'id title slug play_type thumbnail { url } file { audio_url video_url duration } artists(first: 2) { data { id title slug } } sheet { composers(first: 2) { data { id slug title } } }';
+  try {
+    final d = await ApiClient.query('query(\$s: String!) { p: $type(slug: \$s) { songs(first: 20, orderBy: [{column: "views", order: DESC}]) { data { $f } } } }', {'s': slug});
+    return ((d['p']?['songs']?['data'] ?? []) as List)
+        .whereType<Map>()
+        .map((e) => <String, dynamic>{...Map<String, dynamic>.from(e), 'file_type': 'song'})
+        .where((x) => x['file']?['audio_url'] != null || x['file']?['video_url'] != null)
+        .toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
 /// "Kỷ niệm tuần này" — birthdays and death anniversaries of composers and
 /// singers in the coming week (today first). Remembering these days is a habit of the
 /// site's listeners, and the row changes every day without anyone editing it.
@@ -17,10 +113,10 @@ class AnniversaryRail extends StatefulWidget {
   const AnniversaryRail({super.key, this.window = 7});
 
   @override
-  State<AnniversaryRail> createState() => _AnniversaryRailState();
+  State<AnniversaryRail> createState() => AnniversaryRailState();
 }
 
-class _Anniv {
+class Anniv {
   final Map<String, dynamic> person;
   final String route;
   final String role;
@@ -28,11 +124,11 @@ class _Anniv {
   final DateTime date;
   final int years;
   final int inDays;
-  _Anniv(this.person, this.route, this.role, this.birth, this.date, this.years, this.inDays);
+  Anniv(this.person, this.route, this.role, this.birth, this.date, this.years, this.inDays);
 }
 
-class _AnniversaryRailState extends State<AnniversaryRail> {
-  List<_Anniv>? _items;
+class AnniversaryRailState extends State<AnniversaryRail> {
+  List<Anniv>? _items;
 
   late DateTime _loadedDay;
   late final AppLifecycleListener _life;
@@ -55,67 +151,12 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
   }
 
   Future<void> _load() async {
-    final today = DateTime.now();
-    _loadedDay = today;
-    final start = DateTime(today.year, today.month, today.day);
-    final end = start.add(Duration(days: widget.window));
-    final months = {start.month, end.month};
-    final mVals = [for (final m in months) ...['$m', m.toString().padLeft(2, '0')]];
-    const f = 'id title slug views dob mob yob dod mod yod avatar { url }';
-    String q(String type, String col) =>
-        '$type$col: $type(first: 100, where: {AND: [{column: "$col", operator: IN, value: \$m}]}, orderBy: [{column: "views", order: DESC}]) { data { $f } }';
-    try {
-      final d = await ApiClient.query(
-        'query(\$m: Mixed) { ${q('composers', 'mob')} ${q('composers', 'mod')} ${q('artists', 'mob')} ${q('artists', 'mod')} }',
-        {'m': mVals},
-      );
-      final out = <_Anniv>[];
-      final seen = <String>{};
-      void scan(String key, String route, String role, bool birth) {
-        for (final raw in ((d[key]?['data'] as List?) ?? const []).whereType<Map>()) {
-          final p = Map<String, dynamic>.from(raw);
-          final day = int.tryParse('${p[birth ? 'dob' : 'dod']}'.trim());
-          final month = int.tryParse('${p[birth ? 'mob' : 'mod']}'.trim());
-          final year = int.tryParse('${p[birth ? 'yob' : 'yod']}'.trim());
-          if (day == null || month == null || day < 1 || day > 31 || month < 1 || month > 12) continue;
-          // Only people listeners will recognise: a photo, a known year, and
-          // some listening history (skips obscure foreign entries).
-          if ((p['avatar']?['url']?.toString() ?? '').isEmpty || year == null || year < 1800) continue;
-          if (((p['views'] as num?) ?? 0) < 3000) continue;
-          // Try this year's date, and next year's when the week crosses New Year.
-          for (final y in [start.year, start.year + 1]) {
-            final date = DateTime(y, month, day);
-            // 29/2 in a non-leap year (or a typo like 31/11) rolls into the
-            // next month: skip instead of showing the wrong day.
-            if (date.month != month) break;
-            final diff = date.difference(start).inDays;
-            if (diff < 0 || date.isAfter(end)) continue;
-            if (!seen.add('$route${p['id']}$birth')) break;
-            out.add(_Anniv(p, route, role, birth, date, year > 1800 ? y - year : 0, diff));
-            break;
-          }
-        }
-      }
-
-      scan('composersmob', '/nhac-si/', 'Nhạc sĩ', true);
-      scan('composersmod', '/nhac-si/', 'Nhạc sĩ', false);
-      scan('artistsmob', '/nghe-si/', 'Nghệ sĩ', true);
-      scan('artistsmod', '/nghe-si/', 'Nghệ sĩ', false);
-      int views(_Anniv a) => (a.person['views'] as num?)?.toInt() ?? 0;
-      // Today first, then round anniversaries (100, 90… năm), then the best known.
-      out.sort((a, b) {
-        if (a.inDays != b.inDays) return a.inDays.compareTo(b.inDays);
-        final ra = a.years > 0 && a.years % 10 == 0 ? 1 : 0, rb = b.years > 0 && b.years % 10 == 0 ? 1 : 0;
-        if (ra != rb) return rb - ra;
-        return views(b).compareTo(views(a));
-      });
-      if (mounted) setState(() => _items = out.take(10).toList());
-    } catch (_) {
-      if (mounted) setState(() => _items = const []);
-    }
+    _loadedDay = DateTime.now();
+    final out = await loadAnniversaries(window: widget.window);
+    if (mounted) setState(() => _items = out);
   }
 
-  String _when(_Anniv a) {
+  String _when(Anniv a) {
     if (a.inDays == 0) return 'Hôm nay';
     if (a.inDays == 1) return 'Ngày mai';
     return '${a.date.day}/${a.date.month}';
@@ -154,7 +195,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
     ]);
   }
 
-  Widget _card(_Anniv a) {
+  Widget _card(Anniv a) {
     final p = a.person;
     final name = '${p['title'] ?? ''}';
     final today = a.inDays == 0;
@@ -254,7 +295,7 @@ class _AnniversaryRailState extends State<AnniversaryRail> {
   String? _playing;
 
   /// ▶ on a card: that person's best-known songs, most listened first.
-  Future<void> _play(_Anniv a) async {
+  Future<void> _play(Anniv a) async {
     final p = a.person;
     final slug = '${p['slug'] ?? ''}';
     if (slug.isEmpty || _playing != null) return;

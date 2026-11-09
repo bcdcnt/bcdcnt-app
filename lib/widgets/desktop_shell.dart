@@ -4,27 +4,27 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'hover_effects.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/theme_provider.dart';
+import 'brand_logo.dart';
+import 'command_palette.dart';
+import 'desktop_now_panel.dart';
+import 'desktop_player_bar.dart';
 import 'mini_player.dart';
-import 'desktop_comment_sidebar.dart';
-import 'desktop_queue_panel.dart';
-import 'desktop_activity_sidebar.dart';
 import 'notifications_dropdown.dart';
+import 'playlist_cover.dart';
 
-/// Native macOS-style shell — Apple Music / Spotify pattern:
-///   - Left sidebar (220px) holds primary navigation + library shortcuts.
-///   - Main area fills the rest of the window (no max-width cap).
-///   - Right inspector panel — opt-in via single toggle button. When open,
-///     a segmented control inside the panel header switches between Hàng đợi
-///     and Bình luận. Last selected tab is persisted across sessions; the
-///     open/closed state resets each launch (default: closed).
-///   - Bottom-anchored MiniPlayer spans the full width when something is
-///     playing.
-/// Active when MainShell detects viewport >= 900px.
+/// Desktop shell (canvas "Desktop — làm mới: Phòng lưu trữ đang hát"):
+///   - Left menu 240 (76 under 1280px, icon + small label, never icon-only):
+///     Trang chủ · Khám phá · Dòng thời gian · Cộng đồng · Thư viện, then the
+///     member's playlists, account at the foot.
+///   - Top bar 64: back, search (opens the Ctrl K palette), Aa, bell.
+///   - Side panel 360 beside the song playing (Lời · Bình luận · Hàng đợi);
+///     under 1280px it floats over the page instead of squeezing it.
+///   - Player bar 96 across the bottom: the outermost layer, so changing
+///     page never stops the music. Per-screen MiniPlayers are muted.
 class DesktopShell extends StatefulWidget {
   final Widget child;
   const DesktopShell({super.key, required this.child});
@@ -33,344 +33,68 @@ class DesktopShell extends StatefulWidget {
   State<DesktopShell> createState() => _DesktopShellState();
 }
 
-enum _RightPanelTab { queue, comments, activity }
-
-/// Global toggle for the desktop right inspector panel — exposed so the
-/// keyboard handler (above the navigator) can flip the panel without
-/// reaching into [_DesktopShellState]. The shell binds to this notifier
-/// as its source of truth.
+/// Side panel open/closed — the keyboard handler (⌘I) flips it too.
 final ValueNotifier<bool> desktopPanelOpen = ValueNotifier<bool>(true);
 
 class _DesktopShellState extends State<DesktopShell> {
-  // Which sub-tab is selected when panel is open. Persisted to prefs so a
-  // user who always wants Hàng đợi gets it back next launch.
-  _RightPanelTab _panelTab = _RightPanelTab.comments;
-  static const _prefsKey = 'desktop_panel_tab';
-  static const _prefsWidthKey = 'desktop_panel_width';
-  // Right panel width — persisted across sessions. Clamped on read so a
-  // bad/stale value can't break the layout.
-  double _panelWidth = 320;
-  static const _minPanelWidth = 240.0;
-  static const _maxPanelWidth = 480.0;
-
-  // Left navigation sidebar — collapsible + resizable, persisted like the right panel.
-  double _leftWidth = 220;
-  static const _minLeftWidth = 180.0;
-  static const _maxLeftWidth = 320.0;
-  bool _leftCollapsed = false;
-  static const _prefsLeftWidthKey = 'desktop_left_width';
-  static const _prefsLeftCollapsedKey = 'desktop_left_collapsed';
-
-  // Sub-screens already overlay their own MiniPlayer in a Stack. Only the
-  // top-level routes rely on the shell to render the bottom player bar.
-  static const _shellOwnedMiniPlayerPaths = {
-    '/', '/binh-luan', '/search', '/library', '/profile',
-  };
+  bool _sized = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadPrefs();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Opens by itself only where it doesn't squeeze the page.
+    if (!_sized) {
+      _sized = true;
+      desktopPanelOpen.value = MediaQuery.sizeOf(context).width >= 1680;
+    }
   }
 
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_prefsKey);
-    final w = prefs.getDouble(_prefsWidthKey);
-    final lw = prefs.getDouble(_prefsLeftWidthKey);
-    final lc = prefs.getBool(_prefsLeftCollapsedKey);
-    if (!mounted) return;
-    setState(() {
-      if (lw != null) _leftWidth = lw.clamp(_minLeftWidth, _maxLeftWidth);
-      if (lc != null) _leftCollapsed = lc;
-      if (raw == 'queue') {
-        _panelTab = _RightPanelTab.queue;
-      } else if (raw == 'activity') {
-        _panelTab = _RightPanelTab.activity;
-      } else if (raw == 'comments') {
-        _panelTab = _RightPanelTab.comments;
-      }
-      if (w != null) {
-        _panelWidth = w.clamp(_minPanelWidth, _maxPanelWidth);
-      }
-    });
-  }
-
-  Future<void> _saveWidth(double w) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_prefsWidthKey, w);
-  }
-
-  Future<void> _saveLeftWidth(double w) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_prefsLeftWidthKey, w);
-  }
-
-  void _toggleLeft() {
-    setState(() => _leftCollapsed = !_leftCollapsed);
-    SharedPreferences.getInstance().then((p) => p.setBool(_prefsLeftCollapsedKey, _leftCollapsed));
-  }
-
-  Future<void> _saveTab(_RightPanelTab tab) async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = switch (tab) {
-      _RightPanelTab.queue => 'queue',
-      _RightPanelTab.activity => 'activity',
-      _RightPanelTab.comments => 'comments',
-    };
-    await prefs.setString(_prefsKey, key);
-  }
-
-  void _setTab(_RightPanelTab tab) {
-    if (_panelTab == tab) return;
-    setState(() => _panelTab = tab);
-    _saveTab(tab);
+  void _panel(String tab) {
+    if (desktopPanelOpen.value && desktopPanelTab.value == tab) {
+      desktopPanelOpen.value = false;
+    } else {
+      desktopPanelTab.value = tab;
+      desktopPanelOpen.value = true;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasPlayer = context.watch<PlayerProvider>().currentSong != null;
-    final path = GoRouterState.of(context).uri.path;
-    final shellShouldShowMiniPlayer = hasPlayer && _shellOwnedMiniPlayerPaths.contains(path);
-    final effectiveTab = _panelTab;
-
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 1280;
+    final hasSong = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: Column(
-        children: [
-          Expanded(
-            child: ValueListenableBuilder<bool>(
-              valueListenable: desktopPanelOpen,
-              builder: (ctx, isOpen, _) => Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (!_leftCollapsed) ...[
-                    SizedBox(
-                      width: _leftWidth,
-                      child: _Sidebar(onCollapse: _toggleLeft),
-                    ),
-                    // Drag splitter on the left sidebar's right edge — drag to
-                    // resize, double-click to reset to 220.
-                    MouseRegion(
-                      cursor: SystemMouseCursors.resizeColumn,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onDoubleTap: () { setState(() => _leftWidth = 220); _saveLeftWidth(220); },
-                        onHorizontalDragUpdate: (d) {
-                          setState(() => _leftWidth = (_leftWidth + d.delta.dx).clamp(_minLeftWidth, _maxLeftWidth));
-                        },
-                        onHorizontalDragEnd: (_) => _saveLeftWidth(_leftWidth),
-                        child: Container(
-                          width: 6,
-                          color: Colors.transparent,
-                          child: VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
-                        ),
+      body: ValueListenableBuilder<bool>(
+        valueListenable: desktopPanelOpen,
+        builder: (context, open, _) {
+          final panel = SizedBox(width: 360, child: DesktopNowPanel(onClose: () => desktopPanelOpen.value = false));
+          return Column(children: [
+            Expanded(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                compact ? const _RailNav() : const _SideNav(),
+                Expanded(
+                  child: Stack(children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const _TopBar(),
+                      Expanded(child: MiniPlayerScope(child: widget.child)),
+                    ]),
+                    if (open && compact)
+                      Positioned(
+                        top: 0, right: 0, bottom: 0,
+                        child: Material(elevation: 16, shadowColor: Colors.black45, child: panel),
                       ),
-                    ),
-                  ],
-                  Expanded(
-                    // Soft cap so song lists / forms don't span 2000+px on
-                    // ultrawide displays. Matches Apple Music's behaviour where
-                    // content is centred with breathing room rather than
-                    // stretched edge-to-edge.
-                    child: Stack(
-                      children: [
-                        Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 1400),
-                            child: widget.child,
-                          ),
-                        ),
-                        // When the panel is closed we still need a way to
-                        // re-open it, so a single Apple-style sidebar
-                        // toggle stays on the center column. The 3-icon
-                        // tab strip lives inside the panel header itself
-                        // so it never overlaps detail page actions
-                        // (Share, Like, …).
-                        if (!isOpen)
-                          Positioned(
-                            top: 8, right: 12,
-                            child: _HeaderTabBtn(
-                              tooltip: 'Mở bảng phụ  ⌘I',
-                              icon: Icons.view_sidebar_outlined,
-                              active: false,
-                              onTap: () { desktopPanelOpen.value = true; },
-                            ),
-                          ),
-                        // Expand the left nav sidebar after it's been collapsed.
-                        if (_leftCollapsed)
-                          Positioned(
-                            top: 8, left: 12,
-                            child: _HeaderTabBtn(
-                              tooltip: 'Mở thanh điều hướng',
-                              icon: Icons.view_sidebar_outlined,
-                              active: false,
-                              onTap: _toggleLeft,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (isOpen) ...[
-                    // Drag splitter — 6px wide invisible hit area on the
-                    // panel's left edge. Drag to resize; double-click to
-                    // reset to default 320.
-                    MouseRegion(
-                      cursor: SystemMouseCursors.resizeColumn,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onDoubleTap: () {
-                          setState(() => _panelWidth = 320);
-                          _saveWidth(320);
-                        },
-                        onHorizontalDragUpdate: (d) {
-                          setState(() {
-                            _panelWidth = (_panelWidth - d.delta.dx).clamp(_minPanelWidth, _maxPanelWidth);
-                          });
-                        },
-                        onHorizontalDragEnd: (_) => _saveWidth(_panelWidth),
-                        child: Container(
-                          width: 6,
-                          color: Colors.transparent,
-                          // Subtle 1px guide line — only visible when the
-                          // user hovers (Material's InkWell handles cursor;
-                          // here we just suggest the splitter exists).
-                          child: VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: _panelWidth,
-                      child: _RightPanelContainer(
-                        activeTab: effectiveTab,
-                        onSelectTab: _setTab,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          if (shellShouldShowMiniPlayer)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: MiniPlayer(),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RightPanelContainer extends StatelessWidget {
-  final _RightPanelTab activeTab;
-  final ValueChanged<_RightPanelTab> onSelectTab;
-  const _RightPanelContainer({
-    required this.activeTab,
-    required this.onSelectTab,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Tab switcher lives in this panel's own header (used to be on
-    // the center-column header but it overlapped detail-page actions like
-    // Share). Strip is intentionally small + flat — 3 ghost icons +
-    // animated underline indicator (no box bg) for an Apple Music feel.
-    return Container(
-      decoration: BoxDecoration(color: AppColors.bg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
-            child: Row(children: [
-              // Collapse button on the LEFT (inner edge), mirroring the left
-              // sidebar's « on its right edge. » points toward the right screen
-              // edge the panel folds away to. Same widget/size/colour as the
-              // left « (IconButton, 18px, textMuted) so they read as a pair.
-              IconButton(
-                tooltip: 'Thu gọn bảng phụ',
-                icon: Icon(Icons.keyboard_double_arrow_right, size: 18, color: AppColors.textMuted),
-                onPressed: () { desktopPanelOpen.value = false; },
-                hoverColor: AppColors.surfaceHover,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-              ),
-              const Spacer(),
-              _HeaderTabBtn(
-                tooltip: 'Bình luận',
-                icon: Icons.chat_bubble_outline,
-                active: activeTab == _RightPanelTab.comments,
-                onTap: () => onSelectTab(_RightPanelTab.comments),
-              ),
-              _HeaderTabBtn(
-                tooltip: 'Hoạt động',
-                icon: Icons.timeline,
-                active: activeTab == _RightPanelTab.activity,
-                onTap: () => onSelectTab(_RightPanelTab.activity),
-              ),
-              _HeaderTabBtn(
-                tooltip: 'Hàng đợi  ⌘I',
-                icon: Icons.format_list_bulleted,
-                active: activeTab == _RightPanelTab.queue,
-                onTap: () => onSelectTab(_RightPanelTab.queue),
-              ),
-            ]),
-          ),
-          Divider(height: 1, color: AppColors.border),
-          Expanded(
-            child: switch (activeTab) {
-              _RightPanelTab.queue => const DesktopQueuePanel(embedded: true),
-              _RightPanelTab.activity => const DesktopActivitySidebar(embedded: true),
-              _RightPanelTab.comments => const DesktopCommentSidebar(embedded: true),
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Apple Music-style header icon button — compact, transparent by
-/// default, accent-tinted bg + filled icon when its tab is active.
-class _HeaderTabBtn extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final bool active;
-  final VoidCallback onTap;
-  const _HeaderTabBtn({required this.icon, required this.tooltip, required this.active, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    // Compact ghost button — tighter than before (16px icon, 6px padding,
-    // no chunky bg/border). Active state = accent icon + 2px underline
-    // indicator. Reads cleaner and reclaims a few px of vertical space in
-    // the panel header.
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(6),
-          hoverColor: AppColors.surfaceHover,
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: active ? AppColors.accentLight : Colors.transparent,
-                  width: 2,
+                  ]),
                 ),
-              ),
+                if (open && !compact) ...[
+                  VerticalDivider(width: 1, thickness: 1, color: AppColors.border),
+                  panel,
+                ],
+              ]),
             ),
-            child: Icon(
-              icon,
-              size: 16,
-              color: active ? AppColors.accentLight : AppColors.textSecondary,
-            ),
-          ),
-        ),
+            if (hasSong) DesktopPlayerBar(panelOpen: open, onPanel: _panel),
+          ]);
+        },
       ),
     );
   }
@@ -378,207 +102,290 @@ class _HeaderTabBtn extends StatelessWidget {
 
 class _NavItem {
   final String label;
+  final String short;
   final String path;
   final IconData icon;
-  const _NavItem(this.label, this.path, this.icon);
+  final IconData activeIcon;
+  /// Other paths that light this item up.
+  final List<String> also;
+  const _NavItem(this.label, this.short, this.path, this.icon, this.activeIcon, [this.also = const []]);
 }
 
-/// Sidebar nav grouped into clusters with section labels — 13 flat items
-/// were too long to scan. Mirror the "THƯ VIỆN" group label style for the
-/// other clusters so the typography hierarchy is consistent.
-class _NavGroup {
-  final String? label;
-  final List<_NavItem> items;
-  const _NavGroup({this.label, required this.items});
+const _nav = <_NavItem>[
+  _NavItem('Trang chủ', 'Trang chủ', '/', Icons.home_outlined, Icons.home_rounded),
+  _NavItem('Khám phá', 'Khám phá', '/search', Icons.explore_outlined, Icons.explore_rounded, ['/nghe-si', '/nhac-si', '/nha-tho', '/soan-gia', '/the-loai', '/tag', '/bang-xep-hang', '/dan-ca', '/lan-dieu', '/the-loai-dan-ca', '/bai-hat']),
+  _NavItem('Dòng thời gian', 'Thời gian', '/dong-thoi-gian', Icons.calendar_month_outlined, Icons.calendar_month_rounded),
+  _NavItem('Cộng đồng', 'Cộng đồng', '/cong-dong', Icons.people_outline_rounded, Icons.people_rounded, ['/binh-luan', '/thao-luan', '/dien-dan', '/user']),
+  _NavItem('Thư viện', 'Thư viện', '/library', Icons.library_music_outlined, Icons.library_music_rounded, ['/yeu-thich', '/nghe-gan-day', '/da-tai-ve', '/playlist-cua-toi', '/bai-gui-cua-toi', '/profile']),
+];
+
+bool _isActive(String path, _NavItem item) {
+  if (item.path == '/') return path == '/';
+  for (final p in [item.path, ...item.also]) {
+    if (path == p || path.startsWith('$p/')) return true;
+  }
+  return false;
 }
 
-const _primaryNavGroups = <_NavGroup>[
-  _NavGroup(items: [
-    _NavItem('Trang chủ', '/', Icons.home_outlined),
-    _NavItem('Tìm kiếm', '/search', Icons.search),
-    _NavItem('Bình luận', '/binh-luan', Icons.chat_bubble_outline),
-    _NavItem('Hoạt động', '/cong-dong/hoat-dong-thanh-vien', Icons.show_chart),
-  ]),
-  _NavGroup(label: 'KHÁM PHÁ', items: [
-    // Personal hub ("Cá nhân", route /library) leads the Explore group.
-    _NavItem('Cá nhân', '/library', Icons.person_outline_rounded),
-    _NavItem('Nghệ sĩ', '/nghe-si', Icons.mic_outlined),
-    _NavItem('Nhạc sĩ', '/nhac-si', Icons.piano_outlined),
-    _NavItem('Nhà thơ', '/nha-tho', Icons.menu_book_outlined),
-    _NavItem('Soạn giả', '/soan-gia', Icons.edit_note),
-    _NavItem('Tân nhạc', '/the-loai/tan-nhac', Icons.music_note),
-    _NavItem('Dân ca', '/the-loai/dan-ca', Icons.queue_music),
-    _NavItem('Khí nhạc', '/the-loai/khi-nhac', Icons.piano),
-    _NavItem('Tiếng thơ', '/the-loai/tieng-tho', Icons.auto_stories_outlined),
-    _NavItem('Thành viên hát', '/the-loai/thanh-vien-hat', Icons.mic),
-  ]),
-];
+class _SideNav extends StatefulWidget {
+  const _SideNav();
+  @override
+  State<_SideNav> createState() => _SideNavState();
+}
 
-// Library shortcuts — only shown when authenticated
-const _libraryShortcuts = <_NavItem>[
-  _NavItem('Yêu thích', '/yeu-thich', Icons.favorite_outline),
-  _NavItem('Nghe gần đây', '/nghe-gan-day', Icons.history),
-  _NavItem('Playlist của tôi', '/playlist-cua-toi', Icons.queue_music),
-  _NavItem('Bài gửi của tôi', '/bai-gui-cua-toi', Icons.upload_outlined),
-];
+class _SideNavState extends State<_SideNav> {
+  List<Map<String, dynamic>> _playlists = [];
+  String? _for;
 
-class _Sidebar extends StatelessWidget {
-  final VoidCallback? onCollapse;
-  const _Sidebar({this.onCollapse});
-
-  bool _isActive(String currentPath, String navPath) {
-    if (navPath == '/') return currentPath == '/';
-    return currentPath == navPath || currentPath.startsWith('$navPath/');
+  void _load(AuthProvider auth) {
+    final uid = auth.user?['id']?.toString();
+    if (auth.loading || uid == _for) return;
+    _for = uid;
+    if (uid == null) {
+      _playlists = [];
+      return;
+    }
+    const q = r'''query { myPlaylists(first: 6, page: 1, orderBy: [{column: "id", order: DESC}]) { data { id title thumbnail { url }
+      items(first: 4, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } ... on Karaoke { thumbnail { url } } } } }
+    } } }''';
+    auth.authedQuery(q).then((d) {
+      final list = ((d['myPlaylists']?['data'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+      if (mounted && _for == uid) setState(() => _playlists = list);
+    }).catchError((_) {});
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    _load(auth);
     final path = GoRouterState.of(context).uri.path;
-    final isAuth = auth.isAuthenticated;
-
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(right: BorderSide(color: AppColors.border)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Logo
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 4, 14),
-            child: Row(
-              children: [
-                Text(
-                  'BCĐCNT',
-                  style: brand(TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5, color: AppColors.text,
-                  )),
-                ),
-                const Spacer(),
-                if (isAuth)
-                  _NotifBell(unread: (auth.user?['unread'] ?? 0) as int),
-                if (onCollapse != null)
+      width: 240,
+      decoration: BoxDecoration(color: AppColors.surface, border: Border(right: BorderSide(color: AppColors.border))),
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 6, 0, 16),
+          child: Align(alignment: Alignment.centerLeft, child: InkWell(onTap: () => context.go('/'), child: const BrandLogo(height: 32))),
+        ),
+        for (final item in _nav) _NavRow(item: item, active: _isActive(path, item)),
+        Expanded(
+          child: ListView(padding: EdgeInsets.zero, children: [
+            if (auth.isAuthenticated) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 22, 4, 6),
+                child: Row(children: [
+                  Expanded(child: Text('PLAYLIST CỦA TÔI', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
                   IconButton(
-                    tooltip: 'Thu gọn thanh bên',
-                    icon: Icon(Icons.keyboard_double_arrow_left, size: 18, color: AppColors.textMuted),
-                    onPressed: onCollapse,
-                    hoverColor: AppColors.surfaceHover,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                    tooltip: 'Tất cả playlist của tôi',
+                    onPressed: () => context.push('/playlist-cua-toi'),
+                    icon: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.textSecondary),
+                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   ),
-              ],
-            ),
-          ),
-          // Nav + library
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              children: [
-                for (var g = 0; g < _primaryNavGroups.length; g++) ...[
-                  if (_primaryNavGroups[g].label != null) ...[
-                    SizedBox(height: g == 0 ? 0 : 14),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                      child: Text(
-                        _primaryNavGroups[g].label!,
-                        style: body(TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w700,
-                          letterSpacing: 1.2, color: AppColors.textMuted,
-                        )),
-                      ),
-                    ),
-                  ],
-                  for (final item in _primaryNavGroups[g].items)
-                    _SidebarLink(item: item, active: _isActive(path, item.path)),
-                ],
-                if (isAuth) ...[
-                  const SizedBox(height: 14),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                    child: Text(
-                      'THƯ VIỆN CỦA TÔI',
-                      style: body(TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w700,
-                        letterSpacing: 1.2, color: AppColors.textMuted,
-                      )),
+                ]),
+              ),
+              for (final pl in _playlists)
+                HoverHighlight(
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => context.push('/playlist/${pl['id']}'),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      child: Row(children: [
+                        PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 32, radius: 7),
+                        const SizedBox(width: 12),
+                        Expanded(child: Text('${pl['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
+                      ]),
                     ),
                   ),
-                  for (final item in _libraryShortcuts)
-                    _SidebarLink(item: item, active: _isActive(path, item.path)),
-                ],
-                const SizedBox(height: 16),
-              ],
-            ),
+                ),
+            ],
+          ]),
+        ),
+        Container(
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
+          child: auth.isAuthenticated ? _AccountFooter(auth: auth) : _LoginFooter(),
+        ),
+      ]),
+    );
+  }
+}
+
+class _NavRow extends StatelessWidget {
+  final _NavItem item;
+  final bool active;
+  const _NavRow({required this.item, required this.active});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = active ? AppColors.accentFg : AppColors.text;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        color: active ? AppColors.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          hoverColor: AppColors.surfaceHover,
+          onTap: () => context.go(item.path),
+          child: SizedBox(
+            height: 48,
+            child: Row(children: [
+              const SizedBox(width: 14),
+              Icon(active ? item.activeIcon : item.icon, size: 22, color: active ? AppColors.accentFg : AppColors.textSecondary),
+              const SizedBox(width: 14),
+              Expanded(child: Text(item.label, style: body(TextStyle(fontSize: 16, fontWeight: active ? FontWeight.w800 : FontWeight.w700, color: c)))),
+            ]),
           ),
-          // Quick theme switch — always visible (guests too), tap to apply.
-          const _SidebarThemeSwitch(),
-          // Account / login footer
-          Container(
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.border)),
-            ),
-            child: isAuth ? _AccountFooter(auth: auth) : _LoginFooter(),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _SidebarLink extends StatelessWidget {
-  final _NavItem item;
-  final bool active;
-  const _SidebarLink({required this.item, required this.active});
+/// Narrow windows: icon + 11px label, 76 wide.
+class _RailNav extends StatelessWidget {
+  const _RailNav();
 
   @override
   Widget build(BuildContext context) {
-    // Active row gets a 2px accent stripe on the left + bg surfaceLight,
-    // mirrors Apple Music's sidebar active marker. Stripe is implemented
-    // via a left border on the inner row so the rounded corners on the
-    // outer Material still clip nicely.
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: active ? AppColors.surfaceLight : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          // Explicit themed hover — the Material default (white 4%) is
-          // invisible on the light theme.
-          hoverColor: AppColors.surfaceHover,
-          onTap: () => context.go(item.path),
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(color: active ? AppColors.accentLight : Colors.transparent, width: 2),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                Icon(
-                  item.icon,
-                  size: 18,
-                  color: active ? AppColors.accentLight : AppColors.textSecondary,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    item.label,
-                    style: body(TextStyle(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      color: active ? AppColors.text : AppColors.textSecondary,
-                    )),
+    final path = GoRouterState.of(context).uri.path;
+    final auth = context.watch<AuthProvider>();
+    return Container(
+      width: 76,
+      decoration: BoxDecoration(color: AppColors.surface, border: Border(right: BorderSide(color: AppColors.border))),
+      padding: const EdgeInsets.only(top: 14, bottom: 10),
+      child: Column(children: [
+        InkWell(onTap: () => context.go('/'), child: const BrandLogo(height: 30, full: false)),
+        const SizedBox(height: 14),
+        for (final item in _nav)
+          Builder(builder: (context) {
+            final active = _isActive(path, item);
+            final c = active ? AppColors.accentFg : AppColors.textSecondary;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Material(
+                color: active ? AppColors.accentSoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => context.go(item.path),
+                  child: SizedBox(
+                    width: 64,
+                    height: 60,
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Icon(active ? item.activeIcon : item.icon, size: 24, color: c),
+                      const SizedBox(height: 3),
+                      Text(item.short, maxLines: 1, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c))),
+                    ]),
                   ),
                 ),
-              ],
+              ),
+            );
+          }),
+        const Spacer(),
+        if (auth.isAuthenticated)
+          IconButton(tooltip: 'Cài đặt', onPressed: () => context.push('/cai-dat'), icon: Icon(Icons.settings_outlined, color: AppColors.textSecondary)),
+      ]),
+    );
+  }
+}
+
+class _TopBar extends StatelessWidget {
+  const _TopBar();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final router = GoRouter.of(context);
+    final compact = MediaQuery.sizeOf(context).width < 1280;
+    Widget round(Widget child) => Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+          alignment: Alignment.center,
+          child: child,
+        );
+    return Container(
+      height: 64,
+      padding: EdgeInsets.symmetric(horizontal: compact ? 20 : 32),
+      decoration: BoxDecoration(color: AppColors.bg, border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+      child: Row(children: [
+        Tooltip(
+          message: 'Quay lại (Alt+←)',
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: router.canPop() ? () => router.pop() : null,
+            child: round(Icon(Icons.chevron_left_rounded, size: 28, color: router.canPop() ? AppColors.text : AppColors.textMuted.withValues(alpha: 0.5))),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Material(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: () => CommandPalette.show(context),
+                child: Container(
+                  height: 44,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(children: [
+                    Icon(Icons.search_rounded, size: 22, color: AppColors.textMuted),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Tìm bài, nhạc sĩ, nghệ sĩ, câu hát…', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.border)),
+                      child: Text('Ctrl K', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+                    ),
+                  ]),
+                ),
+              ),
             ),
           ),
         ),
+        const Spacer(),
+        const _TextSizeButton(),
+        const SizedBox(width: 8),
+        if (auth.isAuthenticated) _NotifBell(unread: (auth.user?['unread'] ?? 0) as int),
+      ]),
+    );
+  }
+}
+
+/// "Aa": text size and light/dark right on the top bar, not buried in Cài đặt.
+class _TextSizeButton extends StatelessWidget {
+  const _TextSizeButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<ThemeProvider>();
+    return PopupMenuButton<String>(
+      tooltip: 'Cỡ chữ và giao diện',
+      position: PopupMenuPosition.under,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: AppColors.border)),
+      onSelected: (v) {
+        if (v.startsWith('s:')) theme.setTextScale(v.substring(2));
+        if (v.startsWith('t:')) theme.setTheme(v.substring(2));
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(enabled: false, height: 32, child: Text('CỠ CHỮ', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+        for (final e in kTextScaleLabels.entries)
+          CheckedPopupMenuItem(value: 's:${e.key}', checked: theme.textScaleKey == e.key, child: Text(e.value, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
+        const PopupMenuDivider(),
+        PopupMenuItem(enabled: false, height: 32, child: Text('GIAO DIỆN', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+        for (final p in kAppPalettes)
+          CheckedPopupMenuItem(value: 't:${p.name}', checked: theme.name == p.name, child: Text(p.label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
+      ],
+      child: Container(
+        width: 44, height: 44,
+        decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: Text('Aa', style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
       ),
     );
   }
@@ -594,16 +401,22 @@ class _NotifBell extends StatelessWidget {
       builder: (ctx, openDropdown) => Stack(
         clipBehavior: Clip.none,
         children: [
-          IconButton(
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            tooltip: 'Thông báo',
-            icon: Icon(Icons.notifications_none, size: 20, color: AppColors.textSecondary),
-            onPressed: openDropdown,
+          Tooltip(
+            message: 'Thông báo',
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: openDropdown,
+              child: Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(color: AppColors.surface, shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Icon(Icons.notifications_none_rounded, size: 24, color: AppColors.text),
+              ),
+            ),
           ),
           if (unread > 0)
             Positioned(
-              top: -2, right: -2,
+              top: 2, right: 2,
               child: Container(
                 constraints: const BoxConstraints(minWidth: 16),
                 height: 16,
@@ -613,55 +426,6 @@ class _NotifBell extends StatelessWidget {
                 child: Text(unread > 99 ? '99+' : '$unread', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Always-visible quick theme switch in the left sidebar — a horizontal strip
-/// of palette swatches (tap to apply instantly). Local-only, so it works for
-/// guests too; complements the copy inside the logged-in account menu.
-class _SidebarThemeSwitch extends StatelessWidget {
-  const _SidebarThemeSwitch();
-
-  @override
-  Widget build(BuildContext context) {
-    final prov = context.watch<ThemeProvider>();
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.palette_outlined, size: 15, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
-            Text('Giao diện', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
-          ]),
-          const SizedBox(height: 9),
-          SizedBox(
-            height: 24,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.only(right: 8),
-              itemCount: kAppPalettes.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 9),
-              itemBuilder: (_, i) {
-                final p = kAppPalettes[i];
-                return Tooltip(
-                  message: p.label,
-                  child: HoverScale(
-                    scale: 1.2,
-                    child: GestureDetector(
-                      onTap: () => context.read<ThemeProvider>().setTheme(p.name),
-                      child: themeSwatch(p, size: 20, active: prov.name == p.name),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
         ],
       ),
     );

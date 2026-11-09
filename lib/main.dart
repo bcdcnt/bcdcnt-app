@@ -66,6 +66,8 @@ import 'widgets/mini_player.dart';
 import 'widgets/full_player.dart';
 import 'widgets/auth_dialogs.dart';
 import 'widgets/desktop_shell.dart';
+import 'screens/desktop_home_screen.dart';
+import 'screens/timeline_screen.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
 // Conditional import — just_audio_media_kit pulls in libmpv via
@@ -428,13 +430,13 @@ final _router = GoRouter(
     ShellRoute(
       builder: (context, state, child) => MainShell(child: child),
       routes: [
-        // Phone widths get the redesigned home; desktop (>=900, DesktopShell) keeps HomeScreen.
         // The four tabs. On phones they live in _MobileShell's IndexedStack
         // (kept alive, switched instantly); the route itself is only a
         // transparent slot. Desktop renders the screen in the route as before.
-        GoRoute(path: '/', pageBuilder: (c, s) => _tabPage(c, s, const HomeScreen())),
+        GoRoute(path: '/', pageBuilder: (c, s) => _tabPage(c, s, const DesktopHomeScreen())),
         GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
-        GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const CommentsScreen())),
+        GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const CommunityScreen())),
+        GoRoute(path: '/dong-thoi-gian', builder: (c, s) => const TimelineScreen()),
         GoRoute(
           path: '/search',
           pageBuilder: (c, s) {
