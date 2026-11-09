@@ -5,8 +5,8 @@ import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 
 /// "Dòng thời gian" (desktop menu): walk through the years by the songs
-/// written in each. Pick a decade, then a year; ▶ plays what is shown.
-/// The per-year ruler from the canvas needs a count query (later).
+/// written in each (the sheet's year, else the song's). A ruler of songs per
+/// year on top; pick a decade, then a year; ▶ plays what is shown.
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key});
   @override
@@ -28,17 +28,43 @@ class _TimelineScreenState extends State<TimelineScreen> {
   List<Map<String, dynamic>> _songs = [];
   bool _loading = true;
   int _total = 0;
+  /// Songs per year (songYearCounts); empty until the API has it.
+  Map<int, int> _counts = {};
 
   @override
   void initState() {
     super.initState();
     _load();
+    ApiClient.query('query { songYearCounts { year total } }').then((d) {
+      final m = <int, int>{};
+      for (final e in ((d['songYearCounts'] ?? []) as List).whereType<Map>()) {
+        m[(e['year'] as num).toInt()] = (e['total'] as num).toInt();
+      }
+      if (mounted) setState(() => _counts = m);
+    }).catchError((_) {});
   }
 
   Future<void> _load() async {
     setState(() => _loading = true);
     final from = _year ?? _decade, to = _year != null ? _year! + 1 : _decade + 10;
     final key = '$_decade-$_year';
+    // By composition year (songsByYear); servers without it yet fall back
+    // to the song's own year column.
+    try {
+      final d = await ApiClient.query('''query(\$from: Int!, \$to: Int!) {
+        songsByYear(from: \$from, to: \$to, first: 30, page: 1) {
+          data { id slug title play_type views thumbnail { url } file { audio_url video_url duration } sheet { year composers(first: 2) { data { id slug title } } } artists(first: 3) { data { id slug title } } }
+          paginatorInfo { total }
+        }
+      }''', {'from': from, 'to': to});
+      if (!mounted || key != '$_decade-$_year') return;
+      setState(() {
+        _songs = ((d['songsByYear']?['data'] ?? []) as List).whereType<Map>().map((e) => <String, dynamic>{...Map<String, dynamic>.from(e), 'file_type': 'song'}).toList();
+        _total = (d['songsByYear']?['paginatorInfo']?['total'] as num?)?.toInt() ?? _songs.length;
+        _loading = false;
+      });
+      return;
+    } catch (_) {}
     try {
       final d = await ApiClient.query('''query(\$w: WhereConditions) {
         songs(first: 30, page: 1, orderBy: [{column: "views", order: DESC}], where: \$w) {
@@ -78,6 +104,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
               Text('Dòng thời gian', style: display(TextStyle(fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: AppColors.text))),
               const SizedBox(height: 6),
               Text('Đi qua các năm tháng bằng những bài hát ra đời trong từng năm', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              if (_counts.isNotEmpty) ...[
+                const SizedBox(height: 24),
+                _ruler(),
+              ],
               const SizedBox(height: 24),
               // Decades as a ruler of big year numbers.
               Container(
@@ -173,6 +203,56 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Songs per year, 1940–1999: bars in the chosen decade are wine, the
+  /// chosen year darker; a bar picks its year.
+  Widget _ruler() {
+    const first = 1940, last = 1999;
+    final peak = [for (var y = first; y <= last; y++) _counts[y] ?? 0].fold<int>(1, (a, b) => b > a ? b : a);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(
+          height: 120,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            for (var y = first; y <= last; y++)
+              Expanded(
+                child: Tooltip(
+                  message: '$y · ${_counts[y] ?? 0} bài',
+                  child: InkWell(
+                    onTap: () {
+                      setState(() { _decade = y ~/ 10 * 10; _year = y; });
+                      _load();
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1),
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: FractionallySizedBox(
+                          heightFactor: ((_counts[y] ?? 0) / peak).clamp(0.03, 1.0),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: y == _year ? AppColors.text : (y ~/ 10 * 10 == _decade ? AppColors.wine : AppColors.rose.withValues(alpha: 0.45)),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          for (var y = first; y <= last; y += 10)
+            Expanded(child: Text('$y', style: body(TextStyle(fontSize: 13, fontWeight: y == _decade ? FontWeight.w800 : FontWeight.w700, color: y == _decade ? AppColors.accentFg : AppColors.textMuted)))),
+        ]),
+      ]),
     );
   }
 }
