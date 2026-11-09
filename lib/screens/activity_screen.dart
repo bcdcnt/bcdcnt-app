@@ -1,7 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/contribute_card.dart';
-import '../widgets/ui.dart' show goBack, ChipStrip, OfflineBlock;
+import '../widgets/ui.dart' show goBack, ChipStrip, OfflineBlock, UserAvatar;
 import '../services/auth.dart';
 import '../main.dart' show TabReselect;
 import 'package:provider/provider.dart';
@@ -17,7 +17,10 @@ import '../widgets/mini_player.dart';
 class ActivityScreen extends StatefulWidget {
   /// Inside the Cộng đồng tab: no app bar, the tab draws the header.
   final bool embedded;
-  const ActivityScreen({super.key, this.embedded = false});
+  /// Desktop Cộng đồng: the invitation card lives in the side column and a
+  /// run of likes by one member folds into one row.
+  final bool desktop;
+  const ActivityScreen({super.key, this.embedded = false, this.desktop = false});
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
@@ -185,7 +188,80 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return () => context.push(r.path, extra: r.extra);
   }
 
-  List<Object> get _grouped => groupByDay(_items, (a) => a['created_at']);
+  List<Object> get _grouped {
+    final days = groupByDay(_items, (a) => a['created_at']);
+    if (!widget.desktop) return days;
+    // "Ly Khánh 2 thích 6 bình luận": consecutive likes by one member.
+    final out = <Object>[];
+    for (final e in days) {
+      final prev = out.isEmpty ? null : out.last;
+      if (e is Map<String, dynamic> && e['action'] == 'love_comment' && prev is Map<String, dynamic> && prev['user']?['id'] != null && prev['user']?['id'] == e['user']?['id'] && (prev['action'] == 'love_comment' || prev['action'] == 'love_group')) {
+        out[out.length - 1] = prev['action'] == 'love_group' ? {...prev, 'items': [...(prev['items'] as List), e]} : {'action': 'love_group', 'user': prev['user'], 'created_at': prev['created_at'], 'items': [prev, e]};
+      } else {
+        out.add(e);
+      }
+    }
+    return out;
+  }
+
+  final Set<String> _openGroups = {};
+
+  Widget _likeGroup(Map<String, dynamic> g) {
+    final items = (g['items'] as List).cast<Map<String, dynamic>>();
+    final user = g['user'];
+    final key = '${user?['id']}-${g['created_at']}';
+    final open = _openGroups.contains(key);
+    final strong = body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text, height: 1.5));
+    final muted = body(TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.5));
+    return InkWell(
+      onTap: () => setState(() => open ? _openGroups.remove(key) : _openGroups.add(key)),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          UserAvatar(url: user?['avatar']?['url']?.toString(), name: '${user?['username'] ?? ''}', size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text.rich(TextSpan(children: [
+                TextSpan(text: '${user?['username'] ?? ''}', style: strong),
+                TextSpan(text: ' thích ', style: muted),
+                TextSpan(text: '${items.length} bình luận', style: strong),
+                TextSpan(text: open ? '  Thu gọn ▴' : '  Xem ▾', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+              ])),
+              const SizedBox(height: 4),
+              Text(timeago(g['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
+              if (open)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Wrap(spacing: 6, runSpacing: 6, children: [
+                    for (final a in items)
+                      Builder(builder: (context) {
+                        final obj = a['object'] is Map ? Map<String, dynamic>.from(a['object'] as Map) : null;
+                        final owner = obj?['user']?['username'];
+                        final title = _shownTitle(_target(obj)?['title']);
+                        return ActionChip(
+                          label: Text([if (owner != null) '$owner', if (title != null) '$title'].join(' · '), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                          backgroundColor: AppColors.surface,
+                          side: BorderSide.none,
+                          shape: const StadiumBorder(),
+                          onPressed: _openerFor(obj),
+                        );
+                      }),
+                  ]),
+                ),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            width: 28, height: 28, margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(8)),
+            child: Icon(Icons.favorite_outline, size: 16, color: AppColors.accentLight),
+          ),
+        ]),
+      ),
+    );
+  }
 
   /// Real titles for uploads whose "title" is a pasted page link
   /// ("https://bcdcnt.net/bai-hat/hang-em-nguoc-nui-14685.html"): looked up
@@ -227,7 +303,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
               leading: IconButton(tooltip: 'Quay lại', icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => goBack(context)),
             ),
           // Next to what others just contributed: the invitation to add more.
-          if (widget.embedded) const SliverPadding(padding: EdgeInsets.fromLTRB(20, 14, 20, 0), sliver: SliverToBoxAdapter(child: ContributeCard())),
+          if (widget.embedded && !widget.desktop) const SliverPadding(padding: EdgeInsets.fromLTRB(20, 14, 20, 0), sliver: SliverToBoxAdapter(child: ContributeCard())),
           SliverPadding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             sliver: SliverToBoxAdapter(child: ChipStrip(
@@ -257,7 +333,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 (ctx, i) {
                   final entry = _grouped[i];
                   if (entry is String) return _DayHeader(label: entry);
-                  return _row(entry as Map<String, dynamic>);
+                  if ((entry as Map)['action'] == 'love_group') return _likeGroup(Map<String, dynamic>.from(entry));
+                  return _row(Map<String, dynamic>.from(entry));
                 },
                 childCount: _grouped.length,
               )),

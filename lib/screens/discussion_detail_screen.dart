@@ -18,7 +18,9 @@ import '../widgets/comment_section.dart';
 
 class DiscussionDetailScreen extends StatefulWidget {
   final String id;
-  const DiscussionDetailScreen({super.key, required this.id});
+  /// Inside the desktop Cộng đồng page: no app bar (the page has its tabs).
+  final bool embedded;
+  const DiscussionDetailScreen({super.key, required this.id, this.embedded = false});
 
   @override
   State<DiscussionDetailScreen> createState() => _DiscussionDetailScreenState();
@@ -77,6 +79,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
       backgroundColor: AppColors.bg,
       body: Stack(children: [
         CustomScrollView(slivers: [
+          if (!widget.embedded)
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg,

@@ -73,7 +73,10 @@ class CommentsScreen extends StatelessWidget {
 /// own flag so requests to BQT no longer bury listener stories.
 class CommentsFeed extends StatefulWidget {
   final bool showTitle;
-  const CommentsFeed({super.key, this.showTitle = false});
+  /// Desktop Cộng đồng: members move to the page's side column and
+  /// "Yêu cầu bổ sung" (work for BQT) shows only to who can handle it.
+  final bool desktop;
+  const CommentsFeed({super.key, this.showTitle = false, this.desktop = false});
   @override
   State<CommentsFeed> createState() => _CommentsFeedState();
 }
@@ -240,6 +243,8 @@ class _CommentsFeedState extends State<CommentsFeed> {
     }
   }
 
+  List<int> get _chips => widget.desktop && !context.read<AuthProvider>().hasPermission('manage_comment') ? _chipOrder.where((f) => f != 2).toList() : _chipOrder;
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -250,16 +255,16 @@ class _CommentsFeedState extends State<CommentsFeed> {
         slivers: [
           if (widget.showTitle) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.only(bottom: 14), child: PageTitle('Bình luận'))),
           // Moved here from the home page: who keeps the archive going.
-          if (!widget.showTitle) const SliverToBoxAdapter(child: TopMembersRail()),
+          if (!widget.showTitle && !widget.desktop) const SliverToBoxAdapter(child: TopMembersRail()),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.only(top: 14, bottom: 6),
               child: ChipStrip(
-                labels: [for (final f in _chipOrder) _filters[f]],
-                selected: _chipOrder.indexOf(_filter),
+                labels: [for (final f in _chips) _filters[f]],
+                selected: _chips.indexOf(_filter),
                 onSelect: (i) {
                   setState(() {
-                    _filter = _chipOrder[i];
+                    _filter = _chips[i];
                     _items = [];
                   });
                   _fetch(1);
