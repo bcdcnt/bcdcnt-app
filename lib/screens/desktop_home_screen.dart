@@ -387,7 +387,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       );
 
   // ---------- Lists ----------
-  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail}) => InkWell(
+  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail}) => draggableSong(context, s, InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () => _play(list, label, i),
         onSecondaryTap: () => showSongActions(context, s),
@@ -408,7 +408,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, s), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
           ]),
         ),
-      );
+      ));
 
   Widget _rankList() => Column(children: [
         for (var i = 0; i < _top.length; i++)

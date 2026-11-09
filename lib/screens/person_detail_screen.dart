@@ -1553,7 +1553,7 @@ class _DeskSongRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final year = '${song['sheet']?['year'] ?? ''}'.trim();
     final txt = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary));
-    return Material(
+    return draggableSong(context, song, Material(
       color: playing ? AppColors.accentSoft : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
@@ -1587,6 +1587,6 @@ class _DeskSongRow extends StatelessWidget {
           ]),
         ),
       ),
-    );
+    ));
   }
 }

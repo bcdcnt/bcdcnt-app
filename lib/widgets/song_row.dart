@@ -279,7 +279,7 @@ class SongRow extends StatelessWidget {
     final sub = subtitle ?? [byline, if (metric != null) metric].where((s) => s.isNotEmpty).join(' · ');
     final hi = AppColors.accentLight;
 
-    return Semantics(
+    return draggableSong(context, song, Semantics(
       // VoiceOver/TalkBack read the row as one item instead of title,
       // byline and a nameless button separately.
       label: [song['title'] ?? '', sub, if (playing) 'đang phát'].where((e) => '$e'.isNotEmpty).join(', '),
@@ -400,7 +400,7 @@ class SongRow extends StatelessWidget {
         ),
       ),
     ),
-    );
+    ));
   }
 }
 
@@ -554,6 +554,36 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
       logShare(auth, songKind(song), song['id'], 'link');
       break;
   }
+}
+
+/// Desktop: a song can be dragged with the mouse onto one of the member's
+/// playlists in the side menu. Phones keep long-press for the ⋮ menu.
+Widget draggableSong(BuildContext context, Map<String, dynamic> song, Widget child) {
+  if (MediaQuery.sizeOf(context).width < 900) return child;
+  return Draggable<Map<String, dynamic>>(
+    data: song,
+    dragAnchorStrategy: pointerDragAnchorStrategy,
+    feedback: Material(
+      color: Colors.transparent,
+      child: Transform.rotate(
+        angle: -0.03,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(color: AppColors.wine, borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Color(0x592E080A), blurRadius: 24, offset: Offset(0, 10))]),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.music_note_rounded, size: 20, color: Colors.white),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Text('${song['title'] ?? ''} · thả vào một playlist', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
+            ),
+          ]),
+        ),
+      ),
+    ),
+    child: child,
+  );
 }
 
 /// Normalises a raw GraphQL list into song maps for [SongRow.queue].

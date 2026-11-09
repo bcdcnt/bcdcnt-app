@@ -15,6 +15,8 @@ import 'desktop_player_bar.dart';
 import 'mini_player.dart';
 import 'notifications_dropdown.dart';
 import 'playlist_cover.dart';
+import 'song_row.dart' show songKind;
+import '../services/friendly_error.dart';
 
 /// Desktop shell (canvas "Desktop — làm mới: Phòng lưu trữ đang hát"):
 ///   - Left menu 240 (76 under 1280px, icon + small label, never icon-only):
@@ -154,6 +156,19 @@ class _SideNavState extends State<_SideNav> {
     }).catchError((_) {});
   }
 
+  Future<void> _addTo(Map<String, dynamic> pl, Map<String, dynamic> song) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      await context.read<AuthProvider>().authedMutate(
+        r'''mutation($playlist_id: ID!, $object_id: ID!, $object_type: String!) { addToPlaylist(playlist_id: $playlist_id, object_id: $object_id, object_type: $object_type) { id } }''',
+        {'playlist_id': '${pl['id']}', 'object_id': '${song['id']}', 'object_type': songKind(song)},
+      );
+      messenger?.showSnackBar(SnackBar(content: Text('Đã thêm “${song['title'] ?? ''}” vào ${pl['title'] ?? 'playlist'}'), duration: const Duration(seconds: 2)));
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -169,6 +184,11 @@ class _SideNavState extends State<_SideNav> {
           child: Align(alignment: Alignment.centerLeft, child: InkWell(onTap: () => context.go('/'), child: const BrandLogo(height: 32))),
         ),
         for (final item in _nav) _NavRow(item: item, active: _isActive(path, item)),
+        // BQT only: the uploads waiting for a decision.
+        if (auth.hasPermission('manage_upload')) ...[
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), child: Divider(height: 1, color: AppColors.border)),
+          _NavRow(item: const _NavItem('Bàn làm việc', 'Làm việc', '/ban-lam-viec', Icons.assignment_outlined, Icons.assignment_rounded), active: path.startsWith('/ban-lam-viec')),
+        ],
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
             if (auth.isAuthenticated) ...[
@@ -184,19 +204,30 @@ class _SideNavState extends State<_SideNav> {
                   ),
                 ]),
               ),
+              // A song dragged from any list drops onto a playlist here.
               for (final pl in _playlists)
-                HoverHighlight(
-                  borderRadius: BorderRadius.circular(10),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () => context.push('/playlist/${pl['id']}'),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                      child: Row(children: [
-                        PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 32, radius: 7),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text('${pl['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)))),
-                      ]),
+                DragTarget<Map<String, dynamic>>(
+                  onAcceptWithDetails: (d) => _addTo(pl, d.data),
+                  builder: (context, cand, _) => Container(
+                    decoration: BoxDecoration(
+                      color: cand.isNotEmpty ? AppColors.accentSoft : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: cand.isNotEmpty ? AppColors.wine : Colors.transparent, width: 2),
+                    ),
+                    child: HoverHighlight(
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => context.push('/playlist/${pl['id']}'),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          child: Row(children: [
+                            PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 32, radius: 7),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(cand.isNotEmpty ? 'Thả để thêm vào ‘${pl['title'] ?? ''}’' : '${pl['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: cand.isNotEmpty ? AppColors.accentFg : AppColors.text)))),
+                          ]),
+                        ),
+                      ),
                     ),
                   ),
                 ),

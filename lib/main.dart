@@ -68,6 +68,7 @@ import 'widgets/auth_dialogs.dart';
 import 'widgets/desktop_shell.dart';
 import 'screens/desktop_home_screen.dart';
 import 'screens/timeline_screen.dart';
+import 'screens/workspace_screen.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
 // Conditional import — just_audio_media_kit pulls in libmpv via
@@ -328,6 +329,8 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
       const m = r'''mutation($event_id: String!, $object_type: String!, $object_id: ID!, $duration_played: Float!, $song_duration: Float, $source: String, $completed: Boolean) {
             logListen(event_id: $event_id, object_type: $object_type, object_id: $object_id, duration_played: $duration_played, song_duration: $song_duration, source: $source, completed: $completed) { id }
           }''';
+      // An upload heard on the Bàn làm việc isn't in the archive yet.
+      if ('${p.toVariables()['object_id']}'.startsWith('upload-')) return;
       try {
         if (auth.isAuthenticated) {
           await auth.authedMutate(m, p.toVariables());
@@ -437,6 +440,7 @@ final _router = GoRouter(
         GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
         GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const CommunityScreen())),
         GoRoute(path: '/dong-thoi-gian', builder: (c, s) => const TimelineScreen()),
+        GoRoute(path: '/ban-lam-viec', builder: (c, s) => const WorkspaceScreen()),
         GoRoute(
           path: '/search',
           pageBuilder: (c, s) {
