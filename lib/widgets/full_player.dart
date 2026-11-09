@@ -21,14 +21,12 @@ import 'timed_lyrics.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
-import 'hover_effects.dart';
 import 'ui.dart' show UserAvatar;
 import 'song_row.dart' show GeneratedCover, saveForOffline;
 import 'brand_logo.dart';
 import 'synced_video.dart';
 import 'lyrics_text.dart';
 import '../services/api.dart';
-import '../services/theme_provider.dart';
 
 /// Fixed "now playing" palette: the logo's wine red with cream type, used
 /// whatever app theme is active (so the player reads as its own room, like
@@ -37,7 +35,6 @@ import '../services/theme_provider.dart';
 /// opaque surface tones.
 class _PC {
   static const bg = Color(0xFF2A0C0C);
-  static const bgTop = Color(0xFF5A1414);
   static const surface = Color(0xFF341111);
   static const surfaceLight = Color(0xFF401616);
   static const surfaceHover = Color(0xFF4C1C1C);
@@ -111,6 +108,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   double _lyricsScale = 1.0;
   bool _lyricsAutoScroll = true;
 
+  final ScrollController _roomScroll = ScrollController();
   bool get _isDesktopOS => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
   bool get _isPhoneOS => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
@@ -146,11 +144,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     });
   }
 
-  void _onPointerActivity() {
-    if (!_isFullScreen) return;
-    if (!_chromeVisible) setState(() => _chromeVisible = true);
-    _scheduleHideChrome();
-  }
   // Dominant color extracted from the current artwork. Drives the top
   // radial-gradient backdrop so it looks colour-coordinated with the song,
   // matching Spotify's "now playing" vibe.
@@ -205,6 +198,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     _rotation.dispose();
     _shortcutFocus.dispose();
     _mobileScroll.dispose();
+    _roomScroll.dispose();
     _idleTimer?.cancel();
     // Restore the pill via the cached reference — `context.read`
     // here is unreliable since the element is mid-teardown.
@@ -305,94 +299,6 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     }
   }
 
-  /// Single-line credits row: "Sáng tác: X · Thơ: Y · Thể hiện: Z".
-  /// Each name tappable; segments collapse out when their role has no
-  /// data. Wraps onto multiple lines when the viewport is narrow.
-  Widget _buildCreditsBlock(List artists) {
-    final muted = body(TextStyle(fontSize: 13, color: _PC.textMuted));
-    final accent = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _PC.accentLight));
-
-    void Function() openOf(Map m, String routePrefix) => () {
-      final slug = m['slug']?.toString();
-      final id = m['id']?.toString();
-      if (routePrefix == '/user/' && id != null && id.isNotEmpty) {
-        Navigator.of(context).pop();
-        context.push('/user/$id');
-      } else if (slug != null && slug.isNotEmpty) {
-        Navigator.of(context).pop();
-        context.push('$routePrefix$slug');
-      }
-    };
-
-    /// Builds the inline widgets for one role. Returns empty when no
-    /// entries → caller skips the segment + dot separator.
-    List<Widget> seg(String label, List entries, String routePrefix) {
-      final cleaned = entries.where((a) => a is Map && (a['title'] ?? a['username'] ?? '').toString().isNotEmpty).toList();
-      if (cleaned.isEmpty) return const [];
-      final out = <Widget>[
-        Text(label, style: muted),
-        const SizedBox(width: 4),
-      ];
-      for (var i = 0; i < cleaned.length; i++) {
-        final m = cleaned[i] as Map;
-        final name = (m['title'] ?? m['username']).toString();
-        out.add(InkWell(
-          onTap: openOf(m, routePrefix),
-          borderRadius: BorderRadius.circular(4),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-            child: Text(name, style: accent),
-          ),
-        ));
-        if (i < cleaned.length - 1) out.add(Text(', ', style: muted));
-      }
-      return out;
-    }
-
-    final isKaraoke = artists.isNotEmpty && artists.first is Map && (artists.first['username'] != null);
-    final segments = <List<Widget>>[
-      seg('Sáng tác:', _composers, '/nhac-si/'),
-      seg('Thơ:', _poets, '/nha-tho/'),
-      seg(isKaraoke ? 'Thể hiện:' : 'Trình bày:', artists, isKaraoke ? '/user/' : '/nghe-si/'),
-    ].where((s) => s.isNotEmpty).toList();
-    if (segments.isEmpty) return const SizedBox.shrink();
-
-    // Mobile/cửa sổ hẹp: chỉ hiện tên người trình bày cho gọn (bỏ "Sáng tác" +
-    // bỏ luôn nhãn "Trình bày:") — vd "Thanh Hoa, Kiều Hưng". Giống bản web.
-    if (MediaQuery.sizeOf(context).width < 600) {
-      final performers = artists
-          .where((a) => a is Map && (a['title'] ?? a['username'] ?? '').toString().isNotEmpty)
-          .map((a) => (a['title'] ?? a['username']).toString())
-          .join(', ');
-      if (performers.isEmpty) return const SizedBox.shrink();
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text(
-          performers,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: body(TextStyle(fontSize: 13, color: _PC.textMuted)),
-        ),
-      );
-    }
-
-    final children = <Widget>[];
-    for (var i = 0; i < segments.length; i++) {
-      if (i > 0) {
-        children.add(Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text('·', style: muted),
-        ));
-      }
-      children.addAll(segments[i]);
-    }
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: children,
-    );
-  }
 
   /// Speaker icon + horizontal slider — desktop-only chrome in the
   /// header. Tap the icon to toggle mute; drag the slider to set
@@ -441,309 +347,10 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
-  /// Compact "Tiếp theo: …" chip rendered just above the transport.
-  /// Computes the next track honouring shuffle (PlayerProvider keeps
-  /// the original index so we walk the natural sequence; this could
-  /// drift from the actual auto-advance pick once shuffle is on, but
-  /// the visual hint is still useful and avoids querying the
-  /// shuffled order). Tap → flip the panel to queue for the full
-  /// view.
-  Widget _buildNextUpChip(PlayerProvider player) {
-    final q = player.queue;
-    if (q.length < 2) return const SizedBox.shrink();
-    final nextIdx = (player.currentIndex + 1) % q.length;
-    if (nextIdx == player.currentIndex) return const SizedBox.shrink();
-    final next = q[nextIdx];
-    final title = (next['title'] ?? '').toString();
-    if (title.isEmpty) return const SizedBox.shrink();
-    final artists = next['artists'] is List
-        ? next['artists']
-        : (next['artists']?['data'] ?? const []);
-    final artistText = (artists as List)
-        .map((a) => a is Map ? (a['title'] ?? a['username'] ?? '') : '')
-        .where((s) => (s as String).isNotEmpty)
-        .join(', ');
-    return Padding(
-      // Top 14: tách chip khỏi hàng timestamp ngay trên (trước bị sát) — giống web.
-      padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-      child: Center(
-        child: InkWell(
-          onTap: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: _PC.surfaceLight.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _PC.border),
-            ),
-            // Match the label and title to the same fontSize (12) so
-            // crossAxisAlignment.center (Row's default) lines them up
-            // on the same visual midline. Previously the 11pt
-            // "Tiếp theo:" sat noticeably higher than the 12pt title.
-            // Weight (800 vs 600) and colour still separate the two
-            // visually without needing a size delta.
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.skip_next, size: 14, color: _PC.accentLight),
-              const SizedBox(width: 6),
-              Text(
-                'Tiếp theo:',
-                style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: _PC.textMuted)),
-              ),
-              const SizedBox(width: 6),
-              // Flexible (không ConstrainedBox cứng 320) để title co lại vừa
-              // bề ngang còn trống → ellipsis, không tràn 6px trên cửa sổ hẹp.
-              Flexible(
-                child: Text(
-                  artistText.isNotEmpty ? '$title — $artistText' : title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _PC.text)),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
 
-  /// Pill-shaped segmented control for switching between vinyl /
-  /// lyrics / queue panels. Sits between the header and the panel
-  /// area so the toggle has its own clear band — no more mixing into
-  /// the transport row. Tabs collapse out for content that doesn't
-  /// have data (no lyrics tab on instrumentals; no queue tab when
-  /// the queue is empty).
-  Widget _buildPanelSwitcher(PlayerProvider player, bool isInstrumental, bool hasQueue) {
-    final tabs = <(_PanelMode, IconData, String, String?)>[
-      (_PanelMode.vinyl, Icons.album_outlined, 'Đĩa than', null),
-      // Square-ish icons for the other two so the trio reads as a
-      // balanced segmented strip (album is round; subject + list are
-      // both rectangular blocks of horizontal lines).
-      if (!isInstrumental) (_PanelMode.lyrics, Icons.subject, 'Lời bài hát', null),
-      if (hasQueue) (_PanelMode.queue, Icons.format_list_bulleted, 'Hàng đợi', '${player.queue.length}'),
-    ];
-    if (tabs.length < 2) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: _PC.surfaceLight.withValues(alpha: 0.4),
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: _PC.borderSubtle),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: tabs.map((t) {
-              final active = _panel == t.$1;
-              return InkWell(
-                onTap: active ? null : () => setState(() => _panel = t.$1),
-                borderRadius: BorderRadius.circular(20),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: active ? _PC.accent.withValues(alpha: 0.85) : Colors.transparent,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    // Tab lời: dùng chữ "A" thay icon để gợi nhớ "text/lời"
-                    t.$1 == _PanelMode.lyrics
-                        ? SizedBox(
-                            width: 14, height: 14,
-                            child: Center(
-                              child: Text('A', style: display(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, height: 1, color: active ? _PC.wine : _PC.textSecondary))),
-                            ),
-                          )
-                        : Icon(t.$2, size: 14, color: active ? _PC.wine : _PC.textSecondary),
-                    // Icon + chữ ở mọi bề rộng (bản thiết kế 2026-11).
-                    ...[
-                      const SizedBox(width: 6),
-                      Text(
-                        t.$3,
-                        style: body(TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: active ? _PC.wine : _PC.textSecondary,
-                        )),
-                      ),
-                      if (t.$4 != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: active ? _PC.wine.withValues(alpha: 0.15) : _PC.surfaceHover,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            t.$4!,
-                            style: body(TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: active ? _PC.wine : _PC.textMuted,
-                            )),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ]),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
 
-  /// Inline heart button — sits to the right of the title so the
-  /// most-frequent action stays one tap. Tiny love count appears
-  /// underneath the icon when ≥ 1 person has liked the song,
-  /// borrowing the social-proof pattern from song detail.
-  Widget _buildInlineHeart(Map<String, dynamic> song, {bool showCount = true}) {
-    final count = showCount ? _lovers.length : 0;
-    return InkWell(
-      onTap: () => _handleLove(song),
-      borderRadius: BorderRadius.circular(20),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              _liked ? Icons.favorite : Icons.favorite_border,
-              size: 22,
-              color: _liked ? _PC.accent : _PC.textSecondary,
-            ),
-            if (count > 0) ...[
-              const SizedBox(height: 2),
-              Text(
-                _formatCompact(count),
-                style: body(TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _liked ? _PC.accent : _PC.textMuted,
-                )),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 
-  /// Compact number formatter used by the heart count: 999 → "999",
-  /// 1500 → "1.5K", 12000 → "12K". Vietnamese decimal separator.
-  String _formatCompact(int n) {
-    if (n < 1000) return '$n';
-    if (n < 10000) {
-      final v = n / 1000;
-      final s = v.toStringAsFixed(1).replaceAll('.', ',');
-      return '${s.endsWith(',0') ? s.substring(0, s.length - 2) : s}K';
-    }
-    return '${(n / 1000).round()}K';
-  }
 
-  /// Old icon-row builder retained for now in case we revert; not
-  /// referenced from the build tree any more.
-  // ignore: unused_element
-  Widget _buildSecondaryControls(BuildContext context, PlayerProvider player, Map<String, dynamic> song, bool isInstrumental, bool hasQueue) {
-    Widget btn({
-      required IconData icon,
-      required String tooltip,
-      required VoidCallback onTap,
-      bool active = false,
-      Color? activeColor,
-      String? badge,
-    }) {
-      final color = active ? (activeColor ?? _PC.accentLight) : _PC.textSecondary;
-      return Tooltip(
-        message: tooltip,
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: active ? _PC.accentSoft : Colors.transparent,
-            ),
-            child: Stack(clipBehavior: Clip.none, children: [
-              Icon(icon, size: 20, color: color),
-              if (badge != null) Positioned(
-                right: -6, top: -4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: _PC.accent,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _PC.bg, width: 1),
-                  ),
-                  constraints: const BoxConstraints(minWidth: 16),
-                  alignment: Alignment.center,
-                  child: Text(badge, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white, height: 1.2)),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      // Sits at the top of the chrome footer, so vertical breathing
-      // room above isn't needed — the panel area already provides it.
-      padding: const EdgeInsets.fromLTRB(48, 4, 48, 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                btn(
-                  icon: _liked ? Icons.favorite : Icons.favorite_border,
-                  tooltip: _liked ? 'Bỏ thích' : 'Yêu thích',
-                  active: _liked,
-                  activeColor: _PC.accent,
-                  onTap: () => _handleLove(song),
-                ),
-                if (!isInstrumental)
-                  btn(
-                    icon: Icons.lyrics_outlined,
-                    tooltip: _panel == _PanelMode.lyrics ? 'Ẩn lời bài hát' : 'Lời bài hát',
-                    active: _panel == _PanelMode.lyrics,
-                    onTap: () => setState(() => _panel = _panel == _PanelMode.lyrics ? _PanelMode.vinyl : _PanelMode.lyrics),
-                  ),
-                if (hasQueue)
-                  btn(
-                    icon: Icons.queue_music,
-                    tooltip: _panel == _PanelMode.queue ? 'Ẩn hàng đợi' : 'Hàng đợi',
-                    active: _panel == _PanelMode.queue,
-                    badge: '${player.queue.length}',
-                    onTap: () => setState(() => _panel = _panel == _PanelMode.queue ? _PanelMode.vinyl : _PanelMode.queue),
-                  ),
-                btn(
-                  icon: Icons.ios_share,
-                  tooltip: 'Chia sẻ',
-                  onTap: () => _handleShare(song),
-                ),
-                btn(
-                  icon: _downloading ? Icons.hourglass_empty : Icons.download_outlined,
-                  tooltip: _downloading ? 'Đang tải...' : 'Tải về',
-                  onTap: () => _handleDownload(song),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   String _songType(Map<String, dynamic> song) => songKind(song);
   String _songKey(Map song) => '${songKind(song)}-${song['id']}';
@@ -1162,309 +769,195 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     if (narrow && !_isFullScreen) {
       return _buildMobile(context, player, song, thumb, artists, isInstrumental);
     }
+    return _buildRoom(context, player, song, thumb, artists, isInstrumental);
+  }
 
+  // ---------------------------------------------------------------------
+  // Desktop (canvas "Desktop · Đang phát toàn màn"): the phone player laid
+  // out side by side — cover, title + heart, scrubber, transport and the
+  // three labelled pills on the left; the cards the phone keeps below the
+  // fold (Lời, Câu chuyện, Cảm nhận hay, Thực hiện) scroll on the right.
+  // ---------------------------------------------------------------------
+  Widget _buildRoom(BuildContext context, PlayerProvider player, Map<String, dynamic> song, String? thumb, List artists, bool isInstrumental) {
+    bool ok(dynamic s) => s != null && s.toString().isNotEmpty && s != 'Đang cập nhật';
+    final artistText = artists.map((a) => a is Map ? a['title'] : null).where(ok).join(', ');
+    final isPoem = songKind(song) == 'poem';
+    final isKaraoke = songKind(song) == 'karaoke';
+    final composerText = (isPoem ? _poets : _composers).map((c) => c['title']).where(ok).join(', ');
+    final subline = [artistText, composerText, if (_year != null) _year!].where((s) => s.isNotEmpty).join(' · ');
+    final hasLyrics = !isInstrumental && (_songLyrics?.trim().isNotEmpty ?? false);
+    final label = player.sourceLabel;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
-      backgroundColor: _PC.bg,
-      // Auto-focus + KeyboardListener so 'F' (with no modifier) toggles
-      // fullscreen anywhere inside the player. Only swallows F; other keys
-      // bubble up to the parent shortcut handler. Disabled on mobile/web
-      // where there's no hardware keyboard / OS fullscreen.
-      body: KeyboardListener(
-        focusNode: _shortcutFocus,
-        autofocus: true,
-        onKeyEvent: (e) {
-          if (!_isDesktopOS) return;
-          if (e is! KeyDownEvent) return;
-          if (e.logicalKey == LogicalKeyboardKey.keyF &&
-              !HardwareKeyboard.instance.isMetaPressed &&
-              !HardwareKeyboard.instance.isControlPressed) {
-            _toggleFullScreen();
-          }
-        },
-        child: MouseRegion(
-          onHover: (_) => _onPointerActivity(),
-          // Hide cursor while idle in fullscreen, like Spotify / Apple
-          // Music's Now Playing fullscreen — minimises visual noise on
-          // top of the artwork.
-          cursor: (_isFullScreen && !_chromeVisible) ? SystemMouseCursors.none : MouseCursor.defer,
-          child: Stack(
-        children: [
-          const Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [_PC.bgTop, _PC.bg]),
+        backgroundColor: AppColors.night,
+        body: KeyboardListener(
+          focusNode: _shortcutFocus,
+          autofocus: true,
+          onKeyEvent: (e) {
+            if (!_isDesktopOS || e is! KeyDownEvent) return;
+            if (e.logicalKey == LogicalKeyboardKey.keyF && !HardwareKeyboard.instance.isMetaPressed && !HardwareKeyboard.instance.isControlPressed) _toggleFullScreen();
+            if (e.logicalKey == LogicalKeyboardKey.escape && !_isFullScreen) Navigator.pop(context);
+          },
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0, 0.55, 1],
+                colors: [Color(0xFF5A1414), Color(0xFF2A0C0C), AppColors.night],
               ),
             ),
-          ),
-          Positioned(
-            top: -100, left: 0, right: 0,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 600),
-              curve: Curves.easeOut,
-              height: 400,
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  center: const Alignment(0, 0),
-                  radius: 0.8,
-                  colors: [
-                    (_artworkAccent ?? context.watch<ThemeProvider>().palette.accent).withValues(alpha: 0.35),
-                    Colors.transparent,
-                  ],
+            child: SafeArea(
+              child: Column(children: [
+                SizedBox(
+                  height: 72,
+                  child: Row(children: [
+                    const SizedBox(width: 16),
+                    TextButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 30, color: Colors.white),
+                      label: Text('Thu nhỏ', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
+                    ),
+                    Expanded(
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Text('ĐANG PHÁT TỪ', style: body(const TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: Color(0xB3FFFFFF)))),
+                        Text(label != null && label.isNotEmpty ? label : 'BCĐCNT', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                      ]),
+                    ),
+                    if (_isDesktopOS) _buildVolumeControl(player),
+                    if (_isDesktopOS)
+                      IconButton(
+                        tooltip: _isFullScreen ? 'Thoát toàn màn hình (F)' : 'Toàn màn hình (F)',
+                        onPressed: _toggleFullScreen,
+                        icon: Icon(_isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded, color: Colors.white, size: 26),
+                      ),
+                    IconButton(tooltip: 'Tuỳ chọn', icon: const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 26), onPressed: () => _showMoreSheet(context, song, player)),
+                    const SizedBox(width: 16),
+                  ]),
                 ),
-              ),
-            ),
-          ),
-
-          SafeArea(
-            child: Column(
-              children: [
-                // Header — Stack so the centred title is independent of
-                // the icon-cluster width: back at left, fullscreen + more
-                // at right (Apple Music / Spotify pattern — fullscreen is
-                // a primary action, deserves a header slot, not buried in
-                // the overflow). Title stays perfectly centred regardless
-                // of how many trailing icons are visible (mobile = no
-                // fullscreen icon).
-                _FadeChrome(
-                  visible: _chromeVisible,
-                  child: SizedBox(
-                    height: 44,
-                    child: Stack(
-                      children: [
-                        Center(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 120),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  'ĐANG PHÁT',
-                                  textAlign: TextAlign.center,
-                                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: _PC.textMuted)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(64, 4, 48, 28),
+                    child: LayoutBuilder(builder: (context, box) {
+                      // The cover gives way first, so the controls always fit.
+                      final art = (box.maxHeight - 345).clamp(220.0, math.min(480.0, box.maxWidth * 0.42)).toDouble();
+                      return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        SizedBox(
+                          width: art,
+                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            isVideoSong(song) ? _mobileVideo(player, song, art) : _mobileArtwork(thumb, art, player.isPlaying, song),
+                            const SizedBox(height: 26),
+                            Row(children: [
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => _openSongDetail(song),
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(song['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 32, height: 1.15, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
+                                    if (subline.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(subline, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xBFFFFFFF)))),
+                                    ],
+                                  ]),
                                 ),
-                                if (player.sourceLabel != null && player.sourceLabel!.isNotEmpty) ...[
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    player.sourceLabel!,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _PC.text)),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          left: 6, top: 0, bottom: 0,
-                          child: Center(
-                            child: IconButton(
-                              iconSize: 22,
-                              padding: const EdgeInsets.all(8),
-                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                              visualDensity: VisualDensity.compact,
-                              hoverColor: _PC.surfaceHover,
-                              icon: Icon(Icons.keyboard_arrow_down, color: _PC.text),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 6, top: 0, bottom: 0,
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            // Chỉ hiện volume + fullscreen khi desktop VÀ cửa sổ đủ rộng
-                            // (giống web ẩn <768px) → cửa sổ hẹp không che "ĐANG PHÁT".
-                            if (_isDesktopOS && !narrow) _buildVolumeControl(player),
-                            if (_isDesktopOS && !narrow)
-                              IconButton(
-                                tooltip: _isFullScreen ? 'Thoát toàn màn hình  F' : 'Toàn màn hình  F',
-                                iconSize: 20,
-                                padding: const EdgeInsets.all(8),
-                                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                visualDensity: VisualDensity.compact,
-                                hoverColor: _PC.surfaceHover,
-                                icon: Icon(
-                                  _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen,
-                                  color: _isFullScreen ? _PC.accentLight : _PC.textSecondary,
-                                ),
-                                onPressed: _toggleFullScreen,
                               ),
-                            IconButton(
-                              iconSize: 20,
-                              padding: const EdgeInsets.all(8),
-                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                              visualDensity: VisualDensity.compact,
-                              hoverColor: _PC.surfaceHover,
-                              icon: Icon(Icons.more_horiz, color: _PC.textSecondary),
-                              onPressed: () => _showMoreSheet(context, song, player),
-                            ),
+                              IconButton(
+                                tooltip: _liked ? 'Bỏ yêu thích' : 'Yêu thích',
+                                iconSize: 34,
+                                icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? const Color(0xFFE8A3A0) : Colors.white),
+                                onPressed: () => _handleLove(song),
+                              ),
+                            ]),
+                            const SizedBox(height: 12),
+                            _mobileScrubber(player),
+                            const SizedBox(height: 6),
+                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                              _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
+                              IconButton(tooltip: 'Bài trước (⇧←)', iconSize: 42, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white), onPressed: player.playPrev),
+                              Material(
+                                color: Colors.white,
+                                shape: const CircleBorder(),
+                                elevation: 8,
+                                shadowColor: Colors.black54,
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: player.togglePlay,
+                                  child: SizedBox(
+                                    width: 84, height: 84,
+                                    child: player.isLoading
+                                        ? const Center(child: SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
+                                        : Icon(player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 44, color: AppColors.wine),
+                                  ),
+                                ),
+                              ),
+                              IconButton(tooltip: 'Bài tiếp (⇧→)', iconSize: 42, icon: const Icon(Icons.skip_next_rounded, color: Colors.white), onPressed: player.playNext),
+                              _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
+                            ]),
+                            const SizedBox(height: 20),
+                            Row(children: [
+                              if (hasLyrics) Expanded(child: _pill(Icons.notes_rounded, 'Lời bài hát', () => _roomScroll.animateTo(0, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic))),
+                              if (hasLyrics) const SizedBox(width: 8),
+                              Expanded(child: _pill(Icons.bedtime_outlined, player.hasSleepTimer ? 'Đang hẹn' : 'Hẹn giờ', _showSleepSheet, active: player.hasSleepTimer)),
+                              const SizedBox(width: 8),
+                              Expanded(child: _pill(Icons.queue_music_rounded, 'Danh sách', _showQueueSheet)),
+                            ]),
                           ]),
                         ),
-                      ],
-                    ),
+                        const SizedBox(width: 56),
+                        Expanded(
+                          child: ListView(controller: _roomScroll, padding: const EdgeInsets.only(top: 8, bottom: 24), children: [
+                            if (hasLyrics)
+                              _card(
+                                title: 'Lời bài hát',
+                                trailing: composerText.isNotEmpty ? composerText : null,
+                                child: TimedLyrics.hasLrc(_songLyrics) ? SizedBox(height: box.maxHeight * 0.66, child: _buildLyricsPanel(bare: true)) : _buildFlowingLyrics(),
+                              ),
+                            if (_story != null)
+                              _card(
+                                title: 'Câu chuyện bài hát',
+                                onTap: () => _openSongDetail(song),
+                                child: Text(_story!.length > 900 ? '${_story!.substring(0, 900)}…' : _story!, style: body(const TextStyle(fontSize: 16, height: 1.6, fontWeight: FontWeight.w500, color: Color(0xE6FFFFFF)))),
+                              ),
+                            if (_topComment != null)
+                              _card(
+                                title: 'Cảm nhận hay',
+                                trailing: _commentCount > 0 ? '$_commentCount bình luận' : null,
+                                onTap: () => _openSongDetail(song),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text('“${_topComment!['text']}”', maxLines: 8, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, height: 1.55, fontWeight: FontWeight.w600, color: Colors.white))),
+                                  const SizedBox(height: 12),
+                                  Row(children: [
+                                    UserAvatar(url: _topComment!['user']?['avatar']?['url']?.toString(), name: (_topComment!['user']?['username'] ?? '').toString(), size: 26),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: Text((_topComment!['user']?['username'] ?? '').toString(), style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF))))),
+                                    Text('Xem tất cả', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
+                                  ]),
+                                ]),
+                              ),
+                            if (_composers.isNotEmpty || _poets.isNotEmpty || artists.isNotEmpty)
+                              _card(
+                                title: 'Thực hiện',
+                                child: Column(children: [
+                                  for (final c in _composers) _creditRow(c, 'Sáng tác', () => _openPerson('/nhac-si/${c['slug']}')),
+                                  for (final c in _recomposers) _creditRow(c, 'Soạn giả', () => _openPerson('/soan-gia/${c['slug']}')),
+                                  for (final c in _poets) _creditRow(c, isPoem ? 'Sáng tác' : 'Lời thơ', () => _openPerson('/nha-tho/${c['slug']}')),
+                                  for (final a in (_creditArtists.isNotEmpty ? _creditArtists : artists).whereType<Map>().where((a) => ok(a['title'])))
+                                    isKaraoke
+                                        ? _creditRow(Map<String, dynamic>.from(a), 'Thể hiện', () => _openPerson('/user/${a['id']}'))
+                                        : _creditRow(Map<String, dynamic>.from(a), 'Trình bày', () => _openArtistDetail(a)),
+                                ]),
+                              ),
+                          ]),
+                        ),
+                      ]);
+                    }),
                   ),
                 ),
-
-                // Panel switcher — segmented tab between Vinyl / Lời /
-                // Hàng đợi. Replaces the standalone icon row that was
-                // crowding the bottom; chunks panel toggling into a
-                // dedicated band so it's no longer mixed in with the
-                // transport.
-                _FadeChrome(
-                  visible: _chromeVisible,
-                  child: _buildPanelSwitcher(player, isInstrumental, queue.isNotEmpty),
-                ),
-
-                // Panel area (vinyl / lyrics / queue)
-                Expanded(
-                  child: Center(
-                    child: _buildPanel(context, player, song, thumb, vinylSize, isInstrumental, queue),
-                  ),
-                ),
-
-                // Song info + progress + transport — all fade together
-                // when the cursor goes idle in fullscreen, leaving the
-                // vinyl / lyrics / queue panel as the sole focus.
-                _FadeChrome(
-                  visible: _chromeVisible,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Song info — tap title to open song detail.
-                      // Heart icon sits to the right of the title block
-                      // so the most-frequent secondary action stays
-                      // one tap without crowding a separate icon row
-                      // at the bottom.
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
-                        // Heart nằm trong Row bao cả cụm (title + phụ đề + credits)
-                        // và crossAxisAlignment.center → tim căn giữa theo chiều
-                        // dọc cả cụm, cân đối hơn (giống web).
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Spacer cân với trái tim để title vẫn căn giữa.
-                            const SizedBox(width: 38),
-                            Expanded(
-                              child: Column(
-                                children: [
-                                  InkWell(
-                                    onTap: () => _openSongDetail(song),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            song['title'] ?? '',
-                                            textAlign: TextAlign.center,
-                                            maxLines: narrow ? 1 : 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: display(const TextStyle(fontSize: 24, height: 1.2, fontWeight: FontWeight.w600, color: _PC.text)),
-                                          ),
-                                          if (song['subtitle'] != null && (song['subtitle'] as String).isNotEmpty) ...[
-                                            const SizedBox(height: 2),
-                                            Text(song['subtitle'], style: body(TextStyle(fontSize: 14, color: _PC.textMuted))),
-                                          ],
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  _buildCreditsBlock(artists),
-                                ],
-                              ),
-                            ),
-                            _buildInlineHeart(song),
-                          ],
-                        ),
-                      ),
-
-                      // Progress bar — hẹp thì nới rộng gần full width như web
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: narrow ? 14 : 32),
-                        child: Column(
-                          children: [
-                            SliderTheme(
-                              data: SliderThemeData(
-                                activeTrackColor: _PC.accent,
-                                inactiveTrackColor: _PC.border,
-                                thumbColor: _PC.accent,
-                                overlayColor: _PC.accent.withValues(alpha: 0.2),
-                                trackHeight: 4,
-                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-                              ),
-                              child: _SeekSlider(player: player),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  ValueListenableBuilder<Duration>(
-                                    valueListenable: player.positionNotifier,
-                                    builder: (context, pos, _) => Text(_fmt(pos), style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
-                                  ),
-                                  Text(_fmt(player.duration), style: body(TextStyle(fontSize: 12, color: _PC.textMuted, fontFeatures: [FontFeature.tabularFigures()]))),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Next-up chip — peeks the upcoming queue item so
-                      // the user knows what's coming without flipping
-                      // to the queue panel. Falls back silently when
-                      // the queue is empty or there's no next track.
-                      _buildNextUpChip(player),
-
-                      // Main transport controls
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 12, 24, 6),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                            IconButton(tooltip: 'Bài trước  ⇧ ←', icon: Icon(Icons.skip_previous, size: 36, color: _PC.text), onPressed: player.playPrev, hoverColor: _PC.surfaceHover),
-                            HoverScale(
-                              scale: 1.08,
-                              child: Container(
-                                width: 76, height: 76,
-                                decoration: const BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _PC.accent,
-                                  boxShadow: [BoxShadow(color: Color(0x59000000), blurRadius: 20, offset: Offset(0, 8))],
-                                ),
-                                child: IconButton(
-                                  tooltip: player.isPlaying ? 'Tạm dừng  Space' : 'Phát  Space',
-                                  icon: Icon(player.isPlaying ? Icons.pause : Icons.play_arrow, size: 34, color: _PC.wine),
-                                  onPressed: player.togglePlay,
-                                ),
-                              ),
-                            ),
-                            IconButton(tooltip: 'Bài tiếp theo  ⇧ →', icon: Icon(Icons.skip_next, size: 36, color: _PC.text), onPressed: player.playNext, hoverColor: _PC.surfaceHover),
-                            _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ),
-              ],
+              ]),
             ),
           ),
-        ],
+        ),
       ),
-      ),
-      ),
-    ),
     );
   }
 
@@ -1939,103 +1432,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildPanel(BuildContext context, PlayerProvider player, Map<String, dynamic> song, String? thumb, double vinylSize, bool isInstrumental, List<Map<String, dynamic>> queue) {
-    if (_panel == _PanelMode.lyrics && !isInstrumental) {
-      return _buildLyricsPanel();
-    }
-    if (_panel == _PanelMode.queue && queue.isNotEmpty) {
-      return _buildQueuePanel(player, queue);
-    }
-    if (isVideoSong(song)) {
-      return Center(
-        child: GestureDetector(
-          onTap: () => openFullScreenVideo(context, player, song),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: AspectRatio(aspectRatio: 16 / 9, child: SyncedVideo(player: player, song: song)),
-          ),
-        ),
-      );
-    }
-    return _buildVinyl(thumb, vinylSize);
-  }
 
-  Widget _buildVinyl(String? thumb, double vinylSize) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // `vinylSize` is derived from the whole screen, but the panel area
-        // (an Expanded) is shorter once the header / switcher / transport
-        // claim their space. Center would then force the fixed square into
-        // the shorter max-height → an ellipse ("méo"). Clamp to the real
-        // box so the disc always stays a circle.
-        var size = vinylSize;
-        if (constraints.maxWidth.isFinite) size = math.min(size, constraints.maxWidth);
-        if (constraints.maxHeight.isFinite) size = math.min(size, constraints.maxHeight);
-        // Black grooved record with the cover art as the centre label
-        // (60% of the disc), cream rim around the label, spindle hole.
-        final label = size * 0.6;
-        return RotationTransition(
-          turns: _rotation,
-          child: Container(
-            width: size,
-            height: size,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: RadialGradient(
-                colors: [Color(0xFF2A0E0E), Color(0xFF1C0909), Color(0xFF2A0E0E), Color(0xFF160707)],
-                stops: [0.0, 0.55, 0.8, 1.0],
-              ),
-              boxShadow: [BoxShadow(color: Color(0x66000000), blurRadius: 40, offset: Offset(0, 20))],
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Grooves.
-                for (var r = size; r > label + 8; r -= 7)
-                  Container(
-                    width: r, height: r,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.035), width: 1),
-                    ),
-                  ),
-                // Light sheen across the vinyl.
-                Container(
-                  width: size, height: size,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: SweepGradient(colors: [Color(0x00FFFFFF), Color(0x14FFFFFF), Color(0x00FFFFFF), Color(0x00FFFFFF), Color(0x14FFFFFF), Color(0x00FFFFFF)]),
-                  ),
-                ),
-                Container(
-                  width: label, height: label,
-                  decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _PC.accent, width: 6)),
-                  child: ClipOval(
-                    child: thumb != null
-                        ? CachedNetworkImage(
-                            imageUrl: cdnImg((thumb).toString(), 700),
-                            fit: BoxFit.cover,
-                            memCacheWidth: 700,
-                            errorWidget: (_, __, ___) => Container(color: _PC.surfaceLight, child: const Icon(Icons.music_note, size: 60, color: Colors.white38)),
-                          )
-                        : Container(
-                            color: _PC.wine,
-                            padding: EdgeInsets.all(label * 0.22),
-                            child: SvgPicture.asset('assets/logo-on-dark.svg'),
-                          ),
-                  ),
-                ),
-                Container(
-                  width: 12, height: 12,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: _PC.bg, border: Border.all(color: Colors.black26)),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
 
   Widget _buildLyricsPanel({bool bare = false}) {
     // In fullscreen we drop the framed surface + use the karaoke variant
