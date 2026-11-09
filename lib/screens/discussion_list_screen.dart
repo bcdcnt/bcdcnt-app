@@ -14,7 +14,9 @@ import '../widgets/mini_player.dart';
 class DiscussionListScreen extends StatefulWidget {
   /// Inside the Cộng đồng tab: no app bar / hero, the tab draws the header.
   final bool embedded;
-  const DiscussionListScreen({super.key, this.embedded = false});
+  /// Desktop master–detail: open a topic beside the list instead of pushing.
+  final ValueChanged<String>? onOpen;
+  const DiscussionListScreen({super.key, this.embedded = false, this.onOpen});
 
   @override
   State<DiscussionListScreen> createState() => _DiscussionListScreenState();
@@ -256,7 +258,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
     final when = timeago((d['last_comment_at'] ?? d['created_at'])?.toString());
     final muted = body(TextStyle(fontSize: 13, color: AppColors.textMuted));
     return InkWell(
-      onTap: () => context.push('/thao-luan/${d['id']}'),
+      onTap: () => widget.onOpen != null ? widget.onOpen!('${d['id']}') : context.push('/thao-luan/${d['id']}'),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
@@ -392,7 +394,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
   Widget _discussionRow(Map<String, dynamic> d) {
     final author = d['author'];
     return InkWell(
-      onTap: () => context.push('/thao-luan/${d['id']}'),
+      onTap: () => widget.onOpen != null ? widget.onOpen!('${d['id']}') : context.push('/thao-luan/${d['id']}'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),

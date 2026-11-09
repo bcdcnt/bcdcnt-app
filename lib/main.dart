@@ -69,6 +69,7 @@ import 'widgets/desktop_shell.dart';
 import 'screens/desktop_home_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'screens/workspace_screen.dart';
+import 'screens/desktop_community_screen.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
 // Conditional import — just_audio_media_kit pulls in libmpv via
@@ -438,7 +439,7 @@ final _router = GoRouter(
         // transparent slot. Desktop renders the screen in the route as before.
         GoRoute(path: '/', pageBuilder: (c, s) => _tabPage(c, s, const DesktopHomeScreen())),
         GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
-        GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const CommunityScreen())),
+        GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const DesktopCommunityScreen())),
         GoRoute(path: '/dong-thoi-gian', builder: (c, s) => const TimelineScreen()),
         GoRoute(path: '/ban-lam-viec', builder: (c, s) => const WorkspaceScreen()),
         GoRoute(
