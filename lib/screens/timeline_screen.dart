@@ -401,7 +401,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
     items.add(btn(Icon(Icons.chevron_right_rounded, color: AppColors.text), _page < _lastPage ? () => _goPage(_page + 1) : null));
     return Padding(
       padding: const EdgeInsets.only(top: 18),
-      child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: 6, children: [
+      // A Row, not a Wrap: in a Wrap each centred button stretched full width.
+      child: Row(children: [
         ...items,
         Padding(padding: const EdgeInsets.only(left: 6), child: Text('$_perPage bài mỗi trang', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
       ]),
