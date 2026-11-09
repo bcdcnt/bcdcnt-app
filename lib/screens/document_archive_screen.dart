@@ -10,6 +10,7 @@ import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/gallery_lightbox.dart';
 import '../widgets/video_poster.dart';
+import '../widgets/desktop_page.dart';
 
 enum ArchiveType { image, audio, video, news }
 
@@ -195,13 +196,16 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final desk = isDesk(context);
+    final count = _total > 0 ? '${_fmt(_total)} mục' : (_loading ? 'Đang tải...' : 'Chưa có');
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          CustomScrollView(
+          DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -210,9 +214,10 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                sliver: SliverToBoxAdapter(child:
-                  Container(
+                padding: desk ? EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 0) : const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                sliver: SliverToBoxAdapter(child: desk
+                  ? DeskHead(title: _cf.label, subtitle: count, eyebrow: 'Tư liệu')
+                  : Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
@@ -234,7 +239,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
                               Text(_cf.label, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
                               Text(
-                                _total > 0 ? '${_fmt(_total)} mục' : (_loading ? 'Đang tải...' : 'Chưa có'),
+                                count,
                                 style: body(const TextStyle(fontSize: 13, color: Colors.white70)),
                               ),
                             ],
@@ -252,13 +257,13 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
               else if (_items.isEmpty)
                 SliverToBoxAdapter(child: EmptyBlock(icon: _cf.icon, title: 'Chưa có tư liệu nào'))
               else
-                SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 20), sliver: _content()),
+                SliverPadding(padding: EdgeInsets.symmetric(horizontal: desk ? deskPad.left : 20), sliver: _content(desk)),
               SliverToBoxAdapter(child: Column(children: [
                 if (_loadingMore) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
                 SizedBox(height: player.currentSong != null ? 114 : 44),
               ])),
             ],
-          ),
+          )),
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],
@@ -266,13 +271,75 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
     );
   }
 
-  Widget _content() {
+  Widget _content(bool desk) {
     switch (widget.type) {
       case ArchiveType.image: return _imageGrid();
-      case ArchiveType.audio: return _audioList();
+      case ArchiveType.audio: return desk ? _deskCards() : _audioList();
       case ArchiveType.video: return _videoGrid();
-      case ArchiveType.news: return _articleList();
+      case ArchiveType.news: return desk ? _deskCards() : _articleList();
     }
+  }
+
+  /// Desktop, bài viết + âm thanh: three cards a row (picture 16:10 on top,
+  /// title, excerpt, người đăng) instead of full-width rows. Image and video
+  /// are grids already.
+  Widget _deskCards() {
+    const gap = 24.0;
+    final audio = widget.type == ArchiveType.audio;
+    return SliverToBoxAdapter(child: LayoutBuilder(builder: (context, c) {
+      final w = (c.maxWidth - 2 * gap) / 3;
+      return Wrap(spacing: gap, runSpacing: 28, children: [
+        for (var i = 0; i < _items.length; i++)
+          SizedBox(width: w, child: _deskCard(_items[i], i, audio)),
+      ]);
+    }));
+  }
+
+  Widget _deskCard(dynamic d, int i, bool audio) {
+    final thumb = d['thumbnail']?['url'];
+    final excerpt = _plainExcerpt(d['content'], maxLen: 220);
+    final author = d['uploader']?['username'];
+    final Widget pic = thumb != null
+        ? CachedNetworkImage(imageUrl: cdnImg(thumb.toString(), 640), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surfaceLight))
+        : Container(
+            color: audio ? AppColors.accentSoft : AppColors.surfaceLight,
+            child: Icon(audio ? Icons.graphic_eq : Icons.article, size: 40, color: audio ? AppColors.accentLight : AppColors.textMuted),
+          );
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () => _openLightbox(i),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: AspectRatio(
+            aspectRatio: 16 / 10,
+            child: Stack(fit: StackFit.expand, children: [
+              pic,
+              if (audio)
+                Center(
+                  child: Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
+                    child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
+                  ),
+                ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+        if (excerpt.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(excerpt, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.4))),
+          ),
+        if (author != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(author.toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          ),
+      ]),
+    );
   }
 
   Widget _imageGrid() {

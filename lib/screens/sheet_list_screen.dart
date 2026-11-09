@@ -6,6 +6,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/desktop_page.dart';
 
 class SheetListScreen extends StatefulWidget {
   const SheetListScreen({super.key});
@@ -48,10 +49,13 @@ class _SheetListScreenState extends State<SheetListScreen> with PagedLoader {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final desk = isDesk(context);
+    final count = _list.total > 0 ? '${_formatInt(_list.total)} bản nhạc' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có'));
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(controller: _scrollCtl, slivers: [
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(controller: _scrollCtl, slivers: [
+          if (!desk)
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg,
@@ -60,8 +64,11 @@ class _SheetListScreenState extends State<SheetListScreen> with PagedLoader {
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 16),
             sliver: SliverList(delegate: SliverChildListDelegate([
+              if (desk)
+                DeskHead(title: 'Bản nhạc', subtitle: count)
+              else ...[
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -75,26 +82,30 @@ class _SheetListScreenState extends State<SheetListScreen> with PagedLoader {
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('Bản nhạc', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                     const SizedBox(height: 4),
-                    Text(_list.total > 0 ? '${_formatInt(_list.total)} bản nhạc' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                    Text(count, style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                   ])),
                 ]),
               ),
               const SizedBox(height: 14),
+              ],
               SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
-              const SizedBox(height: 14),
+              SizedBox(height: desk ? 18 : 14),
+              if (desk) const _SheetTableHead(),
               ...pagedListBody<Map<String, dynamic>>(
                 _list,
                 perPage: _perPage,
                 emptyText: 'Chưa có bản nhạc',
                 onRetry: () => _fetch(_list.page),
                 onPage: (p) => _fetch(p),
-                skeleton: Column(children: [for (var i = 0; i < 8; i++) const Skeleton(height: 66, margin: EdgeInsets.only(bottom: 8))]),
-                itemBuilder: (s, i) => _SheetCard(sheet: s),
+                skeleton: desk
+                    ? Column(children: [for (var i = 0; i < 10; i++) const Skeleton(height: 44, margin: EdgeInsets.only(top: 8))])
+                    : Column(children: [for (var i = 0; i < 8; i++) const Skeleton(height: 66, margin: EdgeInsets.only(bottom: 8))]),
+                itemBuilder: (s, i) => desk ? _SheetTableRow(sheet: s) : _SheetCard(sheet: s),
               ),
               SizedBox(height: player.currentSong != null ? 90 : 20),
             ])),
           ),
-        ]),
+        ])),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
@@ -132,6 +143,66 @@ class _SheetCard extends StatelessWidget {
             ]),
           ])),
           Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
+        ]),
+      ),
+    );
+  }
+}
+
+// Desktop table: BẢN NHẠC · TÁC GIẢ · NĂM · ›. Column widths are shared by
+// the head and the rows.
+const _kAuthorW = 260.0;
+const _kYearW = 72.0;
+const _kChevW = 32.0;
+
+class _SheetTableHead extends StatelessWidget {
+  const _SheetTableHead();
+
+  @override
+  Widget build(BuildContext context) {
+    final st = body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted));
+    return Container(
+      height: 34,
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: Row(children: [
+        const SizedBox(width: 12),
+        Expanded(child: Text('BẢN NHẠC', style: st)),
+        SizedBox(width: _kAuthorW, child: Text('TÁC GIẢ', style: st)),
+        SizedBox(width: _kYearW, child: Text('NĂM', style: st)),
+        const SizedBox(width: _kChevW),
+      ]),
+    );
+  }
+}
+
+class _SheetTableRow extends StatelessWidget {
+  final Map<String, dynamic> sheet;
+  const _SheetTableRow({required this.sheet});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = sheet;
+    final composers = ((s['composers']?['data'] ?? []) as List).map((c) => c['title']).whereType<String>().join(', ');
+    final year = s['year']?.toString() ?? '';
+    final cell = body(TextStyle(fontSize: 15, color: AppColors.textSecondary));
+    return InkWell(
+      onTap: () => context.push('/sheet/${s['id']}'),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 52),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        child: Row(children: [
+          const SizedBox(width: 12),
+          Expanded(child: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Text(s['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+          )),
+          SizedBox(width: _kAuthorW, child: Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Text(composers, maxLines: 1, overflow: TextOverflow.ellipsis, style: cell),
+          )),
+          SizedBox(width: _kYearW, child: Text(year, style: cell)),
+          SizedBox(width: _kChevW, child: Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18)),
         ]),
       ),
     );

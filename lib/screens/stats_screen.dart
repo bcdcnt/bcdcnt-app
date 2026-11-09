@@ -11,6 +11,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/desktop_page.dart';
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({super.key});
@@ -185,14 +186,38 @@ class _StatsScreenState extends State<StatsScreen> {
     final totalListen = _intOf(_data['listen']);
     final maxListen = _categories.map((c) => _intOf(_data[c.$1])).fold(1, (a, b) => a > b ? a : b);
     final auth = context.watch<AuthProvider>();
-    // Stat card height follows the text-size setting: label + number lines.
-    final ts = MediaQuery.textScalerOf(context);
-    final statExtent = (24 + ts.scale(13) * 1.35 + 2 + ts.scale(22) * 1.25 + 4).clamp(64.0, 180.0);
+    final desk = isDesk(context);
+    final cards = [
+      _statCard('Lượt xem', _intOf(_data['views']), Icons.visibility_outlined, const Color(0xFF2C5F8D)),
+      _statCard('Bình luận', commentsTotal, Icons.chat_bubble_outline, const Color(0xFF2F7D5C)),
+      _statCard('Điểm', _intOf(_data['point']), Icons.star_outline, const Color(0xFFB8860B)),
+      _statCard('Đóng góp', uploadsTotal, Icons.upload_outlined, const Color(0xFF7A3B3A)),
+    ];
+    // Tiles size to their own content (a fixed grid extent guessed from the
+    // text scale came up a few px short → overflow stripes). IntrinsicHeight
+    // keeps tiles in a row equally tall.
+    Widget tileRow(List<Widget> tiles, double gap) => IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (var i = 0; i < tiles.length; i++) ...[if (i > 0) SizedBox(width: gap), Expanded(child: tiles[i])],
+          ]),
+        );
+    final statTiles = desk
+        ? tileRow(cards, 14)
+        : Column(children: [tileRow(cards.sublist(0, 2), 10), const SizedBox(height: 10), tileRow(cards.sublist(2), 10)]);
+    final listenBox = _listenBreakdown(totalListen, maxListen);
+    final topSongs = _topSongs.isEmpty
+        ? null
+        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _sectionTitle('Bài hát nghe nhiều nhất', Icons.music_note),
+            const SizedBox(height: 8),
+            _topSongList(_topSongs),
+          ]);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(slivers: [
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(slivers: [
+          if (!desk)
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg,
@@ -208,31 +233,16 @@ class _StatsScreenState extends State<StatsScreen> {
             SliverFillRemaining(hasScrollBody: false, child: Center(child: OfflineBlock(onRetry: _fetch)))
           else
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 24),
               sliver: SliverList(delegate: SliverChildListDelegate([
-                // Stat cards grid + streak as the 5th tile (full-width).
+                if (desk) const DeskHead(title: 'Điểm & thống kê'),
+                // Stat cards + streak as a full-width tile below.
                 // Each card gets its own soft-tint gradient + colored icon
                 // chip so the strip feels like a hero banner, not 4
                 // identical surface squares (Apple Music / Wrapped vibe).
-                GridView(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    mainAxisExtent: statExtent,
-                  ),
-                  children: [
-                    _statCard('Lượt xem', _intOf(_data['views']), Icons.visibility_outlined, const Color(0xFF2C5F8D)),
-                    _statCard('Bình luận', commentsTotal, Icons.chat_bubble_outline, const Color(0xFF2F7D5C)),
-                    _statCard('Điểm', _intOf(_data['point']), Icons.star_outline, const Color(0xFFB8860B)),
-                    _statCard('Đóng góp', uploadsTotal, Icons.upload_outlined, const Color(0xFF7A3B3A)),
-                  ],
-                ),
+                statTiles,
                 if (_streakDays > 0) ...[
-                  const SizedBox(height: 10),
+                  SizedBox(height: desk ? 14 : 10),
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
@@ -253,52 +263,20 @@ class _StatsScreenState extends State<StatsScreen> {
                 ],
                 const SizedBox(height: 24),
 
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(Icons.headphones, size: 18, color: AppColors.accentFg),
-                      const SizedBox(width: 6),
-                      Text('Tổng nghe', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-                      const Spacer(),
-                      Text(_formatInt(totalListen), style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                    ]),
-                    const SizedBox(height: 14),
-                    ..._categories.map((c) {
-                      final v = _intOf(_data[c.$1]);
-                      final pct = maxListen > 0 ? v / maxListen : 0.0;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Row(children: [
-                            Expanded(child: Text(c.$2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-                            Text(_formatInt(v), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-                          ]),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: pct.clamp(0.0, 1.0),
-                              minHeight: 6,
-                              backgroundColor: AppColors.surfaceLight,
-                              valueColor: AlwaysStoppedAnimation(c.$3),
-                            ),
-                          ),
-                        ]),
-                      );
-                    }),
-                  ]),
-                ),
-
-                // Top sections — fixed to all-time. Period tabs were
-                // dropped per feedback (not adding enough value to justify
-                // the extra UI noise).
-                if (_topSongs.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  _sectionTitle('Bài hát nghe nhiều nhất', Icons.music_note),
-                  const SizedBox(height: 8),
-                  _topSongList(_topSongs),
+                // Desktop: listen breakdown and top songs side by side;
+                // phone keeps them stacked.
+                if (desk)
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: listenBox),
+                    const SizedBox(width: 24),
+                    Expanded(child: topSongs ?? const SizedBox.shrink()),
+                  ])
+                else ...[
+                  listenBox,
+                  // Top sections — fixed to all-time. Period tabs were
+                  // dropped per feedback (not adding enough value to justify
+                  // the extra UI noise).
+                  if (topSongs != null) ...[const SizedBox(height: 24), topSongs],
                 ],
                 if (_topArtists.isNotEmpty) ...[
                   const SizedBox(height: 24),
@@ -316,8 +294,48 @@ class _StatsScreenState extends State<StatsScreen> {
                 SizedBox(height: player.currentSong != null ? 90 : 20),
               ])),
             ),
-        ]),
+        ])),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+
+  Widget _listenBreakdown(int totalListen, int maxListen) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(Icons.headphones, size: 18, color: AppColors.accentFg),
+          const SizedBox(width: 6),
+          Text('Tổng nghe', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+          const Spacer(),
+          Text(_formatInt(totalListen), style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        ]),
+        const SizedBox(height: 14),
+        ..._categories.map((c) {
+          final v = _intOf(_data[c.$1]);
+          final pct = maxListen > 0 ? v / maxListen : 0.0;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Expanded(child: Text(c.$2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+                Text(_formatInt(v), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+              ]),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: pct.clamp(0.0, 1.0),
+                  minHeight: 6,
+                  backgroundColor: AppColors.surfaceLight,
+                  valueColor: AlwaysStoppedAnimation(c.$3),
+                ),
+              ),
+            ]),
+          );
+        }),
       ]),
     );
   }

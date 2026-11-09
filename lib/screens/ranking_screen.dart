@@ -9,6 +9,7 @@ import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/desktop_page.dart';
 
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
@@ -100,22 +101,29 @@ class _RankingScreenState extends State<RankingScreen> {
   @override
   Widget build(BuildContext context) {
     final queue = asSongList(_songs.map((x) => {...Map<String, dynamic>.from(x['object'] as Map), 'views': x['total']}));
-    return Scaffold(
-      backgroundColor: AppColors.bg,
-      appBar: const SubPageBar(title: 'Bảng xếp hạng'),
-      body: Stack(children: [
-        ListView(
-          padding: const EdgeInsets.only(bottom: 120),
-          children: [
-            const SizedBox(height: 6),
-            Segmented(
+    final desk = isDesk(context);
+    final segmented = Segmented(
               labels: [for (final p in _periods) p.$2],
               selected: _periods.indexWhere((p) => p.$1 == _period),
               onSelect: (i) {
                 setState(() => _period = _periods[i].$1);
                 _fetchListen();
               },
-            ),
+            );
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      appBar: desk ? null : const SubPageBar(title: 'Bảng xếp hạng'),
+      body: Stack(children: [
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: ListView(
+          // Segmented / ChipStrip / ListItem carry their own 20px side
+          // inset, so desktop adds 20 more to land on deskPad's 40.
+          padding: desk ? EdgeInsets.fromLTRB(20, deskPad.top, 20, 120) : const EdgeInsets.only(bottom: 120),
+          children: [
+            if (desk) const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: DeskHead(title: 'Bảng xếp hạng'))
+            else const SizedBox(height: 6),
+            // A full-width segmented bar on desktop looks like a toolbar.
+            if (desk) Align(alignment: Alignment.centerLeft, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 560), child: segmented))
+            else segmented,
             const SizedBox(height: 14),
             ChipStrip(
               labels: [for (final t in _types) t.$2],
@@ -134,12 +142,13 @@ class _RankingScreenState extends State<RankingScreen> {
               const EmptyBlock(icon: Icons.leaderboard_outlined, title: 'Chưa có dữ liệu', message: 'Chưa có lượt nghe trong khoảng thời gian này.')
             else ...[
               if (_songs.length >= 3) ...[
-                Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _RankingPodium(items: _songs.take(3).toList(), queue: queue)),
-                const SizedBox(height: 14),
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _RankingPodium(items: _songs.take(3).toList(), queue: queue, compact: desk)),
+                SizedBox(height: desk ? 24 : 14),
               ],
+              if (desk) const Padding(padding: EdgeInsets.symmetric(horizontal: 20), child: SongTableHead()),
               for (var i = _songs.length >= 3 ? 3 : 0; i < _songs.length; i++)
                 Padding(
-                  padding: const EdgeInsets.only(left: 20, right: 6),
+                  padding: desk ? const EdgeInsets.symmetric(horizontal: 20) : const EdgeInsets.only(left: 20, right: 6),
                   child: SongRow(
                     song: queue[i],
                     index: i,
@@ -156,7 +165,7 @@ class _RankingScreenState extends State<RankingScreen> {
             const GroupLabel('Thành viên'),
             for (final t in _memberTiles) ListItem(icon: t.$3, title: t.$2, onTap: () => context.push('/bang-xep-hang/${t.$1}')),
           ],
-        ),
+        )),
         const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
@@ -477,7 +486,10 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
 class _RankingPodium extends StatelessWidget {
   final List items; // each: { object: songMap, total: num }
   final List<Map<String, dynamic>> queue;
-  const _RankingPodium({required this.items, required this.queue});
+  /// Desktop: fixed ~190px covers in reading order 1 · 2 · 3, so the podium
+  /// is a strip above the table instead of filling the first screen.
+  final bool compact;
+  const _RankingPodium({required this.items, required this.queue, this.compact = false});
 
   Widget _card(BuildContext context, int rank) {
     final song = queue[rank - 1];
@@ -498,7 +510,7 @@ class _RankingPodium extends StatelessWidget {
             return SongCover(song: song, size: c.maxWidth, radius: 18);
           })),
           const SizedBox(height: 6),
-          Text('$rank', style: display(TextStyle(fontSize: rank == 1 ? 48 : 32, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+          Text('$rank', style: display(TextStyle(fontSize: compact ? 36 : (rank == 1 ? 48 : 32), height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
           const SizedBox(height: 4),
           Text(song['title']?.toString() ?? '', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
           const SizedBox(height: 2),
@@ -511,6 +523,14 @@ class _RankingPodium extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.length < 3) return const SizedBox.shrink();
+    if (compact) {
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        for (var r = 1; r <= 3; r++) ...[
+          if (r > 1) const SizedBox(width: 28),
+          SizedBox(width: 190, child: _card(context, r)),
+        ],
+      ]);
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [

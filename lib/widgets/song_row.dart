@@ -306,7 +306,9 @@ class SongRow extends StatelessWidget {
           // ink overlay so the two don't stack into a too-dark band.
           hoverColor: Colors.transparent,
           highlightColor: Colors.transparent,
-          child: ConstrainedBox(
+          child: LayoutBuilder(builder: (context, c) => c.maxWidth >= 760
+              ? _tableRow(context, playing, playerPlaying, byline, metric)
+              : ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 68),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
@@ -396,12 +398,110 @@ class SongRow extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          )),
         ),
       ),
     ),
     ));
   }
+
+  /// Wide lists (desktop): a table row — # · cover · title / performers ·
+  /// composer · year · the sort's number · ⋯ — under [SongTableHead].
+  Widget _tableRow(BuildContext context, bool playing, bool playerPlaying, String byline, String? metric) {
+    final hi = AppColors.accentLight;
+    final muted = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    final comps = songComposers(song);
+    final year = '${song['sheet']?['year'] ?? song['year'] ?? ''}';
+    final n = song['weeklyListens'] ?? song['views'];
+    final count = metricKey == 'views' || metricKey == 'none' ? (n is num && n > 0 ? formatViews(n.toInt()) : '') : (metric ?? '');
+    return Container(
+      height: 64,
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+      child: Row(children: [
+        SizedBox(
+          width: 44,
+          child: showIndex
+              ? Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text('${(index ?? 0) + 1}', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: hi, fontFeatures: const [FontFeature.tabularFigures()]))),
+                  if (chartNew)
+                    Text('MỚI', style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.success)))
+                  else if (prevRank != null && prevRank != (index ?? 0) + 1)
+                    Builder(builder: (_) {
+                      final move = prevRank! - ((index ?? 0) + 1);
+                      return Text('${move > 0 ? '▲' : '▼'}${move.abs() > 99 ? '99+' : move.abs()}', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: move > 0 ? AppColors.success : AppColors.error)));
+                    }),
+                ])
+              : (playing ? Center(child: NowPlayingBars(color: hi, animate: playerPlaying)) : null),
+        ),
+        Stack(children: [
+          SongCover(song: song, size: 46, radius: 10),
+          if (isVideoSong(song))
+            const Positioned(left: 3, bottom: 3, child: Icon(Icons.play_circle_fill_rounded, size: 14, color: Colors.white, shadows: [Shadow(color: Colors.black54, blurRadius: 4)])),
+        ]),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text.rich(
+              TextSpan(children: highlightSpans('${song['title'] ?? ''}', highlight, TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+              style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: playing ? hi : AppColors.text)),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if ((subtitle ?? byline).isNotEmpty) Text(subtitle ?? byline, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
+          ]),
+        ),
+        const SizedBox(width: 12),
+        SizedBox(width: 170, child: Text(comps, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+        SizedBox(width: 56, child: Text(year, style: muted)),
+        SizedBox(width: 110, child: Text(count, textAlign: TextAlign.right, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted)),
+        IconButton(
+          tooltip: 'Tuỳ chọn cho ${song['title'] ?? 'bài hát'}',
+          onPressed: () => showSongActions(context, song, onRemove: onRemove),
+          icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted, size: 22),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Composer names of a song for list columns (soạn giả for dân ca, nhà thơ
+/// for tiếng thơ when there is no composer).
+String songComposers(Map song) {
+  List names(dynamic v) => ((v is Map ? v['data'] : v) as List?)?.whereType<Map>().map((e) => '${e['title'] ?? ''}').where((t) => t.isNotEmpty).toList() ?? const [];
+  for (final v in [song['sheet']?['composers'], song['composers'], song['recomposers'], song['poets']]) {
+    final l = names(v);
+    if (l.isNotEmpty) return l.take(2).join(', ');
+  }
+  return '';
+}
+
+/// Table column title for a [SongRow.metricKey].
+String songMetricLabel(String key) => const {'likes': 'LƯỢT THÍCH', 'downloads': 'LƯỢT TẢI', 'time': 'CẬP NHẬT', 'newest': 'CẬP NHẬT', 'none': ''}[key] ?? 'LƯỢT NGHE';
+
+/// Column titles over [SongRow]s in a wide list.
+class SongTableHead extends StatelessWidget {
+  /// The last column follows the sort ("LƯỢT NGHE", "LƯỢT THÍCH", "NGÀY THÍCH"…).
+  final String metric;
+  const SongTableHead({super.key, this.metric = 'LƯỢT NGHE'});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        if (c.maxWidth < 760) return const SizedBox.shrink();
+        final st = body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted));
+        return Container(
+          height: 34,
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+          child: Row(children: [
+            const SizedBox(width: 104),
+            Expanded(child: Text('BÀI HÁT · TRÌNH BÀY', style: st)),
+            const SizedBox(width: 12),
+            SizedBox(width: 170, child: Text('SÁNG TÁC', style: st)),
+            SizedBox(width: 56, child: Text('NĂM', style: st)),
+            SizedBox(width: 110, child: Text(metric, textAlign: TextAlign.right, style: st)),
+            const SizedBox(width: 48),
+          ]),
+        );
+      });
 }
 
 /// Bottom sheet with every secondary action for a song. Opened from the ⋮

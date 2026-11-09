@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
-import '../widgets/ui.dart' show SkeletonSongRow, OfflineBlock, EmptyBlock, goBack;
+import '../widgets/ui.dart' show SkeletonSongRow, OfflineBlock, EmptyBlock, goBack, PillButton;
+import '../widgets/desktop_page.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
@@ -203,10 +204,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final player = context.watch<PlayerProvider>();
+    final desk = isDesk(context);
     if (!auth.isAuthenticated) {
       return Scaffold(
         backgroundColor: AppColors.bg,
-        appBar: AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
+        appBar: desk ? null : AppBar(leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context))),
         body: Center(child: SingleChildScrollView(child: EmptyBlock(
           icon: Icons.notifications_none,
           title: 'Đăng nhập để xem thông báo',
@@ -220,7 +222,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(controller: _scrollCtl, slivers: [
+        // ~760px of reading width plus deskPad's sides.
+        DeskFrame(maxWidth: desk ? 840 : double.infinity, child: CustomScrollView(controller: _scrollCtl, slivers: [
+          if (desk)
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 0),
+              sliver: SliverToBoxAdapter(child: DeskHead(title: 'Thông báo', actions: [
+                if (hasUnread) PillButton(label: 'Đọc tất cả', icon: Icons.done_all_rounded, height: 44, primary: false, onTap: _markAllRead),
+              ])),
+            )
+          else
           SliverAppBar(
             pinned: true,
             backgroundColor: AppColors.bg,
@@ -234,7 +245,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           if (_loading && _items.isEmpty)
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              padding: EdgeInsets.symmetric(horizontal: desk ? deskPad.left - 12 : 8, vertical: 8),
               sliver: SliverList(delegate: SliverChildBuilderDelegate((_, __) => const SkeletonSongRow(), childCount: 8)),
             )
           else if (_failed && _items.isEmpty)
@@ -247,7 +258,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ))
           else
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              // Rows have their own 12px inset; desktop lines their text up
+              // with the DeskHead title.
+              padding: EdgeInsets.symmetric(horizontal: desk ? deskPad.left - 12 : 20, vertical: desk ? 0 : 8),
               sliver: SliverList(delegate: SliverChildBuilderDelegate(
                 (ctx, i) {
                   final entry = _grouped[i];
@@ -261,7 +274,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
-        ]),
+        ])),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );

@@ -1,6 +1,7 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
+import '../widgets/desktop_page.dart';
 import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -154,7 +155,8 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
     final dataKey = {'song': 'songsByTag', 'instrumental': 'instrumentalsByTag', 'karaoke': 'karaokesByTag'}[type]!;
     final people = type == 'karaoke'
         ? 'users(first: 5) { data { id username avatar { url } } }'
-        : 'artists(first: 5) { data { id slug title avatar { url } } }';
+        // + composer and year for the desktop table's columns.
+        : 'artists(first: 5) { data { id slug title avatar { url } } } sheet { year composers(first: 2) { data { id slug title } } }';
     final q = _q;
     _tabs[type]!.query = q;
     await loadPage(_tabs[type]!, page, (page, sort) async {
@@ -210,13 +212,17 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
     }
     final st = _tabs[_activeType]!;
     final activeLabel = _tabConfig.firstWhere((t) => t.$1 == _activeType).$2;
+    final desk = isDesk(context);
+    // All three kinds together: the type tabs below carry the split.
+    final allCount = _counts.values.fold<int>(0, (a, b) => a + b);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
           controller: _scrollCtl,
           slivers: [
+            if (!desk)
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg,
@@ -225,8 +231,16 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
               leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 20),
               sliver: SliverList(delegate: SliverChildListDelegate([
+                if (desk)
+                  DeskHead(
+                    eyebrow: 'Chủ đề',
+                    title: '${_tag!['name']}',
+                    subtitle: allCount > 0 ? '${_formatInt(allCount)} bài' : '',
+                    actions: st.items.isEmpty ? const [] : deskPlayButtons(play: () => _playAll(), shuffle: () => _playAll(shuffle: true)),
+                  )
+                else
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -245,7 +259,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                   ]),
                 ),
                 if ((_tag!['users'] is List) && (_tag!['users'] as List).isNotEmpty) ...[
-                  const SizedBox(height: 14),
+                  if (!desk) const SizedBox(height: 14),
                   _ContributorsStrip(users: _dedupedContributors()),
                 ],
                 const SizedBox(height: 14),
@@ -284,7 +298,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                 ),
                 const SizedBox(height: 14),
                 // Kind and count are on the tab above: just the play buttons.
-                if (st.items.isNotEmpty) ...[
+                if (st.items.isNotEmpty && !desk) ...[
                   Row(children: [
                     Expanded(child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true)),
                     const SizedBox(width: 10),
@@ -297,6 +311,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                 const SizedBox(height: 14),
                 SortTabs(labels: _sorts, selected: st.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetchPage(_activeType, 1, sort: i)),
                 const SizedBox(height: 14),
+                if (desk) SongTableHead(metric: songMetricLabel(kSongSortMetric[_sorts[st.sort]]!)),
                 ...infiniteListBody<Map<String, dynamic>>(
                   st,
                   emptyText: 'Chưa có bài',
@@ -309,7 +324,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
               ])),
             ),
           ],
-        ),
+        )),
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),

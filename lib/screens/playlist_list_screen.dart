@@ -8,6 +8,8 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/desktop_page.dart';
+import '../widgets/playlist_cover.dart';
 
 class PlaylistListScreen extends StatefulWidget {
   const PlaylistListScreen({super.key});
@@ -40,7 +42,10 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> with PagedLoade
   Future<void> _fetch(int page, {int? sort}) => loadPage(_list, page, (page, sort) async {
         final q = '''query(\$page: Int, \$where: WhereConditions) {
           playlists(first: $_perPage, page: \$page, where: \$where, orderBy: [{column: "${_sortCols[sort]}", order: DESC}]) {
-            data { id slug title thumbnail { url } user { id username avatar { url } } items(first: 1) { paginatorInfo { total } } }
+            data { id slug title thumbnail { url } user { id username avatar { url } } items(first: 4, orderBy: [{column: "position", order: ASC}]) {
+              paginatorInfo { total }
+              data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } } }
+            } }
             paginatorInfo { currentPage lastPage total }
           }
         }''';
@@ -64,12 +69,15 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> with PagedLoade
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
+    final desk = isDesk(context);
+    final count = _list.total > 0 ? '${_formatInt(_list.total)} playlist' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có'));
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        CustomScrollView(
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
           controller: _scrollCtl,
           slivers: [
+            if (!desk)
             SliverAppBar(
               pinned: true,
               backgroundColor: AppColors.bg,
@@ -78,8 +86,11 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> with PagedLoade
               leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
             ),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 20),
               sliver: SliverList(delegate: SliverChildListDelegate([
+                if (desk)
+                  DeskHead(title: 'Playlist cộng đồng', subtitle: count)
+                else
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -94,14 +105,32 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> with PagedLoade
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Playlist', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                         const SizedBox(height: 4),
-                        Text(_list.total > 0 ? '${_formatInt(_list.total)} playlist' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                        Text(count, style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                       ])),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+                if (!desk) const SizedBox(height: 16),
                 SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
-                const SizedBox(height: 14),
+                SizedBox(height: desk ? 22 : 14),
+                if (desk)
+                  // Cover cards wrapping into ~180px columns; the pager and
+                  // empty/offline blocks ride along as full-width Wrap children.
+                  LayoutBuilder(builder: (context, c) {
+                    const gap = 20.0;
+                    final cols = ((c.maxWidth + gap) / 200).floor().clamp(2, 8);
+                    final w = (c.maxWidth - (cols - 1) * gap) / cols;
+                    return Wrap(spacing: gap, runSpacing: 24, children: pagedListBody<Map<String, dynamic>>(
+                      _list,
+                      perPage: _perPage,
+                      emptyText: 'Chưa có playlist',
+                      onRetry: () => _fetch(_list.page),
+                      onPage: (p) => _fetch(p),
+                      skeleton: Wrap(spacing: gap, runSpacing: 24, children: [for (var i = 0; i < cols * 2; i++) Skeleton(width: w, height: w + 44, radius: 16)]),
+                      itemBuilder: (pl, i) => SizedBox(width: w, child: _DeskPlaylistCard(playlist: pl, size: w)),
+                    ));
+                  })
+                else
                 ...pagedListBody<Map<String, dynamic>>(
                   _list,
                   perPage: _perPage,
@@ -115,7 +144,7 @@ class _PlaylistListScreenState extends State<PlaylistListScreen> with PagedLoade
               ])),
             ),
           ],
-        ),
+        )),
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
@@ -158,6 +187,32 @@ class _PlaylistCard extends StatelessWidget {
           Icon(Icons.chevron_right, color: AppColors.textMuted, size: 18),
         ]),
       ),
+    );
+  }
+}
+
+/// Desktop cover card: own picture, else the first songs' covers.
+class _DeskPlaylistCard extends StatelessWidget {
+  final Map<String, dynamic> playlist;
+  final double size;
+  const _DeskPlaylistCard({required this.playlist, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final pl = playlist;
+    final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
+    final owner = pl['user']?['username']?.toString();
+    final meta = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => context.push('/playlist/${pl['id']}'),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: size, radius: 16),
+        const SizedBox(height: 8),
+        Text('${pl['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+        const SizedBox(height: 2),
+        Text(owner != null ? '$owner · $total bài' : '$total bài', maxLines: 1, overflow: TextOverflow.ellipsis, style: meta),
+      ]),
     );
   }
 }

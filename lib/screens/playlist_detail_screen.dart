@@ -1,6 +1,8 @@
+import 'dart:ui' as ui;
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, EmptyBlock;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, EmptyBlock, NetImage;
+import '../widgets/desktop_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_html/flutter_html.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -56,10 +58,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               id position type
               object {
                 __typename
-                ... on Song { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
-                ... on Folk { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
-                ... on Instrumental { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
-                ... on Poem { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } }
+                ... on Song { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } sheet { year composers(first: 2) { data { id slug title } } } }
+                ... on Folk { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } recomposers(first: 2) { data { id slug title } } }
+                ... on Instrumental { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } sheet { year composers(first: 2) { data { id slug title } } } }
+                ... on Poem { id slug title views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id slug title avatar { url } } } poets(first: 2) { data { id slug title } } }
                 ... on Karaoke { id slug title views play_type thumbnail { url } file { audio_url video_url duration } users(first: 5) { data { id username avatar { url } } } }
               }
             }
@@ -234,6 +236,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     // notch since the hero is narrower.
     // Floor of 14 on mobile for older readers.
     const metaSize = 14.0;
+    if (isDesktop) return _buildDesk(context, player, pl, canEdit);
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -456,6 +459,221 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
+    );
+  }
+
+  bool _isEvent(Map pl) => pl['event_date'] != null && pl['event_date'].toString().isNotEmpty;
+
+  Widget? _description(Map pl) {
+    final d = pl['description'];
+    if (d is! String || d.isEmpty) return null;
+    return _Clamped(
+      open: _descOpen,
+      long: _isLong(d),
+      onToggle: () => setState(() => _descOpen = !_descOpen),
+      child: Html(
+        data: d,
+        style: {
+          'body': Style(margin: Margins.zero, padding: HtmlPaddings.zero, fontSize: FontSize(16), lineHeight: const LineHeight(1.6), color: AppColors.text, fontFamily: body().fontFamily),
+          'p': Style(margin: Margins.only(bottom: 8)),
+          'a': Style(color: AppColors.accentLight, textDecoration: TextDecoration.none),
+          'br': Style(margin: Margins.zero),
+          'img': Style(width: Width(100, Unit.percent)),
+        },
+        onLinkTap: (url, _, _) {
+          if (url != null) launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        },
+      ),
+    );
+  }
+
+  /// Desktop: a dark band like the song page (cover, title, owner, actions),
+  /// songs as a table, and "Playlist khác" beside the list when it fits.
+  Widget _buildDesk(BuildContext context, PlayerProvider player, Map<String, dynamic> pl, bool canEdit) {
+    final thumb = pl['thumbnail']?['url'];
+    final user = pl['user'];
+    final isPublic = pl['is_public']?.toString() == '1';
+    const light = Color(0xFFF6E8DE);
+    final meta = body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: light));
+    final desc = _description(pl);
+
+    final band = ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Stack(children: [
+        Positioned.fill(child: Container(color: const Color(0xFF2E080A))),
+        if (thumb != null)
+          Positioned.fill(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+              child: NetImage(url: thumb.toString(), tint: true),
+            ),
+          ),
+        const Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x592E080A), Color(0xE62E080A)])),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(28),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Container(
+              width: 200, height: 200,
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 30, offset: const Offset(0, 14))]),
+              child: PlaylistCover(
+                thumb: thumb?.toString(),
+                songThumbs: [for (final s in _items.take(4)) if (s['thumbnail']?['url'] != null) s['thumbnail']['url'].toString()],
+                size: 200,
+                radius: 18,
+              ),
+            ),
+            const SizedBox(width: 28),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(_isEvent(pl) ? 'PLAYLIST SỰ KIỆN' : 'PLAYLIST', style: body(const TextStyle(fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w800, color: light))),
+                const SizedBox(height: 8),
+                Text(pl['title'] ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 34, fontWeight: FontWeight.w800, color: Colors.white, height: 1.12, letterSpacing: -0.7))),
+                const SizedBox(height: 12),
+                Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 6, children: [
+                  if (user?['username'] != null) ...[
+                    CircleAvatar(
+                      radius: 12,
+                      backgroundColor: Colors.white24,
+                      backgroundImage: user['avatar']?['url'] != null ? CachedNetworkImageProvider(cdnImg((user['avatar']['url']).toString(), 160)) : null,
+                    ),
+                    Text('${user['username']}', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
+                  ],
+                  if (_isEvent(pl)) Text('· ${_formatEventDate(pl['event_date'])}', style: meta),
+                  // Public / private only matters to the owner or BQT, as on the phone.
+                  Text('· ${_formatInt(_itemTotal)} bài${canEdit ? ' · ${isPublic ? 'Công khai' : 'Không công khai'}' : ''}', style: meta),
+                ]),
+                const SizedBox(height: 18),
+                Wrap(spacing: 10, runSpacing: 10, children: [
+                  if (_items.isNotEmpty) ...[
+                    _BandPill(icon: Icons.play_arrow_rounded, label: 'Phát tất cả', primary: true, onTap: () => _playAll()),
+                    _BandPill(icon: Icons.shuffle_rounded, label: 'Ngẫu nhiên', onTap: () => _playAll(shuffle: true)),
+                  ],
+                  if (canEdit) _BandPill(icon: Icons.edit_rounded, label: 'Sửa', onTap: _edit),
+                ]),
+              ]),
+            ),
+          ]),
+        ),
+      ]),
+    );
+
+    final songs = <Widget>[
+      if (_items.isEmpty)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 48), child: Center(child: Text('Playlist trống', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))))
+      else ...[
+        const SongTableHead(),
+        for (var i = 0; i < _visible; i++)
+          SongRow(
+            song: _items[i],
+            index: i,
+            showIndex: true,
+            onTap: () => _playAll(startIndex: i),
+            onRemove: canEdit && _items[i]['_itemId'] != null ? () => _remove(_items[i]) : null,
+          ),
+        if (_visible < _items.length)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: TextButton(
+              style: TextButton.styleFrom(backgroundColor: AppColors.surface, foregroundColor: AppColors.text, minimumSize: const Size.fromHeight(48), shape: const StadiumBorder()),
+              onPressed: () => setState(() => _shown += 20),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text('Xem thêm ${_items.length - _visible > 20 ? '20' : '${_items.length - _visible}'} bài', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))),
+                const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
+              ]),
+            ),
+          ),
+      ],
+      const SizedBox(height: 28),
+      Divider(color: AppColors.border, height: 1),
+      const SizedBox(height: 16),
+      CommentSection(type: 'playlist', id: widget.id),
+    ];
+
+    final related = _related.isEmpty
+        ? null
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SectionHeader(
+              icon: _isEvent(pl) ? Icons.event_outlined : Icons.queue_music_outlined,
+              title: _isEvent(pl) ? 'Playlist sự kiện khác' : 'Playlist khác',
+              count: '(${_related.length})',
+            ),
+            ..._related.take(8).map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _RelatedCardCompact(item: r, formatEventDate: _formatEventDate),
+                )),
+          ]);
+
+    return Scaffold(
+      backgroundColor: AppColors.bg,
+      body: Stack(children: [
+        DeskFrame(
+          child: ListView(
+            padding: deskPad.copyWith(bottom: player.currentSong != null ? 110 : 48),
+            children: [
+              band,
+              ?desc,
+              const SizedBox(height: 24),
+              // The table needs ~760 px: the sidebar sits beside it only on
+              // wide windows, otherwise it follows the comments.
+              LayoutBuilder(builder: (context, c) {
+                if (related != null && c.maxWidth >= 1150) {
+                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: songs)),
+                    const SizedBox(width: 28),
+                    SizedBox(width: 340, child: related),
+                  ]);
+                }
+                return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  ...songs.take(songs.length - 3),
+                  // Below the songs, above the comments.
+                  if (related != null) ...[related, const SizedBox(height: 12)],
+                  ...songs.skip(songs.length - 3),
+                ]);
+              }),
+            ],
+          ),
+        ),
+        if (player.currentSong != null)
+          const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+}
+
+/// Action on the dark playlist band: light fill for the main one, glass
+/// for the rest (the wine PillButton would vanish on the wine band).
+class _BandPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+  const _BandPill({required this.icon, required this.label, required this.onTap, this.primary = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = primary ? AppColors.wine : Colors.white;
+    return Material(
+      color: primary ? Colors.white : Colors.white.withValues(alpha: 0.16),
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: SizedBox(
+            height: 46,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 22, color: fg),
+              const SizedBox(width: 8),
+              Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: fg))),
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }

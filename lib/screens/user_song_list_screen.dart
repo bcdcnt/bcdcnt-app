@@ -7,6 +7,7 @@ import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/list_search.dart';
+import '../widgets/desktop_page.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 
@@ -99,12 +100,13 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
       user(id: \$id) {
         $_field(first: \$first, page: \$page, q: \$q, orderBy: [{column: "id", order: DESC}]) {
           data {
+            created_at
             object {
               __typename
-              ... on Song { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Folk { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Instrumental { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
-              ... on Poem { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } }
+              ... on Song { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } sheet { year composers(first: 2) { data { id slug title } } } }
+              ... on Folk { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } recomposers(first: 2) { data { id slug title } } }
+              ... on Instrumental { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } sheet { year composers(first: 2) { data { id slug title } } } }
+              ... on Poem { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id title slug avatar { url } } } poets(first: 2) { data { id slug title } } }
               ... on Karaoke { id title subtitle slug views created_at play_type thumbnail { url } file { audio_url video_url duration } users(first: 3) { data { id username avatar { url } } } }
             }
           }
@@ -130,6 +132,9 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
         if (obj == null) continue;
         final m = Map<String, dynamic>.from(obj as Map);
         m['file_type'] = tnMap[m['__typename']?.toString()] ?? 'song';
+        // When it was loved / listened (the love or listen record, not the
+        // song): the desktop table's last column.
+        if (entry['created_at'] != null) m['_listed_at'] = entry['created_at'];
         if (!seen.add('${m['file_type']}:${m['id']}')) continue;
         if (m['users']?['data'] != null && m['artists'] == null) {
           m['artists'] = {'data': ((m['users']['data']) as List).map((u) => {'id': u['id'], 'title': u['username']}).toList()};
@@ -178,13 +183,16 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
     if (!auth.isAuthenticated) {
       return _scaffoldGuest();
     }
+    final desk = isDesk(context);
+    final count = _list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có'));
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          CustomScrollView(
+          DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -193,8 +201,11 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 sliver: SliverList(delegate: SliverChildListDelegate([
+                  if (desk)
+                    DeskHead(title: _title, subtitle: count, actions: _items.isEmpty ? const [] : deskPlayButtons(play: () => _playAll(), shuffle: () => _playAll(shuffle: true)))
+                  else
                   // Hero stats
                   Container(
                     padding: const EdgeInsets.all(18),
@@ -218,7 +229,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                               Text(_title, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
                               Text(
-                                _list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')),
+                                count,
                                 style: body(const TextStyle(fontSize: 15, color: Colors.white70)),
                               ),
                             ],
@@ -227,10 +238,10 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  if (!desk) const SizedBox(height: 14),
 
                   // Action buttons
-                  if (_items.isNotEmpty)
+                  if (_items.isNotEmpty && !desk)
                     Row(
                       children: [
                         Expanded(
@@ -243,7 +254,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                       ],
                     ),
                   if (_items.isNotEmpty || _q.isNotEmpty) ...[
-                    const SizedBox(height: 14),
+                    if (!desk) const SizedBox(height: 14),
                     ListSearchField(
                       hint: widget.kind == UserListKind.favorites ? 'Tìm trong ${_q.isEmpty && _list.allTotal > 0 ? '${_list.allTotal} ' : ''}bài yêu thích' : 'Tìm trong bài vừa nghe',
                       onChanged: _search,
@@ -251,6 +262,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                     ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
                   ],
                   const SizedBox(height: 8),
+                  if (desk) SongTableHead(metric: widget.kind == UserListKind.favorites ? 'NGÀY THÍCH' : 'NGHE LÚC'),
 
                   // List / loader / empty; more rows load on scroll
                   ...infiniteListBody<Map<String, dynamic>>(
@@ -272,11 +284,13 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                       ),
                     ),
                     itemBuilder: (song, i) => SongRow(
-                      song: song,
+                      // Desktop: SongRow's 'time' column reads created_at, so
+                      // hand it the love/listen time instead of the song's.
+                      song: desk && song['_listed_at'] != null ? {...song, 'created_at': song['_listed_at']} : song,
                       highlight: _q,
                       index: i,
                       showIndex: widget.kind != UserListKind.history,
-                      metricKey: widget.kind == UserListKind.history ? 'none' : 'views',
+                      metricKey: desk ? 'time' : (widget.kind == UserListKind.history ? 'none' : 'views'),
                       queue: asSongList(_items),
                     ),
                   ),
@@ -285,7 +299,7 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                 ])),
               ),
             ],
-          ),
+          )),
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],

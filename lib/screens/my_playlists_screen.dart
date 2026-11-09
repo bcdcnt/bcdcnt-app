@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
+import '../widgets/desktop_page.dart';
 import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -266,6 +267,56 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     return n < 0 ? '-$buf' : buf.toString();
   }
 
+  /// Desktop: cover cards wrapping into rows, ~180px columns.
+  Widget _deskGrid() => LayoutBuilder(builder: (context, c) {
+        const gap = 20.0;
+        final cols = ((c.maxWidth + gap) / 200).floor().clamp(2, 8);
+        final w = (c.maxWidth - (cols - 1) * gap) / cols;
+        return Wrap(spacing: gap, runSpacing: 24, children: [
+          for (final pl in _items) SizedBox(width: w, child: _deskCard(pl, w)),
+        ]);
+      });
+
+  Widget _deskCard(Map<String, dynamic> pl, double w) {
+    final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
+    final pub = pl['is_public']?.toString() == '1';
+    final meta = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    // Right-click opens the same menu as the ⋯ button.
+    return GestureDetector(
+      onSecondaryTap: () => _menu(pl),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _open('/playlist/${pl['id']}'),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          PlaylistCover(thumb: pl['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: w, radius: 16),
+          const SizedBox(height: 8),
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${pl['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+                const SizedBox(height: 2),
+                Row(children: [
+                  Text('$total bài · ', style: meta),
+                  Icon(pub ? Icons.public_rounded : Icons.visibility_off_outlined, size: 13, color: AppColors.textMuted),
+                  const SizedBox(width: 3),
+                  Flexible(child: Text(pub ? 'Công khai' : 'Không công khai', maxLines: 1, overflow: TextOverflow.ellipsis, style: meta)),
+                ]),
+              ]),
+            ),
+            IconButton(
+              tooltip: 'Tuỳ chọn cho ${pl['title'] ?? 'playlist'}',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
+              onPressed: () => _menu(pl),
+              icon: Icon(Icons.more_horiz_rounded, size: 22, color: AppColors.textMuted),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -281,13 +332,16 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
         ),
       );
     }
+    final desk = isDesk(context);
+    final count = _total > 0 ? '${_formatInt(_total)} playlist' : (_loading ? 'Đang tải...' : 'Chưa có playlist');
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          CustomScrollView(
+          DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -306,8 +360,13 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                 ],
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 sliver: SliverList(delegate: SliverChildListDelegate([
+                  if (desk)
+                    DeskHead(title: 'Playlist của tôi', subtitle: count, actions: [
+                      PillButton(label: 'Tạo playlist', icon: Icons.add_rounded, height: 48, loading: _creating, onTap: _creating ? null : _create),
+                    ])
+                  else ...[
                   // Hero stats
                   Container(
                     padding: const EdgeInsets.all(18),
@@ -331,7 +390,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                               Text('Playlist của tôi', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
                               Text(
-                                _total > 0 ? '${_formatInt(_total)} playlist' : (_loading ? 'Đang tải...' : 'Chưa có playlist'),
+                                count,
                                 style: body(const TextStyle(fontSize: 15, color: Colors.white)),
                               ),
                             ],
@@ -341,6 +400,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                     ),
                   ),
                   const SizedBox(height: 20),
+                  ],
 
                   if (_loading && _items.isEmpty)
                     Padding(padding: const EdgeInsets.symmetric(vertical: 60), child: Center(child: CircularProgressIndicator(color: AppColors.accentFg)))
@@ -354,6 +414,8 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                       ctaLabel: '+ Tạo playlist',
                       onCta: _creating ? null : _create,
                     )
+                  else if (desk)
+                    _deskGrid()
                   else
                     ..._items.map((pl) {
                       final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
@@ -408,7 +470,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
                 ])),
               ),
             ],
-          ),
+          )),
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],

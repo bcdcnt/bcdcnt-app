@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
+import '../widgets/desktop_page.dart';
 import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
@@ -134,14 +135,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
       );
     }
     final player = context.watch<PlayerProvider>();
+    final desk = isDesk(context);
+    final count = _list.allTotal > 0 ? '${_formatInt(_list.allTotal)} bài' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có bài'));
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          CustomScrollView(
+          DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -151,9 +155,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
               ),
 
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: desk ? deskPad : const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
+                    if (desk)
+                      DeskHead(title: cfg.name, subtitle: count, actions: _list.items.isEmpty ? const [] : deskPlayButtons(play: () => _playAll(), shuffle: () => _playAll(shuffle: true)))
+                    else
                     // Hero banner
                     Container(
                       margin: const EdgeInsets.only(bottom: 16),
@@ -189,7 +196,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                     ),
 
                     // Play all
-                    if (_list.items.isNotEmpty)
+                    if (_list.items.isNotEmpty && !desk)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 14),
                         child: Row(
@@ -214,6 +221,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                       onSelect: (i) => _fetch(1, sort: i),
                     ),
                     const SizedBox(height: 14),
+                    if (desk) SongTableHead(metric: songMetricLabel(kSongSortMetric[_sorts[_list.sort]]!)),
 
                     ...infiniteListBody<Map<String, dynamic>>(
                       _list,
@@ -234,7 +242,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> with PagedL
                 ),
               ),
             ],
-          ),
+          )),
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],

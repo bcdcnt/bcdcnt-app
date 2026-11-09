@@ -14,6 +14,7 @@ import '../services/friendly_error.dart';
 import '../widgets/ui.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/desktop_page.dart';
 
 /// Plain text from a comment's HTML: line breaks kept, entities decoded.
 String userCommentText(String? html) {
@@ -613,7 +614,8 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        NestedScrollView(
+        // Banner, tabs and tab bodies share one capped width on desktop.
+        DeskFrame(maxWidth: isDesk(context) ? 1320 : double.infinity, child: NestedScrollView(
           headerSliverBuilder: (ctx, innerBoxScrolled) => [
             SliverAppBar(
               pinned: true,
@@ -719,7 +721,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
             'point' => _pointsTab(),
             _ => _overviewTab(u),
           }).toList()),
-        ),
+        )),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
@@ -799,14 +801,67 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     final isOwnProfile = auth.user?['id']?.toString() == widget.id;
     final point = _int(u['point']);
     final hasActivity = point > 0 || _karaokeTotal > 0 || _uploadTotal > 0 || _commentTotal > 0 || _contribTotal > 0 || _playlists.isNotEmpty;
+    final desk = isDesk(context);
+    Widget section(List<Widget> children) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: children);
+    final karaokes = _karaokes.isEmpty ? null : section([
+      _previewHeader('Bản thu', () => _goTab('karaoke')),
+      for (int i = 0; i < _karaokes.length && i < 3; i++) _karaokeRow(i),
+      const SizedBox(height: 22),
+    ]);
+    final uploads = _previewUploads.isEmpty ? null : section([
+      _previewHeader('Bài gửi', () => _goTab('upload')),
+      ..._previewUploads.map(_uploadRow),
+      const SizedBox(height: 22),
+    ]);
+    final playlists = _playlists.isEmpty ? null : section([
+      _previewHeader('Playlist', null),
+      const SizedBox(height: 6),
+      BleedRow(
+        height: 130 + 10 + MediaQuery.textScalerOf(context).scale(44),
+        inset: desk ? 40 : 20,
+        builder: (pad) => ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: pad,
+          itemCount: _playlists.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (_, i) {
+            final p = _playlists[i];
+            final title = (p['title'] ?? '').toString();
+            return RailCard(
+              width: 130,
+              title: title,
+              cover: NetImage(url: p['thumbnail']?['url']?.toString(), width: 130, height: 130, fallback: GeneratedCover(title: title, size: 130, radius: 0)),
+              onTap: () => context.push('/playlist/${p['id']}'),
+            );
+          },
+        ),
+      ),
+      const SizedBox(height: 22),
+    ]);
+    final comments = _previewComments.isEmpty ? null : section([
+      _previewHeader('Bình luận', () => _goTab('comment')),
+      const SizedBox(height: 4),
+      ..._previewComments.map(_commentCard),
+      const SizedBox(height: 22),
+    ]);
+    final visiblePoints = _visiblePoints(_previewPoints, auth);
+    final points = visiblePoints.isEmpty ? null : section([
+      _previewHeader('Cống hiến', () => _goTab('point')),
+      ...visiblePoints.map(_pointRow),
+      const SizedBox(height: 22),
+    ]);
+    final sections = [karaokes, uploads, comments, points].whereType<Widget>().toList();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+      padding: desk ? const EdgeInsets.fromLTRB(40, 24, 40, 100) : const EdgeInsets.fromLTRB(20, 16, 20, 100),
       children: [
         if (isOwnProfile) ...[
-          SizedBox(
-            width: double.infinity,
+          // Phone: full-width button; desktop: a normal-size one on the left.
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+            width: desk ? null : double.infinity,
             child: PillButton(primary: false, height: 48, icon: Icons.edit_outlined, label: 'Sửa hồ sơ', onTap: () => context.push('/cai-dat')),
-          ),
+          )),
           const SizedBox(height: 16),
         ],
         if (!hasActivity)
@@ -839,53 +894,24 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           const SizedBox(height: 22),
         ],
 
-        if (_karaokes.isNotEmpty) ...[
-          _previewHeader('Bản thu', () => _goTab('karaoke')),
-          for (int i = 0; i < _karaokes.length && i < 3; i++) _karaokeRow(i),
-          const SizedBox(height: 22),
-        ],
-
-        if (_previewUploads.isNotEmpty) ...[
-          _previewHeader('Bài gửi', () => _goTab('upload')),
-          ..._previewUploads.map(_uploadRow),
-          const SizedBox(height: 22),
-        ],
-
-        if (_playlists.isNotEmpty) ...[
-          _previewHeader('Playlist', null),
-          const SizedBox(height: 6),
-          BleedRow(
-            height: 130 + 10 + MediaQuery.textScalerOf(context).scale(44),
-            builder: (pad) => ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: pad,
-              itemCount: _playlists.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, i) {
-                final p = _playlists[i];
-                final title = (p['title'] ?? '').toString();
-                return RailCard(
-                  width: 130,
-                  title: title,
-                  cover: NetImage(url: p['thumbnail']?['url']?.toString(), width: 130, height: 130, fallback: GeneratedCover(title: title, size: 130, radius: 0)),
-                  onTap: () => context.push('/playlist/${p['id']}'),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 22),
-        ],
-
-        if (_previewComments.isNotEmpty) ...[
-          _previewHeader('Bình luận', () => _goTab('comment')),
-          const SizedBox(height: 4),
-          ..._previewComments.map(_commentCard),
-          const SizedBox(height: 22),
-        ],
-
-        if (_visiblePoints(_previewPoints, auth).isNotEmpty) ...[
-          _previewHeader('Cống hiến', () => _goTab('point')),
-          ..._visiblePoints(_previewPoints, auth).map(_pointRow),
+        // Desktop: the preview sections sit in two columns (dealt out
+        // alternately so neither runs much longer); phone stacks them.
+        if (desk) ...[
+          if (sections.length == 1)
+            sections.first
+          else if (sections.isNotEmpty)
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (var i = 0; i < sections.length; i += 2) sections[i]])),
+              const SizedBox(width: 32),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (var i = 1; i < sections.length; i += 2) sections[i]])),
+            ]),
+          ?playlists,
+        ] else ...[
+          ?karaokes,
+          ?uploads,
+          ?playlists,
+          ?comments,
+          ?points,
         ],
 
         SizedBox(height: player.currentSong != null ? 90 : 20),

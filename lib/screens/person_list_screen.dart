@@ -10,6 +10,7 @@ import '../services/api.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/hover_effects.dart';
+import '../widgets/desktop_page.dart';
 import 'person_detail_screen.dart' show PersonType;
 
 class PersonListScreen extends StatefulWidget {
@@ -258,13 +259,18 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
     // avatar 80 + gaps + 2-line name (14pt) + listen count (13pt) + slack.
     final ts = MediaQuery.textScalerOf(context);
     final tileExtent = 80 + 8 + 2 + ts.scale(14) * 1.35 * 2 + ts.scale(13) * 1.4 + 16;
+    final desk = isDesk(context);
+    // Grid and pager line up with the desktop page title.
+    final side = desk ? deskPad.left : 20.0;
+    final count = _list.total > 0 ? '${_formatInt(_list.total)} ${_label.toLowerCase()}' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có'));
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(
         children: [
-          CustomScrollView(
+          DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -273,8 +279,11 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                padding: desk ? EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 24) : const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 sliver: SliverList(delegate: SliverChildListDelegate([
+                  if (desk)
+                    DeskHead(title: _label, subtitle: count)
+                  else ...[
                   Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
@@ -296,7 +305,7 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                             children: [
                               Text(_label, style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                               const SizedBox(height: 4),
-                              Text(_list.total > 0 ? '${_formatInt(_list.total)} ${_label.toLowerCase()}' : (!_list.loaded && !_list.failed ? 'Đang tải...' : (_list.failed ? '' : 'Chưa có')), style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
+                              Text(count, style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                             ],
                           ),
                         ),
@@ -304,6 +313,7 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  ],
                   _buildSearch(),
                   const SizedBox(height: 12),
                   // Filter row: A-Z index. Resets to "all" when tapped twice.
@@ -313,7 +323,7 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
               ),
               if (_list.loading || (!_list.loaded && !_list.failed))
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: EdgeInsets.symmetric(horizontal: side),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 180, crossAxisSpacing: 14, mainAxisSpacing: 18, mainAxisExtent: tileExtent),
                     delegate: SliverChildBuilderDelegate(
@@ -330,12 +340,12 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                 SliverToBoxAdapter(child: OfflineBlock(onRetry: () => _fetch(_list.page)))
               else if (_list.items.isEmpty)
                 SliverToBoxAdapter(child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                  padding: EdgeInsets.symmetric(vertical: 40, horizontal: side),
                   child: Center(child: Text(_search.isNotEmpty ? 'Không tìm thấy "$_search"' : 'Chưa có dữ liệu', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))),
                 ))
               else
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: EdgeInsets.symmetric(horizontal: side),
                   sliver: SliverGrid(
                     // Responsive cols: more on desktop so each tile doesn't
                     // stretch with huge horizontal gaps between rows.
@@ -401,14 +411,14 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                 child: Column(children: [
                   if (!_list.loading && _list.items.isNotEmpty && _list.lastPage > 1)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      padding: EdgeInsets.fromLTRB(side, 20, side, 0),
                       child: Pager(page: _list.page, lastPage: _list.lastPage, onPage: _fetch),
                     ),
                   SizedBox(height: player.currentSong != null ? 90 : 20),
                 ]),
               ),
             ],
-          ),
+          )),
           if (player.currentSong != null)
             const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
         ],

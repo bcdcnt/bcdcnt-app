@@ -8,6 +8,7 @@ import '../services/friendly_error.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/desktop_page.dart';
 
 /// Bài gửi: every upload the member sent — approved, waiting or rejected —
 /// so a pending or refused submission never just "disappears".
@@ -137,16 +138,19 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
         ),
       );
     }
+    final desk = isDesk(context);
+    final count = _total > 0 ? '${_formatInt(_total)} bài đã gửi' : (_loading ? 'Đang tải...' : 'Chưa có');
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
         RefreshIndicator(
           color: AppColors.accentFg,
           onRefresh: () => _fetch(1),
-          child: CustomScrollView(
+          child: DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: CustomScrollView(
             controller: _scrollCtl,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
+              if (!desk)
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
@@ -155,9 +159,11 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
               ),
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                padding: desk ? EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 0) : const EdgeInsets.fromLTRB(20, 8, 20, 16),
                 sliver: SliverToBoxAdapter(
-                  child: Container(
+                  child: desk
+                      ? DeskHead(title: 'Bài gửi của tôi', subtitle: count)
+                      : Container(
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(18),
@@ -169,7 +175,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Bài gửi của tôi', style: display(const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white))),
                         const SizedBox(height: 4),
-                        Text(_total > 0 ? '${_formatInt(_total)} bài đã gửi' : (_loading ? 'Đang tải...' : 'Chưa có'), style: body(const TextStyle(fontSize: 15, color: Colors.white))),
+                        Text(count, style: body(const TextStyle(fontSize: 15, color: Colors.white))),
                       ])),
                     ]),
                   ),
@@ -185,7 +191,16 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                   title: 'Chưa có bài gửi',
                   subtitle: 'Bài bạn gửi đóng góp cho thư viện sẽ xuất hiện tại đây.',
                 ))
-              else
+              else if (desk) ...[
+                SliverPadding(padding: EdgeInsets.symmetric(horizontal: deskPad.left), sliver: const SliverToBoxAdapter(child: _UploadTableHead())),
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(horizontal: deskPad.left),
+                  sliver: SliverList(delegate: SliverChildBuilderDelegate(
+                    (ctx, i) => _UploadRow(upload: _items[i], desk: true),
+                    childCount: _items.length,
+                  )),
+                ),
+              ] else
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   sliver: SliverList(delegate: SliverChildBuilderDelegate(
@@ -198,7 +213,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                 SizedBox(height: player.currentSong != null ? 90 : 20),
               ])),
             ],
-          ),
+          )),
         ),
         if (player.currentSong != null)
           const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
@@ -209,7 +224,9 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
 
 class _UploadRow extends StatelessWidget {
   final Map<String, dynamic> upload;
-  const _UploadRow({required this.upload});
+  /// Desktop table row: thumbnail · title · TRẠNG THÁI · NGÀY GỬI · ›.
+  final bool desk;
+  const _UploadRow({required this.upload, this.desk = false});
 
   static String _date(String? s) {
     final d = DateTime.tryParse(s ?? '');
@@ -230,6 +247,52 @@ class _UploadRow extends StatelessWidget {
     final thumb = (upload['thumbnail']?['url'] ?? obj?['thumbnail']?['url'])?.toString();
     final reason = (upload['reason'] ?? '').toString().trim();
     final date = _date(upload['created_at']?.toString());
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color))),
+      ]),
+    );
+    final why = status == 'rejected' && reason.isNotEmpty ? 'Lý do: $reason' : null;
+
+    if (desk) {
+      return Semantics(
+        button: true,
+        label: '$title, $label',
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: () => context.push('/bai-gui/${upload['id']}'),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+            child: Row(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: thumb != null
+                    ? NetImage(url: thumb, width: 44, height: 44)
+                    : Container(width: 44, height: 44, color: AppColors.surfaceLight, child: Icon(Icons.music_note_rounded, size: 20, color: AppColors.textMuted)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.title),
+                    if (why != null) Text(why, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
+                  ]),
+                ),
+              ),
+              SizedBox(width: _kStatusW, child: Align(alignment: Alignment.centerLeft, child: chip)),
+              SizedBox(width: _kDateW, child: Text(date, style: AppText.caption)),
+              SizedBox(width: _kChevW, child: Icon(Icons.chevron_right_rounded, color: AppColors.textMuted)),
+            ]),
+          ),
+        ),
+      );
+    }
 
     return Semantics(
       button: true,
@@ -253,21 +316,13 @@ class _UploadRow extends StatelessWidget {
                 Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.title),
                 const SizedBox(height: 6),
                 Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(icon, size: 15, color: color),
-                      const SizedBox(width: 4),
-                      Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color))),
-                    ]),
-                  ),
+                  chip,
                   if (date.isNotEmpty) Text(date, style: AppText.caption),
                 ]),
-                if (status == 'rejected' && reason.isNotEmpty)
+                if (why != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
-                    child: Text('Lý do: $reason', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
+                    child: Text(why, maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
                   ),
               ]),
             ),
@@ -275,6 +330,32 @@ class _UploadRow extends StatelessWidget {
           ]),
         ),
       ),
+    );
+  }
+}
+
+// Desktop table column widths, shared by the head and the rows.
+const _kStatusW = 150.0;
+const _kDateW = 120.0;
+const _kChevW = 32.0;
+
+class _UploadTableHead extends StatelessWidget {
+  const _UploadTableHead();
+
+  @override
+  Widget build(BuildContext context) {
+    final st = body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted));
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: Row(children: [
+        const SizedBox(width: 58),
+        Expanded(child: Text('BÀI GỬI', style: st)),
+        SizedBox(width: _kStatusW, child: Text('TRẠNG THÁI', style: st)),
+        SizedBox(width: _kDateW, child: Text('NGÀY GỬI', style: st)),
+        const SizedBox(width: _kChevW),
+      ]),
     );
   }
 }
