@@ -15,8 +15,8 @@ import 'desktop_player_bar.dart';
 import 'mini_player.dart';
 import 'notifications_dropdown.dart';
 import 'playlist_cover.dart';
-import 'song_row.dart' show songKind;
 import '../services/friendly_error.dart';
+import '../main.dart' show TabReselect;
 
 /// Desktop shell (canvas "Desktop — làm mới: Phòng lưu trữ đang hát"):
 ///   - Left menu 240 (76 under 1280px, icon + small label, never icon-only):
@@ -102,6 +102,12 @@ class _DesktopShellState extends State<DesktopShell> {
   }
 }
 
+/// "Tìm kiếm" puts the cursor in the search box, also when already there.
+void _goNav(BuildContext context, _NavItem item) {
+  context.go(item.path);
+  if (item.path == '/search') WidgetsBinding.instance.addPostFrameCallback((_) => TabReselect.notify(1));
+}
+
 class _NavItem {
   final String label;
   final String short;
@@ -115,10 +121,10 @@ class _NavItem {
 
 const _nav = <_NavItem>[
   _NavItem('Trang chủ', 'Trang chủ', '/', Icons.home_outlined, Icons.home_rounded),
-  _NavItem('Khám phá', 'Khám phá', '/search', Icons.explore_outlined, Icons.explore_rounded, ['/nghe-si', '/nhac-si', '/nha-tho', '/soan-gia', '/the-loai', '/tag', '/bang-xep-hang', '/dan-ca', '/lan-dieu', '/the-loai-dan-ca', '/bai-hat']),
-  _NavItem('Dòng thời gian', 'Thời gian', '/dong-thoi-gian', Icons.calendar_month_outlined, Icons.calendar_month_rounded),
+  _NavItem('Tìm kiếm', 'Tìm kiếm', '/search', Icons.search_outlined, Icons.search_rounded, ['/nghe-si', '/nhac-si', '/nha-tho', '/soan-gia', '/the-loai', '/tag', '/bang-xep-hang', '/dan-ca', '/lan-dieu', '/the-loai-dan-ca', '/bai-hat']),
+  _NavItem('Dòng thời gian', 'Thời gian', '/dong-thoi-gian', Icons.timeline_outlined, Icons.timeline_rounded),
   _NavItem('Cộng đồng', 'Cộng đồng', '/cong-dong', Icons.people_outline_rounded, Icons.people_rounded, ['/binh-luan', '/thao-luan', '/dien-dan', '/user']),
-  _NavItem('Thư viện', 'Thư viện', '/library', Icons.library_music_outlined, Icons.library_music_rounded, ['/yeu-thich', '/nghe-gan-day', '/da-tai-ve', '/playlist-cua-toi', '/bai-gui-cua-toi', '/profile']),
+  _NavItem('Cá nhân', 'Cá nhân', '/library', Icons.person_outline_rounded, Icons.person_rounded, ['/yeu-thich', '/nghe-gan-day', '/da-tai-ve', '/playlist-cua-toi', '/bai-gui-cua-toi', '/profile']),
 ];
 
 bool _isActive(String path, _NavItem item) {
@@ -259,7 +265,7 @@ class _NavRow extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           hoverColor: AppColors.surfaceHover,
-          onTap: () => context.go(item.path),
+          onTap: () => _goNav(context, item),
           child: SizedBox(
             height: 48,
             child: Row(children: [
@@ -301,7 +307,7 @@ class _RailNav extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                  onTap: () => context.go(item.path),
+                  onTap: () => _goNav(context, item),
                   child: SizedBox(
                     width: 64,
                     height: 60,

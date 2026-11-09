@@ -85,6 +85,8 @@ class _SearchScreenState extends State<SearchScreen> {
       _fetchTrending();
       if (context.read<AuthProvider>().isAuthenticated) _fetchRecent();
       if (q.isNotEmpty) _runSearch(q);
+      // Desktop: arriving from the sidebar means "I want to type".
+      if (q.isEmpty && mounted && MediaQuery.sizeOf(context).width >= 900) _focus.requestFocus();
     });
   }
 

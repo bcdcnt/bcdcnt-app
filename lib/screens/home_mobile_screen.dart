@@ -11,6 +11,7 @@ import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/anniversary_rail.dart';
 import '../services/lunar.dart';
+import '../services/occasions.dart';
 import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
@@ -68,40 +69,6 @@ const _decades = [
 
 const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
 
-/// Fixed-date days the archive has songs for. Within two weeks of one, the
-/// big "Gợi ý" cards play its songs.
-const _occasions = [
-  (1, 1, 'Tết Dương lịch'), (3, 2, 'Ngày thành lập Đảng'), (8, 3, 'Quốc tế Phụ nữ'),
-  (26, 3, 'Ngày thành lập Đoàn'), (30, 4, 'Ngày Giải phóng miền Nam'), (1, 5, 'Quốc tế Lao động'),
-  (7, 5, 'Chiến thắng Điện Biên Phủ'), (19, 5, 'Sinh nhật Bác Hồ'), (1, 6, 'Quốc tế Thiếu nhi'),
-  (27, 7, 'Ngày Thương binh Liệt sĩ'), (19, 8, 'Cách mạng Tháng Tám'), (2, 9, 'Quốc khánh'),
-  (10, 10, 'Giải phóng Thủ đô'), (20, 10, 'Ngày Phụ nữ Việt Nam'), (20, 11, 'Ngày Nhà giáo Việt Nam'),
-  (22, 12, 'Ngày thành lập Quân đội'),
-];
-
-/// Site playlists made for an occasion, used when BQT hasn't set up a
-/// dated event playlist for it (playlist.event_start/event_end).
-const _occasionPlaylist = {
-  'Quốc tế Phụ nữ': 27, 'Ngày Phụ nữ Việt Nam': 27, 'Ngày thành lập Đoàn': 1558,
-  'Ngày Giải phóng miền Nam': 40, 'Sinh nhật Bác Hồ': 18, 'Ngày Nhà giáo Việt Nam': 12,
-  'Ngày thành lập Quân đội': 6, 'Quốc khánh': 1, 'Giải phóng Thủ đô': 2,
-};
-
-typedef _Occasion = ({int days, int day, int month, String label});
-
-/// The nearest occasion within the next 14 days (today included).
-_Occasion? _nextOccasion(DateTime now) {
-  final today = DateTime(now.year, now.month, now.day);
-  _Occasion? best;
-  for (final (d, m, label) in _occasions) {
-    var date = DateTime(now.year, m, d);
-    if (date.isBefore(today)) date = DateTime(now.year + 1, m, d);
-    final days = date.difference(today).inDays;
-    if (days <= 14 && (best == null || days < best.days)) best = (days: days, day: d, month: m, label: label);
-  }
-  return best;
-}
-
 String _greeting(DateTime now) {
   final h = now.hour;
   if (h < 11) return 'Chào buổi sáng';
@@ -148,7 +115,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   /// "Mọi người đang nghe": {listeners, song}.
   List<Map<String, dynamic>> _live = [];
   List<Map<String, dynamic>> _today = [];
-  _Occasion? _occasion;
+  Occasion? _occasion;
   String? _occasionPlaylistId;
   List<Map<String, dynamic>> _occasionSongs = [];
   int _cat = 0;
@@ -207,7 +174,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     Future<Map<String, dynamic>?> safe(Future<Map<String, dynamic>> f) => f.then<Map<String, dynamic>?>((v) => v).catchError((_) => null);
     if (_failed) setState(() => _failed = false);
     _refreshPersonal();
-    _fetchOccasion(_nextOccasion(DateTime.now()));
+    _fetchOccasion(nextOccasion(DateTime.now()));
     final r = await Future.wait([
       safe(ApiClient.query(_mainQuery)),
       safe(ApiClient.query(_peopleQuery)),
@@ -275,7 +242,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
 
   /// The coming occasion's songs: a dated event playlist BQT set up for that
   /// day if there is one, else the site's themed playlist.
-  Future<void> _fetchOccasion(_Occasion? o) async {
+  Future<void> _fetchOccasion(Occasion? o) async {
     if (o == null) {
       if (_occasion != null && mounted) setState(() { _occasion = null; _occasionSongs = []; });
       return;
@@ -291,7 +258,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
         ]},
       });
-      id = (ev['playlists']?['data'] as List?)?.firstOrNull?['id']?.toString() ?? _occasionPlaylist[o.label]?.toString();
+      id = (ev['playlists']?['data'] as List?)?.firstOrNull?['id']?.toString() ?? kOccasionPlaylist[o.label]?.toString();
       if (id == null) return;
       final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { songs(first: 12) { data { $_songFields } } } }', {'id': id});
       final songs = _maps(d['playlist']?['songs']?['data'])
