@@ -144,6 +144,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   int _followers = 0;
   bool _followBusy = false;
   int _shares = 0;
+  /// Songs per composition year for this composer/artist (desktop chart).
+  Map<int, int> _yearCounts = {};
   /// The most listened songs, for the share picture.
   List<String> _topSongs = [];
   final Map<String, _SectionState> _sections = {};
@@ -257,6 +259,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       if (p == null) { setState(() => _loading = false); return; }
       setState(() {
         _person = Map<String, dynamic>.from(p);
+        _yearCounts = {};
         _following = false;
         _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
         _shares = (p['shares'] as num?)?.toInt() ?? 0;
@@ -492,6 +495,24 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     } finally {
       if (mounted) setState(() => _followBusy = false);
     }
+  }
+
+  String? _yearCountsFor;
+
+  /// "Tác phẩm theo năm" (desktop side column): songYearCounts for a
+  /// composer or an artist; stays empty until the API has it.
+  void _loadYearCounts() {
+    final p = _person;
+    final arg = switch (_cfg.queryName) { 'composer' => 'composer_id', 'artist' => 'artist_id', _ => null };
+    if (p == null || arg == null || _yearCountsFor == '${p['id']}') return;
+    _yearCountsFor = '${p['id']}';
+    ApiClient.query('query(\$id: ID) { songYearCounts($arg: \$id) { year total } }', {'id': '${p['id']}'}).then((d) {
+      final m = <int, int>{};
+      for (final e in ((d['songYearCounts'] ?? []) as List).whereType<Map>()) {
+        m[(e['year'] as num).toInt()] = (e['total'] as num).toInt();
+      }
+      if (mounted) setState(() => _yearCounts = m);
+    }).catchError((_) {});
   }
 
   Future<void> _share() async {
@@ -798,84 +819,213 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     return _buildMobileHeader(p, bornDate, deathDate);
   }
 
-  /// Spotify-style horizontal artist hero: left avatar + right column with
-  /// big title, role/rank, stats inline, life dates.
+  /// Desktop hero (canvas "Desktop · Nhạc sĩ"): a dark band with the
+  /// tinted photo on the right, the round portrait, name, life line, the
+  /// "Phát toàn bộ" action and the two totals.
   Widget _buildDesktopHeader(Map<String, dynamic> p, String? bornDate, String? deathDate) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 16, 32, 28),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Avatar always circular — square treatment for creators was
-          // reverted per user feedback (looked inconsistent across the app).
-          InkWell(
-            onTap: p['avatar']?['url'] != null ? () => _showAvatarZoom(p) : null,
-            borderRadius: BorderRadius.circular(100),
+    _loadYearCounts();
+    final first = _cfg.sections.firstWhere((c) => (_sections[c.key]?.allTotal ?? 0) > 0, orElse: () => _cfg.sections.first);
+    final total = _sections[first.key]?.allTotal ?? 0;
+    final canPlay = _sections[first.key]?.items.isNotEmpty ?? false;
+    final avatar = p['avatar']?['url']?.toString();
+    final rank = (p['rank'] ?? '').toString().trim();
+    final life = [
+      if (bornDate != null) bornDate,
+      if (deathDate != null) deathDate,
+      if ((p['born_address'] ?? '').toString().trim().isNotEmpty) p['born_address'].toString().trim(),
+    ].join(' · ');
+    Widget ghost(String label, IconData icon, VoidCallback? onTap, {bool on = false}) => Material(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(26),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(26),
+            onTap: onTap,
             child: Container(
-              width: 200, height: 200,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
-                boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45 * AppColors.shadowMul), blurRadius: 36, spreadRadius: -4)],
-                border: Border.all(color: AppColors.border, width: 3),
-              ),
-              child: ClipOval(
-                child: p['avatar']?['url'] != null
-                    ? CachedNetworkImage(imageUrl: cdnImg((p['avatar']['url']).toString(), 480), fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))
-                    : _initialsFallback(p),
-              ),
+              height: 52,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, size: 22, color: on ? const Color(0xFFE8A3A0) : Colors.white),
+                const SizedBox(width: 8),
+                Text(label, style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+              ]),
             ),
           ),
-          const SizedBox(width: 32),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Vertical rhythm — golden ratio (φ ≈ 1.618):
-                //   font tier  32 → 14 → 11 (anchor = title)
-                //   space tier  6 → 14 → 6 → 22 (within / between groups)
-                Text(
-                  _cfg.label,
-                  style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.2, color: AppColors.textMuted)),
+        );
+    Widget stat(String v, String k) => Column(crossAxisAlignment: CrossAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+          Text(v, style: display(const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white))),
+          Text(k, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xCCFFFFFF)))),
+        ]);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 8, 32, 20),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: SizedBox(
+          height: 300,
+          child: Stack(fit: StackFit.expand, children: [
+            Container(color: const Color(0xFF2E080A)),
+            if (avatar != null)
+              Positioned(
+                right: 0, top: 0, bottom: 0, width: 620,
+                child: Opacity(opacity: 0.55, child: BrandTint(child: CachedNetworkImage(imageUrl: cdnImg(avatar, 1000), fit: BoxFit.cover, alignment: const Alignment(0, -0.4)))),
+              ),
+            const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2E080A), Color(0xB32E080A), Color(0x332E080A)], stops: [0.3, 0.6, 1]))),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(36, 28, 36, 28),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                InkWell(
+                  onTap: avatar != null ? () => _showAvatarZoom(p) : null,
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 184, height: 184,
+                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 4)),
+                    child: ClipOval(child: avatar != null ? BrandTint(child: CachedNetworkImage(imageUrl: cdnImg(avatar, 480), fit: BoxFit.cover, errorWidget: (_, _, _) => _initialsFallback(p))) : _initialsFallback(p)),
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Text(p['title'] ?? '', style: AppText.hero),
-                if (p['rank'] != null && (p['rank'] as String).isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(p['rank'], style: body(TextStyle(fontSize: 14, color: AppColors.accentLight, fontWeight: FontWeight.w500))),
-                ],
-                const SizedBox(height: 14),
-                // Inline stat row — Spotify-style.
-                Wrap(
-                  spacing: 18, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _StatInline(label: 'lượt nghe', value: _formatInt(p['total_listens'])),
-                    _StatInline(label: 'lượt tải', value: _formatInt(p['total_downloads'])),
-                    _StatInline(label: 'lượt xem', value: _formatInt(p['views'])),
-                  ],
+                const SizedBox(width: 28),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                    Text([_cfg.label, if (rank.isNotEmpty) rank].join(' · ').toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE)))),
+                    const SizedBox(height: 6),
+                    Text(p['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 50, height: 1.05, letterSpacing: -1.1, fontWeight: FontWeight.w800, color: Colors.white))),
+                    if (life.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(life, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xE6FFFFFF)))),
+                    ],
+                    const SizedBox(height: 18),
+                    Wrap(spacing: 10, runSpacing: 10, children: [
+                      Material(
+                        color: AppColors.wine,
+                        borderRadius: BorderRadius.circular(26),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(26),
+                          onTap: canPlay ? () => _playSection(first, shuffle: false) : null,
+                          child: Container(
+                            height: 52,
+                            padding: const EdgeInsets.symmetric(horizontal: 22),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              const Icon(Icons.play_arrow_rounded, size: 26, color: Colors.white),
+                              const SizedBox(width: 8),
+                              Text('Phát toàn bộ ${_formatInt(total)} bài', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                            ]),
+                          ),
+                        ),
+                      ),
+                      ghost('Trộn bài', Icons.shuffle_rounded, canPlay ? () => _playSection(first, shuffle: true) : null),
+                      ghost(_followers > 0 ? '$_followers yêu thích' : 'Yêu thích', _following ? Icons.favorite_rounded : Icons.favorite_border_rounded, _toggleFollow, on: _following),
+                      ghost('Chia sẻ', Icons.ios_share_rounded, _share),
+                    ]),
+                  ]),
                 ),
-                if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty
-                    || bornDate != null || deathDate != null
-                    || (p['born_address'] != null && (p['born_address'] as String).isNotEmpty))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 22),
-                    child: Wrap(
-                      spacing: 18, runSpacing: 4,
-                      children: [
-                        if (p['real_name'] != null && (p['real_name'] as String).isNotEmpty)
-                          _MetaChip(icon: Icons.badge_outlined, value: p['real_name']),
-                        if (bornDate != null) _MetaChip(icon: Icons.cake_outlined, value: bornDate),
-                        if (deathDate != null) _MetaChip(icon: Icons.whatshot_outlined, value: deathDate),
-                        if (p['born_address'] != null && (p['born_address'] as String).isNotEmpty)
-                          _MetaChip(icon: Icons.place_outlined, value: p['born_address']),
-                      ],
+                const SizedBox(width: 20),
+                Column(mainAxisAlignment: MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  stat(_formatInt(p['total_listens']), 'lượt nghe'),
+                  const SizedBox(height: 12),
+                  stat(_formatInt(p['total_downloads']), 'lượt tải'),
+                ]),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  /// Desktop side column next to the song table: songs per year, the
+  /// people this one works with most, the start of the bio.
+  Widget _desktopSide(Map<String, dynamic> p) {
+    final eyebrow = AppText.eyebrow;
+    // Collaborators: singers on a composer's songs, composers on a singer's.
+    final counts = <String, (Map, int)>{};
+    for (final x in (_sections['songs']?.items ?? const []).whereType<Map>()) {
+      final people = _cfg.queryName == 'artist' ? (x['sheet']?['composers']?['data'] ?? const []) : (x['artists']?['data'] ?? const []);
+      for (final a in (people as List).whereType<Map>()) {
+        if ('${a['id']}' == '${p['id']}' && _cfg.queryName == 'artist') continue;
+        final k = '${a['slug']}';
+        counts[k] = (a, (counts[k]?.$2 ?? 0) + 1);
+      }
+    }
+    final top = counts.values.toList()..sort((a, b) => b.$2.compareTo(a.$2));
+    final bio = (p['content'] ?? '').toString().replaceAll(RegExp(r'<[^>]+>'), ' ').replaceAll(RegExp(r'&nbsp;|\s+'), ' ').trim();
+    final years = _yearCounts.keys.toList()..sort();
+    final peak = _yearCounts.values.fold<int>(1, (a, b) => b > a ? b : a);
+    var best = (0, 0);
+    for (final y in years) {
+      final five = [for (var i = 0; i < 5; i++) _yearCounts[y + i] ?? 0].fold<int>(0, (a, b) => a + b);
+      if (five > best.$2) best = (y, five);
+    }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(0, 16, 32, 100),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (years.length > 1) ...[
+          Text('TÁC PHẨM THEO NĂM', style: eyebrow),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 110,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              for (var y = years.first; y <= years.last; y++)
+                Expanded(
+                  child: Tooltip(
+                    message: '$y · ${_yearCounts[y] ?? 0} bài',
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 0.5),
+                      child: FractionallySizedBox(
+                        heightFactor: ((_yearCounts[y] ?? 0) / peak).clamp(0.02, 1.0),
+                        alignment: Alignment.bottomCenter,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: y >= best.$1 && y < best.$1 + 5 ? AppColors.wine : AppColors.rose.withValues(alpha: 0.45),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ]),
           ),
+          const SizedBox(height: 6),
+          Row(children: [
+            Text('${years.first}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+            Expanded(child: Text(best.$2 > 0 ? '${best.$1}–${best.$1 + 4} · ${best.$2} bài' : '', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+            Text('${years.last}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+          ]),
+          const SizedBox(height: 28),
         ],
-      ),
+        if (top.isNotEmpty) ...[
+          Text('CỘNG TÁC THƯỜNG XUYÊN', style: eyebrow),
+          const SizedBox(height: 12),
+          Wrap(spacing: 10, runSpacing: 12, children: [
+            for (final (a, _) in top.take(4))
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => context.push('${_cfg.queryName == 'artist' ? '/nhac-si/' : '/nghe-si/'}${a['slug']}'),
+                child: SizedBox(
+                  width: 64,
+                  child: Column(children: [
+                    UserAvatar(url: a['avatar']?['url']?.toString(), name: '${a['title'] ?? ''}', size: 52),
+                    const SizedBox(height: 6),
+                    Text('${a['title'] ?? ''}', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  ]),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 28),
+        ],
+        if (bio.isNotEmpty) ...[
+          Text('TIỂU SỬ', style: eyebrow),
+          const SizedBox(height: 8),
+          Text(bio, maxLines: 5, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.65, color: AppColors.textSecondary))),
+          Builder(builder: (ctx) => TextButton(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                onPressed: () {
+                  final tabs = DefaultTabController.maybeOf(ctx);
+                  final i = _cfg.sections.where((c) => (_sections[c.key]?.allTotal ?? 0) > 0).length;
+                  tabs?.animateTo(i);
+                },
+                child: Text('Đọc tiếp', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+              )),
+        ],
+      ]),
     );
   }
 
@@ -1046,6 +1196,24 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       content = state.query.isNotEmpty
           ? ListSearchEmpty(query: state.query)
           : Padding(padding: const EdgeInsets.symmetric(vertical: 40), child: Center(child: Text('Chưa có bài', style: body(TextStyle(fontSize: 16, color: AppColors.textMuted)))));
+    } else if (MediaQuery.sizeOf(context).width >= 900) {
+      content = Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(children: [
+          _DeskSongHeader(),
+          for (var i = 0; i < queue.length; i++)
+            Builder(
+              builder: (rowCtx) => _DeskSongRow(
+                song: queue[i],
+                index: i,
+                byline: songByline(queue[i]),
+                playing: rowCtx.select<PlayerProvider, bool>((pl) => sameSong(pl.currentSong, queue[i])),
+                onTap: () => playOrOpen(context, queue[i], queue, '${_person?['title'] ?? ''} · ${cfg.label}'),
+              ),
+            ),
+          if (state.loadingMore) const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2.4)),
+        ]),
+      );
     } else {
       content = Column(children: [
         for (var i = 0; i < queue.length; i++)
@@ -1077,7 +1245,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           ),
       ]);
     }
-    return NotificationListener<ScrollNotification>(
+    final list = NotificationListener<ScrollNotification>(
       // Near the bottom: fetch the next page under the rows already shown.
       onNotification: (n) {
         if (n.metrics.axis == Axis.vertical && n.metrics.extentAfter < 600 && !state.loading && !state.loadingMore && !state.moreFailed && state.currentPage < state.lastPage && state.items.isNotEmpty) {
@@ -1107,6 +1275,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       ],
     ),
     );
+    if (MediaQuery.sizeOf(context).width < 1100 || _person == null) return list;
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: list),
+      const SizedBox(width: 8),
+      SizedBox(width: 300, child: _desktopSide(_person!)),
+    ]);
   }
 
   Widget _buildSortBar(String key, _SectionState state) {
@@ -1338,6 +1512,79 @@ class _CountPill extends StatelessWidget {
               ],
             ]),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Desktop song table: column titles.
+class _DeskSongHeader extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final st = body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted));
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+      child: Row(children: [
+        SizedBox(width: 36, child: Text('#', textAlign: TextAlign.right, style: st)),
+        const SizedBox(width: 16),
+        Expanded(flex: 5, child: Text('TÊN BÀI', style: st)),
+        Expanded(flex: 3, child: Text('TRÌNH BÀY', style: st)),
+        SizedBox(width: 64, child: Text('NĂM', style: st)),
+        SizedBox(width: 90, child: Text('LƯỢT NGHE', textAlign: TextAlign.right, style: st)),
+        const SizedBox(width: 48),
+      ]),
+    );
+  }
+}
+
+/// One row of the desktop song table: # · cover + title · singers · year ·
+/// listens · ⋯. Right click opens the same menu as ⋯.
+class _DeskSongRow extends StatelessWidget {
+  final Map<String, dynamic> song;
+  final int index;
+  final String byline;
+  final bool playing;
+  final VoidCallback onTap;
+  const _DeskSongRow({required this.song, required this.index, required this.byline, required this.playing, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final year = '${song['sheet']?['year'] ?? ''}'.trim();
+    final txt = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary));
+    return Material(
+      color: playing ? AppColors.accentSoft : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        hoverColor: AppColors.surfaceHover,
+        onTap: onTap,
+        onSecondaryTap: () => showSongActions(context, song),
+        child: Container(
+          height: 60,
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          child: Row(children: [
+            SizedBox(
+              width: 36,
+              child: playing
+                  ? Icon(Icons.graphic_eq_rounded, size: 22, color: AppColors.accentFg)
+                  : Text('${index + 1}', textAlign: TextAlign.right, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 5,
+              child: Row(children: [
+                SongCover(song: song, size: 40, radius: 8),
+                const SizedBox(width: 12),
+                Expanded(child: Text('${song['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: playing ? AppColors.accentFg : AppColors.text)))),
+              ]),
+            ),
+            Expanded(flex: 3, child: Text(byline, maxLines: 1, overflow: TextOverflow.ellipsis, style: txt)),
+            SizedBox(width: 64, child: Text(year.isEmpty || year == '0' ? '' : year, style: txt)),
+            SizedBox(width: 90, child: Text(formatViews(((song['views'] ?? 0) as num).toInt()), textAlign: TextAlign.right, style: txt)),
+            SizedBox(width: 48, child: IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, song), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted))),
+          ]),
         ),
       ),
     );
