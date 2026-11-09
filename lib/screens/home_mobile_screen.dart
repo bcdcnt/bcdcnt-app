@@ -143,6 +143,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   List<Map<String, dynamic>> _forYou = [];
   /// "Nghe đi nghe lại": the member's most played, with 'plays'.
   List<Map<String, dynamic>> _again = [];
+  /// "Mới thích gần đây": the member's latest loves, newest first.
+  List<Map<String, dynamic>> _loved = [];
   /// "Mọi người đang nghe": {listeners, song}.
   List<Map<String, dynamic>> _live = [];
   List<Map<String, dynamic>> _today = [];
@@ -318,6 +320,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (throttle && _personalAt != null && now.difference(_personalAt!) < const Duration(minutes: 2)) return;
     _personalAt = now;
     _fetchRecent(auth, uid);
+    _fetchLoved(auth, uid);
     _fetchForYou(auth, uid);
     _fetchAgain(uid);
   }
@@ -329,11 +332,12 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     if (uid == _recentFor) return;
     _recentFor = uid;
     if (uid == null) {
-      setState(() { _recent = []; _forYou = []; _again = []; });
+      setState(() { _recent = []; _forYou = []; _again = []; _loved = []; });
       return;
     }
     _personalAt = DateTime.now();
     _fetchRecent(auth, uid);
+    _fetchLoved(auth, uid);
     _fetchForYou(auth, uid);
     _fetchAgain(uid);
   }
@@ -354,6 +358,23 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
         out.add(m);
       }
       if (mounted && _recentFor == uid) setState(() => _recent = out);
+    } catch (_) {}
+  }
+
+  Future<void> _fetchLoved(AuthProvider auth, String uid) async {
+    const f = 'id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 2) { data { id title slug } }';
+    try {
+      final d = await auth.authedQuery('''query(\$id: ID!) { user(id: \$id) { loves(first: 12, page: 1, orderBy: [{column: "id", order: DESC}]) { data { object { __typename ... on Song { $f } ... on Folk { $f } ... on Instrumental { $f } ... on Poem { $f } } } } } }''', {'id': uid});
+      const tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
+      final out = <Map<String, dynamic>>[];
+      for (final e in _maps(d['user']?['loves']?['data'])) {
+        final o = e['object'];
+        if (o is! Map) continue;
+        final m = Map<String, dynamic>.from(o);
+        m['file_type'] = tn[m['__typename']] ?? 'song';
+        out.add(m);
+      }
+      if (mounted && _recentFor == uid) setState(() => _loved = out);
     } catch (_) {}
   }
 
@@ -506,6 +527,32 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 height: 226,
                 count: _recent.length,
                 builder: (_, i) => _songCard(_recent[i], _recent, 'Nghe gần đây'),
+              ),
+            ],
+            // Songs just loved, to play them again: a heart marks the rail.
+            if (_loved.isNotEmpty) ...[
+              SectionTitle('Mới thích gần đây', action: 'Xem tất cả', onAction: () => context.push('/yeu-thich'), padding: const EdgeInsets.fromLTRB(20, 18, 12, 10)),
+              Rail(
+                height: 226,
+                count: _loved.length,
+                builder: (_, i) => RailCard(
+                  cover: Stack(fit: StackFit.expand, children: [
+                    SongCover(song: _loved[i], size: 148, radius: 0),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), shape: BoxShape.circle),
+                        child: const Icon(Icons.favorite_rounded, size: 16, color: Color(0xFF8E1F1F)),
+                      ),
+                    ),
+                  ]),
+                  title: _loved[i]['title']?.toString() ?? '',
+                  subtitle: songByline(_loved[i]),
+                  onTap: () => playOrOpen(context, _loved[i], _loved, 'Yêu thích'),
+                ),
               ),
             ],
 

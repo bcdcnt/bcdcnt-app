@@ -668,7 +668,9 @@ class PersonBubble extends StatelessWidget {
   final VoidCallback? onTap;
   final double size;
   final bool tint;
-  const PersonBubble({super.key, required this.name, this.image, this.onTap, this.size = 88, this.tint = true});
+  /// A small heart on the photo: someone the member follows.
+  final bool loved;
+  const PersonBubble({super.key, required this.name, this.image, this.onTap, this.size = 88, this.tint = true, this.loved = false});
 
   @override
   Widget build(BuildContext context) {
@@ -685,20 +687,33 @@ class PersonBubble extends StatelessWidget {
         onTap: onTap,
         child: Column(
           children: [
-            NetImage(
-              url: image,
-              width: size,
-              height: size,
-              circle: true,
-              tint: tint,
-              fallback: Container(
+            Stack(clipBehavior: Clip.none, children: [
+              NetImage(
+                url: image,
                 width: size,
                 height: size,
-                color: AppColors.accentSoft,
-                alignment: Alignment.center,
-                child: Text(initial, style: display(TextStyle(fontSize: size * 0.38, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                circle: true,
+                tint: tint,
+                fallback: Container(
+                  width: size,
+                  height: size,
+                  color: AppColors.accentSoft,
+                  alignment: Alignment.center,
+                  child: Text(initial, style: display(TextStyle(fontSize: size * 0.38, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                ),
               ),
-            ),
+              if (loved)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2)),
+                    child: Icon(Icons.favorite_rounded, size: 15, color: AppColors.accentLight),
+                  ),
+                ),
+            ]),
             const SizedBox(height: 8),
             Text(name, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.text))),
           ],

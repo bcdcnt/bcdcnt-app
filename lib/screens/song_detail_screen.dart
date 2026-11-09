@@ -19,6 +19,7 @@ import '../services/activity.dart';
 import '../services/player.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../widgets/song_row.dart';
+import '../widgets/song_info_sheet.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_admin_actions.dart';
 import '../widgets/comment_section.dart';
@@ -133,8 +134,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
-            uploader { id username }
+            file { id is_hq bitrate source audio_url video_url duration created_at user { id username avatar { url } } }
+            uploader { id username avatar { url } }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description }
@@ -153,8 +154,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
-            uploader { id username }
+            file { id is_hq bitrate source audio_url video_url duration created_at user { id username avatar { url } } }
+            uploader { id username avatar { url } }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description composers(first: 20) { data { id slug title avatar { url } } } }
@@ -170,8 +171,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
-            uploader { id username }
+            file { id is_hq bitrate source audio_url video_url duration created_at user { id username avatar { url } } }
+            uploader { id username avatar { url } }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             sheet { id slug title year lyric_type content description }
             poets(first: 20) { data { id slug title avatar { url } } }
@@ -186,8 +187,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
-            uploader { id username }
+            file { id is_hq bitrate source audio_url video_url duration created_at user { id username avatar { url } } }
+            uploader { id username avatar { url } }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
             song { id slug title }
@@ -201,8 +202,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             id title subtitle slug content description views downloads shares file_type play_type record_year empty_file created_at
             thumbnail { id url caption }
             imageCreditor { id username }
-            file { id is_hq source audio_url video_url duration created_at user { id username avatar { url } } }
-            uploader { id username }
+            file { id is_hq bitrate source audio_url video_url duration created_at user { id username avatar { url } } }
+            uploader { id username avatar { url } }
             accompaniment_instrument accompanists(first: 20) { data { id title slug avatar { url } } }
             uploads(orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: "approved"}]}) { id file { id audio_url is_hq created_at user { id username avatar { url } } } }
             sheet { id slug title year lyric_type content description tags { id name slug } composers(first: 20) { data { id slug title avatar { url } } } poets(first: 20) { data { id slug title avatar { url } } } }
@@ -949,7 +950,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         padding: pad,
         itemCount: tags.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => BrandChip(label: '#${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
+        itemBuilder: (_, i) => BrandChip(label: '${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
       ),
     ));
 
@@ -1010,7 +1011,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         child: Container(
           constraints: const BoxConstraints(minHeight: 40),
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
-          child: Text('#${t['name'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+          child: Text('${t['name'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
         ),
       )).toList()),
     );
@@ -1054,7 +1055,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       onPressed: () => showSongAdminSheet(context, song: Map<String, dynamic>.from(song), type: _resolvedType, onRefresh: () => _fetch(fresh: true)),
                     ),
                   if (MediaQuery.of(context).size.width < 900)
-                    IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song))),
+                    IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song), onInfo: () => showSongInfoSheet(context, Map<String, dynamic>.from(song)))),
                 ],
               ),
 
@@ -1138,8 +1139,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           [
                             if ((song['views'] ?? 0) is num && (song['views'] ?? 0) > 0) '${formatViews((song['views'] as num).toInt())} lượt nghe',
                             if ((song['downloads'] ?? 0) is num && (song['downloads'] ?? 0) > 0) '${formatViews((song['downloads'] as num).toInt())} lượt tải',
-                            // Where the recording came from (VOV, a TV channel…): minor, so it rides on this line.
-                            if ((song['file']?['source'] ?? '').toString().trim().isNotEmpty) 'Nguồn: ${song['file']['source'].toString().trim()}',
+                            // Source, contributor, dates…: ⋯ → "Thông tin bài hát".
                           ].join(' · '),
                           style: AppText.meta,
                         ),
@@ -2366,19 +2366,57 @@ class _MobileHeader extends StatelessWidget {
         head,
       ]);
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        GestureDetector(
-          onTap: onArtworkTap,
-          child: DecoratedBox(
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.45), blurRadius: 20, offset: const Offset(0, 8))]),
-            child: SongCover(song: song, size: 136, radius: 20),
+    // A wide banner with the title over its darkened foot: the same frame
+    // whatever the title's length, nothing left blank beside a small cover.
+    final thumb = this.thumb;
+    return GestureDetector(
+      onTap: onArtworkTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.45), blurRadius: 20, offset: const Offset(0, 8))]),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(22),
+          child: SizedBox(
+            height: 210,
+            child: LayoutBuilder(builder: (context, c) {
+              final fallback = OverflowBox(maxHeight: double.infinity, child: GeneratedCover(title: title, size: c.maxWidth, radius: 0));
+              return Stack(fit: StackFit.expand, children: [
+                if (thumb == null || thumb.isEmpty)
+                  fallback
+                else
+                  CachedNetworkImage(
+                    imageUrl: cdnImg(thumb, 640),
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(color: AppColors.surfaceLight),
+                    errorWidget: (_, _, _) => fallback,
+                  ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: [0.3, 1],
+                      colors: [Color(0x00161112), Color(0xD1161112)],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 18, right: 18, bottom: 16,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text([kind, if (year != null) year!].join(' · ').toUpperCase(), style: AppText.eyebrow.copyWith(color: const Color(0xFFF6E8DE))),
+                      const SizedBox(height: 4),
+                      Text(noOrphan(title), maxLines: 3, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: Colors.white))),
+                      if (subtitle.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.meta.copyWith(color: Colors.white.withValues(alpha: 0.85)))),
+                    ],
+                  ),
+                ),
+              ]);
+            }),
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(child: head),
-      ],
+      ),
     );
   }
 }

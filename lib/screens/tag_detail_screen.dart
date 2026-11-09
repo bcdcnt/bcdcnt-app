@@ -238,7 +238,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                     Container(width: 56, height: 56, decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(14)), child: const Icon(Icons.tag, color: Colors.white, size: 28)),
                     const SizedBox(width: 14),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('#${_tag!['name']}', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3))),
+                      Text('${_tag!['name']}', style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3))),
                       const SizedBox(height: 4),
                       Text('Bài hát có tag này', style: body(const TextStyle(fontSize: 15, color: Colors.white70))),
                     ])),

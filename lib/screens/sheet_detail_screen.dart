@@ -199,7 +199,7 @@ class _SheetDetailScreenState extends State<SheetDetailScreen> {
                   child: InkWell(
                   onTap: () => context.push('/tag/${t['slug']}'),
                   borderRadius: BorderRadius.circular(24),
-                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)), child: Text('#${t['name']}', style: body(TextStyle(fontSize: 15, color: AppColors.text)))),
+                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13), decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)), child: Text('${t['name']}', style: body(TextStyle(fontSize: 15, color: AppColors.text)))),
                 ))).toList()),
               ],
 

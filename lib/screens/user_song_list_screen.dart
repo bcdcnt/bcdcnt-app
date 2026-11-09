@@ -242,11 +242,6 @@ class _UserSongListScreenState extends State<UserSongListScreen> with PagedLoade
                         ),
                       ],
                     ),
-                  if (_items.isNotEmpty)
-                    Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: SizedBox(width: double.infinity, child: PillButton(onTap: () => saveAllForOffline(context, _items.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(), title: _title), icon: Icons.download_for_offline_outlined, label: _list.page < _list.lastPage ? 'Tải ${_items.length} bài đang hiện về máy' : 'Tải tất cả về máy', primary: false)),
-                  ),
                   if (_items.isNotEmpty || _q.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     ListSearchField(

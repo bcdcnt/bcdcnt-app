@@ -1122,7 +1122,7 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [for (final t in _tags) BrandChip(label: '#${t['name']}', onTap: () => context.push('/tag/${t['slug']}'))],
+              children: [for (final t in _tags) BrandChip(label: '${t['name']}', onTap: () => context.push('/tag/${t['slug']}'))],
             ),
           ),
         ],

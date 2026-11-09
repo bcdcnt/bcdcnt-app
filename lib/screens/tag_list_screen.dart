@@ -165,11 +165,7 @@ class _TagListScreenState extends State<TagListScreen> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
                           decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(24), border: Border.all(color: AppColors.border)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Text('#', style: TextStyle(fontSize: 15, color: AppColors.accentLight, fontWeight: FontWeight.w700)),
-                            const SizedBox(width: 2),
-                            Flexible(child: Text(t['name'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)))),
-                          ]),
+                          child: Text(t['name'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text))),
                         ),
                         ),
                       );

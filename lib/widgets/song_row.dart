@@ -5,7 +5,6 @@ import 'package:flutter/semantics.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/activity.dart' show logShare;
 import '../services/share.dart';
 import '../constants/theme.dart';
@@ -407,7 +406,9 @@ class SongRow extends StatelessWidget {
 
 /// Bottom sheet with every secondary action for a song. Opened from the ⋮
 /// button on any song row, long-press, or right-click on desktop.
-Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {VoidCallback? onRemove}) async {
+/// [onInfo]: on the song page itself, "Xem trang bài hát" gives way to
+/// "Thông tin bài hát" (source, contributor, file details).
+Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {VoidCallback? onRemove, VoidCallback? onInfo}) async {
   final artists = _people(song['artists']);
   final fileType = songKind(song);
   // Author page by kind, as on the song page: dân ca → soạn giả, thơ → nhà thơ.
@@ -479,10 +480,11 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
                 OfflineStore.instance.isSaved(song)
                     ? item('unsave', Icons.download_done_rounded, 'Xoá khỏi "Đã tải về"')
                     : item('save', Icons.download_for_offline_outlined, 'Tải về để nghe offline'),
-              item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
+              if (onInfo == null) item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
               if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến $composerRole ${composer['title']}'),
               if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'nghệ sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
               item('share', Icons.ios_share_rounded, 'Chia sẻ (Zalo, Facebook…)'),
+              if (onInfo != null) item('info', Icons.info_outline_rounded, 'Thông tin bài hát'),
             ],
           ),
         ),
@@ -532,6 +534,9 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
     case 'detail':
       context.push('/song/${song['id']}', extra: Map<String, dynamic>.from(song));
       break;
+    case 'info':
+      onInfo?.call();
+      break;
     case 'composer':
       context.push('$composerRoute/${composer!['slug']}');
       break;
@@ -576,94 +581,3 @@ Future<void> saveForOffline(BuildContext context, Map<String, dynamic> song) asy
   ));
 }
 
-/// Downloads a whole list (playlist, favourites) for offline listening, one
-/// song at a time, in a sheet that shows "Đang tải 3/20" and can be stopped.
-/// Stops early when the server says the daily download quota is used up.
-Future<void> saveAllForOffline(BuildContext context, List<Map<String, dynamic>> songs, {String? title}) async {
-  final auth = context.read<AuthProvider>();
-  if (!auth.isAuthenticated) {
-    askLogin(context);
-    return;
-  }
-  final store = OfflineStore.instance;
-  await store.load();
-  final todo = songs.where((s) => (s['file']?['audio_url'] ?? s['audioUrl']) != null && !store.isSaved(s)).toList();
-  if (!context.mounted) return;
-  if (todo.isEmpty) {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Các bài trong danh sách đã có trong "Đã tải về".')));
-    return;
-  }
-  var done = 0, failed = 0, streak = 0;
-  var stop = false, finished = false;
-  String? error;
-  var running = false;
-  await showModalBottomSheet<void>(
-    context: context,
-    // Above the tab bar: switching tabs must not tear the sheet down while
-    // downloads keep running.
-    useRootNavigator: true,
-    isDismissible: false,
-    enableDrag: false,
-    backgroundColor: AppColors.bg,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => PopScope(
-      // Android Back must not hide a sheet whose download keeps running.
-      canPop: finished,
-      child: Builder(builder: (ctx) {
-      Future<void> run() async {
-        // Screen sleeping would suspend the downloads on iOS.
-        WakelockPlus.enable().catchError((_) {});
-        for (final s in todo) {
-          if (stop) break;
-          final err = await store.download(s, auth);
-          if (err == null) {
-            done++;
-            streak = 0;
-          } else {
-            failed++;
-            // Only network failures count towards "mất mạng".
-            if (err.contains('mạng')) {
-              streak++;
-            } else {
-              streak = 0;
-            }
-            if (err.contains('quá nhiều') || err.contains('đăng nhập')) { error = err; break; }
-            // Three in a row: the network is down, not one bad file.
-            if (streak >= 3) { error = 'Mất kết nối mạng, đã tạm dừng'; break; }
-          }
-          if (ctx.mounted) setSheet(() {});
-        }
-        finished = true;
-        WakelockPlus.disable().catchError((_) {});
-        if (ctx.mounted) setSheet(() {});
-      }
-      if (!running) { running = true; run(); }
-      final total = todo.length;
-      return SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text(!finished ? (stop ? 'Đang dừng…' : 'Đang tải về máy') : (stop ? 'Đã dừng tải' : (error != null ? 'Chưa tải hết' : 'Đã tải xong')), style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
-            if (title != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(title, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-            const SizedBox(height: 18),
-            LinearProgressIndicator(value: total == 0 ? 0 : (done + failed) / total, minHeight: 8, borderRadius: BorderRadius.circular(4), color: AppColors.accent, backgroundColor: AppColors.surfaceLight),
-            const SizedBox(height: 10),
-            Text(
-              [ '$done/$total bài', if (failed > 0) '$failed bài lỗi' ].join(' · '),
-              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
-            ),
-            if (error != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text('$error. Các bài đã tải vẫn nghe được.', style: body(TextStyle(fontSize: 14, color: AppColors.error)))),
-            if (!finished) Padding(padding: const EdgeInsets.only(top: 6), child: Text('Để màn hình mở cho tới khi tải xong. Nên dùng Wi-Fi.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)))),
-            const SizedBox(height: 20),
-            if (finished)
-              PillButton(label: 'Mở Đã tải về', icon: Icons.download_done_rounded, onTap: () { Navigator.pop(ctx); GoRouter.of(context).push('/da-tai-ve'); })
-            else
-              PillButton(label: stop ? 'Đang dừng…' : 'Dừng tải', primary: false, onTap: stop ? null : () => setSheet(() => stop = true)),
-            if (finished) TextButton(onPressed: () => Navigator.pop(ctx), child: Text('Đóng', style: body(TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary)))),
-          ]),
-        ),
-      );
-    }),
-    )),
-  );
-}

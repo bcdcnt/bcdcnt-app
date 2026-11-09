@@ -229,6 +229,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     name: (p['title'] ?? '').toString(),
                     image: p['avatar']?['url']?.toString(),
                     tint: true,
+                    loved: true,
                     onTap: () => _pushThenRefresh('${_personRoutes[p['type']]}${p['slug']}'),
                   );
                 },
