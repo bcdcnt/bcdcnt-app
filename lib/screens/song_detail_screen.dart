@@ -2123,6 +2123,33 @@ class _DesktopHero extends StatelessWidget {
                       // hàng nút gọn 4 nút giống web.
                       _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist),
                     ]),
+                    // Who liked it, beside the Thích button it belongs to.
+                    if (loves.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      InkWell(
+                        onTap: onShowLovers,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          SizedBox(
+                            height: 28,
+                            width: 28 + (loves.length.clamp(1, 4) - 1) * 20.0,
+                            child: Stack(children: [
+                              for (int i = 0; i < loves.length.clamp(0, 4); i++)
+                                Positioned(
+                                  left: i * 20.0,
+                                  child: Container(
+                                    width: 28, height: 28,
+                                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF2E080A), width: 2), color: AppColors.surfaceLight),
+                                    child: ClipOval(child: _LoverAvatar(love: loves[i])),
+                                  ),
+                                ),
+                            ]),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('đã thích', style: body(const TextStyle(fontSize: 13, color: Color(0xCCFFFFFF), decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: Color(0xCCFFFFFF)))),
+                        ]),
+                      ),
+                    ],
                   ]),
                 ),
               ]),
@@ -2131,64 +2158,6 @@ class _DesktopHero extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         if (credits != null) credits!,
-        const SizedBox(height: 10),
-        // Stat strip — Wrap so the 3 metric chunks reflow onto a
-        // second line when the info column gets squeezed (narrow
-        // desktop window). Row would just print "RenderFlex
-        // overflowed by N pixels" + clip the rightmost stat.
-        Wrap(
-          spacing: 14, runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.headphones, size: 13, color: AppColors.textMuted),
-              const SizedBox(width: 4),
-              Text('${_formatIntStatic(views)} lượt nghe', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-            ]),
-            if (downloads > 0)
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.download, size: 13, color: AppColors.textMuted),
-                const SizedBox(width: 4),
-                Text('${_formatIntStatic(downloads)} tải về', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-              ]),
-            if (uploadDate != null)
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.calendar_today, size: 12, color: AppColors.textMuted),
-                const SizedBox(width: 5),
-                Text('đăng $uploadDate', style: body(TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600))),
-              ]),
-          ],
-        ),
-        // Hàng "đã thích" — avatar chồng của những người đã thích + chữ
-        // "đã thích" (bấm mở danh sách), khớp web.
-        if (loves.isNotEmpty) ...[
-          const SizedBox(height: 14),
-          InkWell(
-            onTap: onShowLovers,
-            borderRadius: BorderRadius.circular(6),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              SizedBox(
-                height: 28,
-                width: 28 + (loves.length.clamp(1, 4) - 1) * 20.0,
-                child: Stack(
-                  children: [
-                    for (int i = 0; i < loves.length.clamp(0, 4); i++)
-                      Positioned(
-                        left: i * 20.0,
-                        child: Container(
-                          width: 28, height: 28,
-                          decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2), color: AppColors.surfaceLight),
-                          child: ClipOval(child: _LoverAvatar(love: loves[i])),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text('đã thích', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: AppColors.textMuted))),
-            ]),
-          ),
-        ],
         if (metaContent != null) ...[
           const SizedBox(height: 22),
           metaContent!,
