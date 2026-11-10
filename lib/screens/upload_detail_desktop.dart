@@ -17,7 +17,7 @@ import '../services/upload_types.dart';
 import '../widgets/desktop_page.dart';
 import '../widgets/same_recordings.dart';
 import '../widgets/upload_thread.dart';
-import '../widgets/ui.dart' show PillButton, EmptyBlock, OfflineBlock, NetImage;
+import '../widgets/ui.dart' show PillButton, EmptyBlock, OfflineBlock, NetImage, typingInField;
 import '../widgets/waveform_player.dart';
 
 /// Bài gửi — xem & sửa (desktop, canvas "Desktop · Bài gửi — xem & sửa" +
@@ -415,7 +415,7 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
       return KeyEventResult.handled;
     }
     // Typing in a field: letters are letters.
-    final typing = FocusManager.instance.primaryFocus?.context?.widget is EditableText;
+    final typing = typingInField();
     if (typing || !_canDecide) return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.keyA) { _decide('approve'); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyN) { _decide('not_sure'); return KeyEventResult.handled; }

@@ -1297,3 +1297,11 @@ bool nearListEnd(ScrollController c, PagedList list) =>
     !list.failed &&
     list.loaded &&
     list.page < list.lastPage;
+
+/// True while the keyboard is in a text field (the focused node sits inside
+/// an EditableText) — single-letter shortcuts must not fire then.
+bool typingInField() {
+  final ctx = FocusManager.instance.primaryFocus?.context;
+  if (ctx == null) return false;
+  return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+}
