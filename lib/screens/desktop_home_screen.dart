@@ -637,7 +637,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ]),
       );
 
-  // ---------- Việc của CTV ----------
+  // ---------- Nhờ bạn giúp sức (CTV) ----------
   /// What CTV look after: pictures, tags, lyrics — counted on what came in
   /// the last 30 days, so the numbers stay something one can work through.
   Future<void> _fetchCtv(AuthProvider auth) async {
@@ -660,14 +660,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// Pictures, tags, lyrics for whoever may fix them; a zero hides its item,
   /// all zero hides the strip. Each number opens its queue.
   Widget _ctvStrip() {
-    const labels = {'no_image': 'bài mới chưa có ảnh', 'no_tag': 'bản nhạc mới chưa có tag', 'no_lyric': 'bài mới chưa có lời'};
+    const labels = {'no_image': 'bài chờ ảnh minh hoạ', 'no_tag': 'bản nhạc chờ gắn tag', 'no_lyric': 'bài chờ lời'};
     return Container(
       margin: const EdgeInsets.only(top: 18),
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(color: AppColors.accentSoft.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.accentSoft)),
       child: Row(children: [
-        Text('VIỆC CỦA CTV', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        Text('NHỜ BẠN GIÚP SỨC', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
         const SizedBox(width: 22),
         for (final e in _ctv.entries) ...[
           InkWell(
