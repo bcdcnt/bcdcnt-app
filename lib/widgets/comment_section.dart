@@ -13,7 +13,6 @@ import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow, UserAvatar;
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
-import '../services/player.dart';
 import '../services/friendly_error.dart';
 import 'comment_actions.dart';
 import 'comment_media.dart';
@@ -821,8 +820,6 @@ class _CommentSectionState extends State<CommentSection> {
     final userId = auth.user?['id'];
 
     final compact = widget.compact;
-    final player = compact ? context.watch<PlayerProvider>() : null;
-    final playingHere = player != null && '${player.currentSong?['id']}' == widget.id;
     final composer = <Widget>[];
     final list = <Widget>[];
     final heading = <Widget>[
@@ -847,8 +844,8 @@ class _CommentSectionState extends State<CommentSection> {
           Text('Chủ đề đã khoá, không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))
         else if (auth.isAuthenticated)
           Container(
-            padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.borderSubtle)),
+            padding: compact ? const EdgeInsets.fromLTRB(4, 2, 6, 2) : const EdgeInsets.fromLTRB(10, 8, 6, 8),
+            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(compact ? 24 : 12), border: Border.all(color: AppColors.borderSubtle)),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -895,7 +892,7 @@ class _CommentSectionState extends State<CommentSection> {
                 // and the send button sits in the bottom-right
                 // corner of that same panel.
                 Container(
-                  padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
+                  padding: compact ? EdgeInsets.zero : const EdgeInsets.fromLTRB(2, 4, 2, 4),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     // Discord/Telegram-style row: avatar + input grow
                     // horizontally and the send pill rides at the
@@ -917,10 +914,25 @@ class _CommentSectionState extends State<CommentSection> {
                         key: _composerKey,
                         child: QuillCommentInput(
                           controller: _quillCtl,
-                          hintText: compact ? 'Viết cảm nhận, tư liệu về bài này…' : 'Viết bình luận...',
+                          hintText: compact ? 'Viết cảm nhận…' : 'Viết bình luận...',
                         ),
                       ),
-                      if (!compact) const SizedBox(width: 6),
+                      const SizedBox(width: 6),
+                      // Side panel: one row — clip, text, a small Gửi.
+                      if (compact) FilledButton(
+                        onPressed: _submitting ? null : _submit,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.accent,
+                          disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
+                          minimumSize: const Size(56, 36),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                        child: _submitting
+                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Gửi', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white))),
+                      ),
                       if (!compact) ElevatedButton.icon(
                         onPressed: _submitting ? null : _submit,
                         icon: _submitting
@@ -944,40 +956,6 @@ class _CommentSectionState extends State<CommentSection> {
                     // Attached audio / video chips below the input.
                     if (_attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty)
                       _buildMediaChipsStrip(audios: _attachedAudios, videos: _attachedVideos, onRemoveAudio: (i) => setState(() => _attachedAudios.removeAt(i)), onRemoveVideo: (i) => setState(() => _attachedVideos.removeAt(i))),
-                    // Side panel: "+ Chèn mốc" for the moment playing, Gửi on the right.
-                    if (compact)
-                      Row(children: [
-                        if (playingHere)
-                          InkWell(
-                            borderRadius: BorderRadius.circular(8),
-                            onTap: () {
-                              final p = player.position;
-                              final t = '${p.inMinutes}:${(p.inSeconds % 60).toString().padLeft(2, '0')} ';
-                              final at = _quillCtl.cursorOffset < 0 ? 0 : _quillCtl.cursorOffset;
-                              _quillCtl.replaceTextAt(at, 0, t);
-                              _quillCtl.requestFocus();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-                              child: Text('+ Chèn mốc ${player.position.inMinutes}:${(player.position.inSeconds % 60).toString().padLeft(2, '0')}',
-                                  style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                            ),
-                          ),
-                        const Spacer(),
-                        FilledButton(
-                          onPressed: _submitting ? null : _submit,
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.accent,
-                            disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
-                            minimumSize: const Size(64, 40),
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          ),
-                          child: _submitting
-                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : Text('Gửi', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
-                        ),
-                      ]),
                     // Inline upload status line for audio/video,
                     // which take longer than images.
                     if ((_uploadingAudio || _uploadingVideo) && _editingId == null) Padding(
@@ -1036,7 +1014,7 @@ class _CommentSectionState extends State<CommentSection> {
                     : compact
                         ? Border(bottom: BorderSide(color: AppColors.border))
                         : Border.all(color: Colors.transparent, width: 1),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: compact && !isHighlight ? null : BorderRadius.circular(12),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1162,8 +1140,8 @@ class _CommentSectionState extends State<CommentSection> {
                                   padding: EdgeInsets.only(left: compact ? 0 : 6, right: compact ? 14 : 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                                     Icon(isLoved || compact ? Icons.favorite : Icons.favorite_border, size: compact ? 16 : 20, color: isLoved ? AppColors.error : AppColors.textMuted),
-                                    SizedBox(width: compact ? 5 : 6),
-                                    Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
+                                    if (loveCount > 0 || !compact) SizedBox(width: compact ? 5 : 6),
+                                    if (loveCount > 0 || !compact) Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
                                   ]),
                                 ),
                               ),
@@ -1248,7 +1226,7 @@ class _CommentSectionState extends State<CommentSection> {
               ),
               DecoratedBox(
                 decoration: BoxDecoration(color: AppColors.bg, border: Border(top: BorderSide(color: AppColors.border))),
-                child: Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: composer)),
+                child: Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: composer)),
               ),
             ]
           : [...heading, ...composer, const SizedBox(height: 20), ...list],
