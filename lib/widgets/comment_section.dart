@@ -46,6 +46,34 @@ class CommentSection extends StatefulWidget {
 }
 
 class _CommentSectionState extends State<CommentSection> {
+  // Side panel: long comments fold to ~6 lines until "Xem thêm".
+  final Set<String> _unfolded = {};
+  static int _plainLength(String html) => html.replaceAll(RegExp(r'<[^>]*>'), '').length;
+  static String _exactDate(dynamic at) {
+    final d = DateTime.tryParse('${at ?? ''}')?.toLocal();
+    if (d == null) return '';
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(d.day)}/${two(d.month)}/${d.year} · ${two(d.hour)}:${two(d.minute)}';
+  }
+  Widget _clampLong(Map c, Widget child, bool long) {
+    final id = '${c['id']}';
+    if (!long || _unfolded.contains(id)) return child;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ShaderMask(
+        shaderCallback: (r) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0.7, 1], colors: [Colors.black, Colors.transparent]).createShader(r),
+        blendMode: BlendMode.dstIn,
+        child: ConstrainedBox(constraints: const BoxConstraints(maxHeight: 136), child: ClipRect(child: SingleChildScrollView(physics: const NeverScrollableScrollPhysics(), child: child))),
+      ),
+      InkWell(
+        onTap: () => setState(() => _unfolded.add(id)),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Text('Xem thêm', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentFg)),
+        ),
+      ),
+    ]);
+  }
+
   List<Map<String, dynamic>> _comments = [];
   int _total = 0;
   int _page = 1;
@@ -1022,7 +1050,7 @@ class _CommentSectionState extends State<CommentSection> {
                   InkWell(
                     onTap: user['id'] != null ? () => context.push('/user/${user['id']}') : null,
                     borderRadius: BorderRadius.circular(20),
-                    child: UserAvatar(url: user['avatar']?['url']?.toString(), name: (user['username'] ?? '').toString(), size: compact ? 34 : 36),
+                    child: UserAvatar(url: user['avatar']?['url']?.toString(), name: (user['username'] ?? c['nickname'] ?? '').toString(), size: compact ? 34 : 36, guest: user['id'] == null),
                   ),
                   SizedBox(width: compact ? 12 : 10),
                   Expanded(
@@ -1048,7 +1076,7 @@ class _CommentSectionState extends State<CommentSection> {
                               child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                             );
                           }),
-                          Text(compact ? '· ${timeago(c['created_at'])}' : timeago(c['created_at']), style: AppText.caption),
+                          Tooltip(message: _exactDate(c['created_at']), child: Text(compact ? '· ${timeago(c['created_at'])}' : timeago(c['created_at']), style: AppText.caption)),
                         ]),
                         SizedBox(height: compact ? 2 : 4),
                         if (_editingId == c['id']?.toString()) ...[
@@ -1117,7 +1145,7 @@ class _CommentSectionState extends State<CommentSection> {
                             _attachMenuButton(),
                           ]),
                         ] else
-                          CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString(), fontSize: compact ? 15 : 16),
+                          _clampLong(c, CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString(), fontSize: compact ? 15 : 16), compact && _plainLength(content) > 240),
                         const SizedBox(height: 4),
                         // Hide the like/edit/delete action row while
                         // this very comment is being edited — the

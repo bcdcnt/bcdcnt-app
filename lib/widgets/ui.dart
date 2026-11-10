@@ -729,7 +729,9 @@ class UserAvatar extends StatelessWidget {
   final String? url;
   final String name;
   final double size;
-  const UserAvatar({super.key, this.url, required this.name, this.size = 40});
+  /// A guest from the old site (no account): plain grey, not the member wine.
+  final bool guest;
+  const UserAvatar({super.key, this.url, required this.name, this.size = 40, this.guest = false});
 
   @override
   Widget build(BuildContext context) {
@@ -744,9 +746,11 @@ class UserAvatar extends StatelessWidget {
         height: size,
         // Dark wine, not a pale tint: a member without a photo should still
         // stand out on the white page.
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+        decoration: guest
+            ? BoxDecoration(color: AppColors.surface, shape: BoxShape.circle, border: Border.all(color: AppColors.border))
+            : const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
         alignment: Alignment.center,
-        child: Text(initial, style: body(TextStyle(fontSize: size * 0.4, fontWeight: FontWeight.w800, color: Colors.white))),
+        child: Text(initial, style: body(TextStyle(fontSize: size * 0.4, fontWeight: FontWeight.w800, color: guest ? AppColors.textMuted : Colors.white))),
       ),
     );
   }

@@ -2117,18 +2117,17 @@ class _DesktopHero extends StatelessWidget {
                       style: body(const TextStyle(fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE))),
                     ),
                     const SizedBox(height: 8),
-                    RichText(
-                      textScaler: MediaQuery.textScalerOf(context),
-                      maxLines: 3, overflow: TextOverflow.ellipsis,
-                      text: TextSpan(
-                        style: display(const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white, height: 1.08, letterSpacing: -0.9)),
-                        children: [
-                          TextSpan(text: song['title'] ?? ''),
-                          if (subtitle != null && subtitle.isNotEmpty)
-                            TextSpan(text: ' $subtitle', style: display(const TextStyle(fontSize: 24, fontWeight: FontWeight.w400, color: Color(0xCCFFFFFF), letterSpacing: -0.2))),
-                        ],
-                      ),
+                    Text(
+                      song['title'] ?? '',
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: display(const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white, height: 1.08, letterSpacing: -0.9)),
                     ),
+                    // "(bản 1)": its own line under the title, the band has room.
+                    if (subtitle != null && subtitle.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: Color(0xCCFFFFFF)))),
+                      ),
                     const SizedBox(height: 18),
                     // Action cluster
                     Wrap(spacing: 10, runSpacing: 10, children: [

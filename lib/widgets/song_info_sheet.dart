@@ -76,7 +76,7 @@ List<(String, Widget)> _songFacts(BuildContext context, Map<String, dynamic> son
         ]),
       ),
     if (created != null)
-      ('Ngày đăng', text('${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year} · ${timeago(song['created_at'].toString())}')),
+      ('Ngày đăng', text('${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}')),
   ];
 }
 
