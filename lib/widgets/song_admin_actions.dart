@@ -151,28 +151,21 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
             await auth.authedMutate(r'mutation($id: ID!, $v: CRUDSheetComposers) { updateSheet(input: { id: $id, composers: $v }) { id } }', {'id': sheetId, 'v': _sync(resolved)});
           });
     case 'composersNoSheet':
+      // API setSongComposers does the rest in one transaction: new names,
+      // the sheet of that title + composer if the archive has one, else a
+      // new sheet, then links the song.
       await _editPeople(ctl,
           title: 'Sửa nhạc sĩ',
           search: 'composers',
           allowCreate: canCreatePeople,
           load: () async => <Map<String, dynamic>>[],
           save: (list) async {
-            final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'composer', search: 'composers');
-            if (resolved.isEmpty) return;
-            final title = '${song['title'] ?? ''}'.trim();
-            final want = {for (final p in resolved) '${p['id']}'};
-            // Same title + one of these composers already in the archive?
-            final d = await auth.authedQuery(r'query($t: Mixed) { sheets(first: 20, where: {column: "title", value: $t}) { data { id composers(first: 10) { data { id } } } } }', {'t': title});
-            String? target;
-            for (final sh in ((d['sheets']?['data'] ?? []) as List).whereType<Map>()) {
-              final ids = ((sh['composers']?['data'] ?? []) as List).whereType<Map>().map((c) => '${c['id']}');
-              if (ids.any(want.contains)) { target = '${sh['id']}'; break; }
-            }
-            if (target == null) {
-              final c = await auth.authedMutate(r'mutation($t: String!, $v: CRUDSheetComposers) { createSheet(input: { title: $t, composers: $v }) { id } }', {'t': title, 'v': _sync(resolved)});
-              target = '${c['createSheet']?['id']}';
-            }
-            await auth.authedMutate(r'mutation($id: ID!, $s: ID) { updateSong(input: { id: $id, sheet_id: $s }) { id } }', {'id': id, 's': target});
+            // Typed names carry a 'new-…' id until the API creates them.
+            bool isNew(Map p) => '${p['id'] ?? ''}'.isEmpty || '${p['id']}'.startsWith('new-');
+            final picked = [for (final p in list) if (!isNew(p)) '${p['id']}'];
+            final typed = [for (final p in list) if (isNew(p)) '${p['title'] ?? ''}'.trim()]..removeWhere((t) => t.isEmpty);
+            await auth.authedMutate(r'mutation($s: ID!, $ids: [ID!], $n: [String!]) { setSongComposers(song_id: $s, composer_ids: $ids, new_titles: $n) { id sheet_id } }',
+                {'s': id, 'ids': picked, 'n': typed});
           });
     case 'recomposers':
       await _editPeople(ctl,
