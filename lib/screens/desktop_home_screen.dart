@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,10 +79,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<Map<String, dynamic>> _sticky = [], _comments = [], _top = [], _live = [], _composers = [], _artists = [];
   List<Map<String, dynamic>> _recent = [], _loved = [], _again = [], _forYou = [];
   List<Anniv> _anniv = [];
-  /// Today's event playlist (system playlist whose event_start–event_end covers today).
-  Map<String, dynamic>? _occasion;
-  String? _occasionId;
-  List<Map<String, dynamic>> _occasionSongs = [];
   int? _topDecade;
   Map<String, dynamic>? _topComposer;
   String? _personalFor;
@@ -101,7 +98,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     loadAnniversaries(window: 7).then((a) {
       if (mounted) setState(() => _anniv = a.take(6).toList());
     });
-    _fetchOccasion();
     SharedPreferences.getInstance().then((p) {
       final v = p.getInt('desktop_home_yours');
       if (v != null && mounted) setState(() => _yours = v.clamp(0, 2));
@@ -204,31 +200,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }).catchError((_) {});
   }
 
-  /// The box shows only while an event playlist is running: its
-  /// event_start ≤ today ≤ event_end (MM-DD, set in the playlist's settings).
-  /// Several at once → the one with the most songs.
-  Future<void> _fetchOccasion() async {
-    final now = DateTime.now();
-    final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    try {
-      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 5, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title event_start event_end event_date event_use_cover thumbnail { url } items(first: 1) { paginatorInfo { total } } } } }''', {
-        'w': {'AND': [
-          {'column': 'is_system', 'value': '1'},
-          {'column': 'is_public', 'value': '1'},
-          {'column': 'event_start', 'operator': 'LTE', 'value': mmdd},
-          {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
-        ]},
-      });
-      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
-      final list = _maps(ev['playlists']?['data'])..sort((a, b) => total(b).compareTo(total(a)));
-      if (list.isEmpty) return;
-      final pl = list.first;
-      final id = '${pl['id']}';
-      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { songs(first: 30) { data { $_songFields } } } }', {'id': id});
-      final songs = _maps(d['playlist']?['songs']?['data']).where(_playable).map((s) => {...s, 'file_type': 'song'}).toList();
-      if (mounted && songs.isNotEmpty) setState(() { _occasion = pl; _occasionId = id; _occasionSongs = songs; });
-    } catch (_) {}
-  }
 
   Future<void> _fetchLatest(int i) async {
     final (_, q) = _cats[i];
@@ -317,10 +288,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 const SizedBox(height: 18),
                 _quickRow(authed),
-                if (_occasion != null) ...[
-                  _head('Hôm nay', top: 36, action: 'Mở playlist', onAction: () => context.push('/playlist/$_occasionId')),
-                  _occasionBlock(),
-                ],
+                // Hôm nay: today's event playlists, if any.
+                const _TodayEvents(),
                 ..._yoursBlock(authed),
                 const SizedBox(height: 44),
                 LayoutBuilder(builder: (context, cc) {
@@ -430,114 +399,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     ]);
   }
 
-  // ---------- Gợi ý ngày lễ ----------
-  Widget _occasionBlock() {
-    final o = _occasion!;
-    final songs = _occasionSongs;
-    // Tiles beside the band only when there are songs to spare for them.
-    final tiles = songs.length >= 5;
-    final band = tiles ? [for (var i = 0; i < songs.length; i++) if (i == 0 || i > 4) songs[i]].take(4).toList() : songs.take(4).toList();
-    final own = o['thumbnail']?['url']?.toString();
-    final cover = o['event_use_cover'] == 'Y' ? own : null;
-    final year = int.tryParse('${o['event_date'] ?? ''}'.split('-').first);
-    final ago = year != null && year > 1800 ? DateTime.now().year - year : null;
-    final when = ['PLAYLIST SỰ KIỆN', if (year != null && year > 1800) '$year', if (ago != null && ago > 0) '$ago NĂM'].join(' · ');
-    final label = '${o['title'] ?? ''}';
-    return SizedBox(
-      height: 240,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(
-          flex: 5,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: Stack(fit: StackFit.expand, children: [
-              Container(color: const Color(0xFF2E080A)),
-              // Four songs' pictures, like the playlist covers in lists — not
-              // the four already shown in the tiles beside it.
-              if (cover != null)
-                NetImage(url: cover, tint: true)
-              else if (band.length >= 4)
-                Column(children: [
-                  for (final r in [0, 2])
-                    Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      for (final i in [r, r + 1]) Expanded(child: NetImage(url: band[i]['thumbnail']?['url']?.toString(), tint: true)),
-                    ])),
-                ])
-              else
-                NetImage(url: songs.first['thumbnail']?['url']?.toString(), tint: true),
-              const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xE62E080A), Color(0x332E080A)]))),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
-                  Text(when, style: body(const TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE)))),
-                  const SizedBox(height: 6),
-                  Text(label, maxLines: 2, style: display(const TextStyle(fontSize: 30, height: 1.1, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
-                  const SizedBox(height: 4),
-                  Text('${songs.length} bài', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xD9FFFFFF)))),
-                  const SizedBox(height: 14),
-                  Row(children: [
-                    _bandButton(songs.length > 1 ? 'Phát tất cả' : 'Phát', Icons.play_arrow_rounded, () => _play(songs, label)),
-                    const SizedBox(width: 10),
-                    _bandButton('Xem playlist', null, () => context.push('/playlist/$_occasionId'), ghost: true),
-                  ]),
-                ]),
-              ),
-            ]),
-          ),
-        ),
-        if (tiles) ...[
-        const SizedBox(width: 18),
-        Expanded(
-          flex: 4,
-          child: Column(children: [
-            for (var r = 0; r < 2; r++) ...[
-              if (r == 1) const SizedBox(height: 14),
-              Expanded(
-                child: Row(children: [
-                  for (var k = 0; k < 2; k++) ...[
-                    if (k == 1) const SizedBox(width: 14),
-                    Expanded(child: songs.length > 1 + r * 2 + k ? _tile(songs, 1 + r * 2 + k, label) : const SizedBox.shrink()),
-                  ],
-                ]),
-              ),
-            ],
-          ]),
-        ),
-        ],
-      ]),
-    );
-  }
-
-  Widget _tile(List<Map<String, dynamic>> list, int i, String label) => Material(
-        borderRadius: BorderRadius.circular(16),
-        clipBehavior: Clip.antiAlias,
-        color: AppColors.surfaceLight,
-        child: InkWell(
-          onTap: () => _play(list, label, i),
-          child: Stack(fit: StackFit.expand, children: [
-            NetImage(url: list[i]['thumbnail']?['url']?.toString()),
-            const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, stops: [0.4, 1], colors: [Color(0x002E080A), Color(0xD92E080A)]))),
-            Positioned(left: 12, right: 12, bottom: 10, child: Text('${list[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: Colors.white)))),
-          ]),
-        ),
-      );
-
-  Widget _bandButton(String label, IconData? icon, VoidCallback onTap, {bool ghost = false}) => Material(
-        color: ghost ? Colors.white.withValues(alpha: 0.16) : AppColors.wine,
-        borderRadius: BorderRadius.circular(22),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              if (icon != null) ...[Icon(icon, size: 22, color: Colors.white), const SizedBox(width: 6)],
-              Text(label, style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
-            ]),
-          ),
-        ),
-      );
 
   // ---------- Của bạn ----------
   List<Widget> _yoursBlock(bool authed) {
@@ -844,4 +705,262 @@ class _PersonState extends State<_Person> {
       ),
     );
   }
+}
+
+/// "Hôm nay": the event playlists running today (event_start ≤ today ≤
+/// event_end, set in the playlist's settings) as a tear-off calendar page —
+/// canvas "Desktop · Trang chủ — khối Sự kiện B". Several at once: the
+/// pages stack and chips / ‹ › / ←→ flip between them; never on its own.
+/// Nothing running → nothing shown.
+class _TodayEvents extends StatefulWidget {
+  const _TodayEvents();
+  @override
+  State<_TodayEvents> createState() => _TodayEventsState();
+}
+
+class _TodayEventsState extends State<_TodayEvents> {
+  List<Map<String, dynamic>> _events = [];
+  final Map<String, List<Map<String, dynamic>>> _songs = {};
+  int _at = 0;
+  bool _hover = false;
+
+  static String _mmdd(DateTime d) => '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  bool _onKey(KeyEvent e) {
+    if (!_hover || _events.length < 2 || e is! KeyDownEvent || typingInField()) return false;
+    if (e.logicalKey == LogicalKeyboardKey.arrowLeft && _at > 0) { _go(_at - 1); return true; }
+    if (e.logicalKey == LogicalKeyboardKey.arrowRight && _at < _events.length - 1) { _go(_at + 1); return true; }
+    return false;
+  }
+
+  Future<void> _load() async {
+    final today = _mmdd(DateTime.now());
+    try {
+      final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 20, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title description excerpt event_start event_end event_date items(first: 1) { paginatorInfo { total } } } } }''', {
+        'w': {'AND': [
+          {'column': 'is_system', 'value': '1'},
+          {'column': 'is_public', 'value': '1'},
+          {'column': 'event_start', 'operator': 'LTE', 'value': today},
+          {'column': 'event_end', 'operator': 'GTE', 'value': today},
+        ]},
+      });
+      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
+      bool oneDay(Map p) => p['event_start'] == p['event_end'];
+      final list = _maps(d['playlists']?['data']).where((p) => total(p) > 0).toList()
+        // One-day events first, then the longer ones; within each, more songs first.
+        ..sort((a, b) => oneDay(a) != oneDay(b) ? (oneDay(a) ? -1 : 1) : total(b).compareTo(total(a)));
+      if (!mounted || list.isEmpty) return;
+      setState(() => _events = list);
+      _fetchSongs(list.first);
+    } catch (_) {}
+  }
+
+  Future<void> _fetchSongs(Map<String, dynamic> pl) async {
+    final id = '${pl['id']}';
+    if (_songs.containsKey(id)) return;
+    try {
+      // items, not songs: playlist.songs comes back empty for some event playlists.
+      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { items(first: 12, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { $_songFields } } } } } }', {'id': id});
+      final songs = [for (final it in _maps(d['playlist']?['items']?['data'])) if (it['object'] is Map && (it['object'] as Map).isNotEmpty) Map<String, dynamic>.from(it['object'] as Map)]
+          .where(_playable).map((s) => {...s, 'file_type': 'song'}).toList();
+      if (mounted) setState(() => _songs[id] = songs);
+    } catch (_) {}
+  }
+
+  void _go(int i) {
+    setState(() => _at = i);
+    _fetchSongs(_events[i]);
+  }
+
+  String _plain(dynamic html) => '${html ?? ''}'.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+
+  @override
+  Widget build(BuildContext context) {
+    if (_events.isEmpty) return const SizedBox.shrink();
+    final ev = _events[_at];
+    final id = '${ev['id']}';
+    final songs = _songs[id] ?? const <Map<String, dynamic>>[];
+    final title = '${ev['title'] ?? ''}';
+    final date = DateTime.tryParse('${ev['event_date'] ?? ''}');
+    final parts = '${ev['event_start'] ?? ''}'.split('-');
+    final day = date?.day ?? int.tryParse(parts.last) ?? DateTime.now().day;
+    final month = date?.month ?? int.tryParse(parts.first) ?? DateTime.now().month;
+    final today = _mmdd(DateTime.now());
+    final onDay = date != null && _mmdd(date) == today;
+    final ago = date != null ? DateTime.now().year - date.year : 0;
+    final end = '${ev['event_end'] ?? ''}'.split('-');
+    final eyebrow = onDay && ago > 0
+        ? '$ago NĂM TRƯỚC, NGÀY NÀY'
+        : ev['event_start'] != ev['event_end'] && end.length == 2 ? 'ĐẾN ${end[1]}/${end[0]}' : 'HÔM NAY';
+    final desc = _plain(ev['excerpt']).isNotEmpty ? _plain(ev['excerpt']) : _plain(ev['description']);
+    final many = _events.length > 1;
+    Widget circle(IconData icon, VoidCallback? onTap) => Material(
+          color: AppColors.surface,
+          shape: const CircleBorder(),
+          child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: SizedBox(width: 40, height: 40, child: Icon(icon, size: 22, color: onTap == null ? AppColors.textMuted.withValues(alpha: 0.45) : AppColors.text))),
+        );
+    return MouseRegion(
+      onEnter: (_) => _hover = true,
+      onExit: (_) => _hover = false,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 36, bottom: 14),
+          child: Row(children: [
+            Text('Hôm nay', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
+            const Spacer(),
+            if (many) ...[
+              Text('${_at + 1} / ${_events.length}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+              const SizedBox(width: 10),
+              circle(Icons.chevron_left_rounded, _at > 0 ? () => _go(_at - 1) : null),
+              const SizedBox(width: 8),
+              circle(Icons.chevron_right_rounded, _at < _events.length - 1 ? () => _go(_at + 1) : null),
+            ] else
+              TextButton(onPressed: () => context.push('/playlist/$id'), child: Text('Mở playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
+          child: Row(children: [
+            _Calendar(day: day, month: month, year: date?.year, behind: (_events.length - 1).clamp(0, 2)),
+            const SizedBox(width: 28),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(eyebrow, style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                const SizedBox(height: 6),
+                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 28, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
+                if (desc.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
+                ],
+                const SizedBox(height: 16),
+                Row(children: [
+                  PillButton(label: songs.length > 1 ? 'Phát tất cả' : 'Phát', icon: Icons.play_arrow_rounded, height: 44, onTap: songs.isEmpty ? null : () => playOrOpen(context, songs.first, songs, title)),
+                  const SizedBox(width: 10),
+                  Material(
+                    color: AppColors.bg,
+                    borderRadius: BorderRadius.circular(22),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(22),
+                      onTap: () => context.push('/playlist/$id'),
+                      child: Container(height: 44, padding: const EdgeInsets.symmetric(horizontal: 18), alignment: Alignment.center, child: Text('Xem playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                    ),
+                  ),
+                ]),
+              ]),
+            ),
+            const SizedBox(width: 20),
+            // Song cards: as many as the playlist has, up to three.
+            for (var i = 0; i < songs.length && i < 3; i++) ...[
+              if (i > 0) const SizedBox(width: 14),
+              SizedBox(
+                width: 150,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => playOrOpen(context, songs[i], songs, title),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SongCover(song: songs[i], size: 150, radius: 12),
+                    const SizedBox(height: 8),
+                    Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    Text(songByline(songs[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                  ]),
+                ),
+              ),
+            ],
+          ]),
+        ),
+        if (many)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Wrap(spacing: 8, runSpacing: 8, children: [
+              for (var i = 0; i < _events.length && i < 5; i++) _chip(i),
+              if (_events.length > 5)
+                PopupMenuButton<int>(
+                  tooltip: '',
+                  onSelected: _go,
+                  itemBuilder: (_) => [for (var i = 5; i < _events.length; i++) PopupMenuItem(value: i, child: Text('${_events[i]['title'] ?? ''}'))],
+                  child: _chipBody(false, null, '+${_events.length - 5}', null),
+                ),
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Widget _chip(int i) {
+    final e = _events[i];
+    final y = DateTime.tryParse('${e['event_date'] ?? ''}')?.year;
+    final n = ((e['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
+    return InkWell(borderRadius: BorderRadius.circular(20), onTap: () => _go(i), child: _chipBody(i == _at, y, '${e['title'] ?? ''}', '$n bài'));
+  }
+
+  Widget _chipBody(bool on, int? year, String title, String? count) => Container(
+        height: 40,
+        constraints: const BoxConstraints(maxWidth: 380),
+        padding: EdgeInsets.only(left: year != null ? 6 : 14, right: 14),
+        decoration: BoxDecoration(color: on ? AppColors.text : AppColors.surface, borderRadius: BorderRadius.circular(20)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (year != null) ...[
+            Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.bg, borderRadius: BorderRadius.circular(14)),
+              child: Text('$year', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.accentFg))),
+            ),
+            const SizedBox(width: 8),
+          ],
+          Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text)))),
+          if (count != null) Text(' · $count', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: (on ? AppColors.bg : AppColors.text).withValues(alpha: 0.7)))),
+        ]),
+      );
+}
+
+/// A tear-off calendar page; [behind] more pages peek out when several
+/// events fall on the same day.
+class _Calendar extends StatelessWidget {
+  final int day, month;
+  final int? year;
+  final int behind;
+  const _Calendar({required this.day, required this.month, this.year, this.behind = 0});
+
+  Widget _page({bool face = true}) => Container(
+        width: 150,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 22, offset: const Offset(0, 8))]),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          Container(color: AppColors.wine, height: 34, alignment: Alignment.center, child: Text('THÁNG $month', style: body(const TextStyle(fontSize: 14, letterSpacing: 1, fontWeight: FontWeight.w800, color: Colors.white)))),
+          Padding(padding: const EdgeInsets.only(top: 12), child: Text(face ? day.toString().padLeft(2, '0') : '', style: display(const TextStyle(fontSize: 72, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: Color(0xFF161112))))),
+          Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face && year != null ? 'năm $year' : ' ', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF665C5E))))),
+        ]),
+      );
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 150 + behind * 8.0,
+        child: Stack(clipBehavior: Clip.none, children: [
+          for (var k = behind; k > 0; k--)
+            Positioned(
+              left: 0, top: 0,
+              child: Transform.translate(
+                offset: Offset(6.0 * k, -6.0 * k),
+                child: Transform.rotate(angle: 0.044 * k, child: Opacity(opacity: 1 - 0.25 * k, child: _page(face: false))),
+              ),
+            ),
+          _page(),
+        ]),
+      );
 }
