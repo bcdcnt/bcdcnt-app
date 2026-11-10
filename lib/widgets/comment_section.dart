@@ -1194,20 +1194,24 @@ class _CommentSectionState extends State<CommentSection> {
                               ),
                             ),
                           if (requestBadge(c) case final b?) ...[
-                            Container(
-                              margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(Icons.back_hand_outlined, size: 12, color: b.color),
-                                const SizedBox(width: 4),
-                                Flexible(child: Text(
-                                  c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} bởi ${c['processRequestUser']['username']}' : b.label,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: b.color),
-                                )),
-                              ]),
-                            ),
+                            // Desktop: just the hand in its colour; who handled it shows on hover.
+                            Builder(builder: (ctx) {
+                              final who = c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} bởi ${c['processRequestUser']['username']}' : b.label;
+                              final iconOnly = MediaQuery.sizeOf(ctx).width >= 900;
+                              final chip = Container(
+                                margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
+                                padding: EdgeInsets.symmetric(horizontal: iconOnly ? 6 : 8, vertical: iconOnly ? 4 : 2),
+                                decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Icon(Icons.back_hand_outlined, size: iconOnly ? 14 : 12, color: b.color),
+                                  if (!iconOnly) ...[
+                                    const SizedBox(width: 4),
+                                    Flexible(child: Text(who, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: b.color))),
+                                  ],
+                                ]),
+                              );
+                              return iconOnly ? Tooltip(message: who, child: chip) : chip;
+                            }),
                           ],
                           ])),
                           if (auth.isAuthenticated)

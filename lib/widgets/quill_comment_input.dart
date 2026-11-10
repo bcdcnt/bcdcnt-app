@@ -45,14 +45,14 @@ class QuillCommentInput extends StatelessWidget {
           scrollable: true,
           customStyles: q.DefaultStyles(
             paragraph: q.DefaultTextBlockStyle(
-              TextStyle(color: AppColors.text, fontSize: 17, height: 1.45),
+              body(TextStyle(color: AppColors.text, fontSize: 17, height: 1.45)),
               const q.HorizontalSpacing(0, 0),
               const q.VerticalSpacing(2, 2),
               const q.VerticalSpacing(0, 0),
               null,
             ),
             placeHolder: q.DefaultTextBlockStyle(
-              TextStyle(color: AppColors.textMuted, fontSize: 17),
+              body(TextStyle(color: AppColors.textMuted, fontSize: 17)),
               const q.HorizontalSpacing(0, 0),
               const q.VerticalSpacing(2, 2),
               const q.VerticalSpacing(0, 0),
