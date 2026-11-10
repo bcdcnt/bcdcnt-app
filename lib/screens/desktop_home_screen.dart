@@ -7,7 +7,6 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/lunar.dart';
-import '../services/occasions.dart';
 import '../widgets/anniversary_rail.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/song_row.dart';
@@ -79,7 +78,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<Map<String, dynamic>> _sticky = [], _comments = [], _top = [], _live = [], _composers = [], _artists = [];
   List<Map<String, dynamic>> _recent = [], _loved = [], _again = [], _forYou = [];
   List<Anniv> _anniv = [];
-  Occasion? _occasion;
+  /// Today's event playlist (system playlist whose event_start–event_end covers today).
+  Map<String, dynamic>? _occasion;
   String? _occasionId;
   List<Map<String, dynamic>> _occasionSongs = [];
   int? _topDecade;
@@ -101,7 +101,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     loadAnniversaries(window: 7).then((a) {
       if (mounted) setState(() => _anniv = a.take(6).toList());
     });
-    _fetchOccasion(nextOccasion(DateTime.now()));
+    _fetchOccasion();
     SharedPreferences.getInstance().then((p) {
       final v = p.getInt('desktop_home_yours');
       if (v != null && mounted) setState(() => _yours = v.clamp(0, 2));
@@ -204,11 +204,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }).catchError((_) {});
   }
 
-  Future<void> _fetchOccasion(Occasion? o) async {
-    if (o == null) return;
-    final mmdd = '${o.month.toString().padLeft(2, '0')}-${o.day.toString().padLeft(2, '0')}';
+  /// The box shows only while an event playlist is running: its
+  /// event_start ≤ today ≤ event_end (MM-DD, set in the playlist's settings).
+  /// Several at once → the one with the most songs.
+  Future<void> _fetchOccasion() async {
+    final now = DateTime.now();
+    final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     try {
-      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
+      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 5, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title event_start event_end event_date event_use_cover thumbnail { url } items(first: 1) { paginatorInfo { total } } } } }''', {
         'w': {'AND': [
           {'column': 'is_system', 'value': '1'},
           {'column': 'is_public', 'value': '1'},
@@ -216,11 +219,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
         ]},
       });
-      final id = (ev['playlists']?['data'] as List?)?.firstOrNull?['id']?.toString() ?? kOccasionPlaylist[o.label]?.toString();
-      if (id == null) return;
+      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
+      final list = _maps(ev['playlists']?['data'])..sort((a, b) => total(b).compareTo(total(a)));
+      if (list.isEmpty) return;
+      final pl = list.first;
+      final id = '${pl['id']}';
       final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { songs(first: 30) { data { $_songFields } } } }', {'id': id});
-      final songs = _maps(d['playlist']?['songs']?['data']).where((s) => s['thumbnail']?['url'] != null && _playable(s)).map((s) => {...s, 'file_type': 'song'}).toList();
-      if (mounted && songs.isNotEmpty) setState(() { _occasion = o; _occasionId = id; _occasionSongs = songs; });
+      final songs = _maps(d['playlist']?['songs']?['data']).where(_playable).map((s) => {...s, 'file_type': 'song'}).toList();
+      if (mounted && songs.isNotEmpty) setState(() { _occasion = pl; _occasionId = id; _occasionSongs = songs; });
     } catch (_) {}
   }
 
@@ -312,7 +318,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 const SizedBox(height: 18),
                 _quickRow(authed),
                 if (_occasion != null) ...[
-                  _head('Gợi ý cho ${_occasion!.day}/${_occasion!.month}', top: 36, action: 'Mở playlist', onAction: () => context.push('/playlist/$_occasionId')),
+                  _head('Hôm nay', top: 36, action: 'Mở playlist', onAction: () => context.push('/playlist/$_occasionId')),
                   _occasionBlock(),
                 ],
                 ..._yoursBlock(authed),
@@ -428,8 +434,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Widget _occasionBlock() {
     final o = _occasion!;
     final songs = _occasionSongs;
-    final band = [for (var i = 0; i < songs.length; i++) if (i == 0 || i > 4) songs[i]].take(4).toList();
-    final when = o.days == 0 ? 'HÔM NAY' : 'CÒN ${o.days} NGÀY';
+    // Tiles beside the band only when there are songs to spare for them.
+    final tiles = songs.length >= 5;
+    final band = tiles ? [for (var i = 0; i < songs.length; i++) if (i == 0 || i > 4) songs[i]].take(4).toList() : songs.take(4).toList();
+    final own = o['thumbnail']?['url']?.toString();
+    final cover = o['event_use_cover'] == 'Y' ? own : null;
+    final year = int.tryParse('${o['event_date'] ?? ''}'.split('-').first);
+    final ago = year != null && year > 1800 ? DateTime.now().year - year : null;
+    final when = ['PLAYLIST SỰ KIỆN', if (year != null && year > 1800) '$year', if (ago != null && ago > 0) '$ago NĂM'].join(' · ');
+    final label = '${o['title'] ?? ''}';
     return SizedBox(
       height: 240,
       child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -441,7 +454,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               Container(color: const Color(0xFF2E080A)),
               // Four songs' pictures, like the playlist covers in lists — not
               // the four already shown in the tiles beside it.
-              if (band.length >= 4)
+              if (cover != null)
+                NetImage(url: cover, tint: true)
+              else if (band.length >= 4)
                 Column(children: [
                   for (final r in [0, 2])
                     Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -454,14 +469,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
-                  Text('$when · PLAYLIST NGÀY LỄ', style: body(const TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE)))),
+                  Text(when, style: body(const TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE)))),
                   const SizedBox(height: 6),
-                  Text('${o.label} ${o.day}/${o.month}', maxLines: 2, style: display(const TextStyle(fontSize: 30, height: 1.1, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
+                  Text(label, maxLines: 2, style: display(const TextStyle(fontSize: 30, height: 1.1, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
                   const SizedBox(height: 4),
                   Text('${songs.length} bài', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xD9FFFFFF)))),
                   const SizedBox(height: 14),
                   Row(children: [
-                    _bandButton('Phát tất cả', Icons.play_arrow_rounded, () => _play(songs, o.label)),
+                    _bandButton(songs.length > 1 ? 'Phát tất cả' : 'Phát', Icons.play_arrow_rounded, () => _play(songs, label)),
                     const SizedBox(width: 10),
                     _bandButton('Xem playlist', null, () => context.push('/playlist/$_occasionId'), ghost: true),
                   ]),
@@ -470,6 +485,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ]),
           ),
         ),
+        if (tiles) ...[
         const SizedBox(width: 18),
         Expanded(
           flex: 4,
@@ -480,13 +496,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 child: Row(children: [
                   for (var k = 0; k < 2; k++) ...[
                     if (k == 1) const SizedBox(width: 14),
-                    Expanded(child: songs.length > 1 + r * 2 + k ? _tile(songs, 1 + r * 2 + k, o.label) : const SizedBox.shrink()),
+                    Expanded(child: songs.length > 1 + r * 2 + k ? _tile(songs, 1 + r * 2 + k, label) : const SizedBox.shrink()),
                   ],
                 ]),
               ),
             ],
           ]),
         ),
+        ],
       ]),
     );
   }
