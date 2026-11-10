@@ -940,12 +940,14 @@ class _TodayEventsState extends State<_TodayEvents> {
           decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
           // Song cards only as many as fit beside the text (narrow windows: fewer).
           child: LayoutBuilder(builder: (context, box) {
-          final fit = ((box.maxWidth - 150 - 28 - 20 - 340) / 164).floor().clamp(0, 3);
-          return Row(children: [
-            _Calendar(day: day, month: month, year: date?.year, behind: (_events.length - 1).clamp(0, 2)),
-            const SizedBox(width: 28),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Text keeps ~340px; song cards fill the rest (up to five), so no hole in between.
+          // The text takes what it needs (~360px); the song cards share the rest
+          // evenly (each 130–190px wide), so there is no hole in the middle.
+          const textW = 360.0;
+          final behind = (_events.length - 1).clamp(0, 2);
+          final rest = box.maxWidth - (150 + behind * 8) - 28 - textW - 24;
+          final n = [songs.length, (rest / 144).floor(), 4].reduce((a, b) => a < b ? a : b);
+          final text = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(eyebrow, style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
                 const SizedBox(height: 6),
                 Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 28, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
@@ -968,30 +970,33 @@ class _TodayEventsState extends State<_TodayEvents> {
                     ),
                   ),
                 ]),
-              ]),
-            ),
-            if (fit > 0) const SizedBox(width: 20),
-            // Song cards: as many as the playlist has and the width allows, up to three;
-            // tops aligned even when a title takes two lines.
-            for (var i = 0; i < songs.length && i < fit; i++) ...[
+              ]);
+          final cardW = n > 0 ? ((rest - (n - 1) * 14) / n).clamp(0.0, 190.0) : 0.0;
+          return Row(children: [
+            _Calendar(day: day, month: month, year: date?.year, behind: (_events.length - 1).clamp(0, 2)),
+            const SizedBox(width: 28),
+            if (n > 0) SizedBox(width: textW, child: text) else Expanded(child: text),
+            if (n > 0) ...[
+            const SizedBox(width: 24),
+            // Song cards share the remaining width; tops aligned.
+            Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (var i = 0; i < n; i++) ...[
               if (i > 0) const SizedBox(width: 14),
               SizedBox(
-                width: 150,
+                width: cardW,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(12),
                   onTap: () => playOrOpen(context, songs[i], songs, title),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    SongCover(song: songs[i], size: 150, radius: 12),
+                    SongCover(song: songs[i], size: cardW, radius: 12),
                     const SizedBox(height: 8),
-                    // Room for two lines either way, so the cards line up.
-                    SizedBox(
-                      height: MediaQuery.textScalerOf(context).scale(14) * 1.25 * 2 + 2,
-                      child: Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
-                    ),
+                    Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
                     Text(songByline(songs[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                   ]),
                 ),
               ),
+            ],
+            ])),
             ],
           ]);
           }),
@@ -1059,7 +1064,11 @@ class _Calendar extends StatelessWidget {
         child: Column(children: [
           Container(color: AppColors.wine, height: 34, alignment: Alignment.center, child: Text('THÁNG $month', style: body(const TextStyle(fontSize: 14, letterSpacing: 1, fontWeight: FontWeight.w800, color: Colors.white)))),
           Padding(padding: const EdgeInsets.only(top: 12), child: Text(face ? day.toString().padLeft(2, '0') : '', style: display(TextStyle(fontSize: 72, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: AppColors.text)))),
-          Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face && year != null ? 'năm $year' : ' ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+          // No year known: no empty line under the day.
+          if (year != null)
+            Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face ? 'năm $year' : ' ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textMuted))))
+          else
+            const SizedBox(height: 16),
         ]),
       );
 
