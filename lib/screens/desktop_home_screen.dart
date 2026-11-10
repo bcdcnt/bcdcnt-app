@@ -204,7 +204,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Future<void> _fetchLatest(int i) async {
     final (_, q) = _cats[i];
     if (_latest[q] != null) return;
-    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username avatar { url } } }' : 'artists(first: 3) { data { id slug title avatar { url } } }${q == 'songs' ? ' sheet { composers(first: 1) { data { avatar { url } } } }' : ''}';
+    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username } }' : 'artists(first: 3) { data { id slug title } }';
     try {
       final d = await ApiClient.query('query { $q(first: 8, orderBy: [{column: "id", order: DESC}]) { data { id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } $people } } }');
       if (!mounted) return;
@@ -493,7 +493,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       });
 
   // ---------- Lists ----------
-  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail, String? sub, String? stand}) => draggableSong(context, s, InkWell(
+  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail, String? sub}) => draggableSong(context, s, InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () => _play(list, label, i),
         onSecondaryTap: () => showSongActions(context, s),
@@ -502,9 +502,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
           child: Row(children: [
             ?lead,
-            stand != null
-                ? NetImage(url: stand, width: 46, height: 46, radius: 10, tint: true, fallback: SongCover(song: s, size: 46, radius: 10))
-                : SongCover(song: s, size: 46, radius: 10),
+            SongCover(song: s, size: 46, radius: 10),
             const SizedBox(width: 14),
             Expanded(
               child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -588,17 +586,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       });
 
   // ---------- Mới cập nhật ----------
-  /// A new song often has no picture yet: its singer's, else its composer's.
-  String? _standIn(Map s) {
-    final own = s['thumbnail']?['url']?.toString();
-    if (own != null && own.isNotEmpty) return null;
-    for (final p in [...((s['artists']?['data'] ?? const []) as List), ...((s['sheet']?['composers']?['data'] ?? const []) as List)]) {
-      final u = (p as Map?)?['avatar']?['url']?.toString();
-      if (u != null && u.isNotEmpty) return u;
-    }
-    return null;
-  }
-
   Widget _latestBlock() {
     final list = _latest[_cats[_cat].$2];
     if (list == null) return _skeletonRows();
@@ -606,7 +593,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final label = 'Mới cập nhật · ${_cats[_cat].$1}';
     Widget col(int from) => Column(children: [
           for (var i = from; i < list.length && i < from + 4; i++)
-            _row(list[i], list, i, label, sub: [songByline(list[i]), _postedAgo(list[i]['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · '), stand: _standIn(list[i])),
+            _row(list[i], list, i, label, sub: [songByline(list[i]), _postedAgo(list[i]['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · ')),
         ]);
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
   }
