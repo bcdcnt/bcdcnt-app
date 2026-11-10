@@ -1139,7 +1139,7 @@ class _CommentSectionState extends State<CommentSection> {
                                 child: Padding(
                                   padding: EdgeInsets.only(left: compact ? 0 : 6, right: compact ? 14 : 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(isLoved || compact ? Icons.favorite : Icons.favorite_border, size: compact ? 16 : 20, color: isLoved ? AppColors.error : AppColors.textMuted),
+                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: compact ? 17 : 20, color: isLoved ? AppColors.error : AppColors.textMuted),
                                     if (loveCount > 0 || !compact) SizedBox(width: compact ? 5 : 6),
                                     if (loveCount > 0 || !compact) Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
                                   ]),
