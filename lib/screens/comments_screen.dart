@@ -331,7 +331,10 @@ class CommentTile extends StatelessWidget {
   final Map<String, dynamic> comment;
   /// Opens what the comment is on; [commentId] set = jump to that comment.
   final void Function(Map<String, dynamic> obj, {String? commentId}) onOpenObject;
-  const CommentTile({super.key, required this.comment, required this.onOpenObject});
+  final EdgeInsets padding;
+  /// Clamp the text to this many lines (the home page grid); null = up to 320 chars.
+  final int? maxLines;
+  const CommentTile({super.key, required this.comment, required this.onOpenObject, this.padding = const EdgeInsets.fromLTRB(20, 16, 20, 14), this.maxLines});
 
   @override
   Widget build(BuildContext context) {
@@ -351,7 +354,7 @@ class CommentTile extends StatelessWidget {
       // The whole tile opens the song/page at this comment.
       onTap: canOpen ? () { HapticFeedback.selectionClick(); onOpenObject(obj, commentId: comment['id']?.toString()); } : null,
       child: Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      padding: padding,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -386,7 +389,7 @@ class CommentTile extends StatelessWidget {
                   Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 ]),
                 const SizedBox(height: 4),
-                Text(text.length > 320 ? '${text.substring(0, 320)}…' : text, style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
+                Text(text.length > 320 ? '${text.substring(0, 320)}…' : text, maxLines: maxLines, overflow: maxLines != null ? TextOverflow.ellipsis : null, style: body(TextStyle(fontSize: 15, height: 1.55, fontWeight: FontWeight.w500, color: AppColors.text))),
                 if (obj != null) ...[
                   const SizedBox(height: 10),
                   Material(

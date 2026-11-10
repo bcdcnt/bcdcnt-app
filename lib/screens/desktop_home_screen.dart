@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
-import '../services/friendly_error.dart' show askLogin;
+import 'comments_screen.dart' show CommentTile;
 import '../services/lunar.dart';
 import '../widgets/anniversary_rail.dart';
 import '../widgets/auth_dialogs.dart';
@@ -17,7 +17,7 @@ import '../widgets/ui.dart';
 
 // Trang chủ desktop (canvas "Desktop · Trang chủ"): Lời chào + Phát nhanh ·
 // Gợi ý ngày lễ (only near one) · Của bạn (Nghe tiếp | Mới thích | Nghe đi
-// nghe lại) · Nghe nhiều hôm nay | Đang nghe cùng bạn · Kỷ niệm tuần này ·
+// nghe lại) · Nghe nhiều hôm nay · Kỷ niệm tuần này ·
 // Mới cập nhật · Câu chuyện bài hát · Có thể bạn thích · Nhạc sĩ tiêu biểu ·
 // Nghệ sĩ tiêu biểu. Guests get a login invite in place of "Của bạn".
 // Showcase rows stay always visible; only what the member picks has tabs.
@@ -26,8 +26,7 @@ const _songFields = 'id slug title subtitle views created_at play_type thumbnail
 const _personal = 'id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 2) { data { id title slug } }';
 
 
-const _liveQuery = '''query DesktopHomeLive {
-  nowListening(limit: 8) { listeners song { $_songFields } }
+const _topQuery = '''query DesktopHomeTop {
   topSongsToday(limit: 8) { $_songFields }
 }''';
 
@@ -72,7 +71,7 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
-  List<Map<String, dynamic>> _comments = [], _top = [], _live = [];
+  List<Map<String, dynamic>> _comments = [], _top = [];
   List<Map<String, dynamic>>? _docs;
   /// Việc của CTV: queue → count (zeros left out).
   Map<String, int> _ctv = {};
@@ -87,7 +86,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   int _cat = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
   String? _starting;
-  Timer? _liveTimer;
+  Timer? _topTimer;
 
   @override
   void initState() {
@@ -101,12 +100,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       final v = p.getInt('desktop_home_yours');
       if (v != null && mounted) setState(() => _yours = v.clamp(0, 2));
     });
-    _liveTimer = Timer.periodic(const Duration(minutes: 2), (_) => _fetchLive());
+    _topTimer = Timer.periodic(const Duration(minutes: 10), (_) => _fetchTop());
   }
 
   @override
   void dispose() {
-    _liveTimer?.cancel();
+    _topTimer?.cancel();
     super.dispose();
   }
 
@@ -118,27 +117,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     if (!auth.loading && uid != _personalFor) {
       _personalFor = uid;
       _recent = []; _loved = []; _again = []; _forYou = []; _topDecade = null; _topComposer = null;
-      _ctv = {};
-      if (uid != null) { _fetchPersonal(auth, uid); _fetchCtv(auth); }
+      if (uid != null) _fetchPersonal(auth, uid);
     }
   }
 
   Future<void> _fetch() async {
     await Future.wait([
       _fetchComments(),
-      _fetchLive(),
+      _fetchCtv(),
+      _fetchTop(),
     ]);
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _fetchLive() async {
+  Future<void> _fetchTop() async {
     try {
-      final d = await ApiClient.query(_liveQuery);
+      final d = await ApiClient.query(_topQuery);
       if (!mounted) return;
-      setState(() {
-        _live = _maps(d['nowListening']).where((x) => x['song'] is Map).map((x) => {...Map<String, dynamic>.from(x['song'] as Map), 'file_type': 'song', 'listeners': x['listeners']}).toList();
-        _top = _maps(d['topSongsToday']).map((s) => {...s, 'file_type': 'song'}).toList();
-      });
+      setState(() => _top = _maps(d['topSongsToday']).map((s) => {...s, 'file_type': 'song'}).toList());
     } catch (_) {}
   }
 
@@ -260,7 +256,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final now = DateTime.now();
     // Each song once on the page: rails further down skip what is above.
     final yoursList = [_recent, _loved, _again][_yours];
-    final seen = <String>{for (final s in [...yoursList, ..._top, ..._live]) _key(s)};
+    final seen = <String>{for (final s in [...yoursList, ..._top]) _key(s)};
     final forYou = [for (final s in _forYou) if (seen.add(_key(s))) s];
     return Material(
       color: AppColors.bg,
@@ -282,20 +278,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 const _TodayEvents(),
                 ..._yoursBlock(authed),
                 const SizedBox(height: 44),
-                LayoutBuilder(builder: (context, cc) {
-                  // "Đang nghe cùng bạn" only when it is lively: at least three
-                  // songs with two or more people on them right now.
-                  final lively = _live.where((x) => ((x['listeners'] as num?) ?? 0) >= 2).length >= 3;
-                  if (!lively) {
-                    return _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankGrid(cc.maxWidth >= 760), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'));
-                  }
-                  final top = _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankList(), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'));
-                  final live = _section('Đang nghe cùng bạn', _liveList(), dot: true);
-                  if (cc.maxWidth < 760) return Column(children: [top, const SizedBox(height: 40), live]);
-                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 7, child: top), const SizedBox(width: 40), Expanded(flex: 5, child: live)]);
-                }),
+                LayoutBuilder(builder: (context, cc) => _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankGrid(cc.maxWidth >= 760), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'))),
                 if (_anniv.isNotEmpty) ...[_head('Kỷ niệm tuần này'), _annivGrid()],
-                // CTV work sits by the newest songs it is about.
+                // What is still missing in the catalogue, by the newest songs.
                 if (_ctv.isNotEmpty) _ctvStrip(),
                 _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l, 'Tư liệu'], tab: _cat, onTab: (i) { setState(() => _cat = i); i < _cats.length ? _fetchLatest(i) : _fetchDocs(); }, action: 'Xem tất cả', onAction: () => context.push(_cat < _cats.length ? '/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}' : '/tu-lieu')),
                 _cat < _cats.length ? _latestBlock() : _docsBlock(),
@@ -519,15 +504,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ),
       ));
 
-  Widget _rankList() => Column(children: [
-        for (var i = 0; i < _top.length && i < 7; i++)
-          _row(_top[i], _top, i, 'Nghe nhiều hôm nay',
-              lead: SizedBox(width: 46, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: i < 3 ? AppColors.accentFg : AppColors.textMuted))))),
-      ]);
-
   /// Full-width "Nghe nhiều hôm nay": eight songs in two columns.
   Widget _rankGrid(bool wide) {
-    Widget r(int i) => _row(_top[i], _top, i, 'Nghe nhiều hôm nay',
+    String sub(Map<String, dynamic> s) {
+      final a = songByline(s);
+      if (a.isNotEmpty) return a;
+      final c = songByline({'sheet': s['sheet']}, withComposer: true);
+      return c.isEmpty ? '' : 'Nhạc: $c';
+    }
+    Widget r(int i) => _row(_top[i], _top, i, 'Nghe nhiều hôm nay', sub: sub(_top[i]),
         lead: SizedBox(width: 46, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: i < 3 ? AppColors.accentFg : AppColors.textMuted)))));
     final n = _top.length.clamp(0, 8);
     if (!wide) return Column(children: [for (var i = 0; i < n; i++) r(i)]);
@@ -538,24 +523,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       Expanded(child: Column(children: [for (var i = half; i < n; i++) r(i)])),
     ]);
   }
-
-  Widget _liveList() => Column(children: [
-        for (var i = 0; i < _live.length && i < 7; i++)
-          _row(_live[i], _live, i, 'Mọi người đang nghe',
-              trail: ((_live[i]['listeners'] as num?) ?? 0) > 0
-                  ? Container(
-                      height: 28,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(14)),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Container(width: 8, height: 8, decoration: const BoxDecoration(color: Color(0xFFC62828), shape: BoxShape.circle)),
-                        const SizedBox(width: 6),
-                        Text('${_live[i]['listeners']} người', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                      ]),
-                    )
-                  : null),
-        if (_live.isEmpty && !_loading) Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa có ai đang nghe lúc này.', style: AppText.bodyText)),
-      ]);
 
   Widget _skeletonRows() => Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
 
@@ -614,28 +581,22 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
   }
 
-  // ---------- Nhờ bạn giúp sức (CTV) ----------
-  /// What CTV look after: pictures, tags, lyrics — counted on what came in
-  /// the last 30 days, so the numbers stay something one can work through.
-  Future<void> _fetchCtv(AuthProvider auth) async {
-    bool can(String p) => auth.hasPermission(p);
-    final d30 = DateTime.now().subtract(const Duration(days: 30));
-    final since = '{column: "created_at", operator: GTE, value: "${d30.year}-${d30.month.toString().padLeft(2, '0')}-${d30.day.toString().padLeft(2, '0')}"}';
-    final parts = [
-      if (can('update_thumbnail')) 'no_image: songs(first: 1, where: {AND: [{column: "image_id", operator: IS_NULL}, $since]}) { paginatorInfo { total } }',
-      if (can('manage_sheet')) 'no_tag: sheets(first: 1, untagged: true, where: $since) { paginatorInfo { total } }',
-      if (can('update_lyric')) 'no_lyric: songs(first: 1, where: {AND: [{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}, $since]}) { paginatorInfo { total } }',
-    ];
-    if (parts.isEmpty) return;
+  // ---------- Nhờ bạn giúp sức ----------
+  /// Pictures, tags, lyrics still missing across the whole catalogue — shown
+  /// to everyone to invite help; same totals as the Bàn làm việc queues.
+  Future<void> _fetchCtv() async {
     try {
-      final d = await auth.authedQuery('query { ${parts.join(' ')} }');
+      final d = await ApiClient.query('''query {
+        no_image: songs(first: 1, where: {column: "image_id", operator: IS_NULL}) { paginatorInfo { total } }
+        no_tag: sheets(first: 1, untagged: true) { paginatorInfo { total } }
+        no_lyric: songs(first: 1, where: {OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}) { paginatorInfo { total } }
+      }''');
       int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
       if (mounted) setState(() => _ctv = {for (final k in ['no_image', 'no_tag', 'no_lyric']) if (n(k) > 0) k: n(k)});
     } catch (_) {}
   }
 
-  /// Pictures, tags, lyrics for whoever may fix them; a zero hides its item,
-  /// all zero hides the strip. Each number opens its queue.
+  /// A zero hides its item, all zero hides the strip. Each item opens its queue.
   Widget _ctvStrip() {
     const labels = {'no_image': 'bài chờ ảnh minh hoạ', 'no_tag': 'bản nhạc chờ gắn tag', 'no_lyric': 'bài chờ lời'};
     return Container(
@@ -683,9 +644,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   // ---------- Bình luận mới ----------
   Future<void> _fetchComments() async {
     try {
-      final me = context.read<AuthProvider>().user?['id'];
-      final myLove = me == null ? '' : 'myLove: loves(first: 1, where: {column: "user_id", value: $me}) { paginatorInfo { total } }';
-      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content created_at $myLove user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug file { audio_url } } ... on Instrumental { id title slug file { audio_url } } ... on Poem { id title slug file { audio_url } } } } } }''');
+      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at is_request user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
       final seen = <String>{};
       final out = <Map<String, dynamic>>[];
       for (final c in _maps(d['latestComments']?['data'])) {
@@ -715,50 +674,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return '${cut.substring(0, cut.lastIndexOf(' '))}…';
   }
 
+  /// Same tiles as Cộng đồng › Bình luận mới, two columns.
   Widget _newComments() {
-    Widget item(Map<String, dynamic> c) {
-      final u = c['user'] as Map;
-      final o = Map<String, dynamic>.from(c['object'] as Map);
-      final kind = const {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'}['${o['__typename']}'] ?? 'song';
-      final song = {...o, 'file_type': kind};
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          InkWell(onTap: () => context.push('/user/${u['id']}'), customBorder: const CircleBorder(), child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 36)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text.rich(TextSpan(children: [
-                TextSpan(text: '${u['username'] ?? ''}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
-                TextSpan(text: ' · ${timeago(c['created_at']?.toString())} · trong ', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMuted)),
-                TextSpan(text: '${o['title']}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentFg), recognizer: TapGestureRecognizer()..onTap = () => context.push('/$kind/${o['id']}', extra: song)),
-              ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14))),
-              const SizedBox(height: 3),
-              Text('${c['text']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.text))),
-              const SizedBox(height: 4),
-              Row(children: [
-                _commentHeart(c),
-                const SizedBox(width: 14),
-                TextButton(
-                  onPressed: () => context.push('/$kind/${o['id']}', extra: song),
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                  child: Text('Trả lời', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
-                ),
-                const SizedBox(width: 16),
-                if (_playable(song))
-                  TextButton.icon(
-                    onPressed: () => playOrOpen(context, song, [song], 'Bình luận mới'),
-                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    icon: Icon(Icons.play_arrow_rounded, size: 18, color: AppColors.accentFg),
-                    label: Text('Nghe bài', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                  ),
-              ]),
-            ]),
-          ),
-        ]),
-      );
+    void open(Map<String, dynamic> obj, {String? commentId}) {
+      final kind = const {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'}['${obj['__typename']}'] ?? 'song';
+      // From a comment: land on the song's comments, that comment lit up.
+      context.push(commentId != null ? '/$kind/${obj['id']}?binh-luan=1' : '/$kind/${obj['id']}', extra: {...obj, 'file_type': kind, 'highlightCommentId': ?commentId});
     }
+    Widget item(Map<String, dynamic> c) => Container(
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          child: CommentTile(comment: c, onOpenObject: open, padding: const EdgeInsets.symmetric(vertical: 18), maxLines: 3),
+        );
     return LayoutBuilder(builder: (context, c) {
       if (c.maxWidth < 760) return Column(children: [for (final x in _comments) item(x)]);
       // Rows of two, each pair as tall as its taller comment, so the rules line up.
@@ -773,34 +699,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ),
       ]);
     });
-  }
-
-  /// Outline heart; red and filled once loved (same mutation as the comment section).
-  Widget _commentHeart(Map<String, dynamic> c) {
-    final loved = ((c['myLove']?['paginatorInfo']?['total'] as num?) ?? 0) > 0;
-    void set(bool v) => setState(() => c['myLove'] = {'paginatorInfo': {'total': v ? 1 : 0}});
-    return InkWell(
-      customBorder: const CircleBorder(),
-      onTap: () async {
-        final auth = context.read<AuthProvider>();
-        if (!auth.isAuthenticated) return askLogin(context);
-        set(!loved);
-        try {
-          await auth.authedMutate(
-            loved
-                ? r'''mutation($id: ID!) { unlove(lovable_id: $id, lovable_type: "comment") { id } }'''
-                : r'''mutation($id: ID!) { love(lovable_id: $id, lovable_type: "comment") { id } }''',
-            {'id': '${c['id']}'},
-          );
-        } catch (_) {
-          if (mounted) set(loved);
-        }
-      },
-      child: Padding(
-        padding: const EdgeInsets.all(6),
-        child: Icon(loved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 17, color: loved ? const Color(0xFFC62828) : AppColors.textMuted),
-      ),
-    );
   }
 
   // ---------- Tư liệu (tab của Mới cập nhật) ----------

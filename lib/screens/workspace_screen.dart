@@ -53,13 +53,10 @@ const _uploadQueues = {'pending', 'not_sure', 'rejected', 'approved'};
 const _noScoreWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _requestWhere = '{AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}';
 const _commentPendingWhere = '{column: "status", value: 0}';
-/// Songs posted in the last 30 days still without a picture / lyrics.
-String get _since30 {
-  final d = DateTime.now().subtract(const Duration(days: 30));
-  return '{column: "created_at", operator: GTE, value: "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}"}';
-}
-String get _noImageWhere => '{AND: [{column: "image_id", operator: IS_NULL}, $_since30]}';
-String get _noLyricWhere => '{AND: [{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}, $_since30]}';
+/// Songs still without a picture / lyrics, whole catalogue (the home
+/// "Nhờ bạn giúp sức" strip shows the same totals).
+const _noImageWhere = '{column: "image_id", operator: IS_NULL}';
+const _noLyricWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _commentObj = '__typename ... on Song { id title } ... on Folk { id title } ... on Instrumental { id title } ... on Poem { id title } ... on Karaoke { id title } ... on Sheet { id title }';
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
