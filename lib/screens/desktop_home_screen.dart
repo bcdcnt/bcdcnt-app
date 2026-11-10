@@ -663,12 +663,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     const labels = {'no_image': 'bài chờ ảnh minh hoạ', 'no_tag': 'bản nhạc chờ gắn tag', 'no_lyric': 'bài chờ lời'};
     return Container(
       margin: const EdgeInsets.only(top: 18),
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       decoration: BoxDecoration(color: AppColors.accentSoft.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.accentSoft)),
-      child: Row(children: [
+      // Wraps instead of overflowing when the window is narrow.
+      child: Wrap(spacing: 18, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('NHỜ BẠN GIÚP SỨC', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-        const SizedBox(width: 22),
         for (final e in _ctv.entries) ...[
           InkWell(
             borderRadius: BorderRadius.circular(12),
@@ -689,9 +689,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               ]),
             ),
           ),
-          const SizedBox(width: 18),
         ],
-        const Spacer(),
         TextButton(onPressed: () => context.push('/ban-lam-viec'), child: Text('Mở Bàn làm việc ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
       ]),
     );
@@ -960,7 +958,10 @@ class _TodayEventsState extends State<_TodayEvents> {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
-          child: Row(children: [
+          // Song cards only as many as fit beside the text (narrow windows: fewer).
+          child: LayoutBuilder(builder: (context, box) {
+          final fit = ((box.maxWidth - 150 - 28 - 20 - 340) / 164).floor().clamp(0, 3);
+          return Row(children: [
             _Calendar(day: day, month: month, year: date?.year, behind: (_events.length - 1).clamp(0, 2)),
             const SizedBox(width: 28),
             Expanded(
@@ -988,9 +989,10 @@ class _TodayEventsState extends State<_TodayEvents> {
                 ]),
               ]),
             ),
-            const SizedBox(width: 20),
-            // Song cards: as many as the playlist has, up to three.
-            for (var i = 0; i < songs.length && i < 3; i++) ...[
+            if (fit > 0) const SizedBox(width: 20),
+            // Song cards: as many as the playlist has and the width allows, up to three;
+            // tops aligned even when a title takes two lines.
+            for (var i = 0; i < songs.length && i < fit; i++) ...[
               if (i > 0) const SizedBox(width: 14),
               SizedBox(
                 width: 150,
@@ -1000,13 +1002,18 @@ class _TodayEventsState extends State<_TodayEvents> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     SongCover(song: songs[i], size: 150, radius: 12),
                     const SizedBox(height: 8),
-                    Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    // Room for two lines either way, so the cards line up.
+                    SizedBox(
+                      height: MediaQuery.textScalerOf(context).scale(14) * 1.25 * 2 + 2,
+                      child: Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    ),
                     Text(songByline(songs[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                   ]),
                 ),
               ),
             ],
-          ]),
+          ]);
+          }),
         ),
         if (many)
           Padding(

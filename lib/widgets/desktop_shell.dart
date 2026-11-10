@@ -365,7 +365,8 @@ class _RailNav extends StatelessWidget {
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       Icon(active ? item.activeIcon : item.icon, size: 24, color: c),
                       const SizedBox(height: 3),
-                      Text(item.short, maxLines: 1, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c))),
+                      // Large text setting: shrink to fit rather than clip ("Cộng").
+                      FittedBox(fit: BoxFit.scaleDown, child: Text(item.short, maxLines: 1, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: c)))),
                     ]),
                   ),
                 ),
