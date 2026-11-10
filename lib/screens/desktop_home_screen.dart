@@ -227,6 +227,38 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return _maps(d['songs']?['data']).map((s) => {...s, 'file_type': 'song'}).where(_playable).toList();
   }
 
+  /// ~30 instrumentals (≈ 2 hours) to listen to in the background: no
+  /// ceremonial music or marches, instruments taking turns so it never runs
+  /// five guitar pieces in a row.
+  Future<List<Map<String, dynamic>>> _instrumentalMix() async {
+    final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'column': 'views', 'operator': 'GT', 'value': 300}});
+    final ceremony = RegExp(r'nghi lễ|quân nhạc|kèn đồng', caseSensitive: false);
+    final march = RegExp(r'hành khúc|tiến quân|quốc ca|chiêu hồn|mặc niệm|nhạc hiệu|quân kỳ', caseSensitive: false);
+    final kinds = {
+      'guitar': RegExp(r'guitar|ghi-ta|ghita', caseSensitive: false),
+      'bau': RegExp(r'đàn bầu', caseSensitive: false),
+      'sao': RegExp(r'sáo|flute', caseSensitive: false),
+      'day': RegExp(r'vĩ cầm|violin|piano|dương cầm|đàn tranh|nhị|cello', caseSensitive: false),
+    };
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final s in _maps(d['instrumentals']?['data'])) {
+      final s2 = {...s, 'file_type': 'instrumental'};
+      final who = songByline(s2);
+      if (!_playable(s2) || ceremony.hasMatch(who) || march.hasMatch('${s['title'] ?? ''}')) continue;
+      final k = kinds.keys.firstWhere((k) => kinds[k]!.hasMatch(who), orElse: () => 'other');
+      groups.putIfAbsent(k, () => []).add(s2);
+    }
+    // Round-robin over the instruments, fullest first, so they alternate.
+    final lists = groups.values.toList()..sort((a, b) => b.length.compareTo(a.length));
+    final out = <Map<String, dynamic>>[];
+    for (var i = 0; out.length < 30 && lists.any((l) => i < l.length); i++) {
+      for (final l in lists) {
+        if (i < l.length && out.length < 30) out.add(l[i]);
+      }
+    }
+    return out;
+  }
+
   Future<List<Map<String, dynamic>>> _decadeSongs(int decade) => _songsWhere({'AND': [
         {'column': 'year', 'operator': 'GTE', 'value': '$decade'},
         {'column': 'year', 'operator': 'LT', 'value': '${decade + 10}'},
@@ -354,8 +386,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ('decade', Icons.play_arrow_rounded, 'Thập niên ${_topDecade! % 100}', () => _quick('decade', 'Thập niên $_topDecade', () => _decadeSongs(_topDecade!))),
       if (authed && _topComposer != null)
         ('composer', Icons.play_arrow_rounded, 'Theo ${_topComposer!['title']}', () => _quick('composer', 'Nhạc sĩ ${_topComposer!['title']}', () => _composerSongs('${_topComposer!['slug']}'))),
-      // About two hours of well-liked songs, for listening while working.
-      ('long', Icons.timer_outlined, 'Nghe liền 2 tiếng', () => _quick('long', 'Nghe liền 2 tiếng', () async => (await _songsWhere({'column': 'views', 'operator': 'GT', 'value': 500})).take(36).toList())),
+      // About two hours of music without words, for listening while working.
+      ('instr', Icons.music_note_rounded, 'Nhạc không lời', () => _quick('instr', 'Nhạc không lời', _instrumentalMix)),
       if (!authed) ('d70', Icons.play_arrow_rounded, 'Thập niên 70', () => _quick('d70', 'Thập niên 70', () => _decadeSongs(1970))),
     ];
     return Wrap(spacing: 10, runSpacing: 10, children: [
