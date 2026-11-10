@@ -638,27 +638,29 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       );
 
   // ---------- Việc của CTV ----------
+  /// What CTV look after: pictures, tags, lyrics — counted on what came in
+  /// the last 30 days, so the numbers stay something one can work through.
   Future<void> _fetchCtv(AuthProvider auth) async {
     bool can(String p) => auth.hasPermission(p);
-    if (!(can('manage_upload') || can('manage_song') || can('manage_comment') || can('manage_document'))) return;
     final d30 = DateTime.now().subtract(const Duration(days: 30));
-    final since = '${d30.year}-${d30.month.toString().padLeft(2, '0')}-${d30.day.toString().padLeft(2, '0')}';
+    final since = '{column: "created_at", operator: GTE, value: "${d30.year}-${d30.month.toString().padLeft(2, '0')}-${d30.day.toString().padLeft(2, '0')}"}';
     final parts = [
-      if (can('manage_upload')) 'pending: uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } }',
-      if (can('manage_song')) 'no_image: songs(first: 1, where: {AND: [{column: "image_id", operator: IS_NULL}, {column: "created_at", operator: GTE, value: "$since"}]}) { paginatorInfo { total } }',
-      'doc_request: comments(first: 1, where: {AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}) { paginatorInfo { total } }',
+      if (can('update_thumbnail')) 'no_image: songs(first: 1, where: {AND: [{column: "image_id", operator: IS_NULL}, $since]}) { paginatorInfo { total } }',
+      if (can('manage_sheet')) 'no_tag: sheets(first: 1, untagged: true, where: $since) { paginatorInfo { total } }',
+      if (can('update_lyric')) 'no_lyric: songs(first: 1, where: {AND: [{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}, $since]}) { paginatorInfo { total } }',
     ];
+    if (parts.isEmpty) return;
     try {
       final d = await auth.authedQuery('query { ${parts.join(' ')} }');
       int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
-      if (mounted) setState(() => _ctv = {for (final k in ['pending', 'no_image', 'doc_request']) if (n(k) > 0) k: n(k)});
+      if (mounted) setState(() => _ctv = {for (final k in ['no_image', 'no_tag', 'no_lyric']) if (n(k) > 0) k: n(k)});
     } catch (_) {}
   }
 
-  /// Only for members who look after the archive; a zero hides its item,
+  /// Pictures, tags, lyrics for whoever may fix them; a zero hides its item,
   /// all zero hides the strip. Each number opens its queue.
   Widget _ctvStrip() {
-    const labels = {'pending': 'bài chờ duyệt', 'no_image': 'bài mới chưa có ảnh', 'doc_request': 'yêu cầu chưa xử lý'};
+    const labels = {'no_image': 'bài mới chưa có ảnh', 'no_tag': 'bản nhạc mới chưa có tag', 'no_lyric': 'bài mới chưa có lời'};
     return Container(
       margin: const EdgeInsets.only(top: 18),
       height: 56,
@@ -670,7 +672,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         for (final e in _ctv.entries) ...[
           InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => context.push('/ban-lam-viec?q=${e.key}'),
+            onTap: () => context.push('/ban-lam-viec?q=${e.key}&s=new'),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
               child: Row(mainAxisSize: MainAxisSize.min, children: [

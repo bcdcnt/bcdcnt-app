@@ -22,9 +22,10 @@ import '../widgets/upload_thread.dart';
 /// the other queues (bản nhạc thiếu, tag, yêu cầu, bình luận, mất file)
 /// point at the page to fix. J/K: next/previous everywhere.
 class WorkspaceScreen extends StatefulWidget {
-  /// Queue to open on (`/ban-lam-viec?q=no_image`), e.g. from the home strip.
+  /// Queue (and sort) to open on (`/ban-lam-viec?q=no_tag&s=new`), e.g. from the home strip.
   final String? queue;
-  const WorkspaceScreen({super.key, this.queue});
+  final String? sort;
+  const WorkspaceScreen({super.key, this.queue, this.sort});
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
 }
@@ -39,6 +40,7 @@ const _todo = [
   ('comment_pending', 'Bình luận chờ duyệt', 'Bình luận'),
   ('lost_file', 'Bài mất file', 'Bài hát'),
   ('no_image', 'Bài mới thiếu ảnh', 'Bài hát'),
+  ('no_lyric', 'Bài mới thiếu lời', 'Bài hát'),
 ];
 const _done = [
   ('not_sure', 'Chưa chắc chắn', 'Bài gửi'),
@@ -51,11 +53,13 @@ const _uploadQueues = {'pending', 'not_sure', 'rejected', 'approved'};
 const _noScoreWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _requestWhere = '{AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}';
 const _commentPendingWhere = '{column: "status", value: 0}';
-/// Songs posted in the last 30 days still without a picture.
-String get _noImageWhere {
+/// Songs posted in the last 30 days still without a picture / lyrics.
+String get _since30 {
   final d = DateTime.now().subtract(const Duration(days: 30));
-  return '{AND: [{column: "image_id", operator: IS_NULL}, {column: "created_at", operator: GTE, value: "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}"}]}';
+  return '{column: "created_at", operator: GTE, value: "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}"}';
 }
+String get _noImageWhere => '{AND: [{column: "image_id", operator: IS_NULL}, $_since30]}';
+String get _noLyricWhere => '{AND: [{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}, $_since30]}';
 const _commentObj = '__typename ... on Song { id title } ... on Folk { id title } ... on Instrumental { id title } ... on Poem { id title } ... on Karaoke { id title } ... on Sheet { id title }';
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
@@ -68,7 +72,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool _busy = false;
   int? _dupes;
   /// Newest first; the sheet queues also offer "Xem nhiều nhất".
-  String _sort = 'new';
+  late String _sort = widget.sort ?? ((widget.queue == 'no_score' || widget.queue == 'no_tag') ? 'views' : 'new');
   /// Upload detail: name → found in the archive (null while asking).
   final Map<String, bool> _inKho = {};
   final _focus = FocusNode();
@@ -80,7 +84,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   bool get _isUpload => _uploadQueues.contains(_queue);
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
-  bool get _isSong => _queue == 'lost_file' || _queue == 'no_image';
+  bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
   static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
@@ -123,6 +127,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'comment_pending': 'comments(first: 1, where: $_commentPendingWhere)',
       'lost_file': 'songs(first: 1, where: {column: "empty_file", value: 1})',
       'no_image': 'songs(first: 1, where: $_noImageWhere)',
+      'no_lyric': 'songs(first: 1, where: $_noLyricWhere)',
     };
     Future<void> ask(Iterable<String> keys, String q) async {
       try {
@@ -146,6 +151,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_tag' => ('sheets', 'sheets(first: 40, untagged: true, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'lost_file' => ('songs', 'songs(first: 40, where: {column: "empty_file", value: 1}, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
       'no_image' => ('songs', 'songs(first: 40, where: $_noImageWhere, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
+      'no_lyric' => ('songs', 'songs(first: 40, where: $_noLyricWhere, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
       'doc_request' => ('comments', 'comments(first: 40, where: $_requestWhere, orderBy: [$order]) { data { id content created_at request_status user { id username } object { $_commentObj } } }'),
       'comment_pending' => ('comments', 'comments(first: 40, where: $_commentPendingWhere, orderBy: [$order]) { data { id content created_at user { id username } object { $_commentObj } } }'),
       _ => ('uploads', 'uploads(first: 40, page: 1, where: {column: "status", value: "$queue"}, orderBy: [$order]) { data { $_fields } }'),
@@ -406,7 +412,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   static const _railIcons = {
     'pending': Icons.inbox_rounded, 'no_score': Icons.library_music_outlined, 'doc_request': Icons.description_outlined,
-    'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined, 'no_image': Icons.hide_image_outlined,
+    'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined, 'no_image': Icons.hide_image_outlined, 'no_lyric': Icons.subtitles_off_outlined,
     'not_sure': Icons.help_outline_rounded, 'rejected': Icons.close_rounded, 'approved': Icons.check_rounded,
   };
 
@@ -614,6 +620,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_tag' => ('BẢN NHẠC · CHƯA GẮN TAG', '${u['title'] ?? ''}', 'Gắn chủ đề (tag) ở trang bản nhạc để bài hiện trong các trang chủ đề.'),
       'lost_file' => ('BÀI HÁT · MẤT FILE', '${u['title'] ?? ''}', 'Đường dẫn file không còn mở được. Tải lại file ở trang bài hát.'),
       'no_image' => ('BÀI HÁT · CHƯA CÓ ẢNH MINH HOẠ', '${u['title'] ?? ''}', 'Thêm ảnh ở trang bài hát: ⋯ › Công cụ CTV › Ảnh minh hoạ.'),
+      'no_lyric' => ('BÀI HÁT · CHƯA CÓ LỜI', '${u['title'] ?? ''}', 'Thêm lời ở trang bài hát (mục Lời bài hát).'),
       'doc_request' => ('YÊU CẦU · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', 'Trong ${u['object']?['title'] ?? 'bài'}', 'Xử lý yêu cầu ở phần bình luận của bài.'),
       _ => ('BÌNH LUẬN · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', 'Trong ${u['object']?['title'] ?? 'bài'}', 'Duyệt hoặc ẩn bình luận ở trang của bài.'),
     };
