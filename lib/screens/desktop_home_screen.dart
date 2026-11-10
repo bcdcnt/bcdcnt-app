@@ -71,7 +71,7 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
-  List<Map<String, dynamic>> _comments = [], _top = [], _live = [], _tags = [];
+  List<Map<String, dynamic>> _comments = [], _top = [], _live = [];
   List<Map<String, dynamic>>? _docs;
   /// Việc của CTV: queue → count (zeros left out).
   Map<String, int> _ctv = {};
@@ -124,10 +124,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   Future<void> _fetch() async {
     await Future.wait([
-      ApiClient.query('query { popularTags(limit: 24) { id name slug } }').then((d) {
-        // Short names only, so the row stays one or two lines.
-        if (mounted) setState(() => _tags = _maps(d['popularTags']).where((t) => '${t['name'] ?? ''}'.length <= 22).take(9).toList());
-      }).catchError((_) {}),
       _fetchComments(),
       _fetchLive(),
     ]);
@@ -281,7 +277,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 const SizedBox(height: 18),
                 _quickRow(authed),
-                if (_tags.isNotEmpty) _topicRow(),
                 // Hôm nay: today's event playlists, if any.
                 const _TodayEvents(),
                 ..._yoursBlock(authed),
@@ -612,31 +607,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ]);
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
   }
-
-  // ---------- Chủ đề ----------
-  Widget _topicRow() => Padding(
-        padding: const EdgeInsets.only(top: 14),
-        child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          Padding(padding: const EdgeInsets.only(right: 4), child: Text('CHỦ ĐỀ', style: body(TextStyle(fontSize: 13, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
-          for (final t in _tags)
-            Material(
-              color: Colors.transparent,
-              shape: StadiumBorder(side: BorderSide(color: AppColors.border, width: 1.5)),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: () => context.push('/tag/${t['slug']}'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: Text.rich(TextSpan(children: [
-                    TextSpan(text: '#', style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.6))),
-                    TextSpan(text: '${t['name'] ?? ''}'),
-                  ]), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                ),
-              ),
-            ),
-          TextButton(onPressed: () => context.push('/tag'), child: Text('Tất cả ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
-        ]),
-      );
 
   // ---------- Nhờ bạn giúp sức (CTV) ----------
   /// What CTV look after: pictures, tags, lyrics — counted on what came in
