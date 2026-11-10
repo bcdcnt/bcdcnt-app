@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -23,18 +24,12 @@ import '../widgets/ui.dart';
 const _songFields = 'id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
 const _personal = 'id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 2) { data { id title slug } }';
 
-const _mainQuery = '''query DesktopHomeMain {
-  stickySongs(first: 30) { data { $_songFields } }
-  featuredComments(limit: 6) { id snippet likes username user_avatar song_id song_title song_image audio_url video_url play_type file_type }
-}''';
+
 const _liveQuery = '''query DesktopHomeLive {
   nowListening(limit: 8) { listeners song { $_songFields } }
   topSongsToday(limit: 8) { $_songFields }
 }''';
-const _peopleQuery = '''query HomePeople {
-  topComposersToday(limit: 12) { id slug title avatar { url } }
-  topArtistsToday(limit: 12) { id slug title avatar { url } }
-}''';
+
 
 const _cats = [
   ('Tân nhạc', 'songs'),
@@ -76,7 +71,10 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
-  List<Map<String, dynamic>> _sticky = [], _comments = [], _top = [], _live = [], _composers = [], _artists = [];
+  List<Map<String, dynamic>> _comments = [], _top = [], _live = [], _tags = [];
+  List<Map<String, dynamic>>? _docs;
+  /// Việc của CTV: queue → count (zeros left out).
+  Map<String, int> _ctv = {};
   List<Map<String, dynamic>> _recent = [], _loved = [], _again = [], _forYou = [];
   List<Anniv> _anniv = [];
   int? _topDecade;
@@ -119,23 +117,18 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     if (!auth.loading && uid != _personalFor) {
       _personalFor = uid;
       _recent = []; _loved = []; _again = []; _forYou = []; _topDecade = null; _topComposer = null;
-      if (uid != null) _fetchPersonal(auth, uid);
+      _ctv = {};
+      if (uid != null) { _fetchPersonal(auth, uid); _fetchCtv(auth); }
     }
   }
 
   Future<void> _fetch() async {
     await Future.wait([
-      ApiClient.query(_mainQuery).then((d) {
-        if (!mounted) return;
-        setState(() {
-          _sticky = _maps(d['stickySongs']?['data']).map((s) => {...s, 'file_type': 'song'}).where(_playable).toList();
-          _comments = _maps(d['featuredComments']).where((c) => '${c['snippet'] ?? ''}'.trim().isNotEmpty).take(2).toList();
-        });
+      ApiClient.query('query { popularTags(limit: 24) { id name slug } }').then((d) {
+        // Short names only, so the row stays one or two lines.
+        if (mounted) setState(() => _tags = _maps(d['popularTags']).where((t) => '${t['name'] ?? ''}'.length <= 22).take(9).toList());
       }).catchError((_) {}),
-      ApiClient.query(_peopleQuery).then((d) {
-        bool photo(Map p) => (p['avatar']?['url']?.toString() ?? '').isNotEmpty;
-        if (mounted) setState(() { _composers = _maps(d['topComposersToday']).where(photo).toList(); _artists = _maps(d['topArtistsToday']).where(photo).toList(); });
-      }).catchError((_) {}),
+      _fetchComments(),
       _fetchLive(),
     ]);
     if (mounted) setState(() => _loading = false);
@@ -288,23 +281,29 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 const SizedBox(height: 18),
                 _quickRow(authed),
+                if (_tags.isNotEmpty) _topicRow(),
+                if (_ctv.isNotEmpty) _ctvStrip(),
                 // Hôm nay: today's event playlists, if any.
                 const _TodayEvents(),
                 ..._yoursBlock(authed),
                 const SizedBox(height: 44),
                 LayoutBuilder(builder: (context, cc) {
+                  // "Đang nghe cùng bạn" only when it is lively: at least three
+                  // songs with two or more people on them right now.
+                  final lively = _live.where((x) => ((x['listeners'] as num?) ?? 0) >= 2).length >= 3;
+                  if (!lively) {
+                    return _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankGrid(cc.maxWidth >= 760), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'));
+                  }
                   final top = _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankList(), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'));
                   final live = _section('Đang nghe cùng bạn', _liveList(), dot: true);
                   if (cc.maxWidth < 760) return Column(children: [top, const SizedBox(height: 40), live]);
                   return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 7, child: top), const SizedBox(width: 40), Expanded(flex: 5, child: live)]);
                 }),
                 if (_anniv.isNotEmpty) ...[_head('Kỷ niệm tuần này'), _annivGrid()],
-                _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l], tab: _cat, onTab: (i) { setState(() => _cat = i); _fetchLatest(i); }, action: 'Xem tất cả', onAction: () => context.push('/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}')),
-                _latestBlock(),
-                if (_comments.isNotEmpty) ...[_head('Câu chuyện bài hát', action: 'Xem thêm', onAction: () => context.go('/cong-dong')), _stories()],
+                _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l, 'Tư liệu'], tab: _cat, onTab: (i) { setState(() => _cat = i); i < _cats.length ? _fetchLatest(i) : _fetchDocs(); }, action: 'Xem tất cả', onAction: () => context.push(_cat < _cats.length ? '/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}' : '/tu-lieu')),
+                _cat < _cats.length ? _latestBlock() : _docsBlock(),
+                if (_comments.isNotEmpty) ...[_head('Bình luận mới', action: 'Xem tất cả', onAction: () => context.push('/binh-luan')), _newComments()],
                 if (authed && forYou.isNotEmpty) ...[_head('Có thể bạn thích'), _cards(forYou, 'Có thể bạn thích')],
-                if (_composers.isNotEmpty) ...[_head('Nhạc sĩ tiêu biểu', action: 'Xem tất cả', onAction: () => context.push('/nhac-si')), _people(_composers, '/nhac-si/')],
-                if (_artists.isNotEmpty) ...[_head('Nghệ sĩ tiêu biểu', action: 'Xem tất cả', onAction: () => context.push('/nghe-si')), _people(_artists, '/nghe-si/')],
               ]),
             ),
           ),
@@ -368,7 +367,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ('decade', Icons.play_arrow_rounded, 'Thập niên ${_topDecade! % 100} · bạn hay nghe', () => _quick('decade', 'Thập niên $_topDecade', () => _decadeSongs(_topDecade!))),
       if (authed && _topComposer != null)
         ('composer', Icons.play_arrow_rounded, 'Theo ${_topComposer!['title']}', () => _quick('composer', 'Nhạc sĩ ${_topComposer!['title']}', () => _composerSongs('${_topComposer!['slug']}'))),
-      if (_sticky.isNotEmpty) ('sticky', Icons.play_arrow_rounded, 'Hôm qua nghe nhiều', () => _play(_sticky, 'Hôm qua nghe nhiều')),
+      // About two hours of well-liked songs, for listening while working.
+      ('long', Icons.timer_outlined, 'Nghe liền 2 tiếng', () => _quick('long', 'Nghe liền 2 tiếng', () async => (await _songsWhere({'column': 'views', 'operator': 'GT', 'value': 500})).take(36).toList())),
       if (!authed) ('d70', Icons.play_arrow_rounded, 'Thập niên 70', () => _quick('d70', 'Thập niên 70', () => _decadeSongs(1970))),
     ];
     return Wrap(spacing: 10, runSpacing: 10, children: [
@@ -523,6 +523,20 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               lead: SizedBox(width: 46, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: i < 3 ? AppColors.accentFg : AppColors.textMuted))))),
       ]);
 
+  /// Full-width "Nghe nhiều hôm nay": eight songs in two columns.
+  Widget _rankGrid(bool wide) {
+    Widget r(int i) => _row(_top[i], _top, i, 'Nghe nhiều hôm nay',
+        lead: SizedBox(width: 46, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: i < 3 ? AppColors.accentFg : AppColors.textMuted)))));
+    final n = _top.length.clamp(0, 8);
+    if (!wide) return Column(children: [for (var i = 0; i < n; i++) r(i)]);
+    final half = (n + 1) ~/ 2;
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: Column(children: [for (var i = 0; i < half; i++) r(i)])),
+      const SizedBox(width: 40),
+      Expanded(child: Column(children: [for (var i = half; i < n; i++) r(i)])),
+    ]);
+  }
+
   Widget _liveList() => Column(children: [
         for (var i = 0; i < _live.length && i < 7; i++)
           _row(_live[i], _live, i, 'Mọi người đang nghe',
@@ -598,100 +612,218 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
   }
 
-  // ---------- Câu chuyện bài hát ----------
-  Widget _stories() => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        for (var i = 0; i < _comments.length; i++) ...[
-          if (i > 0) const SizedBox(width: 16),
-          Expanded(child: _story(_comments[i])),
-        ],
-      ]);
-
-  Widget _story(Map<String, dynamic> c) {
-    final song = <String, dynamic>{
-      'id': c['song_id'], 'title': c['song_title'],
-      if (c['song_image'] != null) 'thumbnail': {'url': c['song_image']},
-      'file': {'audio_url': c['audio_url'], 'video_url': c['video_url']},
-      'play_type': c['play_type'], 'file_type': c['file_type'] ?? 'song',
-    };
-    return Material(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: () => context.push('/song/${c['song_id']}', extra: song),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.format_quote_rounded, size: 34, color: AppColors.rose),
-            const SizedBox(height: 8),
-            Text('${c['snippet'] ?? ''}'.trim(), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, height: 1.6, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500, color: AppColors.text))),
-            const SizedBox(height: 16),
-            Row(children: [
-              UserAvatar(url: c['user_avatar']?.toString(), name: '${c['username'] ?? ''}', size: 40),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${c['username'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
-                  Text.rich(TextSpan(children: [const TextSpan(text: 'về bài '), TextSpan(text: '${c['song_title'] ?? ''}', style: TextStyle(color: AppColors.accentFg, fontWeight: FontWeight.w700))]),
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                ]),
+  // ---------- Chủ đề ----------
+  Widget _topicRow() => Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Padding(padding: const EdgeInsets.only(right: 4), child: Text('CHỦ ĐỀ', style: body(TextStyle(fontSize: 13, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+          for (final t in _tags)
+            Material(
+              color: Colors.transparent,
+              shape: StadiumBorder(side: BorderSide(color: AppColors.border, width: 1.5)),
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: () => context.push('/tag/${t['slug']}'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  child: Text.rich(TextSpan(children: [
+                    TextSpan(text: '#', style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.6))),
+                    TextSpan(text: '${t['name'] ?? ''}'),
+                  ]), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                ),
               ),
-              if (_playable(song)) PillButton(label: 'Nghe bài', icon: Icons.play_arrow_rounded, height: 44, onTap: () => playOrOpen(context, song, [song], 'Câu chuyện bài hát')),
+            ),
+          TextButton(onPressed: () => context.push('/tag'), child: Text('Tất cả ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+        ]),
+      );
+
+  // ---------- Việc của CTV ----------
+  Future<void> _fetchCtv(AuthProvider auth) async {
+    bool can(String p) => auth.hasPermission(p);
+    if (!(can('manage_upload') || can('manage_song') || can('manage_comment') || can('manage_document'))) return;
+    final d30 = DateTime.now().subtract(const Duration(days: 30));
+    final since = '${d30.year}-${d30.month.toString().padLeft(2, '0')}-${d30.day.toString().padLeft(2, '0')}';
+    final parts = [
+      if (can('manage_upload')) 'pending: uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } }',
+      if (can('manage_song')) 'no_image: songs(first: 1, where: {AND: [{column: "image_id", operator: IS_NULL}, {column: "created_at", operator: GTE, value: "$since"}]}) { paginatorInfo { total } }',
+      'doc_request: comments(first: 1, where: {AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}) { paginatorInfo { total } }',
+    ];
+    try {
+      final d = await auth.authedQuery('query { ${parts.join(' ')} }');
+      int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      if (mounted) setState(() => _ctv = {for (final k in ['pending', 'no_image', 'doc_request']) if (n(k) > 0) k: n(k)});
+    } catch (_) {}
+  }
+
+  /// Only for members who look after the archive; a zero hides its item,
+  /// all zero hides the strip. Each number opens its queue.
+  Widget _ctvStrip() {
+    const labels = {'pending': 'bài chờ duyệt', 'no_image': 'bài mới chưa có ảnh', 'doc_request': 'yêu cầu chưa xử lý'};
+    return Container(
+      margin: const EdgeInsets.only(top: 18),
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: BoxDecoration(color: AppColors.accentSoft.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.accentSoft)),
+      child: Row(children: [
+        Text('VIỆC CỦA CTV', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        const SizedBox(width: 22),
+        for (final e in _ctv.entries) ...[
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context.push('/ban-lam-viec?q=${e.key}'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  constraints: const BoxConstraints(minWidth: 28),
+                  height: 24,
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.wine, borderRadius: BorderRadius.circular(12)),
+                  child: Text(formatInt(e.value), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white))),
+                ),
+                const SizedBox(width: 8),
+                Text(labels[e.key]!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+              ]),
+            ),
+          ),
+          const SizedBox(width: 18),
+        ],
+        const Spacer(),
+        TextButton(onPressed: () => context.push('/ban-lam-viec'), child: Text('Mở Bàn làm việc ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+      ]),
+    );
+  }
+
+  // ---------- Bình luận mới ----------
+  Future<void> _fetchComments() async {
+    try {
+      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content created_at user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug file { audio_url } } ... on Instrumental { id title slug file { audio_url } } ... on Poem { id title slug file { audio_url } } } } } }''');
+      final seen = <String>{};
+      final out = <Map<String, dynamic>>[];
+      for (final c in _maps(d['latestComments']?['data'])) {
+        final who = '${c['user']?['id'] ?? ''}';
+        final obj = c['object'];
+        if (who.isEmpty || obj is! Map || obj['title'] == null) continue;
+        final text = _sentences('${c['content'] ?? ''}');
+        if (text.length < 30 || !seen.add(who)) continue;
+        out.add({...c, 'text': text});
+        if (out.length == 4) break;
+      }
+      if (mounted) setState(() => _comments = out);
+    } catch (_) {}
+  }
+
+  /// Plain text cut at a sentence end (≤ ~220 chars), never mid-word.
+  static String _sentences(String html) {
+    final t = html.replaceAll(RegExp(r'<br\s*/?>|</p>', caseSensitive: false), ' ').replaceAll(RegExp(r'<[^>]*>'), '').replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (t.length <= 220) return t;
+    final cut = t.substring(0, 220);
+    final end = cut.lastIndexOf(RegExp(r'[.!?…](\s|$)'));
+    if (end > 60) return cut.substring(0, end + 1);
+    return '${cut.substring(0, cut.lastIndexOf(' '))}…';
+  }
+
+  Widget _newComments() {
+    Widget item(Map<String, dynamic> c) {
+      final u = c['user'] as Map;
+      final o = Map<String, dynamic>.from(c['object'] as Map);
+      final kind = const {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'}['${o['__typename']}'] ?? 'song';
+      final song = {...o, 'file_type': kind};
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          InkWell(onTap: () => context.push('/user/${u['id']}'), customBorder: const CircleBorder(), child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 36)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text.rich(TextSpan(children: [
+                TextSpan(text: '${u['username'] ?? ''}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
+                TextSpan(text: ' · ${timeago(c['created_at']?.toString())} · trong ', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+                TextSpan(text: '${o['title']}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentFg), recognizer: TapGestureRecognizer()..onTap = () => context.push('/$kind/${o['id']}', extra: song)),
+              ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14))),
+              const SizedBox(height: 3),
+              Text('${c['text']}', style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.text))),
+              const SizedBox(height: 4),
+              Row(children: [
+                TextButton(
+                  onPressed: () => context.push('/$kind/${o['id']}', extra: song),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                  child: Text('Trả lời', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                ),
+                const SizedBox(width: 16),
+                if (_playable(song))
+                  TextButton.icon(
+                    onPressed: () => playOrOpen(context, song, [song], 'Bình luận mới'),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    icon: Icon(Icons.play_arrow_rounded, size: 18, color: AppColors.accentFg),
+                    label: Text('Nghe bài', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  ),
+              ]),
             ]),
+          ),
+        ]),
+      );
+    }
+    return LayoutBuilder(builder: (context, c) {
+      if (c.maxWidth < 760) return Column(children: [for (final x in _comments) item(x)]);
+      final half = (_comments.length + 1) ~/ 2;
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(children: [for (final x in _comments.take(half)) item(x)])),
+        const SizedBox(width: 36),
+        Expanded(child: Column(children: [for (final x in _comments.skip(half)) item(x)])),
+      ]);
+    });
+  }
+
+  // ---------- Tư liệu (tab của Mới cập nhật) ----------
+  Future<void> _fetchDocs() async {
+    if (_docs != null) return;
+    try {
+      final d = await ApiClient.query('query { documents(first: 8, orderBy: [{column: "id", order: DESC}]) { data { id title type created_at thumbnail { url } uploader { username } } } }');
+      if (mounted) setState(() => _docs = _maps(d['documents']?['data']));
+    } catch (_) {
+      if (mounted) setState(() => _docs = []);
+    }
+  }
+
+  Widget _docsBlock() {
+    final list = _docs;
+    if (list == null) return _skeletonRows();
+    if (list.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa tải được, thử lại sau.', style: AppText.bodyText));
+    const kinds = {'image': ('Ảnh', Icons.image_outlined), 'audio': ('Âm thanh', Icons.graphic_eq_rounded), 'video': ('Video', Icons.videocam_outlined), 'news': ('Bài viết', Icons.article_outlined), 'sheet': ('Bản nhạc', Icons.library_music_outlined)};
+    Widget row(Map<String, dynamic> d) {
+      final k = kinds['${d['type']}'] ?? ('Tư liệu', Icons.folder_outlined);
+      final thumb = d['thumbnail']?['url']?.toString();
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => context.push('/tu-lieu/chi-tiet/${d['id']}'),
+        child: Container(
+          height: 64,
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          child: Row(children: [
+            thumb != null
+                ? NetImage(url: thumb, width: 46, height: 46, radius: 10, tint: true)
+                : Container(width: 46, height: 46, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)), child: Icon(k.$2, color: AppColors.textMuted)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${d['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text([k.$1, if (d['uploader']?['username'] != null) '${d['uploader']['username']}', _postedAgo(d['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              ]),
+            ),
           ]),
         ),
-      ),
-    );
+      );
+    }
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: Column(children: [for (final d in list.take(4)) row(d)])),
+      const SizedBox(width: 36),
+      Expanded(child: Column(children: [for (final d in list.skip(4).take(4)) row(d)])),
+    ]);
   }
 
-  // ---------- Người tiêu biểu ----------
-  Widget _people(List<Map<String, dynamic>> list, String route) => LayoutBuilder(builder: (context, c) {
-        final cols = ((c.maxWidth + 16) / 136).floor().clamp(5, 10);
-        final w = (c.maxWidth - (cols - 1) * 16) / cols;
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (var i = 0; i < cols && i < list.length; i++) ...[
-            if (i > 0) const SizedBox(width: 16),
-            SizedBox(width: w, child: _Person(person: list[i], size: w, onTap: () => context.push('$route${list[i]['slug']}'))),
-          ],
-        ]);
-      });
-}
-
-/// A round portrait: on hover a wine ring hugs the picture and the name
-/// turns wine — no square plate behind a round photo.
-class _Person extends StatefulWidget {
-  final Map<String, dynamic> person;
-  final double size;
-  final VoidCallback onTap;
-  const _Person({required this.person, required this.size, required this.onTap});
-  @override
-  State<_Person> createState() => _PersonState();
-}
-
-class _PersonState extends State<_Person> {
-  bool _hover = false;
-  @override
-  Widget build(BuildContext context) {
-    final w = widget.size;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: Column(children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _hover ? AppColors.accentFg : Colors.transparent, width: 2)),
-            child: NetImage(url: widget.person['avatar']?['url']?.toString(), width: w - 10, height: w - 10, circle: true, tint: true),
-          ),
-          const SizedBox(height: 6),
-          Text('${widget.person['title'] ?? ''}', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w800, color: _hover ? AppColors.accentFg : AppColors.text))),
-        ]),
-      ),
-    );
-  }
 }
 
 /// "Hôm nay": the event playlists running today (event_start ≤ today ≤

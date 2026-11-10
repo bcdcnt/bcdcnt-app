@@ -22,7 +22,9 @@ import '../widgets/upload_thread.dart';
 /// the other queues (bản nhạc thiếu, tag, yêu cầu, bình luận, mất file)
 /// point at the page to fix. J/K: next/previous everywhere.
 class WorkspaceScreen extends StatefulWidget {
-  const WorkspaceScreen({super.key});
+  /// Queue to open on (`/ban-lam-viec?q=no_image`), e.g. from the home strip.
+  final String? queue;
+  const WorkspaceScreen({super.key, this.queue});
   @override
   State<WorkspaceScreen> createState() => _WorkspaceScreenState();
 }
@@ -36,6 +38,7 @@ const _todo = [
   ('no_tag', 'Bài thiếu tag', 'Bản nhạc'),
   ('comment_pending', 'Bình luận chờ duyệt', 'Bình luận'),
   ('lost_file', 'Bài mất file', 'Bài hát'),
+  ('no_image', 'Bài mới thiếu ảnh', 'Bài hát'),
 ];
 const _done = [
   ('not_sure', 'Chưa chắc chắn', 'Bài gửi'),
@@ -48,11 +51,16 @@ const _uploadQueues = {'pending', 'not_sure', 'rejected', 'approved'};
 const _noScoreWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _requestWhere = '{AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}';
 const _commentPendingWhere = '{column: "status", value: 0}';
+/// Songs posted in the last 30 days still without a picture.
+String get _noImageWhere {
+  final d = DateTime.now().subtract(const Duration(days: 30));
+  return '{AND: [{column: "image_id", operator: IS_NULL}, {column: "created_at", operator: GTE, value: "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}"}]}';
+}
 const _commentObj = '__typename ... on Song { id title } ... on Folk { id title } ... on Instrumental { id title } ... on Poem { id title } ... on Karaoke { id title } ... on Sheet { id title }';
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
-  String _queue = 'pending';
+  late String _queue = widget.queue ?? 'pending';
   final Map<String, int> _counts = {};
   List<Map<String, dynamic>> _items = [];
   int _sel = 0;
@@ -72,6 +80,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   bool get _isUpload => _uploadQueues.contains(_queue);
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
+  bool get _isSong => _queue == 'lost_file' || _queue == 'no_image';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
   static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
@@ -113,6 +122,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'doc_request': 'comments(first: 1, where: $_requestWhere)',
       'comment_pending': 'comments(first: 1, where: $_commentPendingWhere)',
       'lost_file': 'songs(first: 1, where: {column: "empty_file", value: 1})',
+      'no_image': 'songs(first: 1, where: $_noImageWhere)',
     };
     Future<void> ask(Iterable<String> keys, String q) async {
       try {
@@ -135,6 +145,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_score' => ('sheets', 'sheets(first: 40, where: $_noScoreWhere, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'no_tag' => ('sheets', 'sheets(first: 40, untagged: true, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'lost_file' => ('songs', 'songs(first: 40, where: {column: "empty_file", value: 1}, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
+      'no_image' => ('songs', 'songs(first: 40, where: $_noImageWhere, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
       'doc_request' => ('comments', 'comments(first: 40, where: $_requestWhere, orderBy: [$order]) { data { id content created_at request_status user { id username } object { $_commentObj } } }'),
       'comment_pending' => ('comments', 'comments(first: 40, where: $_commentPendingWhere, orderBy: [$order]) { data { id content created_at user { id username } object { $_commentObj } } }'),
       _ => ('uploads', 'uploads(first: 40, page: 1, where: {column: "status", value: "$queue"}, orderBy: [$order]) { data { $_fields } }'),
@@ -395,7 +406,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   static const _railIcons = {
     'pending': Icons.inbox_rounded, 'no_score': Icons.library_music_outlined, 'doc_request': Icons.description_outlined,
-    'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined,
+    'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined, 'no_image': Icons.hide_image_outlined,
     'not_sure': Icons.help_outline_rounded, 'rejected': Icons.close_rounded, 'approved': Icons.check_rounded,
   };
 
@@ -538,7 +549,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   /// "Bài gửi · 13" and the sort over the list.
   Widget _listHead() {
     final title = [..._todo, ..._done].firstWhere((q) => q.$1 == _queue).$3;
-    final sorts = [if (_isSheet || _queue == 'lost_file') ('views', 'Xem nhiều nhất'), ('new', 'Mới nhất'), ('old', 'Cũ nhất')];
+    final sorts = [if (_isSheet || _isSong) ('views', 'Xem nhiều nhất'), ('new', 'Mới nhất'), ('old', 'Cũ nhất')];
     final label = sorts.firstWhere((x) => x.$1 == _sort, orElse: () => sorts.first).$2;
     return Padding(
       padding: const EdgeInsets.fromLTRB(26, 22, 12, 8),
@@ -575,7 +586,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (_isSheet) {
       return [_names(u['composers']), '${formatInt((u['views'] as num?)?.toInt() ?? 0)} lượt xem'].where((x) => x.isNotEmpty).join(' · ');
     }
-    if (_queue == 'lost_file') {
+    if (_isSong) {
       return [_names(u['artists']), '${formatInt((u['views'] as num?)?.toInt() ?? 0)} lượt nghe'].where((x) => x.isNotEmpty).join(' · ');
     }
     if (_isComment) {
@@ -602,13 +613,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_score' => ('BẢN NHẠC · CHƯA CÓ BẢN NHẠC', '${u['title'] ?? ''}', 'Thêm ảnh hoặc tệp bản nhạc ở trang bản nhạc.'),
       'no_tag' => ('BẢN NHẠC · CHƯA GẮN TAG', '${u['title'] ?? ''}', 'Gắn chủ đề (tag) ở trang bản nhạc để bài hiện trong các trang chủ đề.'),
       'lost_file' => ('BÀI HÁT · MẤT FILE', '${u['title'] ?? ''}', 'Đường dẫn file không còn mở được. Tải lại file ở trang bài hát.'),
+      'no_image' => ('BÀI HÁT · CHƯA CÓ ẢNH MINH HOẠ', '${u['title'] ?? ''}', 'Thêm ảnh ở trang bài hát: ⋯ › Công cụ CTV › Ảnh minh hoạ.'),
       'doc_request' => ('YÊU CẦU · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', 'Trong ${u['object']?['title'] ?? 'bài'}', 'Xử lý yêu cầu ở phần bình luận của bài.'),
       _ => ('BÌNH LUẬN · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', 'Trong ${u['object']?['title'] ?? 'bài'}', 'Duyệt hoặc ẩn bình luận ở trang của bài.'),
     };
     final obj = u['object'] is Map ? u['object'] as Map : null;
     void open() {
       if (_isSheet) { context.push('/sheet/${u['id']}'); return; }
-      if (_queue == 'lost_file') { context.push('/song/${u['id']}'); return; }
+      if (_isSong) { context.push('/song/${u['id']}'); return; }
       final tn = '${obj?['__typename'] ?? ''}';
       if (_fileTypes.containsKey(tn)) {
         context.push('/song/${obj!['id']}?binh-luan=1', extra: {...Map<String, dynamic>.from(obj), 'file_type': _fileTypes[tn], 'highlightCommentId': '${u['id']}'});
@@ -634,7 +646,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         row('Lượt xem', formatInt((u['views'] as num?)?.toInt() ?? 0)),
         if (songs != null) row('Bản thu', songs > 0 ? '$songs bản thu trong kho' : 'chưa có bản thu'),
       ],
-      if (_queue == 'lost_file') ...[
+      if (_isSong) ...[
         row('Sáng tác', _names(u['sheet']?['composers'])),
         row('Trình bày', _names(u['artists'])),
         row('Năm thu', '${u['record_year'] ?? ''}'),
@@ -646,7 +658,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       Text(hint, style: body(TextStyle(fontSize: 14, color: AppColors.textSecondary))),
       const SizedBox(height: 18),
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        PillButton(label: _isSheet ? 'Mở bản nhạc' : (_queue == 'lost_file' ? 'Mở bài hát' : 'Mở bình luận trong bài'), icon: Icons.open_in_new_rounded, onTap: open),
+        PillButton(label: _isSheet ? 'Mở bản nhạc' : (_isSong ? 'Mở bài hát' : 'Mở bình luận trong bài'), icon: Icons.open_in_new_rounded, onTap: open),
         const SizedBox(width: 12),
         Row(mainAxisSize: MainAxisSize.min, children: [_kbd('J', 'tiếp theo'), const SizedBox(width: 12), _kbd('K', 'trước đó')]),
       ]),

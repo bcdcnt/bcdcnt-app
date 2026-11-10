@@ -441,7 +441,7 @@ final _router = GoRouter(
         GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
         GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const DesktopCommunityScreen())),
         GoRoute(path: '/dong-thoi-gian', builder: (c, s) => const TimelineScreen()),
-        GoRoute(path: '/ban-lam-viec', builder: (c, s) => const WorkspaceScreen()),
+        GoRoute(path: '/ban-lam-viec', builder: (c, s) => WorkspaceScreen(queue: s.uri.queryParameters['q'])),
         GoRoute(
           path: '/search',
           pageBuilder: (c, s) {
