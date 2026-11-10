@@ -227,7 +227,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Future<void> _fetchLatest(int i) async {
     final (_, q) = _cats[i];
     if (_latest[q] != null) return;
-    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username } }' : 'artists(first: 3) { data { id slug title } }';
+    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username avatar { url } } }' : 'artists(first: 3) { data { id slug title avatar { url } } }${q == 'songs' ? ' sheet { composers(first: 1) { data { avatar { url } } } }' : ''}';
     try {
       final d = await ApiClient.query('query { $q(first: 8, orderBy: [{column: "id", order: DESC}]) { data { id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } $people } } }');
       if (!mounted) return;
@@ -304,7 +304,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           child: Align(
             alignment: Alignment.topLeft,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1240),
+              constraints: const BoxConstraints(maxWidth: 1200),
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Text(authed ? '${_greeting(now)}${name != null ? ', $name' : ''}' : 'Chào bạn', style: display(TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: AppColors.text))),
                 const SizedBox(height: 6),
@@ -428,6 +428,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Widget _occasionBlock() {
     final o = _occasion!;
     final songs = _occasionSongs;
+    final band = [for (var i = 0; i < songs.length; i++) if (i == 0 || i > 4) songs[i]].take(4).toList();
     final when = o.days == 0 ? 'HÔM NAY' : 'CÒN ${o.days} NGÀY';
     return SizedBox(
       height: 240,
@@ -438,12 +439,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             borderRadius: BorderRadius.circular(22),
             child: Stack(fit: StackFit.expand, children: [
               Container(color: const Color(0xFF2E080A)),
-              // Four songs' pictures, like the playlist covers in lists.
-              if (songs.length >= 4)
+              // Four songs' pictures, like the playlist covers in lists — not
+              // the four already shown in the tiles beside it.
+              if (band.length >= 4)
                 Column(children: [
                   for (final r in [0, 2])
                     Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      for (final i in [r, r + 1]) Expanded(child: NetImage(url: songs[i]['thumbnail']?['url']?.toString(), tint: true)),
+                      for (final i in [r, r + 1]) Expanded(child: NetImage(url: band[i]['thumbnail']?['url']?.toString(), tint: true)),
                     ])),
                 ])
               else
@@ -613,7 +615,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       });
 
   // ---------- Lists ----------
-  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail, String? sub}) => draggableSong(context, s, InkWell(
+  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail, String? sub, String? stand}) => draggableSong(context, s, InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: () => _play(list, label, i),
         onSecondaryTap: () => showSongActions(context, s),
@@ -622,7 +624,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
           child: Row(children: [
             ?lead,
-            SongCover(song: s, size: 46, radius: 10),
+            stand != null
+                ? NetImage(url: stand, width: 46, height: 46, radius: 10, tint: true, fallback: SongCover(song: s, size: 46, radius: 10))
+                : SongCover(song: s, size: 46, radius: 10),
             const SizedBox(width: 14),
             Expanded(
               child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -706,6 +710,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       });
 
   // ---------- Mới cập nhật ----------
+  /// A new song often has no picture yet: its singer's, else its composer's.
+  String? _standIn(Map s) {
+    final own = s['thumbnail']?['url']?.toString();
+    if (own != null && own.isNotEmpty) return null;
+    for (final p in [...((s['artists']?['data'] ?? const []) as List), ...((s['sheet']?['composers']?['data'] ?? const []) as List)]) {
+      final u = (p as Map?)?['avatar']?['url']?.toString();
+      if (u != null && u.isNotEmpty) return u;
+    }
+    return null;
+  }
+
   Widget _latestBlock() {
     final list = _latest[_cats[_cat].$2];
     if (list == null) return _skeletonRows();
@@ -713,7 +728,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final label = 'Mới cập nhật · ${_cats[_cat].$1}';
     Widget col(int from) => Column(children: [
           for (var i = from; i < list.length && i < from + 4; i++)
-            _row(list[i], list, i, label, sub: [songByline(list[i]), _postedAgo(list[i]['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · ')),
+            _row(list[i], list, i, label, sub: [songByline(list[i]), _postedAgo(list[i]['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · '), stand: _standIn(list[i])),
         ]);
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
   }
@@ -771,19 +786,45 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (var i = 0; i < cols && i < list.length; i++) ...[
             if (i > 0) const SizedBox(width: 16),
-            SizedBox(
-              width: w,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => context.push('$route${list[i]['slug']}'),
-                child: Column(children: [
-                  NetImage(url: list[i]['avatar']?['url']?.toString(), width: w, height: w, circle: true, tint: true),
-                  const SizedBox(height: 8),
-                  Text('${list[i]['title'] ?? ''}', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
-                ]),
-              ),
-            ),
+            SizedBox(width: w, child: _Person(person: list[i], size: w, onTap: () => context.push('$route${list[i]['slug']}'))),
           ],
         ]);
       });
+}
+
+/// A round portrait: on hover a wine ring hugs the picture and the name
+/// turns wine — no square plate behind a round photo.
+class _Person extends StatefulWidget {
+  final Map<String, dynamic> person;
+  final double size;
+  final VoidCallback onTap;
+  const _Person({required this.person, required this.size, required this.onTap});
+  @override
+  State<_Person> createState() => _PersonState();
+}
+
+class _PersonState extends State<_Person> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final w = widget.size;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Column(children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: _hover ? AppColors.accentFg : Colors.transparent, width: 2)),
+            child: NetImage(url: widget.person['avatar']?['url']?.toString(), width: w - 10, height: w - 10, circle: true, tint: true),
+          ),
+          const SizedBox(height: 6),
+          Text('${widget.person['title'] ?? ''}', maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.3, fontWeight: FontWeight.w800, color: _hover ? AppColors.accentFg : AppColors.text))),
+        ]),
+      ),
+    );
+  }
 }
