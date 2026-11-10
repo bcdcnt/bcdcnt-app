@@ -492,8 +492,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
         PillButton(label: _isSheet ? 'Mở bản nhạc' : (_queue == 'lost_file' ? 'Mở bài hát' : 'Mở bình luận trong bài'), icon: Icons.open_in_new_rounded, onTap: open),
         const SizedBox(width: 12),
-        _kbd('J', 'tiếp theo'),
-        _kbd('K', 'trước đó'),
+        Row(mainAxisSize: MainAxisSize.min, children: [_kbd('J', 'tiếp theo'), const SizedBox(width: 12), _kbd('K', 'trước đó')]),
       ]),
     ]);
   }
@@ -633,8 +632,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           if (r != null) { _load(); _loadCounts(); }
         }),
         const SizedBox(width: 12),
-        _kbd('J', 'bài sau'),
-        _kbd('K', 'bài trước'),
+        // J and K wrap together, never split over two lines.
+        Row(mainAxisSize: MainAxisSize.min, children: [_kbd('J', 'bài sau'), const SizedBox(width: 12), _kbd('K', 'bài trước')]),
       ]),
     ]);
   }
