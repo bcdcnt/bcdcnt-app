@@ -438,7 +438,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             borderRadius: BorderRadius.circular(22),
             child: Stack(fit: StackFit.expand, children: [
               Container(color: const Color(0xFF2E080A)),
-              NetImage(url: songs.first['thumbnail']?['url']?.toString(), tint: true),
+              // Four songs' pictures, like the playlist covers in lists.
+              if (songs.length >= 4)
+                Column(children: [
+                  for (final r in [0, 2])
+                    Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      for (final i in [r, r + 1]) Expanded(child: NetImage(url: songs[i]['thumbnail']?['url']?.toString(), tint: true)),
+                    ])),
+                ])
+              else
+                NetImage(url: songs.first['thumbnail']?['url']?.toString(), tint: true),
               const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xE62E080A), Color(0x332E080A)]))),
               Padding(
                 padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),

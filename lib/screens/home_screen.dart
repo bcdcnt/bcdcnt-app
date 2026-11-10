@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/player.dart';
+import '../widgets/playlist_cover.dart';
 import '../widgets/song_row.dart';
 import '../widgets/section_header.dart';
 import '../widgets/hover_effects.dart';
@@ -96,7 +97,7 @@ const _rankingQuery = '''query {
 
 const _playlistsQuery = '''query(\$where: WhereConditions) {
   playlists(first: 30, orderBy: [{column: "event_date", order: DESC}], where: \$where) {
-    data { id slug title event_start event_date thumbnail { url } user { id username } }
+    data { id slug title event_start event_date thumbnail { url } user { id username } items(first: 4, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } } } } }
   }
 }''';
 
@@ -172,7 +173,7 @@ const _stickyWhere = {
 // Events (date-based)
 const _eventQuery = '''query(\$where: WhereConditions) {
   playlists(first: 10, where: \$where) {
-    data { id slug title description excerpt event_date event_use_cover thumbnail { url } items(first: 1, orderBy: [{column: "position", order: ASC}]) { data { type object { ... on Song { id slug title thumbnail { url } } ... on Folk { id slug title thumbnail { url } } ... on Instrumental { id slug title thumbnail { url } } ... on Poem { id slug title thumbnail { url } } ... on Karaoke { id slug title thumbnail { url } } } } } }
+    data { id slug title description excerpt event_date event_use_cover thumbnail { url } items(first: 4, orderBy: [{column: "position", order: ASC}]) { data { type object { ... on Song { id slug title thumbnail { url } } ... on Folk { id slug title thumbnail { url } } ... on Instrumental { id slug title thumbnail { url } } ... on Poem { id slug title thumbnail { url } } ... on Karaoke { id slug title thumbnail { url } } } } } }
   }
 }''';
 
@@ -656,14 +657,14 @@ class _HomeScreenState extends State<HomeScreen> {
         _composers = queries[3]['composers']?['data'] ?? [];
         _restartFeaturedArtistTimer();
         _videos = List.of(queries[4]['songs']?['data'] ?? [])..shuffle();
-        // Event playlists — drop ones without a thumbnail (placeholder grey
-        // tiles look broken). Keep the event_date DESC order (most recent
-        // events first); no shuffle so the chronology reads.
+        // Event playlists — drop ones with no picture at all (placeholder
+        // grey tiles look broken). Keep the event_date DESC order (most
+        // recent events first); no shuffle so the chronology reads.
         _playlists = List.of(queries[5]['playlists']?['data'] ?? [])
           ..removeWhere((p) {
             final t = (p as Map?)?['thumbnail'];
             final url = t is Map ? t['url']?.toString() : null;
-            return url == null || url.isEmpty;
+            return (url == null || url.isEmpty) && PlaylistCover.thumbsOf(p?['items']).isEmpty;
           });
         _trendingKeywords = ((queries[6]['trendingKeywords'] ?? []) as List)
             .map((e) => Map<String, dynamic>.from(e as Map))
@@ -2407,6 +2408,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _eventCard(dynamic ep) {
     final thumb = ep['thumbnail']?['url'] ?? ep['items']?['data']?[0]?['object']?['thumbnail']?['url'];
+    final songThumbs = PlaylistCover.thumbsOf(ep['items']);
     final desc = _plainExcerpt(ep['excerpt'] ?? ep['description']);
     final now = DateTime.now();
     final evDate = _formatDate(ep['event_date']);
@@ -2457,7 +2459,15 @@ class _HomeScreenState extends State<HomeScreen> {
             if (thumb != null)
               AspectRatio(
                 aspectRatio: 16 / 9,
-                child: CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surface)),
+                child: songThumbs.length >= 4
+                    // Four songs' pictures, like the playlist covers in lists.
+                    ? Column(children: [
+                        for (final r in [0, 2])
+                          Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            for (final i in [r, r + 1]) Expanded(child: CachedNetworkImage(imageUrl: cdnImg(songThumbs[i], 320), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surface))),
+                          ])),
+                      ])
+                    : CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: AppColors.surface)),
               ),
             if (desc.isNotEmpty)
               Padding(
@@ -2937,9 +2947,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           onPlay: () => context.push('/playlist/${pl['id']}'),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: thumb != null
-                                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 640), width: card, height: card, fit: BoxFit.cover)
-                                : Container(width: card, height: card, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, size: 32, color: AppColors.textMuted)),
+                            child: PlaylistCover(thumb: thumb?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: card, radius: 0),
                           ),
                         ),
                         // Event start date badge (top-left, clear of the
