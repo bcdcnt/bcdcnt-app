@@ -12,6 +12,7 @@ import '../services/upload_types.dart';
 import '../widgets/ui.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/same_recordings.dart';
+import '../widgets/upload_thread.dart';
 
 /// "Bàn làm việc" (desktop, members with manage_upload): what BQT has to do,
 /// in one place — queues with counts | list | detail. Uploads get the
@@ -262,6 +263,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   KeyEventResult _onKey(FocusNode _, KeyEvent e) {
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    // Typing in a field (the thread with the sender): letters are letters.
+    if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) return KeyEventResult.ignored;
     final k = e.logicalKey;
     if (k == LogicalKeyboardKey.keyJ) { _select(_sel + 1); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyK) { _select(_sel - 1); return KeyEventResult.handled; }
@@ -613,7 +616,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ]);
         }),
       ],
-      const SizedBox(height: 24),
+      const SizedBox(height: 20),
+      // Ask the sender before deciding.
+      UploadThread(key: ValueKey('thread-${u['id']}'), uploadId: '${u['id']}', senderId: '${u['user']?['id'] ?? ''}'),
+      const SizedBox(height: 20),
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
         if (!decided) ...[
           PillButton(label: 'Duyệt (A)', icon: Icons.check_rounded, loading: _busy, onTap: () => _decide('approve')),
