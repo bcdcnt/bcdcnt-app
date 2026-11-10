@@ -847,11 +847,15 @@ class _CommentSectionState extends State<CommentSection> {
     final auth = context.watch<AuthProvider>();
     final userId = auth.user?['id'];
 
-    final compact = widget.compact;
+    // [panel]: the side panel layout (no heading, list scrolls, composer
+    // pinned). [compact]: the tighter look, shared by the panel and the
+    // desktop song page so both comment boxes read the same.
+    final panel = widget.compact;
+    final compact = panel || MediaQuery.sizeOf(context).width >= 900;
     final composer = <Widget>[];
     final list = <Widget>[];
     final heading = <Widget>[
-      if (!compact) ...[
+      if (!panel) ...[
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
@@ -1145,7 +1149,7 @@ class _CommentSectionState extends State<CommentSection> {
                             _attachMenuButton(),
                           ]),
                         ] else
-                          _clampLong(c, CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString(), fontSize: compact ? 15 : 16), compact && _plainLength(content) > 240),
+                          _clampLong(c, CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString(), fontSize: panel ? 15 : 16), compact && _plainLength(content) > (panel ? 240 : 700)),
                         const SizedBox(height: 4),
                         // Hide the like/edit/delete action row while
                         // this very comment is being edited — the
@@ -1247,7 +1251,7 @@ class _CommentSectionState extends State<CommentSection> {
     ]);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: compact
+      children: panel
           // Side panel: the list scrolls, the composer stays at the bottom.
           ? [
               Expanded(
