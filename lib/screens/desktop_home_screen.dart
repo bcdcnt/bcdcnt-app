@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/friendly_error.dart' show askLogin;
 import '../services/lunar.dart';
 import '../widgets/anniversary_rail.dart';
 import '../widgets/auth_dialogs.dart';
@@ -299,7 +300,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l, 'Tư liệu'], tab: _cat, onTab: (i) { setState(() => _cat = i); i < _cats.length ? _fetchLatest(i) : _fetchDocs(); }, action: 'Xem tất cả', onAction: () => context.push(_cat < _cats.length ? '/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}' : '/tu-lieu')),
                 _cat < _cats.length ? _latestBlock() : _docsBlock(),
                 if (_comments.isNotEmpty) ...[_head('Bình luận mới', action: 'Xem tất cả', onAction: () => context.push('/binh-luan')), _newComments()],
-                if (authed && forYou.isNotEmpty) ...[_head('Có thể bạn thích'), _cards(forYou, 'Có thể bạn thích')],
+                if (authed && forYou.isNotEmpty) ...[_head('Có thể bạn thích', action: 'Làm mới', onAction: () => setState(() => _forYou.shuffle())), _cards(forYou, 'Có thể bạn thích')],
               ]),
             ),
           ),
@@ -346,7 +347,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ] else
             const Spacer(),
-          if (action != null) TextButton(onPressed: onAction, child: Text(action, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+          if (action != null)
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onAction,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(action, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+            ),
         ]),
       );
 
@@ -461,7 +467,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   /// One row of song cards: ~160px each, more columns on wider windows.
   Widget _cards(List<Map<String, dynamic>> list, String label, {Widget? Function(Map<String, dynamic>)? badge}) => LayoutBuilder(builder: (context, c) {
-        final cols = ((c.maxWidth + 18) / 178).floor().clamp(4, 9);
+        final cols = ((c.maxWidth + 18) / 162).floor().clamp(4, 9);
         final w = (c.maxWidth - (cols - 1) * 18) / cols;
         final shown = list.take(cols).toList();
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -636,9 +642,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       margin: const EdgeInsets.only(top: 44),
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-      decoration: BoxDecoration(color: AppColors.accentSoft.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.accentSoft)),
-      // Wraps instead of overflowing when the window is narrow.
-      child: Wrap(spacing: 18, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      decoration: BoxDecoration(
+        color: AppColors.isLight ? const Color(0xFFFBF3F3) : AppColors.accentSoft.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.isLight ? const Color(0xFFEBD3D3) : AppColors.accentSoft),
+      ),
+      child: LayoutBuilder(builder: (context, box) {
+      final link = TextButton(onPressed: () => context.push('/ban-lam-viec'), child: Text('Mở Bàn làm việc ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg))));
+      final items = <Widget>[
         Text('NHỜ BẠN GIÚP SỨC', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
         for (final e in _ctv.entries) ...[
           InkWell(
@@ -661,15 +672,20 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ),
         ],
-        TextButton(onPressed: () => context.push('/ban-lam-viec'), child: Text('Mở Bàn làm việc ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
-      ]),
+      ];
+      // Wide: one line, the link on the right edge. Narrow: wraps instead of overflowing.
+      if (box.maxWidth >= 1000) return Row(children: [for (final w in items) ...[w, const SizedBox(width: 18)], const Spacer(), link]);
+      return Wrap(spacing: 18, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [...items, link]);
+      }),
     );
   }
 
   // ---------- Bình luận mới ----------
   Future<void> _fetchComments() async {
     try {
-      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content created_at user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug file { audio_url } } ... on Instrumental { id title slug file { audio_url } } ... on Poem { id title slug file { audio_url } } } } } }''');
+      final me = context.read<AuthProvider>().user?['id'];
+      final myLove = me == null ? '' : 'myLove: loves(first: 1, where: {column: "user_id", value: $me}) { paginatorInfo { total } }';
+      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content created_at $myLove user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug file { audio_url } } ... on Instrumental { id title slug file { audio_url } } ... on Poem { id title slug file { audio_url } } } } } }''');
       final seen = <String>{};
       final out = <Map<String, dynamic>>[];
       for (final c in _maps(d['latestComments']?['data'])) {
@@ -722,6 +738,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               Text('${c['text']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.text))),
               const SizedBox(height: 4),
               Row(children: [
+                _commentHeart(c),
+                const SizedBox(width: 14),
                 TextButton(
                   onPressed: () => context.push('/$kind/${o['id']}', extra: song),
                   style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 32), tapTargetSize: MaterialTapTargetSize.shrinkWrap),
@@ -755,6 +773,34 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ),
       ]);
     });
+  }
+
+  /// Outline heart; red and filled once loved (same mutation as the comment section).
+  Widget _commentHeart(Map<String, dynamic> c) {
+    final loved = ((c['myLove']?['paginatorInfo']?['total'] as num?) ?? 0) > 0;
+    void set(bool v) => setState(() => c['myLove'] = {'paginatorInfo': {'total': v ? 1 : 0}});
+    return InkWell(
+      customBorder: const CircleBorder(),
+      onTap: () async {
+        final auth = context.read<AuthProvider>();
+        if (!auth.isAuthenticated) return askLogin(context);
+        set(!loved);
+        try {
+          await auth.authedMutate(
+            loved
+                ? r'''mutation($id: ID!) { unlove(lovable_id: $id, lovable_type: "comment") { id } }'''
+                : r'''mutation($id: ID!) { love(lovable_id: $id, lovable_type: "comment") { id } }''',
+            {'id': '${c['id']}'},
+          );
+        } catch (_) {
+          if (mounted) set(loved);
+        }
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(6),
+        child: Icon(loved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 17, color: loved ? const Color(0xFFC62828) : AppColors.textMuted),
+      ),
+    );
   }
 
   // ---------- Tư liệu (tab của Mới cập nhật) ----------
