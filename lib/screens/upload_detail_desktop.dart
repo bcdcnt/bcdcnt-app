@@ -128,11 +128,15 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
   @override
   void initState() {
     super.initState();
+    // Shortcuts listen app-wide while this page is on top, so they keep
+    // working when the keyboard focus fell out of the page (a closed panel).
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetch());
   }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     for (final c in _text.values) {
       c.dispose();
     }
@@ -406,6 +410,12 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
     }
   }
 
+  bool _onHardwareKey(KeyEvent e) {
+    // Only for the page on top: not under a dialog or another page.
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    return _onKey(_focus, e) == KeyEventResult.handled;
+  }
+
   KeyEventResult _onKey(FocusNode _, KeyEvent e) {
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
@@ -416,7 +426,7 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
     }
     // Typing in a field: letters are letters.
     final typing = typingInField();
-    if (typing || !_canDecide) return KeyEventResult.ignored;
+    if (typing || !_canDecide || hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.keyA) { _decide('approve'); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyN) { _decide('not_sure'); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyR) { _decide('reject'); return KeyEventResult.handled; }
@@ -465,7 +475,6 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
         child: Focus(
           focusNode: _focus,
           autofocus: true,
-          onKeyEvent: _onKey,
           child: DeskFrame(
             maxWidth: 1320,
             child: ListView(

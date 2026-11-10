@@ -80,6 +80,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   @override
   void initState() {
     super.initState();
+    // Shortcuts listen app-wide while this page is on top, so they keep
+    // working when the keyboard focus fell out of the page (a closed panel).
+    HardwareKeyboard.instance.addHandler(_onHardwareKey);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCounts();
       _load();
@@ -92,6 +95,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     _focus.dispose();
     super.dispose();
   }
@@ -268,10 +272,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     context.read<PlayerProvider>().playSong(song, [song], 'manual', 'Bàn làm việc');
   }
 
+  bool _onHardwareKey(KeyEvent e) {
+    // Only for the page on top: not under a dialog or another page.
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    return _onKey(_focus, e) == KeyEventResult.handled;
+  }
+
   KeyEventResult _onKey(FocusNode _, KeyEvent e) {
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     // Typing in a field (the thread with the sender): letters are letters.
     if (typingInField()) return KeyEventResult.ignored;
+    final hw = HardwareKeyboard.instance;
+    if (hw.isControlPressed || hw.isMetaPressed || hw.isAltPressed) return KeyEventResult.ignored;
     final k = e.logicalKey;
     if (k == LogicalKeyboardKey.keyJ) { _select(_sel + 1); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyK) { _select(_sel - 1); return KeyEventResult.handled; }
@@ -293,7 +305,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       child: Focus(
         focusNode: _focus,
         autofocus: true,
-        onKeyEvent: _onKey,
         child: LayoutBuilder(builder: (context, box) {
           _boxW = box.maxWidth;
           final threadOn = _threadOn;
