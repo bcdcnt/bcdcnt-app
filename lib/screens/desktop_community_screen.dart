@@ -9,7 +9,8 @@ import 'comments_screen.dart';
 import 'discussion_compose_screen.dart';
 import 'discussion_detail_screen.dart';
 
-/// Cộng đồng on desktop (canvas "Desktop · Cộng đồng"): Diễn đàn as a list
+/// Cộng đồng on desktop (canvas "Desktop · Cộng đồng"); opens on Bình luận
+/// mới, where most new posts land. Diễn đàn as a list
 /// of topics (by category) beside the open topic; Bình luận mới and Hoạt
 /// động in a readable column with members, the call to contribute and the
 /// liveliest topics beside them.
@@ -20,7 +21,7 @@ class DesktopCommunityScreen extends StatefulWidget {
 }
 
 class _DesktopCommunityScreenState extends State<DesktopCommunityScreen> {
-  int _tab = 0;
+  int _tab = 1; // Bình luận mới; pane indices stay 0 forum, 1 comments, 2 activity
   String? _topic;
   final _forumKey = GlobalKey<_ForumListState>();
   final Map<int, Widget> _built = {};
@@ -60,7 +61,7 @@ class _DesktopCommunityScreenState extends State<DesktopCommunityScreen> {
           Container(
             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
             child: Row(children: [
-              for (final (i, label) in const [(0, 'Diễn đàn'), (1, 'Bình luận mới'), (2, 'Hoạt động')])
+              for (final (i, label) in const [(1, 'Bình luận mới'), (0, 'Diễn đàn'), (2, 'Hoạt động')])
                 Padding(
                   padding: const EdgeInsets.only(right: 28),
                   child: InkWell(
