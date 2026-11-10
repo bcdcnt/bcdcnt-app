@@ -62,6 +62,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   /// Upload detail: name → found in the archive (null while asking).
   final Map<String, bool> _inKho = {};
   final _focus = FocusNode();
+  /// Lời gửi kèm: long lyrics start folded to [_lyricsFold] lines.
+  bool _lyricsOpen = false;
+  static const _lyricsFold = 8;
 
   bool get _isUpload => _uploadQueues.contains(_queue);
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
@@ -187,7 +190,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   void _select(int i) {
     if (i < 0 || i >= _items.length) return;
-    setState(() => _sel = i);
+    setState(() { _sel = i; _lyricsOpen = false; });
     _checkDupes();
   }
 
@@ -592,7 +595,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         const SizedBox(height: 16),
         Text('LỜI GỬI KÈM', style: AppText.eyebrow),
         const SizedBox(height: 6),
-        SelectableText(lyrics, style: body(TextStyle(fontSize: 16, height: 1.6, color: AppColors.text))),
+        Builder(builder: (context) {
+          final lines = lyrics.split('\n');
+          final long = lines.length > _lyricsFold + 2;
+          final shown = long && !_lyricsOpen ? lines.take(_lyricsFold).join('\n') : lyrics;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SelectableText(shown, style: body(TextStyle(fontSize: 16, height: 1.6, color: AppColors.text))),
+            if (long)
+              TextButton.icon(
+                style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                onPressed: () => setState(() => _lyricsOpen = !_lyricsOpen),
+                icon: Icon(_lyricsOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20),
+                label: Text(_lyricsOpen ? 'Thu gọn' : 'Xem thêm (${lines.length - _lyricsFold} dòng)'),
+              ),
+          ]);
+        }),
       ],
       const SizedBox(height: 24),
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
