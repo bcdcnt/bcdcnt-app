@@ -316,7 +316,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 TextSpan(text: '${sender!['username']} ', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
               if (((n['_senders'] as Set?)?.length ?? 1) > 1)
                 TextSpan(text: 'và ${(n['_senders'] as Set).length - 1} người khác ', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w700 : FontWeight.w600, color: contentColor, height: 1.5))),
-              TextSpan(text: n['content'] ?? '', style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
+              // Some server texts end in `: ""` when the title is missing.
+              TextSpan(text: '${n['content'] ?? ''}'.replaceFirst(RegExp(r':\s*(""|“”)\s*$'), ''), style: body(TextStyle(fontSize: 15, fontWeight: unread ? FontWeight.w600 : FontWeight.w400, color: contentColor, height: 1.5))),
             ])),
             const SizedBox(height: 4),
             Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 13, color: unread ? AppColors.accentLight : AppColors.textMuted))),

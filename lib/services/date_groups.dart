@@ -1,4 +1,4 @@
-/// Group timestamped feed items into "Hôm nay / Hôm qua / Tuần này / Tháng MM/YYYY"
+/// Group timestamped feed items into "Hôm nay / Hôm qua / Thứ… / Tuần trước / Tháng này / Tháng MM/YYYY"
 /// buckets in the order they appear, preserving the original sort.
 ///
 /// Returns a flat list of either a [String] header or the original item.
@@ -13,7 +13,8 @@ String _bucketLabel(DateTime ts, DateTime now) {
   if (diff == 0) return 'Hôm nay';
   if (diff == 1) return 'Hôm qua';
   if (diff < 7) return _weekdays[ts.weekday % 7];
-  if (ts.year == now.year && ts.month == now.month) return 'Tuần này';
+  if (diff < 14) return 'Tuần trước';
+  if (ts.year == now.year && ts.month == now.month) return 'Tháng này';
   if (ts.year == now.year) return 'Tháng ${ts.month.toString().padLeft(2, '0')}';
   return 'Tháng ${ts.month.toString().padLeft(2, '0')}/${ts.year}';
 }
