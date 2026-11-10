@@ -244,7 +244,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
 
   /// Today's event playlist, as on desktop: a system playlist whose
   /// event_start ≤ today ≤ event_end (set in the playlist's settings).
-  /// Several running → one-day events first, then the one with most songs.
+  /// Several running → one-day events first, then the one ending soonest, then more songs.
   /// None → the big cards show what everyone played yesterday.
   Future<void> _fetchOccasion() async {
     final now = DateTime.now();
@@ -261,7 +261,12 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
       bool oneDay(Map p) => p['event_start'] == p['event_end'];
       final list = _maps(ev['playlists']?['data']).where((p) => total(p) > 0).toList()
-        ..sort((a, b) => oneDay(a) != oneDay(b) ? (oneDay(a) ? -1 : 1) : total(b).compareTo(total(a)));
+        ..sort((a, b) {
+          // One-day events first, then the one ending soonest, then more songs.
+          if (oneDay(a) != oneDay(b)) return oneDay(a) ? -1 : 1;
+          final e = '${a['event_end']}'.compareTo('${b['event_end']}');
+          return e != 0 ? e : total(b).compareTo(total(a));
+        });
       if (list.isEmpty) {
         if (_occasion != null && mounted) setState(() { _events = []; _occasion = null; _occasionSongs = []; });
         return;

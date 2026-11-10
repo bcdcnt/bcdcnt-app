@@ -747,8 +747,12 @@ class _TodayEventsState extends State<_TodayEvents> {
       int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
       bool oneDay(Map p) => p['event_start'] == p['event_end'];
       final list = _maps(d['playlists']?['data']).where((p) => total(p) > 0).toList()
-        // One-day events first, then the longer ones; within each, more songs first.
-        ..sort((a, b) => oneDay(a) != oneDay(b) ? (oneDay(a) ? -1 : 1) : total(b).compareTo(total(a)));
+        ..sort((a, b) {
+          // One-day events first, then the one ending soonest, then more songs.
+          if (oneDay(a) != oneDay(b)) return oneDay(a) ? -1 : 1;
+          final e = '${a['event_end']}'.compareTo('${b['event_end']}');
+          return e != 0 ? e : total(b).compareTo(total(a));
+        });
       if (!mounted || list.isEmpty) return;
       setState(() => _events = list);
       _fetchSongs(list.first);
@@ -782,7 +786,8 @@ class _TodayEventsState extends State<_TodayEvents> {
     final songs = _songs[id] ?? const <Map<String, dynamic>>[];
     final title = '${ev['title'] ?? ''}';
     final date = DateTime.tryParse('${ev['event_date'] ?? ''}');
-    final parts = '${ev['event_start'] ?? ''}'.split('-');
+    // No original date: the page shows the day the event leads up to.
+    final parts = '${ev['event_end'] ?? ''}'.split('-');
     final day = date?.day ?? int.tryParse(parts.last) ?? DateTime.now().day;
     final month = date?.month ?? int.tryParse(parts.first) ?? DateTime.now().month;
     final today = _mmdd(DateTime.now());
