@@ -22,11 +22,13 @@ class UploadThread extends StatefulWidget {
 
 class _UploadThreadState extends State<UploadThread> {
   static const _minLength = 20; // API Comment::CONTENT_MIN_LENGTH
+  /// (chip, text put in the box) — whole, polite sentences the sender
+  /// can answer straight away.
   static const _quick = [
-    ('Nguồn bản thu?', 'Bạn cho BQT hỏi bản thu này lấy từ nguồn nào (đài, băng, đĩa…) ạ?'),
-    ('Ai trình bày?', 'Bạn có biết chắc ai trình bày bản thu này không ạ?'),
-    ('Năm thu?', 'Bạn có biết bản thu này được thu năm nào không ạ?'),
-    ('File chất lượng cao hơn?', 'Bạn có file chất lượng cao hơn (bitrate cao hơn) của bản thu này không ạ?'),
+    ('BQT xin hỏi nguồn bản thu', 'Chào bạn, BQT xin hỏi bản thu này bạn lấy từ nguồn nào (đài, băng, đĩa…) ạ?'),
+    ('BQT xin hỏi người trình bày', 'Chào bạn, BQT xin hỏi bạn có biết chắc ai trình bày bản thu này không ạ?'),
+    ('BQT xin hỏi năm thu', 'Chào bạn, BQT xin hỏi bạn có biết bản thu này được thu vào năm nào không ạ?'),
+    ('BQT xin hỏi file tốt hơn', 'Chào bạn, BQT xin hỏi bạn có file chất lượng cao hơn (bitrate cao hơn) của bản thu này không ạ?'),
   ];
   final _ctl = TextEditingController();
   List<Map<String, dynamic>> _items = const [];
@@ -102,25 +104,30 @@ class _UploadThreadState extends State<UploadThread> {
         else
           for (final c in _items) _bubble(c),
         const SizedBox(height: 10),
-        Container(
-          padding: const EdgeInsets.fromLTRB(12, 2, 4, 2),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.border, width: 1.5)),
-          child: Row(children: [
-            Expanded(
-              child: TextField(
-                controller: _ctl,
-                minLines: 1,
-                maxLines: 5,
-                style: body(TextStyle(fontSize: 14, color: AppColors.text)),
-                decoration: InputDecoration(isDense: true, border: InputBorder.none, hintText: isBqt ? 'Hỏi người gửi…' : 'Trả lời BQT…', hintStyle: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
-              ),
-            ),
-            FilledButton(
-              onPressed: _sending ? null : _send,
-              style: FilledButton.styleFrom(backgroundColor: AppColors.wine, minimumSize: const Size(56, 34), padding: const EdgeInsets.symmetric(horizontal: 14)),
-              child: _sending ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('Gửi'),
-            ),
-          ]),
+        // Room to write a real question.
+        TextField(
+          controller: _ctl,
+          minLines: 3,
+          maxLines: 8,
+          textCapitalization: TextCapitalization.sentences,
+          style: body(TextStyle(fontSize: 14, height: 1.45, color: AppColors.text)),
+          decoration: InputDecoration(
+            hintText: isBqt ? 'Hỏi người gửi…' : 'Trả lời BQT…',
+            hintStyle: body(TextStyle(fontSize: 14, color: AppColors.textMuted)),
+            contentPadding: const EdgeInsets.all(12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border, width: 1.5)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border, width: 1.5)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: _sending ? null : _send,
+            style: FilledButton.styleFrom(backgroundColor: AppColors.wine, minimumSize: const Size(96, 40)),
+            icon: _sending ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.send_rounded, size: 16),
+            label: const Text('Gửi'),
+          ),
         ),
         if (isBqt) ...[
           const SizedBox(height: 8),
@@ -129,7 +136,11 @@ class _UploadThreadState extends State<UploadThread> {
               ActionChip(
                 label: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
                 visualDensity: VisualDensity.compact,
-                onPressed: () => setState(() => _ctl.text = text),
+                tooltip: text,
+                onPressed: () => setState(() {
+                  _ctl.text = text;
+                  _ctl.selection = TextSelection.collapsed(offset: text.length);
+                }),
               ),
           ]),
         ],
