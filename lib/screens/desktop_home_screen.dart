@@ -282,7 +282,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 const SizedBox(height: 18),
                 _quickRow(authed),
                 if (_tags.isNotEmpty) _topicRow(),
-                if (_ctv.isNotEmpty) _ctvStrip(),
                 // Hôm nay: today's event playlists, if any.
                 const _TodayEvents(),
                 ..._yoursBlock(authed),
@@ -300,6 +299,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 7, child: top), const SizedBox(width: 40), Expanded(flex: 5, child: live)]);
                 }),
                 if (_anniv.isNotEmpty) ...[_head('Kỷ niệm tuần này'), _annivGrid()],
+                // CTV work sits by the newest songs it is about.
+                if (_ctv.isNotEmpty) _ctvStrip(),
                 _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l, 'Tư liệu'], tab: _cat, onTab: (i) { setState(() => _cat = i); i < _cats.length ? _fetchLatest(i) : _fetchDocs(); }, action: 'Xem tất cả', onAction: () => context.push(_cat < _cats.length ? '/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}' : '/tu-lieu')),
                 _cat < _cats.length ? _latestBlock() : _docsBlock(),
                 if (_comments.isNotEmpty) ...[_head('Bình luận mới', action: 'Xem tất cả', onAction: () => context.push('/binh-luan')), _newComments()],
@@ -364,7 +365,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final items = <(String, IconData, String, VoidCallback)>[
       ('random', Icons.shuffle_rounded, 'Ngẫu nhiên kho nhạc', () => _quick('random', 'Ngẫu nhiên kho nhạc', () => _songsWhere({'column': 'views', 'operator': 'GT', 'value': 2000}))),
       if (authed && _topDecade != null)
-        ('decade', Icons.play_arrow_rounded, 'Thập niên ${_topDecade! % 100} · bạn hay nghe', () => _quick('decade', 'Thập niên $_topDecade', () => _decadeSongs(_topDecade!))),
+        ('decade', Icons.play_arrow_rounded, 'Thập niên ${_topDecade! % 100}', () => _quick('decade', 'Thập niên $_topDecade', () => _decadeSongs(_topDecade!))),
       if (authed && _topComposer != null)
         ('composer', Icons.play_arrow_rounded, 'Theo ${_topComposer!['title']}', () => _quick('composer', 'Nhạc sĩ ${_topComposer!['title']}', () => _composerSongs('${_topComposer!['slug']}'))),
       // About two hours of well-liked songs, for listening while working.
@@ -662,7 +663,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Widget _ctvStrip() {
     const labels = {'no_image': 'bài chờ ảnh minh hoạ', 'no_tag': 'bản nhạc chờ gắn tag', 'no_lyric': 'bài chờ lời'};
     return Container(
-      margin: const EdgeInsets.only(top: 18),
+      margin: const EdgeInsets.only(top: 44),
       constraints: const BoxConstraints(minHeight: 56),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
       decoration: BoxDecoration(color: AppColors.accentSoft.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.accentSoft)),
@@ -705,8 +706,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         final who = '${c['user']?['id'] ?? ''}';
         final obj = c['object'];
         if (who.isEmpty || obj is! Map || obj['title'] == null) continue;
-        final text = _sentences('${c['content'] ?? ''}');
-        if (text.length < 30 || !seen.add(who)) continue;
+        final raw = '${c['content'] ?? ''}';
+        // Lyrics pasted as a comment (numbered verses, many short lines) are not a story.
+        final lines = raw.split(RegExp(r'<br\s*/?>|</p>|\n', caseSensitive: false)).map((l) => l.replaceAll(RegExp(r'<[^>]*>'), '').trim()).where((l) => l.isNotEmpty).toList();
+        final lyricLike = RegExp(r'^\s*(\d+|đk|điệp khúc)\s*[-.:)]', caseSensitive: false).hasMatch(lines.isEmpty ? '' : lines.first) || (lines.length >= 4 && lines.every((l) => l.length < 60));
+        final text = _sentences(raw);
+        if (lyricLike || text.length < 30 || !seen.add(who)) continue;
         out.add({...c, 'text': text});
         if (out.length == 4) break;
       }
@@ -744,7 +749,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 TextSpan(text: '${o['title']}', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.accentFg), recognizer: TapGestureRecognizer()..onTap = () => context.push('/$kind/${o['id']}', extra: song)),
               ]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14))),
               const SizedBox(height: 3),
-              Text('${c['text']}', style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.text))),
+              Text('${c['text']}', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.text))),
               const SizedBox(height: 4),
               Row(children: [
                 TextButton(
@@ -768,11 +773,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
     return LayoutBuilder(builder: (context, c) {
       if (c.maxWidth < 760) return Column(children: [for (final x in _comments) item(x)]);
-      final half = (_comments.length + 1) ~/ 2;
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Column(children: [for (final x in _comments.take(half)) item(x)])),
-        const SizedBox(width: 36),
-        Expanded(child: Column(children: [for (final x in _comments.skip(half)) item(x)])),
+      // Rows of two, each pair as tall as its taller comment, so the rules line up.
+      return Column(children: [
+        for (var i = 0; i < _comments.length; i += 2)
+          IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Expanded(child: item(_comments[i])),
+              const SizedBox(width: 36),
+              Expanded(child: i + 1 < _comments.length ? item(_comments[i + 1]) : const SizedBox()),
+            ]),
+          ),
       ]);
     });
   }
@@ -969,16 +979,17 @@ class _TodayEventsState extends State<_TodayEvents> {
                 Text(eyebrow, style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
                 const SizedBox(height: 6),
                 Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 28, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
-                if (desc.isNotEmpty) ...[
+                ...[
                   const SizedBox(height: 8),
-                  Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
+                  // No description: at least say how much there is to hear.
+                  Text(desc.isNotEmpty ? desc : '${(ev['items']?['paginatorInfo']?['total'] as num?)?.toInt() ?? songs.length} bài', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
                 ],
                 const SizedBox(height: 16),
                 Row(children: [
                   PillButton(label: songs.length > 1 ? 'Phát tất cả' : 'Phát', icon: Icons.play_arrow_rounded, height: 44, onTap: songs.isEmpty ? null : () => playOrOpen(context, songs.first, songs, title)),
                   const SizedBox(width: 10),
                   Material(
-                    color: AppColors.bg,
+                    color: AppColors.isLight ? Colors.white : const Color(0xFF2A2021),
                     borderRadius: BorderRadius.circular(22),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(22),
@@ -1072,12 +1083,13 @@ class _Calendar extends StatelessWidget {
 
   Widget _page({bool face = true}) => Container(
         width: 150,
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.12), blurRadius: 22, offset: const Offset(0, 8))]),
+        // Dark theme: a dark sheet, not a white glare.
+        decoration: BoxDecoration(color: AppColors.isLight ? Colors.white : const Color(0xFF2A2021), borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 8))]),
         clipBehavior: Clip.antiAlias,
         child: Column(children: [
           Container(color: AppColors.wine, height: 34, alignment: Alignment.center, child: Text('THÁNG $month', style: body(const TextStyle(fontSize: 14, letterSpacing: 1, fontWeight: FontWeight.w800, color: Colors.white)))),
-          Padding(padding: const EdgeInsets.only(top: 12), child: Text(face ? day.toString().padLeft(2, '0') : '', style: display(const TextStyle(fontSize: 72, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: Color(0xFF161112))))),
-          Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face && year != null ? 'năm $year' : ' ', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF665C5E))))),
+          Padding(padding: const EdgeInsets.only(top: 12), child: Text(face ? day.toString().padLeft(2, '0') : '', style: display(TextStyle(fontSize: 72, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: AppColors.text)))),
+          Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face && year != null ? 'năm $year' : ' ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
         ]),
       );
 
