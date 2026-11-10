@@ -6,8 +6,9 @@ import '../services/auth.dart';
 import '../services/friendly_error.dart';
 import 'ui.dart' show NetImage;
 
-/// "Trao đổi với người gửi": comments on the upload. Only the sender and BQT
-/// can read them (they come through upload(id), which checks viewUpload, and
+/// "Trao đổi với người gửi": comments on the upload. Only those who may
+/// can read them — the sender and anyone with manage_upload (they come
+/// through upload(id), which checks viewUpload = owner or manage_upload, and
 /// the public comment lists leave uploads out); the sender is notified.
 class UploadThread extends StatefulWidget {
   final String uploadId;
@@ -25,10 +26,10 @@ class _UploadThreadState extends State<UploadThread> {
   /// (chip, text put in the box) — whole, polite sentences the sender
   /// can answer straight away.
   static const _quick = [
-    ('BQT xin hỏi nguồn bản thu', 'Chào bạn, BQT xin hỏi bản thu này bạn lấy từ nguồn nào (đài, băng, đĩa…) ạ?'),
-    ('BQT xin hỏi người trình bày', 'Chào bạn, BQT xin hỏi bạn có biết chắc ai trình bày bản thu này không ạ?'),
-    ('BQT xin hỏi năm thu', 'Chào bạn, BQT xin hỏi bạn có biết bản thu này được thu vào năm nào không ạ?'),
-    ('BQT xin hỏi file tốt hơn', 'Chào bạn, BQT xin hỏi bạn có file chất lượng cao hơn (bitrate cao hơn) của bản thu này không ạ?'),
+    ('Nguồn bản thu?', 'Chào bạn, BQT xin hỏi bản thu này bạn lấy từ nguồn nào (đài, băng, đĩa…) ạ?'),
+    ('Ai trình bày?', 'Chào bạn, BQT xin hỏi bạn có biết chắc ai trình bày bản thu này không ạ?'),
+    ('Năm thu?', 'Chào bạn, BQT xin hỏi bạn có biết bản thu này được thu vào năm nào không ạ?'),
+    ('File chất lượng cao hơn?', 'Chào bạn, BQT xin hỏi bạn có file chất lượng cao hơn (bitrate cao hơn) của bản thu này không ạ?'),
   ];
   final _ctl = TextEditingController();
   List<Map<String, dynamic>> _items = const [];
@@ -91,11 +92,11 @@ class _UploadThreadState extends State<UploadThread> {
       decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border, width: 1.5)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-          Text(isBqt ? 'Trao đổi với người gửi' : 'Trao đổi với BQT', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+          Text(isBqt ? 'Trao đổi với người gửi' : 'Trao đổi với người duyệt bài', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
           const SizedBox(width: 8),
           if (_items.isNotEmpty) Text('${_items.length}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
         ]),
-        Text(isBqt ? 'Chỉ người gửi và BQT thấy · người gửi nhận thông báo' : 'Chỉ bạn và BQT thấy', style: muted),
+        Text(isBqt ? 'Chỉ người gửi và người duyệt bài thấy · người gửi nhận thông báo' : 'Chỉ bạn và người duyệt bài thấy', style: muted),
         const SizedBox(height: 8),
         if (_loading)
           const Padding(padding: EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))))
@@ -112,7 +113,7 @@ class _UploadThreadState extends State<UploadThread> {
           textCapitalization: TextCapitalization.sentences,
           style: body(TextStyle(fontSize: 14, height: 1.45, color: AppColors.text)),
           decoration: InputDecoration(
-            hintText: isBqt ? 'Hỏi người gửi…' : 'Trả lời BQT…',
+            hintText: isBqt ? 'Hỏi người gửi…' : 'Trả lời người duyệt bài…',
             hintStyle: body(TextStyle(fontSize: 14, color: AppColors.textMuted)),
             contentPadding: const EdgeInsets.all(12),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: AppColors.border, width: 1.5)),
@@ -176,7 +177,7 @@ class _UploadThreadState extends State<UploadThread> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(6)),
-                    child: Text('BQT', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+                    child: Text('Duyệt bài', style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
                   ),
                 Text('${sender ? 'người gửi · ' : ''}${timeago(c['created_at']?.toString())}', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
               ]),
