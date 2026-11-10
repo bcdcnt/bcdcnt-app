@@ -494,7 +494,7 @@ final _router = GoRouter(
         GoRoute(path: '/da-tai-ve', builder: (c, s) => const DownloadsScreen()),
         GoRoute(path: '/yeu-thich', builder: (c, s) => const UserSongListScreen(kind: UserListKind.favorites)),
         GoRoute(path: '/nghe-gan-day', builder: (c, s) => const UserSongListScreen(kind: UserListKind.history)),
-        GoRoute(path: '/playlist-cua-toi', builder: (c, s) => const MyPlaylistsScreen()),
+        GoRoute(path: '/playlist-cua-toi', builder: (c, s) => MyPlaylistsScreen(autoCreate: s.extra == 'create')),
         GoRoute(
           path: '/tu-lieu/:type',
           builder: (c, s) {

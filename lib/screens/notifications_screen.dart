@@ -16,6 +16,8 @@ import '../services/realtime.dart';
 import '../services/friendly_error.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/contribute_card.dart';
+import '../services/upload_types.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -29,6 +31,68 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1;
   bool _loading = true, _loadingMore = false, _failed = false;
+  /// Desktop filter tab (see [_tabs]); the phone always shows everything.
+  String _tab = 'all';
+  int _unreadTotal = 0;
+  /// BQT side card: uploads waiting, total and per type.
+  int _pendingTotal = 0;
+  List<(String, int)> _pendingByType = const [];
+  /// Older API without `thumbnail_url`: ask without it.
+  bool _noThumbField = false;
+
+  static const _tabs = [
+    ('all', 'Tất cả'),
+    ('unread', 'Chưa đọc'),
+    ('comment', 'Bình luận & trả lời'),
+    ('like', 'Thích & đánh giá'),
+    ('review', 'Cần duyệt'),
+  ];
+
+  /// Server-side filter for a tab. "Cần duyệt" shares its action with
+  /// "đã sử dụng bài gửi của bạn", so the text tells them apart.
+  Map<String, dynamic>? _where(String tab) => switch (tab) {
+        'unread' => {'column': 'is_read', 'value': 0},
+        'comment' => {'column': 'action', 'operator': 'IN', 'value': ['comment', 'mention', 'process_comment_request']},
+        'like' => {'column': 'action', 'operator': 'IN', 'value': ['love_comment', 'answer_poll']},
+        'review' => {'OR': [
+            {'AND': [
+              {'column': 'action', 'value': 'process_upload'},
+              {'column': 'content', 'operator': 'LIKE', 'value': '%thẩm định%'},
+            ]},
+            {'column': 'action', 'value': 'change_username_request'},
+          ]},
+        _ => null,
+      };
+
+  void _setTab(String t) {
+    if (t == _tab) return;
+    _gen++;
+    setState(() { _tab = t; _items = []; _page = 1; _lastPage = 1; _loading = true; _failed = false; });
+    _fetch(1);
+  }
+
+  /// Desktop extras: unread count for its tab, and for BQT the uploads
+  /// waiting by type.
+  Future<void> _fetchSide() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.token == null) return;
+    final review = auth.hasPermission('manage_upload');
+    const types = ['song', 'replace', 'sheet', 'folk', 'instrumental', 'karaoke', 'poem', 'document_audio', 'document_image', 'document_video', 'document_news', 'beat'];
+    final per = review ? [for (final t in types) '$t: uploads(first: 1, where: {AND: [{column: "status", value: "pending"}, {column: "type", value: "$t"}]}) { paginatorInfo { total } }'].join(' ') : '';
+    final all = review ? 'pending: uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } }' : '';
+    try {
+      final d = await auth.authedQuery('query { me { notifications(first: 1, where: {column: "is_read", value: 0}) { paginatorInfo { total } } } $all $per }');
+      if (!mounted) return;
+      int n(dynamic v) => (v?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      final byType = [for (final t in types) (uploadTypeLabel(t), n(d[t]))]..retainWhere((e) => e.$2 > 0);
+      byType.sort((a, b) => b.$2.compareTo(a.$2));
+      setState(() {
+        _unreadTotal = n(d['me']?['notifications']);
+        _pendingTotal = n(d['pending']);
+        _pendingByType = byType;
+      });
+    } catch (_) {}
+  }
 
   AuthProvider? _authRef;
   bool _didInitialFetch = false;
@@ -74,6 +138,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     setState(() { _items = []; _page = 1; _lastPage = 1; _loading = uid != null; _loadingMore = false; _failed = false; });
     if (uid == null) return;
     _fetch(1);
+    _fetchSide();
     _resetUnread();
   }
 
@@ -101,14 +166,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final uid = auth.user?['id']?.toString();
     setState(() { _failed = false; if (page == 1) _loading = _items.isEmpty; else _loadingMore = true; });
     try {
-      final data = await auth.authedQuery(r'''query($first: Int!, $page: Int) {
+      Future<Map<String, dynamic>> ask() => auth.authedQuery('''query(\$first: Int!, \$page: Int, \$where: WhereConditions) {
         me {
-          notifications(first: $first, page: $page, orderBy: [{column: "created_at", order: DESC}]) {
-            data { id code content action extra object_type object_id is_read created_at sender { id username avatar { url } } }
+          notifications(first: \$first, page: \$page, where: \$where, orderBy: [{column: "created_at", order: DESC}]) {
+            data { id code content action extra object_type object_id is_read created_at ${_noThumbField ? '' : 'thumbnail_url'} sender { id username avatar { url } } }
             paginatorInfo { lastPage currentPage }
           }
         }
-      }''', {'first': 20, 'page': page});
+      }''', {'first': 20, 'page': page, 'where': _where(_tab)});
+      Map<String, dynamic> data;
+      try {
+        data = await ask();
+      } catch (e) {
+        if (_noThumbField || !'$e'.contains('thumbnail_url')) rethrow;
+        _noThumbField = true;
+        data = await ask();
+      }
       final n = data['me']?['notifications'];
       final list = ((n?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       final pi = n?['paginatorInfo'] ?? {};
@@ -144,7 +217,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
     auth.setUnread(0);
-    if (mounted) setState(() { _items = _items.map((i) { i['is_read'] = 1; return i; }).toList(); });
+    if (mounted) setState(() { _unreadTotal = 0; _items = _items.map((i) { i['is_read'] = 1; return i; }).toList(); });
   }
 
   Future<void> _markRead(Map<String, dynamic> n, {bool quiet = false}) async {
@@ -157,7 +230,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return;
     }
     auth.decrementUnread();
-    if (mounted) setState(() { final idx = _items.indexWhere((i) => i['id'] == n['id']); if (idx >= 0) _items[idx]['is_read'] = 1; });
+    if (mounted) setState(() {
+      if (_unreadTotal > 0) _unreadTotal--; final idx = _items.indexWhere((i) => i['id'] == n['id']); if (idx >= 0) _items[idx]['is_read'] = 1; });
   }
 
   void _open(Map<String, dynamic> notif) {
@@ -222,13 +296,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
-        // ~760px of reading width plus deskPad's sides.
-        DeskFrame(maxWidth: desk ? 840 : double.infinity, child: CustomScrollView(controller: _scrollCtl, slivers: [
+        // List up to ~820px; on a wide window a 320px column beside it.
+        DeskFrame(maxWidth: desk ? 1320 : double.infinity, child: _withSide(desk, auth, CustomScrollView(controller: _scrollCtl, slivers: [
           if (desk)
             SliverPadding(
               padding: EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 0),
-              sliver: SliverToBoxAdapter(child: DeskHead(title: 'Thông báo', actions: [
-                if (hasUnread) PillButton(label: 'Đọc tất cả', icon: Icons.done_all_rounded, height: 44, primary: false, onTap: _markAllRead),
+              sliver: SliverToBoxAdapter(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                DeskHead(title: 'Thông báo', actions: [
+                  if (hasUnread || _unreadTotal > 0) PillButton(label: 'Đọc tất cả', icon: Icons.done_all_rounded, height: 44, primary: false, onTap: _markAllRead),
+                ]),
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final (k, label) in _tabs)
+                    if (k != 'review' || auth.hasPermission('manage_upload'))
+                      _TabChip(
+                        label: label,
+                        count: k == 'unread' && _unreadTotal > 0 ? (_unreadTotal > 999 ? '999+' : '$_unreadTotal') : null,
+                        on: _tab == k,
+                        onTap: () => _setTab(k),
+                      ),
+                ]),
+                const SizedBox(height: 8),
               ])),
             )
           else
@@ -274,8 +361,54 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             if (_loadingMore) Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2))),
             SizedBox(height: player.currentSong != null ? 90 : 20),
           ])),
-        ])),
+        ]))),
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
+      ]),
+    );
+  }
+
+  /// Desktop ≥ 1180px wide: the list (max 820) and a 320px column — BQT see
+  /// the uploads waiting, members the Góp tay card.
+  Widget _withSide(bool desk, AuthProvider auth, Widget list) {
+    if (!desk) return list;
+    return LayoutBuilder(builder: (context, c) {
+      if (c.maxWidth < 1180) return ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900), child: list);
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(width: (c.maxWidth - 320 - deskPad.right - 32).clamp(0, 900).toDouble(), child: list),
+        const SizedBox(width: 32),
+        SizedBox(
+          width: 320,
+          child: Padding(
+            padding: EdgeInsets.only(top: deskPad.top + 122),
+            child: auth.hasPermission('manage_upload') ? _pendingCard() : const ContributeCard(),
+          ),
+        ),
+      ]);
+    });
+  }
+
+  Widget _pendingCard() {
+    final top = _pendingByType.take(4).toList();
+    final rest = _pendingByType.skip(4).fold<int>(0, (a, e) => a + e.$2);
+    final row = body(TextStyle(fontSize: 14, color: AppColors.textSecondary));
+    final num = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text));
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.wine, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.assignment_rounded, color: Colors.white, size: 20)),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Đang chờ duyệt', style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text)))),
+          Text('$_pendingTotal', style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+        ]),
+        const SizedBox(height: 6),
+        for (final (label, n) in top)
+          Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [Expanded(child: Text(label, style: row)), Text('$n', style: num)])),
+        if (rest > 0)
+          Padding(padding: const EdgeInsets.only(top: 8), child: Row(children: [Expanded(child: Text('Loại khác', style: row)), Text('$rest', style: num)])),
+        const SizedBox(height: 14),
+        PillButton(label: 'Mở Bàn làm việc', height: 42, onTap: () => context.push('/ban-lam-viec')),
       ]),
     );
   }
@@ -322,6 +455,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             const SizedBox(height: 4),
             Text(timeago(n['created_at']), style: body(TextStyle(fontSize: 13, color: unread ? AppColors.accentLight : AppColors.textMuted))),
           ])),
+          if (isDesk(context) && (n['thumbnail_url'] ?? '').toString().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: ClipRRect(borderRadius: BorderRadius.circular(8), child: CachedNetworkImage(imageUrl: cdnImg(n['thumbnail_url'].toString(), 120), width: 44, height: 44, fit: BoxFit.cover, errorWidget: (_, __, ___) => const SizedBox(width: 44, height: 44))),
+            ),
           if (unread)
             Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6, left: 12), decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accent))
           else
@@ -343,6 +481,38 @@ class _NotifDayHeader extends StatelessWidget {
       child: Text(
         label.toUpperCase(),
         style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted)),
+      ),
+    );
+  }
+}
+
+class _TabChip extends StatelessWidget {
+  final String label;
+  final String? count;
+  final bool on;
+  final VoidCallback onTap;
+  const _TabChip({required this.label, required this.on, required this.onTap, this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = on ? Colors.white : AppColors.textSecondary;
+    return Material(
+      color: on ? AppColors.wine : AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: fg))),
+            if (count != null) ...[
+              const SizedBox(width: 6),
+              Text(count!, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: fg.withValues(alpha: 0.75)))),
+            ],
+          ]),
+        ),
       ),
     );
   }

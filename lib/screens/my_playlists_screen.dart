@@ -13,7 +13,9 @@ import '../widgets/playlist_cover.dart';
 import 'playlist_edit_screen.dart' show confirmDeletePlaylist;
 
 class MyPlaylistsScreen extends StatefulWidget {
-  const MyPlaylistsScreen({super.key});
+  /// Opened from the sidebar's +: ask for the new playlist's name right away.
+  final bool autoCreate;
+  const MyPlaylistsScreen({super.key, this.autoCreate = false});
 
   @override
   State<MyPlaylistsScreen> createState() => _MyPlaylistsScreenState();
@@ -42,6 +44,7 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     // otherwise a deep-link straight here races the async load and shows an
     // empty list with no retry.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.autoCreate) _create();
       _authRef = context.read<AuthProvider>();
       _authRef!.addListener(_initialFetch);
       _initialFetch();

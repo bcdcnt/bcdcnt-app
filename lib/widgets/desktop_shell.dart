@@ -1,4 +1,5 @@
 import '../services/imgcdn.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -144,15 +145,37 @@ class _SideNav extends StatefulWidget {
 class _SideNavState extends State<_SideNav> {
   List<Map<String, dynamic>> _playlists = [];
   String? _for;
+  /// BQT: uploads waiting for a decision, for the Bàn làm việc badge.
+  int _pending = 0;
+  Timer? _pendingTimer;
+
+  @override
+  void dispose() {
+    _pendingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _loadPending(AuthProvider auth) {
+    if (!auth.hasPermission('manage_upload')) return;
+    auth.authedQuery(r'query { uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } } }').then((d) {
+      final n = (d['uploads']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      if (mounted && n != _pending) setState(() => _pending = n);
+    }).catchError((_) {});
+  }
 
   void _load(AuthProvider auth) {
     final uid = auth.user?['id']?.toString();
     if (auth.loading || uid == _for) return;
     _for = uid;
+    _pendingTimer?.cancel();
+    _pending = 0;
     if (uid == null) {
       _playlists = [];
       return;
     }
+    // Refreshed every few minutes; the workspace itself has the live list.
+    _loadPending(auth);
+    _pendingTimer = Timer.periodic(const Duration(minutes: 5), (_) => _loadPending(auth));
     const q = r'''query { myPlaylists(first: 6, page: 1, orderBy: [{column: "id", order: DESC}]) { data { id title thumbnail { url }
       items(first: 4, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } ... on Karaoke { thumbnail { url } } } } }
     } } }''';
@@ -193,20 +216,28 @@ class _SideNavState extends State<_SideNav> {
         // BQT only: the uploads waiting for a decision.
         if (auth.hasPermission('manage_upload')) ...[
           Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8), child: Divider(height: 1, color: AppColors.border)),
-          _NavRow(item: const _NavItem('Bàn làm việc', 'Làm việc', '/ban-lam-viec', Icons.assignment_outlined, Icons.assignment_rounded), active: path.startsWith('/ban-lam-viec')),
+          _NavRow(item: const _NavItem('Bàn làm việc', 'Làm việc', '/ban-lam-viec', Icons.assignment_outlined, Icons.assignment_rounded), active: path.startsWith('/ban-lam-viec'), badge: _pending),
         ],
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
             if (auth.isAuthenticated) ...[
               Padding(
-                padding: const EdgeInsets.fromLTRB(14, 22, 4, 6),
+                padding: const EdgeInsets.fromLTRB(14, 22, 0, 6),
                 child: Row(children: [
-                  Expanded(child: Text('PLAYLIST CỦA TÔI', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+                  Expanded(child: Text('PLAYLIST CỦA TÔI', maxLines: 1, softWrap: false, overflow: TextOverflow.fade, style: body(TextStyle(fontSize: 12, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+                  IconButton(
+                    tooltip: 'Tạo playlist',
+                    onPressed: () => context.push('/playlist-cua-toi', extra: 'create'),
+                    icon: Icon(Icons.add_rounded, size: 22, color: AppColors.textSecondary),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
+                  ),
                   IconButton(
                     tooltip: 'Tất cả playlist của tôi',
                     onPressed: () => context.push('/playlist-cua-toi'),
                     icon: Icon(Icons.chevron_right_rounded, size: 22, color: AppColors.textSecondary),
-                    constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 36),
                   ),
                 ]),
               ),
@@ -252,7 +283,9 @@ class _SideNavState extends State<_SideNav> {
 class _NavRow extends StatelessWidget {
   final _NavItem item;
   final bool active;
-  const _NavRow({required this.item, required this.active});
+  /// Count pill at the end (Bàn làm việc: uploads waiting); hidden at 0.
+  final int badge;
+  const _NavRow({required this.item, required this.active, this.badge = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -272,7 +305,17 @@ class _NavRow extends StatelessWidget {
               const SizedBox(width: 14),
               Icon(active ? item.activeIcon : item.icon, size: 22, color: active ? AppColors.accentFg : AppColors.textSecondary),
               const SizedBox(width: 14),
-              Expanded(child: Text(item.label, style: body(TextStyle(fontSize: 16, fontWeight: active ? FontWeight.w800 : FontWeight.w700, color: c)))),
+              Expanded(child: Text(item.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: active ? FontWeight.w800 : FontWeight.w700, color: c)))),
+              if (badge > 0)
+                Container(
+                  constraints: const BoxConstraints(minWidth: 24),
+                  height: 22,
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.wine, borderRadius: BorderRadius.circular(11)),
+                  child: Text(badge > 999 ? '999+' : '$badge', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white))),
+                ),
+              const SizedBox(width: 10),
             ]),
           ),
         ),
@@ -516,7 +559,7 @@ class _AccountFooter extends StatelessWidget {
           children: [
             ClipOval(
               child: SizedBox(
-                width: 30, height: 30,
+                width: 40, height: 40,
                 child: avatar != null && avatar.isNotEmpty
                     ? CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 160), fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder(username))
                     : _placeholder(username),
@@ -524,18 +567,30 @@ class _AccountFooter extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                username,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.text)),
-              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text('${_points(auth.user?['point'])} điểm', maxLines: 1, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              ]),
             ),
-            Icon(Icons.expand_less, size: 16, color: AppColors.textMuted),
+            IconButton(
+              tooltip: 'Cài đặt',
+              onPressed: () => context.push('/cai-dat'),
+              icon: Icon(Icons.settings_rounded, size: 22, color: AppColors.textSecondary),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  static String _points(dynamic v) {
+    final s = '${v is num ? v.toInt() : int.tryParse('$v') ?? 0}';
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write('.');
+      buf.write(s[i]);
+    }
+    return buf.toString();
   }
 
   Widget _placeholder(String username) {
@@ -543,7 +598,7 @@ class _AccountFooter extends StatelessWidget {
     return Container(
       color: AppColors.accent,
       alignment: Alignment.center,
-      child: Text(initial, style: body(const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13))),
+      child: Text(initial, style: body(const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16))),
     );
   }
 

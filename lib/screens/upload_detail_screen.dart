@@ -1,5 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
+import '../services/upload_types.dart';
 import '../widgets/ui.dart' show goBack, EmptyBlock, OfflineBlock;
 import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
@@ -25,19 +26,7 @@ class UploadDetailScreen extends StatefulWidget {
 }
 
 class _UploadDetailScreenState extends State<UploadDetailScreen> {
-  static const _typeLabels = {
-    'song': 'Tân nhạc',
-    'folk': 'Dân ca',
-    'instrumental': 'Khí nhạc',
-    'karaoke': 'Bản thu',
-    'poem': 'Tiếng thơ',
-    'replace': 'Bổ sung bản ghi',
-    'document_audio': 'Tư liệu âm thanh',
-    'document_image': 'Tư liệu hình ảnh',
-    'document_video': 'Tư liệu video',
-    'document_news': 'Bài viết',
-    'sheet': 'Bản nhạc',
-  };
+  static const _typeLabels = kUploadTypeLabels;
   static const _statusLabels = {'pending': 'Chờ duyệt', 'approved': 'Đã duyệt', 'rejected': 'Không duyệt', 'not_sure': 'Chưa rõ'};
   // Text-safe tones (≥4.5:1) — the old Material 400 shades were 1.6–2:1 on light.
   static Map<String, Color> get _statusColors => {'pending': AppColors.warningText, 'approved': AppColors.successText, 'rejected': AppColors.errorText, 'not_sure': AppColors.warningText};

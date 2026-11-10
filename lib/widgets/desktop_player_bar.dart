@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/auth.dart';
+import '../services/friendly_error.dart';
 import '../services/player.dart';
 import 'mini_player.dart' show openFullPlayer;
 import 'song_row.dart';
@@ -53,9 +55,11 @@ class DesktopPlayerBar extends StatelessWidget {
                   Text('${song['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
                   if (byline.isNotEmpty)
                     Text(byline, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+                  _NowExtras(song: song, part: _NowPart.meta),
                 ]),
               ),
             ),
+            _NowExtras(song: song, part: _NowPart.love),
           ]),
         ),
         const SizedBox(width: 24),
@@ -241,5 +245,101 @@ class _Labelled extends StatelessWidget {
         ]),
       ),
     );
+  }
+}
+
+enum _NowPart { meta, love }
+
+/// Bits of the playing song the queue entry doesn't carry: the recording
+/// line ("THU 1985 · ĐÀI TNVN") and whether the member loves it. Both parts
+/// share one fetch per song through [_NowInfo].
+class _NowExtras extends StatefulWidget {
+  final Map<String, dynamic> song;
+  final _NowPart part;
+  const _NowExtras({required this.song, required this.part});
+
+  @override
+  State<_NowExtras> createState() => _NowExtrasState();
+}
+
+class _NowInfo {
+  final String key;
+  String meta = '';
+  bool loved = false;
+  _NowInfo(this.key);
+}
+
+final ValueNotifier<_NowInfo?> _nowInfo = ValueNotifier<_NowInfo?>(null);
+String? _nowLoading;
+
+Future<void> _loadNowInfo(BuildContext context, Map<String, dynamic> song) async {
+  final type = songKind(song);
+  final key = '$type:${song['id']}';
+  if (_nowLoading == key || _nowInfo.value?.key == key) return;
+  _nowLoading = key;
+  final auth = context.read<AuthProvider>();
+  final uid = auth.user?['id']?.toString();
+  final mine = uid == null ? '' : 'loves(first: 1, where: {column: "user_id", value: "$uid"}) { paginatorInfo { total } }';
+  try {
+    final d = await ApiClient.query('query(\$id: ID!) { $type(id: \$id) { record_year file { source } $mine } }', {'id': '${song['id']}'});
+    final o = d[type];
+    if (_nowLoading != key) return;
+    final year = '${o?['record_year'] ?? ''}'.trim();
+    final source = '${o?['file']?['source'] ?? ''}'.trim();
+    final info = _NowInfo(key)
+      ..meta = [if (year.isNotEmpty && year != '0') 'Thu $year', if (source.isNotEmpty) source].join(' · ').toUpperCase()
+      ..loved = ((o?['loves']?['paginatorInfo']?['total'] as num?) ?? 0) > 0;
+    _nowInfo.value = info;
+  } catch (_) {
+    if (_nowLoading == key) _nowInfo.value = _NowInfo(key);
+  }
+}
+
+class _NowExtrasState extends State<_NowExtras> {
+  @override
+  Widget build(BuildContext context) {
+    final key = '${songKind(widget.song)}:${widget.song['id']}';
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _loadNowInfo(context, widget.song); });
+    return ValueListenableBuilder<_NowInfo?>(
+      valueListenable: _nowInfo,
+      builder: (context, info, _) {
+        final mine = info?.key == key ? info : null;
+        if (widget.part == _NowPart.meta) {
+          if (mine == null || mine.meta.isEmpty) return const SizedBox.shrink();
+          return Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(mine.meta, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 11, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+          );
+        }
+        final loved = mine?.loved ?? false;
+        return IconButton(
+          tooltip: loved ? 'Bỏ yêu thích' : 'Yêu thích',
+          onPressed: mine == null ? null : () => _toggle(mine),
+          icon: Icon(loved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 24, color: loved ? AppColors.accentLight : AppColors.textMuted),
+        );
+      },
+    );
+  }
+
+  Future<void> _toggle(_NowInfo info) async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isAuthenticated) {
+      askLogin(context);
+      return;
+    }
+    final type = songKind(widget.song);
+    final now = !info.loved;
+    _nowInfo.value = _NowInfo(info.key)..meta = info.meta..loved = now;
+    try {
+      await auth.authedMutate('mutation(\$id: ID!) { ${now ? 'love' : 'unlove'}(lovable_id: \$id, lovable_type: "$type") { id } }', {'id': '${widget.song['id']}'});
+    } catch (e) {
+      if (_nowInfo.value?.key == info.key) _nowInfo.value = _NowInfo(info.key)..meta = info.meta..loved = !now;
+      if (mounted) {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(
+          content: Text(friendlyError(e, fallback: now ? 'Chưa thích được bài này, vui lòng thử lại.' : 'Chưa bỏ thích được, vui lòng thử lại.')),
+          backgroundColor: AppColors.error,
+        ));
+      }
+    }
   }
 }
