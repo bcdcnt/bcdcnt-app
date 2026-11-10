@@ -64,6 +64,9 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
       _Action('composers', 'Sửa sáng tác', Icons.music_note_outlined),
       _Action('poets', 'Sửa nhà thơ', Icons.menu_book_outlined),
     ],
+    // A song with no sheet yet (no composer page): picking the composers
+    // files it under an existing sheet of that title, or a new one.
+    if (type == 'song' && sheetId == null && can('manage_sheet') && can('manage_song')) const _Action('composersNoSheet', 'Sửa sáng tác', Icons.music_note_outlined),
     if (type == 'folk' && can('manage_folk')) ...const [
       _Action('recomposers', 'Sửa soạn giả', Icons.music_note_outlined),
       _Action('melodyFcat', 'Sửa làn điệu – thể loại', Icons.queue_music_rounded),
@@ -146,6 +149,30 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
           save: (list) async {
             final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'composer', search: 'composers');
             await auth.authedMutate(r'mutation($id: ID!, $v: CRUDSheetComposers) { updateSheet(input: { id: $id, composers: $v }) { id } }', {'id': sheetId, 'v': _sync(resolved)});
+          });
+    case 'composersNoSheet':
+      await _editPeople(ctl,
+          title: 'Sửa nhạc sĩ',
+          search: 'composers',
+          allowCreate: canCreatePeople,
+          load: () async => <Map<String, dynamic>>[],
+          save: (list) async {
+            final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'composer', search: 'composers');
+            if (resolved.isEmpty) return;
+            final title = '${song['title'] ?? ''}'.trim();
+            final want = {for (final p in resolved) '${p['id']}'};
+            // Same title + one of these composers already in the archive?
+            final d = await auth.authedQuery(r'query($t: Mixed) { sheets(first: 20, where: {column: "title", value: $t}) { data { id composers(first: 10) { data { id } } } } }', {'t': title});
+            String? target;
+            for (final sh in ((d['sheets']?['data'] ?? []) as List).whereType<Map>()) {
+              final ids = ((sh['composers']?['data'] ?? []) as List).whereType<Map>().map((c) => '${c['id']}');
+              if (ids.any(want.contains)) { target = '${sh['id']}'; break; }
+            }
+            if (target == null) {
+              final c = await auth.authedMutate(r'mutation($t: String!, $v: CRUDSheetComposers) { createSheet(input: { title: $t, composers: $v }) { id } }', {'t': title, 'v': _sync(resolved)});
+              target = '${c['createSheet']?['id']}';
+            }
+            await auth.authedMutate(r'mutation($id: ID!, $s: ID) { updateSong(input: { id: $id, sheet_id: $s }) { id } }', {'id': id, 's': target});
           });
     case 'recomposers':
       await _editPeople(ctl,
