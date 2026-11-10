@@ -114,6 +114,8 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
   String _type = '';
   String _initial = '';
 
+  /// Đổi file: null when idle, 0–1 while sending, -1 while the server converts.
+  double? _fileProgress;
   bool _showVideo = false;
   VideoPlayerController? _videoCtl;
   ChewieController? _chewie;
@@ -341,6 +343,43 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
     }
   }
 
+  Future<void> _changeFile() async {
+    final f = await pickMedia();
+    if (f == null || !mounted) return;
+    setState(() => _fileProgress = 0);
+    try {
+      final file = await uploadMedia(_auth, f,
+          onProgress: (p) { if (mounted) setState(() => _fileProgress = p); },
+          onProcessing: () { if (mounted) setState(() => _fileProgress = -1); });
+      final fileId = int.tryParse('${file['id']}');
+      await _auth.authedMutate(r'mutation($input: UpdateUploadInput!) { updateUpload(input: $input) { id } }', {'input': {'id': widget.id, 'file_id': fileId}});
+      if (!mounted) return;
+      // Fresh file row (bitrate, duration) without touching unsaved edits.
+      Map<String, dynamic> row = file;
+      try {
+        final d = await _auth.authedQuery(r'query($id: ID!) { upload(id: $id) { file { id audio_url video_url duration bitrate } } }', {'id': widget.id});
+        if (d['upload']?['file'] is Map) row = Map<String, dynamic>.from(d['upload']['file'] as Map);
+      } catch (_) {}
+      if (!mounted) return;
+      _chewie?.dispose();
+      _videoCtl?.dispose();
+      setState(() {
+        _u!['file'] = row;
+        _u!['file_id'] = fileId;
+        _fileProgress = null;
+        _showVideo = false;
+        _chewie = null;
+        _videoCtl = null;
+      });
+      _snack('Đã đổi file');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _fileProgress = null);
+        _snack(friendlyError(e, fallback: 'Chưa đổi được file, vui lòng thử lại.'), error: true);
+      }
+    }
+  }
+
   void _listen(String url, dynamic duration) {
     final song = <String, dynamic>{
       'id': 'upload-${widget.id}', 'title': _text['title']!.text, 'file_type': 'upload',
@@ -488,6 +527,16 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
       final obj = u['object'] is Map ? u['object'] as Map : null;
       if (obj != null) media.add(_targetCard(obj));
       if (file['audio_url'] != null) media..add(_label('FILE GỬI KÈM'))..add(_wave(file));
+      if (edit) {
+        media.add(Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: _fileProgress != null ? null : _changeFile, child: Text(file['audio_url'] == null ? 'Thêm file' : 'Đổi file', style: link))));
+        if (_fileProgress != null) {
+          media.add(Row(children: [
+            Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: _fileProgress! < 0 ? null : _fileProgress, minHeight: 6, color: AppColors.wine, backgroundColor: AppColors.surfaceLight))),
+            const SizedBox(width: 12),
+            Text(_fileProgress! < 0 ? 'Đang xử lý file…' : 'Đang tải lên ${(_fileProgress! * 100).round()}%', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+          ]));
+        }
+      }
       final cur = obj?['file'] is Map ? obj!['file'] as Map : null;
       if (cur?['audio_url'] != null) media..add(_label('FILE ĐANG CÓ TRÊN BÀI'))..add(_wave(cur!, button: 40, height: 36));
     } else {
@@ -505,10 +554,19 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
                     label: Text(_showVideo ? 'Ẩn video' : 'Xem video'),
                     onPressed: () => _toggleVideo('${file['video_url']}'),
                   ),
-                if (edit) TextButton(onPressed: () => launchUrl(Uri.parse('$siteUrl/bai-gui/${widget.id}'), mode: LaunchMode.externalApplication), child: Text('Đổi file', style: link)),
+                if (edit) TextButton(onPressed: _fileProgress != null ? null : _changeFile, child: Text(file['audio_url'] == null ? 'Thêm file' : 'Đổi file', style: link)),
                 if (file['audio_url'] != null) TextButton.icon(onPressed: () => _listen('${file['audio_url']}', file['duration']), icon: const Icon(Icons.queue_music_rounded, size: 18), label: Text('Nghe trên thanh phát', style: link)),
               ]),
             ),
+            if (_fileProgress != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 4),
+                child: Row(children: [
+                  Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: _fileProgress! < 0 ? null : _fileProgress, minHeight: 6, color: AppColors.wine, backgroundColor: AppColors.surfaceLight))),
+                  const SizedBox(width: 12),
+                  Text(_fileProgress! < 0 ? 'Đang xử lý file…' : 'Đang tải lên ${(_fileProgress! * 100).round()}%', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                ]),
+              ),
             if (_showVideo)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
