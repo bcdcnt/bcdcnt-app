@@ -16,6 +16,8 @@ import '../services/auth.dart';
 import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/waveform_player.dart';
+import '../widgets/desktop_page.dart' show isDesk;
+import 'upload_detail_desktop.dart';
 
 class UploadDetailScreen extends StatefulWidget {
   final String id;
@@ -81,7 +83,8 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
       // Show the page now; the video loads on its own.
       setState(() { _upload = up; _loading = false; });
       final videoUrl = up['file']?['video_url'];
-      if (videoUrl is String && videoUrl.isNotEmpty) _initVideo(videoUrl);
+      // Desktop shows UploadDetailDesktop, which loads video only on demand.
+      if (videoUrl is String && videoUrl.isNotEmpty && !isDesk(context)) _initVideo(videoUrl);
     } catch (e) {
       if (mounted) setState(() { _loading = false; _failed = true; _error = friendlyError(e); });
     }
@@ -119,6 +122,8 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Desktop: the view-and-edit page (canvas "Bài gửi — xem & sửa").
+    if (isDesk(context)) return UploadDetailDesktop(id: widget.id);
     final player = context.watch<PlayerProvider>();
     if (_loading) return Scaffold(backgroundColor: AppColors.bg, body: Center(child: CircularProgressIndicator(color: AppColors.accent)));
     if (_error != null || _upload == null || _needLogin) {
