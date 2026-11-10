@@ -809,7 +809,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 /// "Hôm nay": the event playlists running today (event_start ≤ today ≤
 /// event_end, set in the playlist's settings) as a tear-off calendar page —
 /// canvas "Desktop · Trang chủ — khối Sự kiện B". Several at once: the
-/// pages stack and chips / ‹ › / ←→ flip between them; never on its own.
+/// pages stack and "Tiếp: <next>" / ‹ › / ←→ flip between them, wrapping
+/// round; never on its own.
 /// Nothing running → nothing shown.
 class _TodayEvents extends StatefulWidget {
   const _TodayEvents();
@@ -840,8 +841,8 @@ class _TodayEventsState extends State<_TodayEvents> {
 
   bool _onKey(KeyEvent e) {
     if (!_hover || _events.length < 2 || e is! KeyDownEvent || typingInField()) return false;
-    if (e.logicalKey == LogicalKeyboardKey.arrowLeft && _at > 0) { _go(_at - 1); return true; }
-    if (e.logicalKey == LogicalKeyboardKey.arrowRight && _at < _events.length - 1) { _go(_at + 1); return true; }
+    if (e.logicalKey == LogicalKeyboardKey.arrowLeft) { _go(_at - 1); return true; }
+    if (e.logicalKey == LogicalKeyboardKey.arrowRight) { _go(_at + 1); return true; }
     return false;
   }
 
@@ -883,7 +884,9 @@ class _TodayEventsState extends State<_TodayEvents> {
     } catch (_) {}
   }
 
+  /// Wraps round: past the last event comes the first again.
   void _go(int i) {
+    i %= _events.length;
     setState(() => _at = i);
     _fetchSongs(_events[i]);
   }
@@ -926,11 +929,25 @@ class _TodayEventsState extends State<_TodayEvents> {
             Text('Hôm nay', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
             const Spacer(),
             if (many) ...[
-              Text('${_at + 1} / ${_events.length}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+              // Names the next event instead of "1 / 2", so it is clear what is there.
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _go(_at + 1),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Tiếp: ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 320),
+                      child: Text('${_events[(_at + 1) % _events.length]['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    ),
+                  ]),
+                ),
+              ),
               const SizedBox(width: 10),
-              circle(Icons.chevron_left_rounded, _at > 0 ? () => _go(_at - 1) : null),
+              circle(Icons.chevron_left_rounded, () => _go(_at - 1)),
               const SizedBox(width: 8),
-              circle(Icons.chevron_right_rounded, _at < _events.length - 1 ? () => _go(_at + 1) : null),
+              circle(Icons.chevron_right_rounded, () => _go(_at + 1)),
             ] else
               TextButton(onPressed: () => context.push('/playlist/$id'), child: Text('Mở playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
           ]),
@@ -1001,51 +1018,9 @@ class _TodayEventsState extends State<_TodayEvents> {
           ]);
           }),
         ),
-        if (many)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Wrap(spacing: 8, runSpacing: 8, children: [
-              for (var i = 0; i < _events.length && i < 5; i++) _chip(i),
-              if (_events.length > 5)
-                PopupMenuButton<int>(
-                  tooltip: '',
-                  onSelected: _go,
-                  itemBuilder: (_) => [for (var i = 5; i < _events.length; i++) PopupMenuItem(value: i, child: Text('${_events[i]['title'] ?? ''}'))],
-                  child: _chipBody(false, null, '+${_events.length - 5}', null),
-                ),
-            ]),
-          ),
       ]),
     );
   }
-
-  Widget _chip(int i) {
-    final e = _events[i];
-    final y = DateTime.tryParse('${e['event_date'] ?? ''}')?.year;
-    final n = ((e['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
-    return InkWell(borderRadius: BorderRadius.circular(20), onTap: () => _go(i), child: _chipBody(i == _at, y, '${e['title'] ?? ''}', '$n bài'));
-  }
-
-  Widget _chipBody(bool on, int? year, String title, String? count) => Container(
-        height: 40,
-        constraints: const BoxConstraints(maxWidth: 380),
-        padding: EdgeInsets.only(left: year != null ? 6 : 14, right: 14),
-        decoration: BoxDecoration(color: on ? AppColors.text : AppColors.surface, borderRadius: BorderRadius.circular(20)),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (year != null) ...[
-            Container(
-              height: 28,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.bg, borderRadius: BorderRadius.circular(14)),
-              child: Text('$year', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.accentFg))),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text)))),
-          if (count != null) Text(' · $count', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: (on ? AppColors.bg : AppColors.text).withValues(alpha: 0.7)))),
-        ]),
-      );
 }
 
 /// A tear-off calendar page; [behind] more pages peek out when several

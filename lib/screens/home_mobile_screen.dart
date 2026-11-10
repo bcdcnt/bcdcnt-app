@@ -449,49 +449,24 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     }
   }
 
-  /// Several events today: one chip each (year · name); the dark one is shown.
-  Widget _eventChips() => SizedBox(
-        height: 58,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
-          itemCount: _events.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (_, i) {
-            final e = _events[i];
-            final on = '${e['id']}' == _occasionPlaylistId;
-            final y = DateTime.tryParse('${e['event_date'] ?? ''}')?.year;
-            return Material(
-              color: on ? AppColors.text : AppColors.surface,
-              borderRadius: BorderRadius.circular(22),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(22),
-                onTap: on ? null : () => _showEvent(e),
-                child: Container(
-                  height: 44,
-                  padding: EdgeInsets.only(left: y != null ? 6 : 14, right: 14),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    if (y != null) ...[
-                      Container(
-                        height: 32,
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.bg, borderRadius: BorderRadius.circular(16)),
-                        child: Text('$y', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.accentFg))),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 190),
-                      child: Text('${e['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text))),
-                    ),
-                  ]),
-                ),
-              ),
-            );
-          },
-        ),
-      );
+  /// Several events today: one small line "1/3 · Tiếp: <next> ›" under the
+  /// title; tapping flips to the next one, wrapping round.
+  Widget _eventNext() {
+    final at = _events.indexWhere((e) => '${e['id']}' == _occasionPlaylistId).clamp(0, _events.length - 1);
+    final next = _events[(at + 1) % _events.length];
+    return InkWell(
+      onTap: () => _showEvent(next),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+        child: Row(children: [
+          Text('${at + 1}/${_events.length} · Tiếp: ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          Flexible(child: Text('${next['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+          const SizedBox(width: 2),
+          Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.accentFg),
+        ]),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -644,7 +619,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                 )
               else
                 const _EyebrowTitle(eyebrow: 'Hôm qua', title: 'Mọi người nghe nhiều'),
-              if (occasionOn && _events.length > 1) _eventChips(),
+              if (occasionOn && _events.length > 1) _eventNext(),
               _PickCarousel(key: ValueKey(occasionOn ? 'occ-$_occasionPlaylistId' : 'top'), picks: picks, label: occasionOn ? occTitle : 'Hôm qua nghe nhiều'),
             ],
 
