@@ -785,7 +785,8 @@ class _EyebrowTitle extends StatelessWidget {
       const SizedBox(height: 2),
       Row(mainAxisSize: MainAxisSize.min, children: [
         Flexible(child: Text(title, maxLines: lines, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
-        if (chevron) Icon(Icons.chevron_right_rounded, size: 26, color: AppColors.text),
+        // Quiet hint that the title opens the list: small, thin, grey.
+        if (chevron) Padding(padding: const EdgeInsets.only(left: 4, top: 2), child: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted)),
       ]),
     ]);
     return Padding(
