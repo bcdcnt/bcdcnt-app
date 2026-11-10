@@ -70,7 +70,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
-  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
+  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
 
 
   @override
@@ -422,7 +422,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (_isComment) {
       return [u['user']?['username'] ?? '', if (u['object']?['title'] != null) 'trong ${u['object']['title']}', timeago(u['created_at']?.toString())].where((x) => '$x'.isNotEmpty).join(' · ');
     }
-    return '${u['user']?['username'] ?? ''} · ${timeago(u['created_at']?.toString())}';
+    // Uploads with a sender ↔ BQT thread say so.
+    final talk = (u['talk']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+    return [u['user']?['username'] ?? '', timeago(u['created_at']?.toString()), if (talk > 0) '$talk trao đổi'].join(' · ');
   }
 
   /// Detail for the queues that are fixed on the item's own page.
