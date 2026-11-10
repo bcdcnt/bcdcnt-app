@@ -63,7 +63,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
         final col = kSongSortColumn[_sorts[sort]]!;
         final q = '''query(\$page: Int, \$where: WhereConditions, \$q: String) {
           songs(first: $_perPage, page: \$page, q: \$q, orderBy: [{column: "$col", order: ${kSongSortOrder[_sorts[sort]]}}], where: \$where) {
-            data { id slug title subtitle views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } sheet { year } artists(first: 5) { data { id slug title avatar { url } } } }
+            data { id slug title subtitle views likes downloads created_at play_type thumbnail { url } file { audio_url video_url duration } year sheet { year composers(first: 2) { data { id slug title } } } composers(first: 2) { data { id slug title } } artists(first: 5) { data { id slug title avatar { url } } } }
             paginatorInfo { currentPage lastPage total }
           }
         }''';

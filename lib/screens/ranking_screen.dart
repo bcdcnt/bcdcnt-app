@@ -66,7 +66,7 @@ class _RankingScreenState extends State<RankingScreen> {
             total
             prev_rank
             object {
-              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } sheet { composers(first: 5) { data { id slug title } } } }
+              ... on Song { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } year sheet { year composers(first: 5) { data { id slug title } } } }
               ... on Folk { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
               ... on Instrumental { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
               ... on Poem { id title subtitle slug views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 5) { data { id title slug avatar { url } } } }
@@ -520,14 +520,50 @@ class _RankingPodium extends StatelessWidget {
     );
   }
 
+  /// Desktop: one horizontal card per rank — cover, big number, title,
+  /// byline and the period's plays — three across the table's width.
+  Widget _wideCard(BuildContext context, int rank) {
+    final song = queue[rank - 1];
+    final total = (items[rank - 1] as Map)['total'];
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => playOrOpen(context, song, queue, 'Bảng xếp hạng'),
+        onLongPress: () => showSongActions(context, song),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(children: [
+            SongCover(song: song, size: 88, radius: 12),
+            const SizedBox(width: 14),
+            Text('$rank', style: display(TextStyle(fontSize: 40, height: 1, fontWeight: FontWeight.w800, color: AppColors.accentLight))),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(song['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+                const SizedBox(height: 2),
+                Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                if (total is num) ...[
+                  const SizedBox(height: 4),
+                  Text('${formatViews(total.toInt())} lượt nghe', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+                ],
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (items.length < 3) return const SizedBox.shrink();
     if (compact) {
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      return Row(children: [
         for (var r = 1; r <= 3; r++) ...[
-          if (r > 1) const SizedBox(width: 28),
-          SizedBox(width: 190, child: _card(context, r)),
+          if (r > 1) const SizedBox(width: 16),
+          Expanded(child: _wideCard(context, r)),
         ],
       ]);
     }

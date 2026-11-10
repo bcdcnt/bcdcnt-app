@@ -611,6 +611,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
     final name = (u['username'] ?? '').toString();
     final since = _memberSince(u);
     final avatarUrl = u['avatar']?['url']?.toString();
+    // Desktop: the top bar already has a back button; name and tabs line up
+    // with the 40 px content inset.
+    final desk = isDesk(context);
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -624,8 +627,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
               expandedHeight: 220 + (MediaQuery.textScalerOf(context).scale(100) - 100).clamp(0, 140).toDouble(),
               backgroundColor: AppColors.bg,
               surfaceTintColor: Colors.transparent,
-              leadingWidth: 64,
-              leading: Center(child: IconButton(tooltip: 'Quay lại', style: _circleBtn, icon: const Icon(Icons.arrow_back_rounded, color: Colors.white), onPressed: () => goBack(context))),
+              automaticallyImplyLeading: false,
+              leadingWidth: desk ? 40 : 64,
+              leading: desk ? const SizedBox.shrink() : Center(child: IconButton(tooltip: 'Quay lại', style: _circleBtn, icon: const Icon(Icons.arrow_back_rounded, color: Colors.white), onPressed: () => goBack(context))),
               actions: [
                 Builder(builder: (bctx) => IconButton(
                   tooltip: 'Chia sẻ',
@@ -646,7 +650,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                     ],
                   ),
                 ],
-                const SizedBox(width: 8),
+                SizedBox(width: desk ? 32 : 8),
               ],
               flexibleSpace: LayoutBuilder(builder: (lctx, c) {
                 final top = MediaQuery.paddingOf(lctx).top;
@@ -659,7 +663,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                       else
                         Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight))),
                       Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
-                      Positioned(left: 16, right: 16, bottom: 12, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Positioned(left: desk ? 40 : 16, right: desk ? 40 : 16, bottom: desk ? 20 : 12, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                           InkWell(
                             onTap: avatarUrl != null ? _showAvatarZoom : null,
@@ -682,7 +686,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                     ]),
                   ),
                   Positioned(
-                    left: 72, right: 72, top: top, height: kToolbarHeight,
+                    left: desk ? 40 : 72, right: 72, top: top, height: kToolbarHeight,
                     child: IgnorePointer(
                       child: AnimatedOpacity(
                         opacity: collapsed ? 1 : 0,
@@ -707,6 +711,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                 indicatorColor: AppColors.accent,
                 labelColor: AppColors.text,
                 unselectedLabelColor: AppColors.textMuted,
+                padding: EdgeInsets.only(left: desk ? 26 : 0),
                 labelPadding: const EdgeInsets.symmetric(horizontal: 14),
                 labelStyle: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                 unselectedLabelStyle: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),

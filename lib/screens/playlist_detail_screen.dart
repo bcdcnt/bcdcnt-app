@@ -111,7 +111,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       };
       final data = await ApiClient.query(r'''query($where: WhereConditions) {
         playlists(first: 8, orderBy: [{column: "id", order: DESC}], where: $where) {
-          data { id slug title event_date thumbnail { url } user { username } items(first: 1) { paginatorInfo { total } } }
+          data { id slug title event_date thumbnail { url } user { username } items(first: 4, orderBy: [{column: "position", order: ASC}]) { paginatorInfo { total } data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } } } } }
         }
       }''', {'where': where});
       final list = ((data['playlists']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
@@ -489,6 +489,46 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
 
   /// Desktop: a dark band like the song page (cover, title, owner, actions),
   /// songs as a table, and "Playlist khác" beside the list when it fits.
+  /// Other playlists as a row of cover cards under the table (windows too
+  /// narrow for the side column).
+  Widget _relatedGrid(Map<String, dynamic> pl, double width) {
+    const gap = 20.0;
+    final cols = (width / 200).floor().clamp(3, 6);
+    final size = (width - gap * (cols - 1)) / cols;
+    final meta = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SectionHeader(
+        icon: _isEvent(pl) ? Icons.event_outlined : Icons.queue_music_outlined,
+        title: _isEvent(pl) ? 'Playlist sự kiện khác' : 'Playlist khác',
+        count: '(${_related.length})',
+      ),
+      const SizedBox(height: 4),
+      Wrap(spacing: gap, runSpacing: 20, children: [
+        for (final r in _related.take(cols * 2))
+          SizedBox(
+            width: size,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => context.push('/playlist/${r['id']}'),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                PlaylistCover(thumb: r['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(r['items']), size: size, radius: 16),
+                const SizedBox(height: 8),
+                Text('${r['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+                const SizedBox(height: 2),
+                Text(
+                  (r['event_date'] ?? '').toString().isNotEmpty
+                      ? _formatEventDate(r['event_date'])
+                      : '${r['items']?['paginatorInfo']?['total'] ?? 0} bài',
+                  maxLines: 1,
+                  style: meta,
+                ),
+              ]),
+            ),
+          ),
+      ]),
+    ]);
+  }
+
   Widget _buildDesk(BuildContext context, PlayerProvider player, Map<String, dynamic> pl, bool canEdit) {
     final thumb = pl['thumbnail']?['url'];
     final user = pl['user'];
@@ -630,7 +670,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   ...songs.take(songs.length - 3),
                   // Below the songs, above the comments.
-                  if (related != null) ...[related, const SizedBox(height: 12)],
+                  if (related != null) ...[_relatedGrid(pl, c.maxWidth), const SizedBox(height: 12)],
                   ...songs.skip(songs.length - 3),
                 ]);
               }),
@@ -696,12 +736,7 @@ class _RelatedCardCompact extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: thumb != null
-                ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover, errorWidget: (_, _, _) => Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)))
-                : Container(width: 56, height: 56, color: AppColors.surfaceLight, child: Icon(Icons.queue_music, color: AppColors.textMuted)),
-          ),
+          PlaylistCover(thumb: thumb?.toString(), songThumbs: PlaylistCover.thumbsOf(item['items']), size: 56, radius: 6),
           const SizedBox(width: 10),
           Expanded(
             child: Column(

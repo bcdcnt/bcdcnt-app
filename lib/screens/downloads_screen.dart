@@ -147,7 +147,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
                   ListSearchField(hint: 'Tìm trong ${items.length} bài đã tải về', padding: EdgeInsets.zero, onChanged: (q) => setState(() => _q = q)),
                   ListSearchSummary(query: _q, total: shown.length),
                   const SizedBox(height: 14),
-                  if (shown.isEmpty) ListSearchEmpty(query: _q) else const SongTableHead(), // 'none' rows still show listens in the table
+                  if (shown.isEmpty) ListSearchEmpty(query: _q) else const SongTableHead(metric: ''), // offline copies carry no listen counts
                   for (final s in shown) SongRow(song: s, queue: shown, sourceLabel: 'Đã tải về', metricKey: 'none', highlight: _q),
                 ],
               ],

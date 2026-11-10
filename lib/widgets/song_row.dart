@@ -452,6 +452,7 @@ class SongRow extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         SizedBox(width: 170, child: Text(comps, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+        const SizedBox(width: 12),
         SizedBox(width: 56, child: Text(year, style: muted)),
         SizedBox(width: 110, child: Text(count, textAlign: TextAlign.right, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted)),
         IconButton(
@@ -496,6 +497,7 @@ class SongTableHead extends StatelessWidget {
             Expanded(child: Text('BÀI HÁT · TRÌNH BÀY', style: st)),
             const SizedBox(width: 12),
             SizedBox(width: 170, child: Text('SÁNG TÁC', style: st)),
+            const SizedBox(width: 12),
             SizedBox(width: 56, child: Text('NĂM', style: st)),
             SizedBox(width: 110, child: Text(metric, textAlign: TextAlign.right, style: st)),
             const SizedBox(width: 48),

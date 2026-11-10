@@ -124,7 +124,7 @@ const _nav = <_NavItem>[
   _NavItem('Tìm kiếm', 'Tìm kiếm', '/search', Icons.search_outlined, Icons.search_rounded, ['/nghe-si', '/nhac-si', '/nha-tho', '/soan-gia', '/the-loai', '/tag', '/bang-xep-hang', '/dan-ca', '/lan-dieu', '/the-loai-dan-ca', '/bai-hat']),
   _NavItem('Dòng thời gian', 'Thời gian', '/dong-thoi-gian', Icons.timeline_outlined, Icons.timeline_rounded),
   _NavItem('Cộng đồng', 'Cộng đồng', '/cong-dong', Icons.people_outline_rounded, Icons.people_rounded, ['/binh-luan', '/thao-luan', '/dien-dan', '/user']),
-  _NavItem('Cá nhân', 'Cá nhân', '/library', Icons.person_outline_rounded, Icons.person_rounded, ['/yeu-thich', '/nghe-gan-day', '/da-tai-ve', '/playlist-cua-toi', '/bai-gui-cua-toi', '/profile']),
+  _NavItem('Cá nhân', 'Cá nhân', '/library', Icons.person_outline_rounded, Icons.person_rounded, ['/yeu-thich', '/nghe-gan-day', '/da-tai-ve', '/playlist-cua-toi', '/bai-gui-cua-toi', '/thong-ke', '/profile']),
 ];
 
 bool _isActive(String path, _NavItem item) {

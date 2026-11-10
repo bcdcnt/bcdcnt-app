@@ -158,7 +158,7 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
 
   String _plainExcerpt(String? html, {int maxLen = 120}) {
     if (html == null || html.isEmpty) return '';
-    final s = html.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final s = html.replaceAll(RegExp(r'<(br|/p|/div|/h\d|/li)[^>]*>', caseSensitive: false), ' ').replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
     return s.length <= maxLen ? s : '${s.substring(0, maxLen)}…';
   }
 
@@ -280,14 +280,15 @@ class _DocumentArchiveScreenState extends State<DocumentArchiveScreen> {
     }
   }
 
-  /// Desktop, bài viết + âm thanh: three cards a row (picture 16:10 on top,
+  /// Desktop, bài viết + âm thanh: three or four cards a row (picture 16:10 on top,
   /// title, excerpt, người đăng) instead of full-width rows. Image and video
   /// are grids already.
   Widget _deskCards() {
     const gap = 24.0;
     final audio = widget.type == ArchiveType.audio;
     return SliverToBoxAdapter(child: LayoutBuilder(builder: (context, c) {
-      final w = (c.maxWidth - 2 * gap) / 3;
+      final cols = c.maxWidth >= 1100 ? 4 : 3;
+      final w = (c.maxWidth - (cols - 1) * gap) / cols;
       return Wrap(spacing: gap, runSpacing: 28, children: [
         for (var i = 0; i < _items.length; i++)
           SizedBox(width: w, child: _deskCard(_items[i], i, audio)),
