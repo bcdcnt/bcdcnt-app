@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
@@ -63,6 +64,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   /// Upload detail: name → found in the archive (null while asking).
   final Map<String, bool> _inKho = {};
   final _focus = FocusNode();
+  /// Trao đổi column: the member's choice (saved), else open from 1600px.
+  bool? _threadPref;
   /// Lời gửi kèm: long lyrics start folded to [_lyricsFold] lines.
   bool _lyricsOpen = false;
   static const _lyricsFold = 8;
@@ -71,7 +74,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
-  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
+  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
 
 
   @override
@@ -80,6 +83,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadCounts();
       _load();
+    });
+    SharedPreferences.getInstance().then((p) {
+      final v = p.getBool('workspace_thread_open');
+      if (v != null && mounted) setState(() => _threadPref = v);
     });
   }
 
@@ -287,22 +294,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         focusNode: _focus,
         autofocus: true,
         onKeyEvent: _onKey,
-        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          // Queues with counts.
-          Container(
-            width: 240,
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-            decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Padding(padding: const EdgeInsets.fromLTRB(12, 0, 0, 12), child: Text('Việc cần làm', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
-              for (final (k, label, _) in _todo) _queueRow(k, label),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 22, 0, 8),
-                child: Text('ĐÃ XỬ LÝ', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
-              ),
-              for (final (k, label, _) in _done) _queueRow(k, label),
-            ]),
-          ),
+        child: LayoutBuilder(builder: (context, box) {
+          _boxW = box.maxWidth;
+          final threadOn = _threadOn;
+          // Not enough room for four columns: the queues shrink to icons;
+          // still too narrow for the detail (≥ 460) → Trao đổi slides over it.
+          final rail = threadOn && box.maxWidth < 240 + 320 + 340 + 620;
+          final overlay = threadOn && box.maxWidth - 72 - 320 - 340 < 460;
+          final row = Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (rail) _rail() else _queueColumn(),
           // The list.
           Container(
             width: 320,
@@ -344,7 +344,152 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ]),
           ),
           Expanded(child: _cur == null ? const SizedBox.shrink() : (_isUpload ? _detail(_cur!) : _otherDetail(_cur!))),
+          if (threadOn && !overlay) _threadColumn(_cur!),
+        ]);
+          if (!overlay) return row;
+          return Stack(children: [
+            Positioned.fill(child: row),
+            Positioned(top: 0, bottom: 0, right: 0, child: Material(elevation: 12, color: AppColors.bg, child: _threadColumn(_cur!))),
+          ]);
+        }),
+      ),
+    );
+  }
+
+  /// Width the workspace actually has (the app's side panel may take some).
+  double _boxW = 0;
+  /// Open by default only when four full columns fit.
+  bool get _threadOn => _isUpload && _cur != null && (_threadPref ?? _boxW >= 240 + 320 + 340 + 620);
+
+  void _toggleThread() {
+    final next = !_threadOn;
+    setState(() => _threadPref = next);
+    SharedPreferences.getInstance().then((p) => p.setBool('workspace_thread_open', next));
+  }
+
+  Widget _queueColumn() => Container(
+            width: 240,
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+            decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Padding(padding: const EdgeInsets.fromLTRB(12, 0, 0, 12), child: Text('Việc cần làm', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
+              for (final (k, label, _) in _todo) _queueRow(k, label),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 22, 0, 8),
+                child: Text('ĐÃ XỬ LÝ', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+              ),
+              for (final (k, label, _) in _done) _queueRow(k, label),
+            ]),
+          );
+
+  static const _railIcons = {
+    'pending': Icons.inbox_rounded, 'no_score': Icons.library_music_outlined, 'doc_request': Icons.description_outlined,
+    'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined,
+    'not_sure': Icons.help_outline_rounded, 'rejected': Icons.close_rounded, 'approved': Icons.check_rounded,
+  };
+
+  /// The queues as a 72px strip of icons with counts (Trao đổi open on a
+  /// narrow window); » closes Trao đổi and brings the full column back.
+  Widget _rail() {
+    String short(int? n) => n == null ? '' : (n >= 1000 ? '${n ~/ 1000}N' : '$n');
+    Widget item(String k, String label) {
+      final on = k == _queue;
+      return Tooltip(
+        message: '$label · ${formatInt(_counts[k] ?? 0)}',
+        child: Material(
+          color: on ? AppColors.accentSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _openQueue(k),
+            child: SizedBox(
+              height: 52,
+              child: Stack(alignment: Alignment.center, children: [
+                Icon(_railIcons[k], color: on ? AppColors.accentFg : AppColors.textSecondary),
+                if (_counts[k] != null)
+                  Positioned(
+                    top: 4, right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      constraints: const BoxConstraints(minWidth: 18),
+                      height: 18,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.surfaceLight, borderRadius: BorderRadius.circular(9)),
+                      child: Text(short(_counts[k]), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.textSecondary))),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 72,
+      padding: const EdgeInsets.fromLTRB(8, 20, 8, 16),
+      decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
+      child: ListView(children: [
+        IconButton(tooltip: 'Đóng Trao đổi, hiện đủ Việc cần làm', onPressed: _toggleThread, icon: Icon(Icons.keyboard_double_arrow_right_rounded, color: AppColors.textMuted)),
+        for (final (k, label, _) in _todo) item(k, label),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6), child: Divider(height: 1, color: AppColors.border)),
+        for (final (k, label, _) in _done) item(k, label),
+      ]),
+    );
+  }
+
+  /// Trao đổi with the sender of the upload on screen, as a right column.
+  Widget _threadColumn(Map<String, dynamic> u) => Container(
+        width: 340,
+        decoration: BoxDecoration(border: Border(left: BorderSide(color: AppColors.borderSubtle))),
+        child: Stack(children: [
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 36, bottom: 8),
+                child: Text('${u['title'] ?? ''} · ${u['user']?['username'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted))),
+              ),
+              UploadThread(
+                key: ValueKey('thread-${u['id']}'),
+                uploadId: '${u['id']}',
+                senderId: '${u['user']?['id'] ?? ''}',
+                onSent: () => setState(() {
+                  final n = (u['talk']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+                  u['talk'] = {'paginatorInfo': {'total': n + 1}, 'data': [{'user': {'id': context.read<AuthProvider>().user?['id']}}]};
+                }),
+              ),
+            ],
+          ),
+          Positioned(top: 10, right: 10, child: IconButton(tooltip: 'Đóng Trao đổi', onPressed: _toggleThread, icon: const Icon(Icons.close_rounded))),
         ]),
+      );
+
+  /// "💬 Trao đổi 2 ●" — the dot when the sender wrote last.
+  Widget _threadChip(Map<String, dynamic> u) {
+    final n = (u['talk']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+    final last = ((u['talk']?['data'] ?? []) as List).whereType<Map>().firstOrNull;
+    final senderLast = last != null && '${last['user']?['id']}' == '${u['user']?['id']}';
+    final on = _threadOn;
+    return Material(
+      color: on ? AppColors.wine : Colors.transparent,
+      shape: StadiumBorder(side: BorderSide(color: AppColors.wine, width: 1.5)),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: _toggleThread,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.chat_bubble_outline_rounded, size: 16, color: on ? Colors.white : AppColors.wine),
+            const SizedBox(width: 6),
+            Text(n > 0 ? 'Trao đổi $n' : 'Trao đổi', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.wine))),
+            if (senderLast) ...[
+              const SizedBox(width: 6),
+              Container(width: 7, height: 7, decoration: const BoxDecoration(color: Color(0xFFC62828), shape: BoxShape.circle)),
+            ],
+            const SizedBox(width: 4),
+            Icon(on ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 18, color: on ? Colors.white : AppColors.wine),
+          ]),
+        ),
       ),
     );
   }
@@ -545,7 +690,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final lyrics = '${u['content'] ?? ''}'.replaceAll(RegExp(r'<br\s*/?>'), '\n').replaceAll(RegExp(r'<[^>]+>'), '').trim();
     final decided = _queue == 'approved';
     return ListView(padding: const EdgeInsets.fromLTRB(36, 24, 36, 40), children: [
-      Text('BÀI GỬI · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', style: AppText.eyebrow),
+      Row(children: [
+        Expanded(child: Text('BÀI GỬI · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', style: AppText.eyebrow)),
+        _threadChip(u),
+      ]),
       const SizedBox(height: 6),
       Text('${u['title'] ?? '(chưa có tên)'}', style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
       const SizedBox(height: 16),
@@ -615,9 +763,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ]);
         }),
       ],
-      const SizedBox(height: 20),
-      // Ask the sender before deciding.
-      UploadThread(key: ValueKey('thread-${u['id']}'), uploadId: '${u['id']}', senderId: '${u['user']?['id'] ?? ''}'),
       const SizedBox(height: 20),
       Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
         if (!decided) ...[

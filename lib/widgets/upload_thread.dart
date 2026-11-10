@@ -12,7 +12,9 @@ import 'ui.dart' show NetImage;
 class UploadThread extends StatefulWidget {
   final String uploadId;
   final String senderId;
-  const UploadThread({super.key, required this.uploadId, required this.senderId});
+  /// After a message went out (the caller may bump its count).
+  final VoidCallback? onSent;
+  const UploadThread({super.key, required this.uploadId, required this.senderId, this.onSent});
 
   @override
   State<UploadThread> createState() => _UploadThreadState();
@@ -69,6 +71,7 @@ class _UploadThreadState extends State<UploadThread> {
       await context.read<AuthProvider>().authedMutate(r'mutation($type: String!, $id: Int!, $content: String!) { addComment(type: $type, object_id: $id, content: $content) { id } }',
           {'type': 'upload', 'id': int.parse(widget.uploadId), 'content': t});
       _ctl.clear();
+      widget.onSent?.call();
       await _load();
     } catch (e) {
       if (mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(friendlyError(e, fallback: 'Chưa gửi được, vui lòng thử lại.')), backgroundColor: AppColors.error));
