@@ -546,7 +546,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                       style: display(TextStyle(fontSize: 28, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
                   const SizedBox(height: 6),
                   Text(
-                    '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label}',
+                    '${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch',
                     style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
                   ),
                 ],
