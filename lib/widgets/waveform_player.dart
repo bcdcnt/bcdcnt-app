@@ -56,6 +56,12 @@ class WaveformPlayer extends StatefulWidget {
   final bool autoPlay;
   final bool showTimestamp;
   final double height;
+  /// Play button diameter (36 in compact lists).
+  final double buttonSize;
+  /// Known length before the file loads (seconds), so "3:41" shows at once.
+  final double? durationHint;
+  /// Extra text after the time, e.g. "192 kbps".
+  final String? trailing;
   const WaveformPlayer({
     super.key,
     required this.audioUrl,
@@ -63,7 +69,10 @@ class WaveformPlayer extends StatefulWidget {
     this.waveform,
     this.autoPlay = false,
     this.showTimestamp = true,
-    this.height = 68,
+    this.height = 56,
+    this.buttonSize = 52,
+    this.durationHint,
+    this.trailing,
   });
 
   @override
@@ -126,9 +135,18 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
   }
 
   String _fmt(Duration d) {
-    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$m:$s';
+    return '${d.inMinutes}:$s';
+  }
+
+  /// "1:12 / 3:48 · 192 kbps" while playing, "3:48 · 192 kbps" before.
+  String get _timeText {
+    final total = _duration > Duration.zero
+        ? _duration
+        : (widget.durationHint != null && widget.durationHint! > 0 ? Duration(milliseconds: (widget.durationHint! * 1000).round()) : null);
+    final started = _loaded && (_playing || _position > Duration.zero);
+    final t = total == null ? (started ? _fmt(_position) : '') : (started ? '${_fmt(_position)} / ${_fmt(total)}' : _fmt(total));
+    return [if (t.isNotEmpty) t, if ((widget.trailing ?? '').isNotEmpty) widget.trailing!].join(' · ');
   }
 
   Future<void> _toggle() async {
@@ -154,28 +172,26 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
   @override
   Widget build(BuildContext context) {
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
+    final b = widget.buttonSize;
+    final time = widget.showTimestamp ? _timeText : '';
     return Row(
       children: [
         Semantics(
           button: true,
           label: _playing ? 'Tạm dừng ghi âm' : 'Phát ghi âm',
           child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _loading ? null : _toggle,
-          child: Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-              boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 10, offset: const Offset(0, 3))],
+            behavior: HitTestBehavior.opaque,
+            onTap: _loading ? null : _toggle,
+            child: Container(
+              width: b, height: b,
+              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.wine),
+              child: _loading
+                  ? Padding(padding: EdgeInsets.all(b * 0.28), child: const CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+                  : Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white, size: b * 0.55),
             ),
-            child: _loading
-                ? const Padding(padding: EdgeInsets.all(13), child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
-                : Icon(_playing ? Icons.pause : Icons.play_arrow, color: Colors.white, size: 24),
           ),
         ),
-        ),
-        const SizedBox(width: 12),
+        SizedBox(width: b * 0.3),
         Expanded(
           child: LayoutBuilder(builder: (ctx, constraints) {
             return GestureDetector(
@@ -186,69 +202,48 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
                 painter: _WaveformPainter(
                   bars: _bars,
                   progress: progress,
-                  playedColor: AppColors.accent,
-                  unplayedColor: AppColors.textMuted.withValues(alpha: 0.35),
-                  currentLabel: widget.showTimestamp ? _fmt(_position) : null,
-                  durationLabel: widget.showTimestamp && _duration > Duration.zero ? _fmt(_duration) : null,
+                  playedColor: AppColors.wine,
+                  unplayedColor: AppColors.wine.withValues(alpha: 0.22),
                 ),
               ),
             );
           }),
         ),
+        if (time.isNotEmpty) ...[
+          const SizedBox(width: 14),
+          Text(time, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textSecondary, fontFeatures: const [FontFeature.tabularFigures()]))),
+        ],
       ],
     );
   }
 }
 
+/// Rounded vertical bars around the middle line (canvas "sóng nhạc"):
+/// played part in wine, the rest a light tint of it. Bars are ~4px with a
+/// 3px gap whatever the width; the data is resampled to fit.
 class _WaveformPainter extends CustomPainter {
   final List<double> bars;
   final double progress;
   final Color playedColor;
   final Color unplayedColor;
-  final String? currentLabel;
-  final String? durationLabel;
-  _WaveformPainter({required this.bars, required this.progress, required this.playedColor, required this.unplayedColor, this.currentLabel, this.durationLabel});
+  _WaveformPainter({required this.bars, required this.progress, required this.playedColor, required this.unplayedColor});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width, totalH = size.height;
-    final halfH = totalH / 2;
-    final mid = halfH;
-    final barW = (w / bars.length).clamp(2.0, double.infinity);
-    const barGap = 2.0;
-    final splitX = progress * w;
-
-    for (var i = 0; i < bars.length; i++) {
-      final x = i * barW;
-      final bw = (barW - barGap).clamp(2.0, double.infinity);
-      final h = (bars[i] * (halfH - 2)).clamp(3.0, double.infinity);
-      final r = Radius.circular((bw / 2).clamp(0.0, 2.0));
-      final color = (x + bw) <= splitX ? playedColor : unplayedColor;
-      // Upper bar
-      final upper = RRect.fromRectAndRadius(Rect.fromLTWH(x, mid - h, bw, h), r);
-      canvas.drawRRect(upper, Paint()..color = color);
-      // Lower mirror bar (faded)
-      final lower = RRect.fromRectAndRadius(Rect.fromLTWH(x, mid + 2, bw, h * 0.7), r);
-      canvas.drawRRect(lower, Paint()..color = color.withValues(alpha: color.a * 0.35));
+    if (bars.isEmpty) return;
+    const bw = 4.0, gap = 3.0;
+    final n = ((size.width + gap) / (bw + gap)).floor().clamp(1, 1000);
+    final splitX = progress * size.width;
+    final mid = size.height / 2;
+    for (var i = 0; i < n; i++) {
+      final v = bars[(i * bars.length / n).floor().clamp(0, bars.length - 1)];
+      final h = (v * size.height).clamp(6.0, size.height);
+      final x = i * (bw + gap);
+      final paint = Paint()..color = x + bw / 2 <= splitX ? playedColor : unplayedColor;
+      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, mid - h / 2, bw, h), const Radius.circular(2)), paint);
     }
-
-    void drawPill(String text, double x, bool alignLeft) {
-      final tp = TextPainter(
-        text: TextSpan(text: text, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      final pw = tp.width + 10, ph = 18.0, py = mid - ph / 2;
-      final px = alignLeft ? x - 3 : x - pw + 3;
-      final rect = RRect.fromRectAndRadius(Rect.fromLTWH(px, py, pw, ph), const Radius.circular(4));
-      canvas.drawRRect(rect, Paint()..color = const Color(0x8C000000));
-      tp.paint(canvas, Offset(alignLeft ? x + 2 : x - 2 - tp.width, py + (ph - tp.height) / 2));
-    }
-
-    if (currentLabel != null) drawPill(currentLabel!, 4, true);
-    if (durationLabel != null) drawPill(durationLabel!, w - 4, false);
   }
 
   @override
-  bool shouldRepaint(_WaveformPainter old) =>
-      old.progress != progress || old.bars != bars || old.currentLabel != currentLabel || old.durationLabel != durationLabel;
+  bool shouldRepaint(_WaveformPainter old) => old.progress != progress || old.bars != bars || old.playedColor != playedColor;
 }
