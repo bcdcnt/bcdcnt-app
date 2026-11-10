@@ -659,21 +659,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           child: TextButton.icon(onPressed: () => _listen(u), icon: const Icon(Icons.queue_music_rounded, size: 18), label: const Text('Nghe trên thanh phát')),
         ),
       ],
-      if ((_dupes ?? 0) > 0) ...[
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(color: AppColors.warningText.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-          child: Row(children: [
-            Icon(Icons.warning_amber_rounded, color: AppColors.warningText),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Có thể trùng: kho đã có $_dupes bài tên “${u['title']}”', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.warningText)))),
-            TextButton(onPressed: () => context.push('/search', extra: '${u['title']}'), child: const Text('So sánh')),
-          ]),
-        ),
-      ],
       const SizedBox(height: 10),
-      field('Tên bài', u['title']?.toString(), status: _dupes == null ? null : (_dupes! > 0 ? _khoTag('✓ đã có trong kho', AppColors.successText) : _khoTag('bài mới', AppColors.textMuted))),
+      // Same-title songs (any composer): the count and the way to compare,
+      // for every upload type.
+      field('Tên bài', u['title']?.toString(), status: _dupes == null
+          ? null
+          : (_dupes! > 0
+              ? InkWell(
+                  onTap: () => context.push('/search', extra: '${u['title']}'),
+                  child: Text.rich(TextSpan(children: [
+                    TextSpan(text: '${formatInt(_dupes)} bài cùng tên · ', style: TextStyle(color: AppColors.warningText)),
+                    TextSpan(text: 'So sánh ›', style: TextStyle(color: AppColors.accentLight)),
+                  ]), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+                )
+              : _khoTag('bài mới', AppColors.textMuted))),
       field('Loại', uploadTypeLabel(u['type'])),
       field('Sáng tác', u['composers']?.toString(), kho: 'composers'),
       field('Lời thơ', u['poets']?.toString(), kho: 'poets'),
