@@ -83,9 +83,8 @@ class _DesktopNowPanelState extends State<DesktopNowPanel> {
               'queue' => const DesktopQueuePanel(embedded: true),
               _ when song == null => _empty(),
               'lyric' => _Lyrics(key: ValueKey('l-${songKind(song)}-${song['id']}'), song: song),
-              _ => SingleChildScrollView(
+              _ => KeyedSubtree(
                   key: ValueKey('c-${songKind(song)}-${song['id']}'),
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   child: CommentSection(
                     type: songKind(song), id: '${song['id']}', compact: true,
                     onTotal: (n) { if (mounted) setState(() { _commentTotal = n; _commentFor = '${songKind(song)}-${song['id']}'; }); },

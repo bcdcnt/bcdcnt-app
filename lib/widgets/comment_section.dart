@@ -1044,9 +1044,9 @@ class _CommentSectionState extends State<CommentSection> {
                   InkWell(
                     onTap: user['id'] != null ? () => context.push('/user/${user['id']}') : null,
                     borderRadius: BorderRadius.circular(20),
-                    child: UserAvatar(url: user['avatar']?['url']?.toString(), name: (user['username'] ?? '').toString(), size: 36),
+                    child: UserAvatar(url: user['avatar']?['url']?.toString(), name: (user['username'] ?? '').toString(), size: compact ? 34 : 36),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: compact ? 12 : 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1072,7 +1072,7 @@ class _CommentSectionState extends State<CommentSection> {
                           }),
                           Text(compact ? '· ${timeago(c['created_at'])}' : timeago(c['created_at']), style: AppText.caption),
                         ]),
-                        const SizedBox(height: 4),
+                        SizedBox(height: compact ? 2 : 4),
                         if (_editingId == c['id']?.toString()) ...[
                           // Inline edit mode — replaces the comment
                           // body with a text field + save/cancel
@@ -1157,13 +1157,13 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _love(c['id'].toString(), isLoved),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(minHeight: compact ? 40 : 48, minWidth: 48),
+                                constraints: BoxConstraints(minHeight: compact ? 32 : 48, minWidth: compact ? 0 : 48),
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  padding: EdgeInsets.only(left: compact ? 0 : 6, right: compact ? 14 : 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 20, color: isLoved ? AppColors.error : AppColors.textMuted),
-                                    const SizedBox(width: 6),
-                                    Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
+                                    Icon(isLoved || compact ? Icons.favorite : Icons.favorite_border, size: compact ? 16 : 20, color: isLoved ? AppColors.error : AppColors.textMuted),
+                                    SizedBox(width: compact ? 5 : 6),
+                                    Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
                                   ]),
                                 ),
                               ),
@@ -1174,13 +1174,15 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _replyTo(user['username']?.toString() ?? c['nickname']?.toString()),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(minHeight: compact ? 40 : 48, minWidth: 48),
+                                constraints: BoxConstraints(minHeight: compact ? 32 : 48, minWidth: compact ? 0 : 48),
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(Icons.reply_rounded, size: 20, color: AppColors.textMuted),
-                                    const SizedBox(width: 6),
-                                    Text('Trả lời', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
+                                    if (!compact) ...[
+                                      Icon(Icons.reply_rounded, size: 20, color: AppColors.textMuted),
+                                      const SizedBox(width: 6),
+                                    ],
+                                    Text('Trả lời', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: AppColors.textSecondary)),
                                   ]),
                                 ),
                               ),
@@ -1206,8 +1208,9 @@ class _CommentSectionState extends State<CommentSection> {
                             IconButton(
                               tooltip: 'Tuỳ chọn bình luận',
                               onPressed: () => _openActions(c),
-                              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
-                              icon: Icon(Icons.more_vert_rounded, size: 22, color: AppColors.textMuted),
+                              constraints: BoxConstraints.tightFor(width: compact ? 32 : 48, height: compact ? 32 : 48),
+                              padding: EdgeInsets.zero,
+                              icon: Icon(compact ? Icons.more_horiz_rounded : Icons.more_vert_rounded, size: compact ? 18 : 22, color: AppColors.textMuted),
                             ),
                         ]),
                       ],
@@ -1235,7 +1238,19 @@ class _CommentSectionState extends State<CommentSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: compact
-          ? [...list, const SizedBox(height: 12), ...composer]
+          // Side panel: the list scrolls, the composer stays at the bottom.
+          ? [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: list),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(color: AppColors.bg, border: Border(top: BorderSide(color: AppColors.border))),
+                child: Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: composer)),
+              ),
+            ]
           : [...heading, ...composer, const SizedBox(height: 20), ...list],
     );
   }

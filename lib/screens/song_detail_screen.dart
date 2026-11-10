@@ -961,14 +961,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     // Credits kiểu web cho desktop hero: từng dòng "Nhãn: giá trị" đặt GIỮA
     // tiêu đề và stats. Style khớp web: nhãn 13px xám mờ (w500), giá trị 16px
     // đậm màu chữ (w700), KHÔNG gạch chân — dùng _webCreditLine/_creditLinkRow.
-    final yearSpan = year != null
-        ? TextSpan(text: ' ($year)', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500)))
-        : null;
     final desktopCredits = <Widget>[];
     if (composers.isNotEmpty) {
       desktopCredits.add(_webCreditLine('Sáng tác', [
         ..._creditLinkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
-        if (yearSpan != null) yearSpan,
+        // The year already heads the band and sits in Thông tin bản thu.
       ]));
     }
     {
@@ -1015,7 +1012,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         child: Container(
           constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Text('${t['name'] ?? ''}', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: '#', style: TextStyle(color: AppColors.accentFg.withValues(alpha: 0.5))),
+            TextSpan(text: '${t['name'] ?? ''}'),
+          ]), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
         ),
       )).toList()),
     );
