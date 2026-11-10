@@ -308,7 +308,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Text(authed ? '${_greeting(now)}${name != null ? ', $name' : ''}' : 'Chào bạn', style: display(TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: AppColors.text))),
                 const SizedBox(height: 6),
-                Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label}', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                 const SizedBox(height: 18),
                 _quickRow(authed),
                 if (_occasion != null) ...[
@@ -631,7 +631,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               ]),
             ),
             ?trail,
-            IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, s), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
+            // Rows with a badge ("● 3 người") keep it alone; right-click still opens the menu.
+            if (trail == null) IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, s), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
           ]),
         ),
       ));
@@ -743,7 +744,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.format_quote_rounded, size: 34, color: AppColors.rose),
             const SizedBox(height: 8),
-            Text('${c['snippet'] ?? ''}'.trim(), maxLines: 5, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 18, height: 1.6, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500, color: AppColors.text))),
+            Text('${c['snippet'] ?? ''}'.trim(), maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, height: 1.6, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500, color: AppColors.text))),
             const SizedBox(height: 16),
             Row(children: [
               UserAvatar(url: c['user_avatar']?.toString(), name: '${c['username'] ?? ''}', size: 40),
