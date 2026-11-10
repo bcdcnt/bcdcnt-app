@@ -1,3 +1,5 @@
+import '../services/player.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -18,7 +20,10 @@ List<(String, Widget)> _songFacts(BuildContext context, Map<String, dynamic> son
   final file = song['file'] is Map ? song['file'] as Map : const {};
   final views = num_(song['views']);
   final downloads = num_(song['downloads']);
-  final duration = num_(file['duration']);
+  // Older files have no stored length; the player knows it once the song plays.
+  final player = context.watch<PlayerProvider>();
+  final playing = '${player.currentSong?['id']}' == '${song['id']}' && player.duration > Duration.zero;
+  final duration = num_(file['duration']) ?? (playing ? player.duration.inSeconds : null);
   final bitrate = num_(file['bitrate']);
   final hq = file['is_hq'] == 1 || file['is_hq'] == true;
   final created = DateTime.tryParse('${song['created_at'] ?? ''}');
@@ -147,11 +152,11 @@ class SongArchiveCard extends StatelessWidget {
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('THÔNG TIN BẢN THU', style: AppText.eyebrow),
         const SizedBox(height: 6),
-        for (final (label, value) in facts)
+        for (final (i, (label, value)) in facts.indexed)
           Container(
             constraints: const BoxConstraints(minHeight: 40),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
+            decoration: i == facts.length - 1 ? null : BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
             child: Row(children: [
               SizedBox(width: 104, child: Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
               const SizedBox(width: 10),

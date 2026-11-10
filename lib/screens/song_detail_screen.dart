@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
@@ -1005,13 +1006,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
     final uploadDate = song['created_at'] != null ? _formatDate(song['created_at']) : null;
     final tagsWidget = tags.isEmpty ? null : Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Wrap(spacing: 10, runSpacing: 0, children: tags.map<Widget>((t) => InkWell(
+      padding: EdgeInsets.zero,
+      child: Wrap(spacing: 18, runSpacing: 0, children: tags.map<Widget>((t) => InkWell(
         onTap: () => context.push('/tag/${t['slug']}'),
         borderRadius: BorderRadius.circular(8),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 40),
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
+          constraints: const BoxConstraints(minHeight: 36),
+          padding: const EdgeInsets.symmetric(vertical: 7),
           child: Text('${t['name'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
         ),
       )).toList()),
@@ -1023,7 +1024,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               // 1. Sticky header — title swaps to the song name + artist
               // line once the user has scrolled past the hero, à la
               // Apple Music album pages.
-              SliverAppBar(
+              if (!isDesktop) SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.bg,
                 titleSpacing: 0,
@@ -1060,8 +1061,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 ],
               ),
 
-              SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+              // Desktop: content capped at 1120 and kept to the left, so a
+              // wide window leaves room instead of stretching the page.
+              SliverLayoutBuilder(builder: (ctx, c) => SliverPadding(
+                padding: isDesktop
+                    ? EdgeInsets.fromLTRB(40, 20, math.max(40.0, c.crossAxisExtent - 40 - 1120), 0)
+                    : const EdgeInsets.symmetric(horizontal: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     const SizedBox(height: 4),
@@ -1092,6 +1097,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         onAddToPlaylist: _openPlaylistDialog,
                         onShare: _share,
                         onHistory: uploads.isNotEmpty ? _openFileHistory : null,
+                        ctvItems: songAdminItems(context.watch<AuthProvider>(), Map<String, dynamic>.from(song), _resolvedType),
+                        onCtv: (k) => showSongAdminSheet(context, song: Map<String, dynamic>.from(song), type: _resolvedType, onRefresh: () => _fetch(fresh: true), pick: k),
                         onShowLovers: () => _showLoversSheet(loves),
                         onArtistTap: (a) {
                           if (_resolvedType == 'karaoke') {
@@ -1228,7 +1235,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         decoration: BoxDecoration(color: const Color(0x1FF59E0B), border: Border.all(color: const Color(0x4DF59E0B)), borderRadius: BorderRadius.circular(8)),
                         child: const Text('Thiếu dữ liệu', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFF59E0B))),
                       ),
-                    const SizedBox(height: 8),
+                    if (!isDesktop) const SizedBox(height: 8),
 
                     // Contributor caption removed — uploader/file owner info
                     // is admin metadata, available via API/admin tooling. A
@@ -1260,14 +1267,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
                       if (isDesktop && rightItems.isNotEmpty) {
                         return Padding(
-                          padding: const EdgeInsets.only(top: 4),
+                          padding: EdgeInsets.zero,
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: leftItems)),
-                              const SizedBox(width: 28),
+                              const SizedBox(width: 32),
                               SizedBox(
-                                width: 360,
+                                width: 300,
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rightItems),
                               ),
                             ],
@@ -1289,7 +1296,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     const SizedBox(height: 120),
                   ]),
                 ),
-              ),
+              )),
             ],
           );
 
@@ -1489,7 +1496,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final str = lyrics as String;
     if (str.isEmpty) return const [];
     return [
-      const SizedBox(height: 16),
+      SizedBox(height: MediaQuery.sizeOf(context).width >= 900 ? 0 : 16),
       SectionHeader(
         icon: Icons.article_outlined,
         title: 'Lời bài hát',
@@ -1999,6 +2006,8 @@ class _DesktopHero extends StatelessWidget {
   final VoidCallback onAddToPlaylist;
   final VoidCallback onShare;
   final VoidCallback? onHistory;
+  final List<SongAdminItem> ctvItems;
+  final void Function(String key)? onCtv;
   final VoidCallback? onShowLovers;
   final void Function(Map artist) onArtistTap;
   final VoidCallback? onArtworkTap;
@@ -2026,6 +2035,8 @@ class _DesktopHero extends StatelessWidget {
     required this.onAddToPlaylist,
     required this.onShare,
     this.onHistory,
+    this.ctvItems = const [],
+    this.onCtv,
     this.onShowLovers,
     required this.onArtistTap,
     this.onArtworkTap,
@@ -2048,7 +2059,7 @@ class _DesktopHero extends StatelessWidget {
     // (blurred, tinted) with the cover, title and the main actions on it;
     // credits, figures and tags follow on the page below.
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: const EdgeInsets.only(top: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(24),
@@ -2121,7 +2132,7 @@ class _DesktopHero extends StatelessWidget {
                       _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải về', onTap: onDownload),
                       // Overflow — Playlist + Chia sẻ + Lịch sử vào menu "..." để
                       // hàng nút gọn 4 nút giống web.
-                      _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist),
+                      _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist, ctvItems: ctvItems, onCtv: onCtv),
                     ]),
                     // Who liked it, beside the Thích button it belongs to.
                     if (loves.isNotEmpty) ...[
@@ -2159,7 +2170,7 @@ class _DesktopHero extends StatelessWidget {
         const SizedBox(height: 18),
         if (credits != null) credits!,
         if (metaContent != null) ...[
-          const SizedBox(height: 22),
+          const SizedBox(height: 4),
           metaContent!,
         ],
       ]),
@@ -2240,8 +2251,10 @@ class _OverflowActionPill extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback? onHistory;
   final VoidCallback? onAddToPlaylist;
+  final List<SongAdminItem> ctvItems;
+  final void Function(String key)? onCtv;
 
-  const _OverflowActionPill({required this.onShare, this.onHistory, this.onAddToPlaylist});
+  const _OverflowActionPill({required this.onShare, this.onHistory, this.onAddToPlaylist, this.ctvItems = const [], this.onCtv});
 
   @override
   Widget build(BuildContext context) {
@@ -2254,6 +2267,7 @@ class _OverflowActionPill extends StatelessWidget {
         if (v == 'playlist' && onAddToPlaylist != null) onAddToPlaylist!();
         if (v == 'share') onShare();
         if (v == 'history' && onHistory != null) onHistory!();
+        if (v.startsWith('ctv:')) onCtv?.call(v.substring(4));
       },
       itemBuilder: (ctx) => [
         if (onAddToPlaylist != null)
@@ -2282,6 +2296,24 @@ class _OverflowActionPill extends StatelessWidget {
               Text('Lịch sử bản thu', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
             ]),
           ),
+        // CTV tools, only for members holding a CTV permission.
+        if (ctvItems.isNotEmpty && onCtv != null) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            enabled: false,
+            height: 30,
+            child: Text('CÔNG CỤ CTV', style: AppText.eyebrow),
+          ),
+          for (final a in ctvItems)
+            PopupMenuItem(
+              value: 'ctv:${a.key}',
+              child: Row(children: [
+                Icon(a.icon, size: 16, color: a.danger ? AppColors.error : AppColors.text),
+                const SizedBox(width: 10),
+                Text(a.label, style: body(TextStyle(fontSize: 13, color: a.danger ? AppColors.error : AppColors.text))),
+              ]),
+            ),
+        ],
       ],
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

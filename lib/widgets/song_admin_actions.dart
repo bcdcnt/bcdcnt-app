@@ -34,27 +34,26 @@ class _Action {
   const _Action(this.key, this.label, this.icon, {this.danger = false, this.toggle = false, this.on = false});
 }
 
-/// The CTV menu. [song] is the detail page's normalized map; [onRefresh]
-/// reloads the page after a change.
-Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dynamic> song, required String type, required Future<void> Function() onRefresh}) async {
-  final auth = context.read<AuthProvider>();
+/// One CTV tool, for menus built elsewhere (the desktop ⋯ menu).
+class SongAdminItem {
+  final String key, label;
+  final IconData icon;
+  final bool danger;
+  const SongAdminItem(this.key, this.label, this.icon, this.danger);
+}
+
+/// The CTV tools [auth] may use on this song, in menu order.
+List<SongAdminItem> songAdminItems(AuthProvider auth, Map<String, dynamic> song, String type) =>
+    [for (final a in _actions(auth, song, type)) SongAdminItem(a.key, a.label, a.icon, a.danger)];
+
+List<_Action> _actions(AuthProvider auth, Map<String, dynamic> song, String type, {int sticky = 0}) {
   bool can(String? p) => p != null && auth.hasPermission(p);
-  final id = '${song['id']}';
   // Folk / poem pages have no sheet on the web either (tags, year, composers live elsewhere).
   final sheetId = (type == 'folk' || type == 'poem') ? null : song['sheet']?['id']?.toString();
   final fileId = song['file']?['id']?.toString();
   final thumb = song['thumbnail'] is Map ? song['thumbnail'] as Map : null;
   final isHq = song['file']?['is_hq'] == 1 || song['file']?['is_hq'] == true;
-
-  int sticky = 0;
-  if (type == 'song' && can('manage_song')) {
-    try {
-      final d = await auth.authedQuery(r'query($id: ID!) { song(id: $id) { id sticky_comment } }', {'id': id});
-      sticky = (d['song']?['sticky_comment'] as num?)?.toInt() ?? 0;
-    } catch (_) {}
-  }
-
-  final actions = <_Action>[
+  return [
     // API updateThumbnail needs update_thumbnail; replacing an existing picture is for manage_thumbnail.
     if (can('update_thumbnail') && (can('manage_thumbnail') || thumb?['url'] == null)) const _Action('thumb', 'Ảnh minh hoạ', Icons.image_outlined),
     if (type != 'karaoke' && can(_artistPerms[type])) const _Action('artists', 'Sửa trình bày', Icons.mic_none_rounded),
@@ -88,9 +87,35 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
     ],
     if (can(_typePerms[type])) const _Action('edit', 'Sửa trên web', Icons.open_in_new_rounded),
   ];
+}
+
+/// The CTV menu. [song] is the detail page's normalized map; [onRefresh]
+/// reloads the page after a change.
+/// [pick] runs that tool straight away (chosen from another menu).
+Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dynamic> song, required String type, required Future<void> Function() onRefresh, String? pick}) async {
+  final auth = context.read<AuthProvider>();
+  bool can(String? p) => p != null && auth.hasPermission(p);
+  final id = '${song['id']}';
+  // Folk / poem pages have no sheet on the web either (tags, year, composers live elsewhere).
+  final sheetId = (type == 'folk' || type == 'poem') ? null : song['sheet']?['id']?.toString();
+  final fileId = song['file']?['id']?.toString();
+  final thumb = song['thumbnail'] is Map ? song['thumbnail'] as Map : null;
+  final isHq = song['file']?['is_hq'] == 1 || song['file']?['is_hq'] == true;
+
+  int sticky = 0;
+  if (type == 'song' && can('manage_song')) {
+    try {
+      final d = await auth.authedQuery(r'query($id: ID!) { song(id: $id) { id sticky_comment } }', {'id': id});
+      sticky = (d['song']?['sticky_comment'] as num?)?.toInt() ?? 0;
+    } catch (_) {}
+  }
+
+  final actions = _actions(auth, song, type, sticky: sticky);
   if (actions.isEmpty || !context.mounted) return;
 
-  final picked = await showModalBottomSheet<_Action>(
+  final _Action? picked = pick != null
+      ? actions.where((a) => a.key == pick).firstOrNull
+      : await showModalBottomSheet<_Action>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
