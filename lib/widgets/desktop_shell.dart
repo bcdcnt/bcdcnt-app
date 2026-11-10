@@ -70,7 +70,9 @@ class _DesktopShellState extends State<DesktopShell> {
       backgroundColor: AppColors.bg,
       body: ValueListenableBuilder<bool>(
         valueListenable: desktopPanelOpen,
-        builder: (context, open, _) {
+        builder: (context, wantOpen, _) {
+          // Nothing playing yet: nothing to show beside it.
+          final open = wantOpen && hasSong;
           final panel = SizedBox(width: 360, child: DesktopNowPanel(onClose: () => desktopPanelOpen.value = false));
           return Column(children: [
             Expanded(

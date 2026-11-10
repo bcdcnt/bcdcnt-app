@@ -13,6 +13,7 @@ class LyricsText extends StatelessWidget {
   final Color labelColor;
   /// Show only the first N lines (collapsed song page); null = all.
   final int? maxLines;
+  final double lineHeight;
 
   const LyricsText({
     super.key,
@@ -22,6 +23,7 @@ class LyricsText extends StatelessWidget {
     required this.color,
     required this.labelColor,
     this.maxLines,
+    this.lineHeight = 1.5,
   });
 
   static final _labelOnly = RegExp(r'^\s*(?:(\d+(?:\s*[,&]\s*\d+)*)\s*[-–.:)]?|(đk|điệp khúc|coda|kết)\s*[-–.:)]?)\s*$', caseSensitive: false);
@@ -59,7 +61,7 @@ class LyricsText extends StatelessWidget {
         );
     Widget line(String s) {
       lines++;
-      return Text(s, style: body(TextStyle(fontSize: fontSize, height: 1.5, fontWeight: weight, color: color)));
+      return Text(s, style: body(TextStyle(fontSize: fontSize, height: lineHeight, fontWeight: weight, color: color)));
     }
 
     for (final l in plain(html).split('\n')) {

@@ -1139,7 +1139,7 @@ class _CommentSectionState extends State<CommentSection> {
                             _attachMenuButton(),
                           ]),
                         ] else
-                          CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString()),
+                          CommentMedia(html: content, authorName: user['username']?.toString() ?? c['nickname']?.toString(), fontSize: compact ? 15 : 16),
                         const SizedBox(height: 4),
                         // Hide the like/edit/delete action row while
                         // this very comment is being edited — the

@@ -1537,7 +1537,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               ),
             );
           }
-          return LyricsText(html: str, color: AppColors.text, labelColor: AppColors.accentLight);
+          // Desktop reads at arm's length: lighter strokes, more air between lines.
+          final desk = MediaQuery.sizeOf(context).width >= 900;
+          return LyricsText(html: str, color: AppColors.text, labelColor: AppColors.accentLight, weight: desk ? FontWeight.w500 : FontWeight.w600, lineHeight: desk ? 1.7 : 1.5);
         }(),
       ),
     ];
@@ -1721,11 +1723,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   // Dòng credit kiểu web: nhãn 13px xám mờ (w500) + giá trị 16px đậm màu chữ.
   Widget _webCreditLine(String label, List<InlineSpan> valueSpans) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 6),
       child: RichText(
         textScaler: MediaQuery.textScalerOf(context),
         text: TextSpan(children: [
-          TextSpan(text: '$label: ', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
+          TextSpan(text: '$label: ', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
           ...valueSpans,
         ]),
       ),
@@ -2183,7 +2185,7 @@ class _DesktopHero extends StatelessWidget {
         const SizedBox(height: 18),
         if (credits != null) credits!,
         if (metaContent != null) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           metaContent!,
         ],
       ]),

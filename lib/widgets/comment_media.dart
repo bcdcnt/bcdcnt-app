@@ -23,7 +23,9 @@ class CommentMedia extends StatefulWidget {
   /// Keep each picture where it sits in the text (discussion posts).
   /// Comments (false) gather pictures into one strip at the bottom.
   final bool inlineImages;
-  const CommentMedia({super.key, required this.html, this.authorName, this.inlineImages = false});
+  /// Body size; the desktop side panel reads a notch smaller.
+  final double fontSize;
+  const CommentMedia({super.key, required this.html, this.authorName, this.inlineImages = false, this.fontSize = 16});
 
   @override
   State<CommentMedia> createState() => _CommentMediaState();
@@ -215,7 +217,7 @@ class _CommentMediaState extends State<CommentMedia> {
             padding: HtmlPaddings.zero,
             // Comments are the second thing people read after the lyrics:
             // full-size body text, not small grey print.
-            fontSize: FontSize(16),
+            fontSize: FontSize(widget.fontSize),
             lineHeight: const LineHeight(1.5),
             color: AppColors.text,
             fontFamily: body().fontFamily,
