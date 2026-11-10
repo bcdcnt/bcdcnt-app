@@ -114,7 +114,9 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   /// "Mọi người đang nghe": {listeners, song}.
   List<Map<String, dynamic>> _live = [];
   List<Map<String, dynamic>> _today = [];
-  /// Today's event playlist (see [_fetchOccasion]).
+  /// Today's event playlists (see [_fetchOccasion]); [_occasion] is the one shown.
+  List<Map<String, dynamic>> _events = [];
+  final Map<String, List<Map<String, dynamic>>> _eventSongs = {};
   Map<String, dynamic>? _occasion;
   String? _occasionPlaylistId;
   List<Map<String, dynamic>> _occasionSongs = [];
@@ -261,11 +263,23 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       final list = _maps(ev['playlists']?['data']).where((p) => total(p) > 0).toList()
         ..sort((a, b) => oneDay(a) != oneDay(b) ? (oneDay(a) ? -1 : 1) : total(b).compareTo(total(a)));
       if (list.isEmpty) {
-        if (_occasion != null && mounted) setState(() { _occasion = null; _occasionSongs = []; });
+        if (_occasion != null && mounted) setState(() { _events = []; _occasion = null; _occasionSongs = []; });
         return;
       }
-      final pl = list.first;
-      final id = '${pl['id']}';
+      if (mounted) setState(() => _events = list);
+      await _showEvent(list.first);
+    } catch (_) {}
+  }
+
+  /// Puts [pl] in the big cards, loading its songs once.
+  Future<void> _showEvent(Map<String, dynamic> pl) async {
+    final id = '${pl['id']}';
+    final cached = _eventSongs[id];
+    if (cached != null) {
+      setState(() { _occasion = pl; _occasionPlaylistId = id; _occasionSongs = cached; });
+      return;
+    }
+    try {
       // items, not songs: playlist.songs comes back empty for some event playlists.
       final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { items(first: 12, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { $_songFields } } } } } }', {'id': id});
       final songs = [for (final it in _maps(d['playlist']?['items']?['data'])) if (it['object'] is Map && (it['object'] as Map).isNotEmpty) Map<String, dynamic>.from(it['object'] as Map)]
@@ -273,6 +287,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           .map((s) => {...s, 'file_type': 'song'})
           .toList();
       if (!mounted) return;
+      _eventSongs[id] = songs;
       setState(() {
         _occasion = pl;
         _occasionPlaylistId = id;
@@ -429,6 +444,50 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     }
   }
 
+  /// Several events today: one chip each (year · name); the dark one is shown.
+  Widget _eventChips() => SizedBox(
+        height: 58,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
+          itemCount: _events.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (_, i) {
+            final e = _events[i];
+            final on = '${e['id']}' == _occasionPlaylistId;
+            final y = DateTime.tryParse('${e['event_date'] ?? ''}')?.year;
+            return Material(
+              color: on ? AppColors.text : AppColors.surface,
+              borderRadius: BorderRadius.circular(22),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: on ? null : () => _showEvent(e),
+                child: Container(
+                  height: 44,
+                  padding: EdgeInsets.only(left: y != null ? 6 : 14, right: 14),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (y != null) ...[
+                      Container(
+                        height: 32,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.bg, borderRadius: BorderRadius.circular(16)),
+                        child: Text('$y', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.accentFg))),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 190),
+                      child: Text('${e['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text))),
+                    ),
+                  ]),
+                ),
+              ),
+            );
+          },
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -447,6 +506,10 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     final occDate = DateTime.tryParse('${occ?['event_date'] ?? ''}');
     final occOnDay = occDate != null && occDate.month == DateTime.now().month && occDate.day == DateTime.now().day;
     final occAgo = occDate == null ? 0 : DateTime.now().year - occDate.year;
+    final occEnd = '${occ?['event_end'] ?? ''}'.split('-');
+    final occLong = occ != null && occ['event_start'] != occ['event_end'] && occEnd.length == 2;
+    // Red on the very day; "Đến dd/mm" while a longer event runs.
+    final occEyebrow = occOnDay && occAgo > 0 ? '$occAgo năm trước, ngày này' : occLong ? 'Đến ${occEnd[1]}/${occEnd[0]}' : 'Hôm nay';
     // Outside occasions the big cards are yesterday's most played: leave out
     // what "Nghe nhiều hôm nay" already lists.
     final todayIds = {for (final s in _today) '${s['id']}'};
@@ -567,13 +630,16 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             ] else if (picks.isNotEmpty) ...[
               if (occasionOn)
                 _EyebrowTitle(
-                  eyebrow: occOnDay && occAgo > 0 ? '$occAgo năm trước, ngày này' : 'Hôm nay',
+                  eyebrow: occEyebrow,
+                  eyebrowRed: occOnDay && occAgo > 0,
+                  lines: 2,
                   title: occTitle,
                   chevron: _occasionPlaylistId != null,
                   onTap: _occasionPlaylistId == null ? null : () => context.push('/playlist/$_occasionPlaylistId'),
                 )
               else
                 const _EyebrowTitle(eyebrow: 'Hôm qua', title: 'Mọi người nghe nhiều'),
+              if (occasionOn && _events.length > 1) _eventChips(),
               _PickCarousel(key: ValueKey(occasionOn ? 'occ-$_occasionPlaylistId' : 'top'), picks: picks, label: occasionOn ? occTitle : 'Hôm qua nghe nhiều'),
             ],
 
@@ -708,15 +774,17 @@ class _EyebrowTitle extends StatelessWidget {
   final String title;
   final bool chevron;
   final VoidCallback? onTap;
-  const _EyebrowTitle({required this.eyebrow, required this.title, this.chevron = false, this.onTap});
+  final bool eyebrowRed;
+  final int lines;
+  const _EyebrowTitle({required this.eyebrow, required this.title, this.chevron = false, this.onTap, this.eyebrowRed = false, this.lines = 1});
 
   @override
   Widget build(BuildContext context) {
     final text = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Text(eyebrow, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      Text(eyebrow, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: eyebrowRed ? FontWeight.w800 : FontWeight.w600, color: eyebrowRed ? AppColors.errorText : AppColors.textMuted))),
       const SizedBox(height: 2),
       Row(mainAxisSize: MainAxisSize.min, children: [
-        Flexible(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
+        Flexible(child: Text(title, maxLines: lines, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
         if (chevron) Icon(Icons.chevron_right_rounded, size: 26, color: AppColors.text),
       ]),
     ]);
@@ -911,6 +979,7 @@ class _PickCarouselState extends State<_PickCarousel> {
           ),
           ),
         ),
+        if (picks.length > 1) ...[
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -925,6 +994,7 @@ class _PickCarouselState extends State<_PickCarousel> {
               ),
           ],
         ),
+        ],
       ],
     );
   }
