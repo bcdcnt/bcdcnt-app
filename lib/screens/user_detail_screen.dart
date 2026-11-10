@@ -11,6 +11,7 @@ import '../services/activity.dart';
 import '../services/player.dart';
 import '../services/share.dart';
 import '../services/friendly_error.dart';
+import '../widgets/playlist_cover.dart';
 import '../widgets/ui.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
@@ -183,7 +184,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           avatar { url } background { url }
           roles { name alias group_type display_in_profile userRolePivot { role custom_title } }
           uploads(first: 3, page: 1, orderBy: [{column: "id", order: DESC}], where: $_approved) { data { $_uploadFields } paginatorInfo { total } }
-          playlists(first: 10, page: 1, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "is_public", value: 1}]}) { data { id title thumbnail { url } } paginatorInfo { total } }
+          playlists(first: 10, page: 1, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "is_public", value: 1}]}) { data { id title thumbnail { url } items(first: 4, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { thumbnail { url } } ... on Folk { thumbnail { url } } ... on Instrumental { thumbnail { url } } ... on Poem { thumbnail { url } } } } } } paginatorInfo { total } }
           allComments: comments(first: 1, where: $_commentWhere) { paginatorInfo { total } }
           allPoints: points(first: 1) { paginatorInfo { total } }
           karaokes(first: $_karaokePageSize, page: 1, orderBy: [{column: "views", order: DESC}]) {
@@ -835,7 +836,9 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
             return RailCard(
               width: 130,
               title: title,
-              cover: NetImage(url: p['thumbnail']?['url']?.toString(), width: 130, height: 130, fallback: GeneratedCover(title: title, size: 130, radius: 0)),
+              cover: PlaylistCover.thumbsOf(p['items']).length >= 4
+                  ? PlaylistCover(songThumbs: PlaylistCover.thumbsOf(p['items']), size: 130, radius: 0)
+                  : NetImage(url: p['thumbnail']?['url']?.toString(), width: 130, height: 130, fallback: GeneratedCover(title: title, size: 130, radius: 0)),
               onTap: () => context.push('/playlist/${p['id']}'),
             );
           },

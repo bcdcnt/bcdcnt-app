@@ -5,6 +5,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/offline_store.dart';
+import '../widgets/playlist_cover.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/ui.dart';
@@ -504,7 +505,7 @@ extension _Desktop on _LibraryScreenState {
   }
 }
 
-/// Desktop playlist cover: its own picture, else four song covers.
+/// Desktop playlist cover: four song covers, else its own picture.
 class _PlaylistCard extends StatelessWidget {
   final Map<String, dynamic> playlist;
   final double size;
@@ -516,10 +517,10 @@ class _PlaylistCard extends StatelessWidget {
     final own = playlist['thumbnail']?['url']?.toString();
     final thumbs = ((playlist['items']?['data'] ?? []) as List).whereType<Map>().map((i) => i['object']?['thumbnail']?['url']?.toString()).whereType<String>().toList();
     final total = playlist['items']?['paginatorInfo']?['total'];
-    final Widget cover = own != null
-        ? NetImage(url: own, width: size, height: size)
-        : thumbs.length >= 4
-            ? GridView.count(crossAxisCount: 2, padding: EdgeInsets.zero, physics: const NeverScrollableScrollPhysics(), children: [for (final u in thumbs.take(4)) NetImage(url: u)])
+    final Widget cover = thumbs.length >= 4
+        ? GridView.count(crossAxisCount: 2, padding: EdgeInsets.zero, physics: const NeverScrollableScrollPhysics(), children: [for (final u in thumbs.take(4)) NetImage(url: u)])
+        : own != null
+            ? NetImage(url: own, width: size, height: size)
             : thumbs.isNotEmpty
                 ? NetImage(url: thumbs.first, width: size, height: size)
                 : Container(color: AppColors.accentSoft, child: Icon(Icons.queue_music_rounded, size: 40, color: AppColors.accentLight));
@@ -667,33 +668,8 @@ class _PlaylistRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final own = playlist['thumbnail']?['url']?.toString();
-    final thumbs = ((playlist['items']?['data'] ?? []) as List)
-        .whereType<Map>()
-        .map((i) => i['object']?['thumbnail']?['url']?.toString())
-        .whereType<String>()
-        .toList();
     final total = playlist['items']?['paginatorInfo']?['total'];
-    Widget cover;
-    if (own != null) {
-      cover = NetImage(url: own, width: 52, height: 52, radius: 12);
-    } else if (thumbs.length >= 4) {
-      cover = ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: 52,
-          height: 52,
-          child: GridView.count(crossAxisCount: 2, padding: EdgeInsets.zero, physics: const NeverScrollableScrollPhysics(), children: [for (final u in thumbs.take(4)) NetImage(url: u)]),
-        ),
-      );
-    } else {
-      cover = Container(
-        width: 52,
-        height: 52,
-        decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(12)),
-        child: Icon(Icons.queue_music_rounded, color: AppColors.accentLight),
-      );
-    }
+    final cover = PlaylistCover(thumb: playlist['thumbnail']?['url']?.toString(), songThumbs: PlaylistCover.thumbsOf(playlist['items']), size: 52);
     return InkWell(
       onTap: onOpen ?? () => context.push('/playlist/${playlist['id']}'),
       child: Padding(

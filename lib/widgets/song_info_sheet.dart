@@ -7,7 +7,7 @@ import 'ui.dart';
 
 /// The song's side facts, label → value, in the order they are shown. A
 /// row with no data is left out. Shared by the phone's "Thông tin bài hát"
-/// sheet and the desktop "Phiếu lưu trữ" card.
+/// sheet and the desktop "Thông tin bản thu" card.
 List<(String, Widget)> _songFacts(BuildContext context, Map<String, dynamic> song, {VoidCallback? beforeOpen, double fontSize = 15}) {
   String? str(dynamic v) {
     final s = (v ?? '').toString().trim();
@@ -132,7 +132,7 @@ Future<void> showSongInfoSheet(BuildContext context, Map<String, dynamic> song) 
   );
 }
 
-/// Desktop "Phiếu lưu trữ": the same facts, always on show beside the page.
+/// Desktop "Thông tin bản thu": the same facts, always on show beside the page.
 class SongArchiveCard extends StatelessWidget {
   final Map<String, dynamic> song;
   const SongArchiveCard({super.key, required this.song});
@@ -145,7 +145,7 @@ class SongArchiveCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('PHIẾU LƯU TRỮ', style: AppText.eyebrow),
+        Text('THÔNG TIN BẢN THU', style: AppText.eyebrow),
         const SizedBox(height: 6),
         for (final (label, value) in facts)
           Container(

@@ -483,7 +483,7 @@ class _PlaylistEditScreenState extends State<PlaylistEditScreen> {
   Widget _form(bool bqt) {
     final cover = Row(children: [
       Stack(alignment: Alignment.center, children: [
-        PlaylistCover(thumb: _imageUrl, songThumbs: _songThumbs, size: 88, radius: 14),
+        PlaylistCover(thumb: _imageUrl, songThumbs: _songThumbs, size: 88, radius: 14, ownFirst: true),
         if (_uploading) const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white)),
       ]),
       const SizedBox(width: 14),

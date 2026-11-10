@@ -1,7 +1,5 @@
-import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, Skeleton, SortTabs, PagedLoader, PagedList, PageResult, pagedListBody;
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
@@ -169,7 +167,7 @@ class _PlaylistCard extends StatelessWidget {
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
         child: Row(children: [
-          ClipRRect(borderRadius: BorderRadius.circular(10), child: thumb != null ? CachedNetworkImage(imageUrl: cdnImg((thumb).toString(), 140), width: 56, height: 56, fit: BoxFit.cover) : Container(width: 56, height: 56, color: AppColors.surface, child: Icon(Icons.queue_music, color: AppColors.textMuted))),
+          PlaylistCover(thumb: thumb?.toString(), songThumbs: PlaylistCover.thumbsOf(pl['items']), size: 56, radius: 10),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             Text(pl['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),

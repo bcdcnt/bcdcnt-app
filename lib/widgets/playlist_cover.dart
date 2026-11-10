@@ -3,14 +3,16 @@ import 'package:flutter/material.dart';
 import '../constants/theme.dart';
 import '../services/imgcdn.dart';
 
-/// A playlist's cover: its own picture, else the first four songs' pictures
-/// in a 2×2 grid (one song: that picture), else a music icon.
+/// A playlist's cover in lists: the first four songs' pictures in a 2×2
+/// grid, else its own picture, else one song's picture, else a music icon.
+/// `ownFirst` (the playlist's own page, the editor) puts its picture first.
 class PlaylistCover extends StatelessWidget {
   final String? thumb;
   final List<String> songThumbs;
   final double size;
   final double radius;
-  const PlaylistCover({super.key, this.thumb, this.songThumbs = const [], required this.size, this.radius = 12});
+  final bool ownFirst;
+  const PlaylistCover({super.key, this.thumb, this.songThumbs = const [], required this.size, this.radius = 12, this.ownFirst = false});
 
   /// The pictures of the first songs in `items { data { object { thumbnail } } }`.
   static List<String> thumbsOf(dynamic items) => [
@@ -26,14 +28,9 @@ class PlaylistCover extends StatelessWidget {
           width: s, height: s, fit: BoxFit.cover,
           errorWidget: (_, _, _) => Container(width: s, height: s, color: AppColors.surfaceLight),
         );
+    final hasOwn = thumb != null && thumb!.isNotEmpty;
     final Widget child;
-    if (thumb != null && thumb!.isNotEmpty) {
-      child = CachedNetworkImage(
-        imageUrl: cdnImg(thumb!, px > 160 ? 640 : 160),
-        width: size, height: size, fit: BoxFit.cover,
-        errorWidget: (_, _, _) => _empty(),
-      );
-    } else if (songThumbs.length >= 4) {
+    if (songThumbs.length >= 4 && !(ownFirst && hasOwn)) {
       final h = size / 2;
       child = SizedBox(
         width: size, height: size,
@@ -41,6 +38,12 @@ class PlaylistCover extends StatelessWidget {
           Row(children: [pic(songThumbs[0], h), pic(songThumbs[1], h)]),
           Row(children: [pic(songThumbs[2], h), pic(songThumbs[3], h)]),
         ]),
+      );
+    } else if (hasOwn) {
+      child = CachedNetworkImage(
+        imageUrl: cdnImg(thumb!, px > 160 ? 640 : 160),
+        width: size, height: size, fit: BoxFit.cover,
+        errorWidget: (_, _, _) => _empty(),
       );
     } else if (songThumbs.isNotEmpty) {
       child = pic(songThumbs.first, size);

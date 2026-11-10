@@ -2026,9 +2026,8 @@ class _PlaylistCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final own = playlist['thumbnail']?['url']?.toString();
-    if (own != null) return NetImage(url: own);
     final t = _plThumbs(playlist);
-    if (t.length < 4) return NetImage(url: t.first);
+    if (t.length < 4) return NetImage(url: own ?? t.first);
     return GridView.count(
       crossAxisCount: 2,
       physics: const NeverScrollableScrollPhysics(),
