@@ -24,6 +24,8 @@ import '../widgets/song_row.dart';
 import '../widgets/song_info_sheet.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_admin_actions.dart';
+import '../widgets/desktop_player_bar.dart' show desktopPanelTab;
+import '../widgets/desktop_shell.dart' show desktopPanelOpen;
 import '../widgets/comment_section.dart';
 import '../widgets/sheet_lightbox.dart';
 import '../widgets/playlist_dialog.dart';
@@ -1013,7 +1015,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         child: Container(
           constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Text('${t['name'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.accentLight))),
+          child: Text('${t['name'] ?? ''}', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
         ),
       )).toList()),
     );
@@ -1256,8 +1258,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ..._buildDescriptionSection(description),
                         ..._buildStorySection(story),
                         if (!isDesktop && _plainEmpty(description) && _plainEmpty(story)) ...(_memberStory != null ? _buildMemberStory() : _buildStoryInvite()),
-                        const SizedBox(height: 28),
-                        CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true)),
+                        // Desktop: when the side panel already shows this song's
+                        // comments, the page doesn't repeat them.
+                        ListenableBuilder(
+                          listenable: Listenable.merge([desktopPanelOpen, desktopPanelTab]),
+                          builder: (ctx, _) {
+                            final inPanel = isDesktop && desktopPanelOpen.value && desktopPanelTab.value == 'comment' && isCurrent && widget.highlightCommentId == null;
+                            if (inPanel) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 28),
+                              child: CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true)),
+                            );
+                          },
+                        ),
                       ];
                       final rightItems = [
                         // Desktop: the facts the phone keeps behind ⋯ stay on show.
@@ -1285,7 +1298,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          ...leftItems.sublist(0, leftItems.length - 2), // strip trailing comments
+                          ...leftItems.sublist(0, leftItems.length - 1), // strip trailing comments
                           ...rightItems,
                           const SizedBox(height: 28),
                           KeyedSubtree(key: _commentsKey, child: CommentSection(type: _resolvedType, id: widget.songId, highlightCommentId: widget.highlightCommentId, onPageChanged: () => _fetch(fresh: true))),
@@ -2129,7 +2142,7 @@ class _DesktopHero extends StatelessWidget {
                         onTap: onLove,
                         activeAccent: isLoved,
                       ),
-                      _PrimaryActionPill(icon: Icons.download_outlined, label: 'Tải về', onTap: onDownload),
+                      _PrimaryActionPill(icon: Icons.download_for_offline_rounded, label: 'Tải về', onTap: onDownload),
                       // Overflow — Playlist + Chia sẻ + Lịch sử vào menu "..." để
                       // hàng nút gọn 4 nút giống web.
                       _OverflowActionPill(onShare: onShare, onHistory: onHistory, onAddToPlaylist: onAddToPlaylist, ctvItems: ctvItems, onCtv: onCtv),
@@ -2218,26 +2231,22 @@ class _PrimaryActionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fg = primary ? Colors.white : (activeAccent ? AppColors.accent : AppColors.text);
-    final bgColor = primary ? null : (activeAccent ? AppColors.accentSoft : AppColors.surfaceLight);
+    // On the dark band: solid wine for play, white pills for the rest.
+    final fg = primary ? Colors.white : (activeAccent ? const Color(0xFF8E1F1F) : const Color(0xFF161112));
+    final bgColor = primary ? const Color(0xFF711313) : Colors.white;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(24),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: primary ? LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]) : null,
-            color: bgColor,
-            borderRadius: BorderRadius.circular(24),
-            border: primary || activeAccent ? null : Border.all(color: AppColors.border),
-            boxShadow: primary ? [BoxShadow(color: AppColors.accent.withValues(alpha: 0.4 * AppColors.shadowMul), blurRadius: 12, offset: const Offset(0, 4))] : null,
-          ),
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(22)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 16, color: fg),
-            const SizedBox(width: 6),
-            Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg))),
+            Icon(icon, size: 20, color: fg),
+            const SizedBox(width: 8),
+            Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: fg))),
           ]),
         ),
       ),
@@ -2316,13 +2325,9 @@ class _OverflowActionPill extends StatelessWidget {
         ],
       ],
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Icon(Icons.more_horiz, size: 18, color: AppColors.text),
+        width: 44, height: 44,
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: const Icon(Icons.more_horiz, size: 22, color: Color(0xFF161112)),
       ),
     );
   }

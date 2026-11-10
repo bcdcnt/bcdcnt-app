@@ -13,6 +13,7 @@ import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow, UserAvatar;
 import '../services/api.dart';
 import '../services/push.dart';
 import '../services/auth.dart';
+import '../services/player.dart';
 import '../services/friendly_error.dart';
 import 'comment_actions.dart';
 import 'comment_media.dart';
@@ -34,7 +35,12 @@ class CommentSection extends StatefulWidget {
   /// Name of the person whose page this is: "Đặt làm tư liệu ảnh" starts
   /// with them already picked.
   final String? subjectTitle;
-  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false, this.subjectTitle});
+  /// The desktop side panel: no heading (the tab carries the count), the
+  /// composer at the bottom, tighter rows.
+  final bool compact;
+  /// Reports the comment count (the side panel's tab shows it).
+  final ValueChanged<int>? onTotal;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false, this.subjectTitle, this.compact = false, this.onTotal});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -285,6 +291,7 @@ class _CommentSectionState extends State<CommentSection> {
               .where((c) => seen.add(c['id']?.toString())));
         }
         _total = pi?['total'] ?? 0;
+        widget.onTotal?.call(_total);
         _hasMore = (pi?['currentPage'] ?? 0) < (pi?['lastPage'] ?? 0);
         _page = page;
         _loadError = false;
@@ -813,9 +820,13 @@ class _CommentSectionState extends State<CommentSection> {
     final auth = context.watch<AuthProvider>();
     final userId = auth.user?['id'];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
+    final compact = widget.compact;
+    final player = compact ? context.watch<PlayerProvider>() : null;
+    final playingHere = player != null && '${player.currentSong?['id']}' == widget.id;
+    final composer = <Widget>[];
+    final list = <Widget>[];
+    final heading = <Widget>[
+      if (!compact) ...[
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
@@ -828,7 +839,9 @@ class _CommentSectionState extends State<CommentSection> {
           ],
         ),
         const SizedBox(height: 16),
-
+      ],
+    ];
+    composer.addAll([
         // Input
         if (widget.readOnly)
           Text('Chủ đề đã khoá, không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))
@@ -891,24 +904,24 @@ class _CommentSectionState extends State<CommentSection> {
                     // the button stays put when the input is empty
                     // and follows the input as it grows multi-line.
                     Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                      CircleAvatar(
+                      if (!compact) CircleAvatar(
                         radius: 14,
                         backgroundColor: const Color(0xFF711313),
                         backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(cdnImg((auth.user!['avatar']).toString(), 160)) : null,
                         child: auth.user?['avatar'] == null ? const Icon(Icons.person, size: 16, color: Colors.white) : null,
                       ),
-                      const SizedBox(width: 4),
+                      if (!compact) const SizedBox(width: 4),
                       _attachMenuButton(),
                       const SizedBox(width: 2),
                       Expanded(
                         key: _composerKey,
                         child: QuillCommentInput(
                           controller: _quillCtl,
-                          hintText: 'Viết bình luận...',
+                          hintText: compact ? 'Viết cảm nhận, tư liệu về bài này…' : 'Viết bình luận...',
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      ElevatedButton.icon(
+                      if (!compact) const SizedBox(width: 6),
+                      if (!compact) ElevatedButton.icon(
                         onPressed: _submitting ? null : _submit,
                         icon: _submitting
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -931,6 +944,40 @@ class _CommentSectionState extends State<CommentSection> {
                     // Attached audio / video chips below the input.
                     if (_attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty)
                       _buildMediaChipsStrip(audios: _attachedAudios, videos: _attachedVideos, onRemoveAudio: (i) => setState(() => _attachedAudios.removeAt(i)), onRemoveVideo: (i) => setState(() => _attachedVideos.removeAt(i))),
+                    // Side panel: "+ Chèn mốc" for the moment playing, Gửi on the right.
+                    if (compact)
+                      Row(children: [
+                        if (playingHere)
+                          InkWell(
+                            borderRadius: BorderRadius.circular(8),
+                            onTap: () {
+                              final p = player.position;
+                              final t = '${p.inMinutes}:${(p.inSeconds % 60).toString().padLeft(2, '0')} ';
+                              final at = _quillCtl.cursorOffset < 0 ? 0 : _quillCtl.cursorOffset;
+                              _quillCtl.replaceTextAt(at, 0, t);
+                              _quillCtl.requestFocus();
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                              child: Text('+ Chèn mốc ${player.position.inMinutes}:${(player.position.inSeconds % 60).toString().padLeft(2, '0')}',
+                                  style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                            ),
+                          ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: _submitting ? null : _submit,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.accent,
+                            disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
+                            minimumSize: const Size(64, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                          child: _submitting
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : Text('Gửi', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white))),
+                        ),
+                      ]),
                     // Inline upload status line for audio/video,
                     // which take longer than images.
                     if ((_uploadingAudio || _uploadingVideo) && _editingId == null) Padding(
@@ -955,9 +1002,8 @@ class _CommentSectionState extends State<CommentSection> {
               onTap: () => askLogin(context),
             ),
           ),
-
-        const SizedBox(height: 20),
-
+    ]);
+    list.addAll([
         if (_loading && _comments.isEmpty)
           Column(children: [for (var i = 0; i < 3; i++) const SkeletonSongRow()])
         else if (_loadError && _comments.isEmpty)
@@ -979,15 +1025,17 @@ class _CommentSectionState extends State<CommentSection> {
               key: isHighlight ? _highlightKey : null,
               duration: const Duration(milliseconds: 700),
               curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.only(bottom: 16),
-              padding: isHighlight ? const EdgeInsets.fromLTRB(10, 10, 10, 10) : EdgeInsets.zero,
+              margin: EdgeInsets.only(bottom: compact ? 0 : 16),
+              padding: isHighlight ? const EdgeInsets.fromLTRB(10, 10, 10, 10) : (compact ? const EdgeInsets.symmetric(vertical: 12) : EdgeInsets.zero),
               decoration: BoxDecoration(
                 color: isHighlight && _highlightAnimating
                     ? AppColors.accent.withValues(alpha: 0.18)
                     : Colors.transparent,
                 border: isHighlight && _highlightAnimating
                     ? Border.all(color: AppColors.accentLight.withValues(alpha: 0.6), width: 1)
-                    : Border.all(color: Colors.transparent, width: 1),
+                    : compact
+                        ? Border(bottom: BorderSide(color: AppColors.border))
+                        : Border.all(color: Colors.transparent, width: 1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -1022,7 +1070,7 @@ class _CommentSectionState extends State<CommentSection> {
                               child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                             );
                           }),
-                          Text(timeago(c['created_at']), style: AppText.caption),
+                          Text(compact ? '· ${timeago(c['created_at'])}' : timeago(c['created_at']), style: AppText.caption),
                         ]),
                         const SizedBox(height: 4),
                         if (_editingId == c['id']?.toString()) ...[
@@ -1098,7 +1146,7 @@ class _CommentSectionState extends State<CommentSection> {
                         // inline form above already exposes Lưu/Huỷ,
                         // and the like target wouldn't be the
                         // current text anyway.
-                        if (_editingId != c['id']?.toString()) Row(children: [
+                        if (_editingId != c['id']?.toString()) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
                           // 48pt targets with words: older readers miss bare
                           // 14px icons.
                           Semantics(
@@ -1109,7 +1157,7 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _love(c['id'].toString(), isLoved),
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                                constraints: BoxConstraints(minHeight: compact ? 40 : 48, minWidth: 48),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1126,7 +1174,7 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _replyTo(user['username']?.toString() ?? c['nickname']?.toString()),
                               child: ConstrainedBox(
-                                constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+                                constraints: BoxConstraints(minHeight: compact ? 40 : 48, minWidth: 48),
                                 child: Padding(
                                   padding: const EdgeInsets.symmetric(horizontal: 6),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1138,21 +1186,22 @@ class _CommentSectionState extends State<CommentSection> {
                               ),
                             ),
                           if (requestBadge(c) case final b?) ...[
-                            const SizedBox(width: 12),
                             Container(
+                              margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Icon(Icons.back_hand_outlined, size: 12, color: b.color),
                                 const SizedBox(width: 4),
-                                Text(
+                                Flexible(child: Text(
                                   c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} bởi ${c['processRequestUser']['username']}' : b.label,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: b.color),
-                                ),
+                                )),
                               ]),
                             ),
                           ],
-                          const Spacer(),
+                          ])),
                           if (auth.isAuthenticated)
                             IconButton(
                               tooltip: 'Tuỳ chọn bình luận',
@@ -1182,7 +1231,12 @@ class _CommentSectionState extends State<CommentSection> {
               ),
             ),
         ],
-      ],
+    ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: compact
+          ? [...list, const SizedBox(height: 12), ...composer]
+          : [...heading, ...composer, const SizedBox(height: 20), ...list],
     );
   }
 }

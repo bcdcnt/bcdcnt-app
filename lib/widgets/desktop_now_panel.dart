@@ -22,6 +22,8 @@ class DesktopNowPanel extends StatefulWidget {
 
 class _DesktopNowPanelState extends State<DesktopNowPanel> {
   Map<String, dynamic>? _pinned;
+  int? _commentTotal;
+  String? _commentFor; // which song _commentTotal counts
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +69,7 @@ class _DesktopNowPanelState extends State<DesktopNowPanel> {
                           height: 36,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           alignment: Alignment.center,
-                          child: Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tab == k ? AppColors.bg : AppColors.textSecondary))),
+                          child: Text(k == 'comment' && (_commentTotal ?? 0) > 0 && song != null && _commentFor == '${songKind(song)}-${song['id']}' ? '$label $_commentTotal' : label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: tab == k ? AppColors.bg : AppColors.textSecondary))),
                         ),
                       ),
                     ),
@@ -84,7 +86,10 @@ class _DesktopNowPanelState extends State<DesktopNowPanel> {
               _ => SingleChildScrollView(
                   key: ValueKey('c-${songKind(song)}-${song['id']}'),
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  child: CommentSection(type: songKind(song), id: '${song['id']}'),
+                  child: CommentSection(
+                    type: songKind(song), id: '${song['id']}', compact: true,
+                    onTotal: (n) { if (mounted) setState(() { _commentTotal = n; _commentFor = '${songKind(song)}-${song['id']}'; }); },
+                  ),
                 ),
             },
           ),
