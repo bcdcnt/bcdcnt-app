@@ -1,3 +1,4 @@
+import 'action_menu.dart' show lastPointerDown;
 import '../services/imgcdn.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -68,7 +69,11 @@ class _DesktopShellState extends State<DesktopShell> {
     final hasSong = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: ValueListenableBuilder<bool>(
+      // Desktop ⋯ menus open where the click landed.
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (e) => lastPointerDown = e.position,
+        child: ValueListenableBuilder<bool>(
         valueListenable: desktopPanelOpen,
         builder: (context, wantOpen, _) {
           // Nothing playing yet: nothing to show beside it.
@@ -100,6 +105,7 @@ class _DesktopShellState extends State<DesktopShell> {
             if (hasSong) DesktopPlayerBar(panelOpen: open, onPanel: _panel),
           ]);
         },
+      ),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import '../widgets/action_menu.dart';
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, OfflineBlock, PillButton;
 import '../widgets/desktop_page.dart';
@@ -136,7 +137,14 @@ class _MyPlaylistsScreenState extends State<MyPlaylistsScreen> {
     final title = (pl['title'] ?? '').toString();
     final total = pl['items']?['paginatorInfo']?['total'] ?? 0;
     final pub = pl['is_public']?.toString() == '1';
-    final choice = await showModalBottomSheet<String>(
+    // Desktop: a small menu by the ⋯; Xoá still asks in a dialog.
+    final choice = isDesk(context)
+        ? await showDesktopMenu<String>(context, [
+            const MenuEntry('open', 'Mở playlist', Icons.queue_music_rounded),
+            const MenuEntry('edit', 'Sửa playlist', Icons.edit_rounded),
+            MenuEntry('delete', 'Xoá playlist', Icons.delete_rounded, color: AppColors.errorText, group: 1),
+          ])
+        : await showModalBottomSheet<String>(
       context: context,
       useRootNavigator: true,
       backgroundColor: AppColors.bg,

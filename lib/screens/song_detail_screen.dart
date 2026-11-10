@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../widgets/song_row.dart';
 import '../widgets/song_info_sheet.dart';
 import '../widgets/mini_player.dart';
+import '../widgets/action_menu.dart';
 import '../widgets/song_admin_actions.dart';
 import '../widgets/desktop_player_bar.dart' show desktopPanelTab;
 import '../widgets/desktop_shell.dart' show desktopPanelOpen;
@@ -2268,67 +2269,29 @@ class _OverflowActionPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      tooltip: '',
-      offset: const Offset(0, 48),
-      color: AppColors.surface,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: AppColors.border)),
-      onSelected: (v) {
-        if (v == 'playlist' && onAddToPlaylist != null) onAddToPlaylist!();
-        if (v == 'share') onShare();
-        if (v == 'history' && onHistory != null) onHistory!();
-        if (v.startsWith('ctv:')) onCtv?.call(v.substring(4));
-      },
-      itemBuilder: (ctx) => [
-        if (onAddToPlaylist != null)
-          PopupMenuItem(
-            value: 'playlist',
-            child: Row(children: [
-              Icon(Icons.playlist_add, size: 16, color: AppColors.text),
-              const SizedBox(width: 10),
-              Text('Thêm vào playlist', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
-            ]),
-          ),
-        PopupMenuItem(
-          value: 'share',
-          child: Row(children: [
-            Icon(Icons.ios_share, size: 16, color: AppColors.text),
-            const SizedBox(width: 10),
-            Text('Chia sẻ', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
-          ]),
-        ),
-        if (onHistory != null)
-          PopupMenuItem(
-            value: 'history',
-            child: Row(children: [
-              Icon(Icons.history, size: 16, color: AppColors.text),
-              const SizedBox(width: 10),
-              Text('Lịch sử bản thu', style: body(TextStyle(fontSize: 13, color: AppColors.text))),
-            ]),
-          ),
+    Future<void> open() async {
+      final v = await showDesktopMenu<String>(context, [
+        if (onAddToPlaylist != null) const MenuEntry('playlist', 'Thêm vào playlist', Icons.playlist_add_rounded),
+        const MenuEntry('share', 'Chia sẻ', Icons.ios_share_rounded),
+        if (onHistory != null) const MenuEntry('history', 'Lịch sử bản thu', Icons.history_rounded),
         // CTV tools, only for members holding a CTV permission.
-        if (ctvItems.isNotEmpty && onCtv != null) ...[
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            enabled: false,
-            height: 30,
-            child: Text('CÔNG CỤ CTV', style: AppText.eyebrow),
-          ),
-          for (final a in ctvItems)
-            PopupMenuItem(
-              value: 'ctv:${a.key}',
-              child: Row(children: [
-                Icon(a.icon, size: 16, color: a.danger ? AppColors.error : AppColors.text),
-                const SizedBox(width: 10),
-                Text(a.label, style: body(TextStyle(fontSize: 13, color: a.danger ? AppColors.error : AppColors.text))),
-              ]),
-            ),
-        ],
-      ],
-      child: Container(
-        width: 44, height: 44,
-        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-        child: const Icon(Icons.more_horiz, size: 22, color: Color(0xFF161112)),
+        if (onCtv != null)
+          for (final (i, a) in ctvItems.indexed)
+            MenuEntry('ctv:${a.key}', a.label, a.icon, color: a.danger ? AppColors.error : null, group: 1, heading: i == 0 ? 'CÔNG CỤ CTV' : null),
+      ]);
+      if (v == 'playlist') onAddToPlaylist?.call();
+      if (v == 'share') onShare();
+      if (v == 'history') onHistory?.call();
+      if (v != null && v.startsWith('ctv:')) onCtv?.call(v.substring(4));
+    }
+
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: open,
+        child: const SizedBox(width: 44, height: 44, child: Icon(Icons.more_horiz, size: 22, color: Color(0xFF161112))),
       ),
     );
   }

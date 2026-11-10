@@ -1,3 +1,5 @@
+import 'desktop_page.dart' show isDesk;
+import 'action_menu.dart';
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +19,6 @@ import 'list_search.dart' show highlightSpans;
 import '../services/friendly_error.dart' show askLogin;
 import 'playlist_dialog.dart';
 import 'synced_video.dart';
-import 'ui.dart' show PillButton;
 
 bool _hasAudio(Map s) => (s['file']?['audio_url'] ?? s['audioUrl']) != null;
 
@@ -530,7 +531,24 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
   final m = Map<String, dynamic>.from(song);
   m['audioUrl'] ??= m['file']?['audio_url'];
 
-  final choice = await showModalBottomSheet<String>(
+  final saved = OfflineStore.instance.isSaved(song);
+  // Desktop: a small menu by the ⋯ — listen · keep · go to · share.
+  final choice = isDesk(context)
+      ? await showDesktopMenu<String>(context, [
+          if (hasAudio) const MenuEntry('next', 'Phát tiếp theo', Icons.playlist_play_rounded),
+          if (hasAudio) const MenuEntry('queue', 'Thêm vào danh sách phát', Icons.queue_music_rounded),
+          const MenuEntry('playlist', 'Thêm vào playlist', Icons.playlist_add_rounded),
+          if (onRemove != null) const MenuEntry('remove', 'Bỏ khỏi playlist', Icons.playlist_remove_rounded),
+          if (hasAudio) saved
+              ? const MenuEntry('unsave', 'Xoá khỏi "Đã tải về"', Icons.download_done_rounded, group: 1)
+              : const MenuEntry('save', 'Tải về để nghe offline', Icons.download_for_offline_outlined, group: 1),
+          if (onInfo == null) const MenuEntry('detail', 'Xem trang bài hát', Icons.chevron_right_rounded, group: 2),
+          if (composer != null) MenuEntry('composer', 'Đến $composerRole ${composer['title']}', Icons.music_note_outlined, group: 2),
+          if (artist != null) MenuEntry('artist', 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'nghệ sĩ'} ${artist['title'] ?? artist['username'] ?? ''}', Icons.mic_none_rounded, group: 2),
+          const MenuEntry('share', 'Chia sẻ', Icons.ios_share_rounded, group: 3),
+          if (onInfo != null) const MenuEntry('info', 'Thông tin bài hát', Icons.info_outline_rounded, group: 3),
+        ])
+      : await showModalBottomSheet<String>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

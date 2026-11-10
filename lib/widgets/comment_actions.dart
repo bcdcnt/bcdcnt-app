@@ -1,3 +1,5 @@
+import 'desktop_page.dart' show isDesk;
+import 'action_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -76,19 +78,23 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
     ],
     if (can('process_ai_request') && isReq) const _A('processAI', 'Xử lý bằng AI', Icons.auto_awesome_rounded, _aiPurple),
     if (isOwn || moderator) const _A('edit', 'Sửa bình luận', Icons.edit_outlined),
+    // Everyone can copy the text, so ⋮ is never an empty menu.
+    const _A('copy', 'Sao chép nội dung', Icons.copy_rounded),
     if (can('manage_sheet') && hasImg) const _A('createSheet', 'Dùng làm sheet nhạc', Icons.description_outlined),
     if (can('update_lyric') && const ['song', 'folk', 'poem'].contains(type)) const _A('applyLyric', 'Dùng làm lời bài hát', Icons.subtitles_outlined),
     if (can('manage_song') && hasMedia) const _A('replaceFile', 'Dùng làm bản thu', Icons.music_note_outlined),
     if (can('manage_thumbnail') && hasImg) const _A('replaceImage', 'Dùng làm minh hoạ', Icons.image_outlined),
     if (can('manage_document') && RegExp(r'<img|<oembed', caseSensitive: false).hasMatch(content)) const _A('tagDocument', 'Đặt làm tư liệu ảnh', Icons.photo_library_outlined),
     if (moderator) const _A('move', 'Chuyển bình luận', Icons.open_in_new_rounded),
-    if (isOwn || moderator) _A('delete', 'Xoá bình luận', Icons.delete_outline_rounded, AppColors.error),
     if (moderator) _A('hide', 'Ẩn bình luận', Icons.visibility_off_outlined, AppColors.error),
-    // Everyone can copy the text, so ⋮ is never an empty menu.
-    const _A('copy', 'Sao chép nội dung', Icons.copy_rounded),
+    if (isOwn || moderator) _A('delete', 'Xoá bình luận', Icons.delete_outline_rounded, AppColors.error),
   ];
 
-  final picked = await showModalBottomSheet<_A>(
+  // Desktop: a small menu by the ⋯ (requests · edit/copy · use as… · hide/delete).
+  int group(String k) => k.contains('equest') || k.startsWith('status') || k == 'processAI' ? 0 : (k == 'edit' || k == 'copy') ? 1 : (k == 'hide' || k == 'delete') ? 3 : 2;
+  final picked = isDesk(context)
+      ? await showDesktopMenu<_A>(context, [for (final a in actions) MenuEntry(a, a.label, a.icon, color: a.color, group: group(a.key))])
+      : await showModalBottomSheet<_A>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

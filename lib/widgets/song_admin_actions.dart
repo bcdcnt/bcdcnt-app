@@ -1,3 +1,5 @@
+import 'desktop_page.dart' show isDesk;
+import 'action_menu.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -115,7 +117,12 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
 
   final _Action? picked = pick != null
       ? actions.where((a) => a.key == pick).firstOrNull
-      : await showModalBottomSheet<_Action>(
+      : isDesk(context)
+          ? await showDesktopMenu<_Action>(context, [
+              for (final (i, a) in actions.indexed)
+                MenuEntry(a, a.toggle ? '${a.label}${a.on ? ' · đang bật' : ''}' : a.label, a.icon, color: a.danger ? AppColors.error : null, heading: i == 0 ? 'CÔNG CỤ CTV' : null),
+            ])
+          : await showModalBottomSheet<_Action>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
