@@ -11,7 +11,6 @@ import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import '../widgets/anniversary_rail.dart';
 import '../services/lunar.dart';
-import '../services/occasions.dart';
 import '../main.dart' show TabReselect;
 
 export '../widgets/song_row.dart' show playOrOpen;
@@ -115,7 +114,8 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
   /// "Mọi người đang nghe": {listeners, song}.
   List<Map<String, dynamic>> _live = [];
   List<Map<String, dynamic>> _today = [];
-  Occasion? _occasion;
+  /// Today's event playlist (see [_fetchOccasion]).
+  Map<String, dynamic>? _occasion;
   String? _occasionPlaylistId;
   List<Map<String, dynamic>> _occasionSongs = [];
   int _cat = 0;
@@ -174,7 +174,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     Future<Map<String, dynamic>?> safe(Future<Map<String, dynamic>> f) => f.then<Map<String, dynamic>?>((v) => v).catchError((_) => null);
     if (_failed) setState(() => _failed = false);
     _refreshPersonal();
-    _fetchOccasion(nextOccasion(DateTime.now()));
+    _fetchOccasion();
     final r = await Future.wait([
       safe(ApiClient.query(_mainQuery)),
       safe(ApiClient.query(_peopleQuery)),
@@ -240,17 +240,15 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     } catch (_) {}
   }
 
-  /// The coming occasion's songs: a dated event playlist BQT set up for that
-  /// day if there is one, else the site's themed playlist.
-  Future<void> _fetchOccasion(Occasion? o) async {
-    if (o == null) {
-      if (_occasion != null && mounted) setState(() { _occasion = null; _occasionSongs = []; });
-      return;
-    }
-    final mmdd = '${o.month.toString().padLeft(2, '0')}-${o.day.toString().padLeft(2, '0')}';
+  /// Today's event playlist, as on desktop: a system playlist whose
+  /// event_start ≤ today ≤ event_end (set in the playlist's settings).
+  /// Several running → one-day events first, then the one with most songs.
+  /// None → the big cards show what everyone played yesterday.
+  Future<void> _fetchOccasion() async {
+    final now = DateTime.now();
+    final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     try {
-      String? id;
-      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 1, orderBy: [{column: "id", order: DESC}], where: $w) { data { id } } }''', {
+      final ev = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 20, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title event_start event_end event_date items(first: 1) { paginatorInfo { total } } } } }''', {
         'w': {'AND': [
           {'column': 'is_system', 'value': '1'},
           {'column': 'is_public', 'value': '1'},
@@ -258,16 +256,25 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
           {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
         ]},
       });
-      id = (ev['playlists']?['data'] as List?)?.firstOrNull?['id']?.toString() ?? kOccasionPlaylist[o.label]?.toString();
-      if (id == null) return;
-      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { songs(first: 12) { data { $_songFields } } } }', {'id': id});
-      final songs = _maps(d['playlist']?['songs']?['data'])
-          .where((s) => s['thumbnail']?['url'] != null && (s['file']?['audio_url'] != null || s['file']?['video_url'] != null))
+      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
+      bool oneDay(Map p) => p['event_start'] == p['event_end'];
+      final list = _maps(ev['playlists']?['data']).where((p) => total(p) > 0).toList()
+        ..sort((a, b) => oneDay(a) != oneDay(b) ? (oneDay(a) ? -1 : 1) : total(b).compareTo(total(a)));
+      if (list.isEmpty) {
+        if (_occasion != null && mounted) setState(() { _occasion = null; _occasionSongs = []; });
+        return;
+      }
+      final pl = list.first;
+      final id = '${pl['id']}';
+      // items, not songs: playlist.songs comes back empty for some event playlists.
+      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { items(first: 12, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { $_songFields } } } } } }', {'id': id});
+      final songs = [for (final it in _maps(d['playlist']?['items']?['data'])) if (it['object'] is Map && (it['object'] as Map).isNotEmpty) Map<String, dynamic>.from(it['object'] as Map)]
+          .where((s) => s['file']?['audio_url'] != null || s['file']?['video_url'] != null)
           .map((s) => {...s, 'file_type': 'song'})
           .toList();
       if (!mounted) return;
       setState(() {
-        _occasion = o;
+        _occasion = pl;
         _occasionPlaylistId = id;
         _occasionSongs = songs;
       });
@@ -435,7 +442,11 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
     final seen = <String>{for (final x in [..._recent, ..._again]) '${x['file_type']}-${x['id']}'};
     final forYou = [for (final x in _forYou) if (seen.add('${x['file_type']}-${x['id']}')) x];
     final occ = _occasion;
-    final occasionOn = occ != null && _occasionSongs.length >= 3;
+    final occasionOn = occ != null && _occasionSongs.isNotEmpty;
+    final occTitle = '${occ?['title'] ?? ''}';
+    final occDate = DateTime.tryParse('${occ?['event_date'] ?? ''}');
+    final occOnDay = occDate != null && occDate.month == DateTime.now().month && occDate.day == DateTime.now().day;
+    final occAgo = occDate == null ? 0 : DateTime.now().year - occDate.year;
     // Outside occasions the big cards are yesterday's most played: leave out
     // what "Nghe nhiều hôm nay" already lists.
     final todayIds = {for (final s in _today) '${s['id']}'};
@@ -556,14 +567,14 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
             ] else if (picks.isNotEmpty) ...[
               if (occasionOn)
                 _EyebrowTitle(
-                  eyebrow: 'Kỷ niệm ngày lễ, sự kiện',
-                  title: '${occ.label} ${occ.day}/${occ.month}',
+                  eyebrow: occOnDay && occAgo > 0 ? '$occAgo năm trước, ngày này' : 'Hôm nay',
+                  title: occTitle,
                   chevron: _occasionPlaylistId != null,
                   onTap: _occasionPlaylistId == null ? null : () => context.push('/playlist/$_occasionPlaylistId'),
                 )
               else
                 const _EyebrowTitle(eyebrow: 'Hôm qua', title: 'Mọi người nghe nhiều'),
-              _PickCarousel(key: ValueKey(occasionOn ? 'occ-${occ.label}' : 'top'), picks: picks, label: occasionOn ? occ.label : 'Hôm qua nghe nhiều'),
+              _PickCarousel(key: ValueKey(occasionOn ? 'occ-$_occasionPlaylistId' : 'top'), picks: picks, label: occasionOn ? occTitle : 'Hôm qua nghe nhiều'),
             ],
 
             if (!_failed) ...[
