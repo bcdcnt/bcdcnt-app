@@ -58,6 +58,7 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
   final id = '${comment['id']}';
   final isOwn = '${comment['user']?['id']}' == '${auth.user?['id']}';
   final isReq = comment['is_request'] == 1 || comment['is_request'] == true;
+  final featured = comment['is_featured'] == true || comment['is_featured'] == 1;
   bool can(String p) => auth.hasPermission(p);
   final content = (comment['content'] ?? '').toString();
   // Content-based actions only show when the comment has that content.
@@ -85,6 +86,9 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
     if (can('manage_song') && hasMedia) const _A('replaceFile', 'Dùng làm bản thu', Icons.music_note_outlined),
     if (can('manage_thumbnail') && hasImg) const _A('replaceImage', 'Dùng làm minh hoạ', Icons.image_outlined),
     if (can('manage_document') && RegExp(r'<img|<oembed', caseSensitive: false).hasMatch(content)) const _A('tagDocument', 'Đặt làm tư liệu ảnh', Icons.photo_library_outlined),
+    // Cảm nhận hay: shown in Người nghe kể on the home page (songs only).
+    if (moderator && !isReq && const ['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(type))
+      featured ? const _A('unfeature', 'Bỏ đánh dấu cảm nhận hay', Icons.star_rounded) : const _A('feature', 'Đánh dấu cảm nhận hay', Icons.star_outline_rounded),
     if (moderator) const _A('move', 'Chuyển bình luận', Icons.open_in_new_rounded),
     if (moderator) _A('hide', 'Ẩn bình luận', Icons.visibility_off_outlined, AppColors.error),
     if (isOwn || moderator) _A('delete', 'Xoá bình luận', Icons.delete_outline_rounded, AppColors.error),
@@ -190,6 +194,14 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
           : null;
       await _tagDocument(context, auth, comment, seed: seed);
       return null;
+    case 'feature':
+    case 'unfeature':
+      final on = picked.key == 'feature';
+      return await guard<CommentChange?>(() async {
+        await auth.authedMutate(r'mutation($id: ID!, $f: Boolean!) { featureComment(id: $id, featured: $f) { id } }', {'id': id, 'f': on});
+        toast(on ? 'Đã đánh dấu cảm nhận hay — sẽ hiện ở Người nghe kể' : 'Đã bỏ đánh dấu cảm nhận hay');
+        return CommentUpdated({'is_featured': on});
+      });
     case 'move':
       final link = await _askText(context, 'Chuyển bình luận', 'Dán link trang đích (bài hát, chủ đề…)', hint: 'https://bcdcnt.net/bai-hat/…');
       if (link == null || link.isEmpty) return null;

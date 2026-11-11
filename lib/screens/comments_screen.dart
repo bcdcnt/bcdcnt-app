@@ -33,7 +33,7 @@ const _objFields = '''
 
 const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
     latestComments(first: 20, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
-      data { id content likes created_at is_request user { id username avatar { url } } object { $_objFields } }
+      data { id content likes created_at is_request is_featured user { id username avatar { url } } object { $_objFields } }
       paginatorInfo { currentPage lastPage total }
     }
   }''';

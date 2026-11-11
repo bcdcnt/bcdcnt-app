@@ -485,29 +485,34 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
+  /// Người nghe kể: comments marked "cảm nhận hay" (is_featured), a random
+  /// few each visit; the longest is told big.
   Future<void> _fetchComments() async {
     try {
-      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at is_request user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
-      final seen = <String>{};
-      final out = <Map<String, dynamic>>[];
-      for (final c in _maps(d['latestComments']?['data'])) {
-        final who = '${c['user']?['id'] ?? ''}';
-        final obj = c['object'];
-        // Requests ("nhờ bổ sung…") are work, not stories.
-        if (who.isEmpty || obj is! Map || obj['title'] == null || c['is_request'] == true || c['is_request'] == 1) continue;
-        final raw = '${c['content'] ?? ''}';
-        // Lyrics pasted as a comment (numbered verses, many short lines) are not a story.
-        final lines = raw.split(RegExp(r'<br\s*/?>|</p>|\n', caseSensitive: false)).map((l) => l.replaceAll(RegExp(r'<[^>]*>'), '').trim()).where((l) => l.isNotEmpty).toList();
-        final lyricLike = RegExp(r'^\s*(\d+|đk|điệp khúc)\s*[-.:)]', caseSensitive: false).hasMatch(lines.isEmpty ? '' : lines.first) || (lines.length >= 4 && lines.every((l) => l.length < 60));
-        final text = _sentences(raw);
-        if (lyricLike || text.length < 30 || !seen.add(who)) continue;
-        out.add({...c, 'text': text});
-        if (out.length == 4) break;
-      }
-      // The longest one is the story told big.
+      final d = await ApiClient.query('query { featuredComments(limit: 4) { id snippet likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
+      const typenames = {'song': 'Song', 'folk': 'Folk', 'instrumental': 'Instrumental', 'poem': 'Poem', 'karaoke': 'Karaoke'};
+      final out = [
+        for (final c in _maps(d['featuredComments']))
+          if (c['song_id'] != null && '${c['snippet'] ?? ''}'.isNotEmpty)
+            {
+              'id': c['id'],
+              'text': _sentences('${c['snippet']}'),
+              'likes': c['likes'],
+              'created_at': c['created_at'],
+              'user': {'username': c['username'], 'avatar': {'url': c['user_avatar']}},
+              'object': {
+                '__typename': typenames[c['file_type']] ?? 'Song',
+                'id': c['song_id'],
+                'title': c['song_title'],
+                'thumbnail': {'url': c['song_image']},
+                'play_type': c['play_type'],
+                'file': {'audio_url': c['audio_url'], 'video_url': c['video_url']},
+              },
+            },
+      ];
       if (out.length > 1) {
-        final i = out.indexWhere((c) => '${c['text']}'.length == out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b));
-        out.insert(0, out.removeAt(i));
+        final longest = out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b);
+        out.insert(0, out.removeAt(out.indexWhere((c) => '${c['text']}'.length == longest)));
       }
       if (mounted) setState(() => _comments = out);
     } catch (_) {}
