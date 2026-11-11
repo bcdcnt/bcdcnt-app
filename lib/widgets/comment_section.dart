@@ -286,7 +286,7 @@ class _CommentSectionState extends State<CommentSection> {
         $field(id: \$val) {
           comments(first: 10, page: \$page, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
             data {
-              id content created_at nickname is_request is_featured request_status processRequestUser { id username }
+              id content created_at nickname is_request is_featured featured_excerpt request_status processRequestUser { id username }
               user { id username avatar { url } roles { name alias display_in_comment group_type userRolePivot { custom_title } } }
               loves(first: 1) { paginatorInfo { total } }
               $myLove

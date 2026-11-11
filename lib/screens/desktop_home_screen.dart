@@ -495,14 +495,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// (is_featured), a different set each visit.
   Future<void> _fetchStory() async {
     try {
-      final d = await ApiClient.query('query { featuredComments(limit: 8) { id snippet likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
+      final d = await ApiClient.query('query { featuredComments(limit: 8) { id snippet excerpt likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
       const typenames = {'song': 'Song', 'folk': 'Folk', 'instrumental': 'Instrumental', 'poem': 'Poem', 'karaoke': 'Karaoke'};
       final out = [
         for (final c in _maps(d['featuredComments']))
           if (c['song_id'] != null && '${c['snippet'] ?? ''}'.isNotEmpty)
             {
               'id': c['id'],
-              'text': _sentences('${c['snippet']}'),
+              // The hand-picked trích đoạn; else the opening, cut at a sentence.
+              'text': '${c['excerpt'] ?? ''}'.trim().isNotEmpty ? '${c['excerpt']}'.trim() : _sentences('${c['snippet']}'),
+              'cut': '${c['excerpt'] ?? ''}'.trim().isNotEmpty || '${c['snippet']}'.length > 220,
               'likes': c['likes'],
               'created_at': c['created_at'],
               'user': {'username': c['username'], 'avatar': {'url': c['user_avatar']}},
@@ -1193,8 +1195,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const SizedBox(height: 4),
         InkWell(
           onTap: () => _openObject(obj, commentId: '${big['id']}'),
-          child: Text('${big['text']}', maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: 21, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text)),
+          // Longer trích đoạn: a little smaller so ~280 chars still fit.
+          child: Text('${big['text']}', maxLines: 5, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: '${big['text']}'.length > 180 ? 18 : 21, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text)),
         ),
+        if (big['cut'] == true) ...[
+          const SizedBox(height: 8),
+          InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => _openObject(obj, commentId: '${big['id']}'),
+            child: Text('Đọc toàn bộ ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+          ),
+        ],
         const Spacer(),
         const SizedBox(height: 18),
         Row(children: [

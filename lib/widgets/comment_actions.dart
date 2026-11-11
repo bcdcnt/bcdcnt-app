@@ -87,8 +87,10 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
     if (can('manage_thumbnail') && hasImg) const _A('replaceImage', 'Dùng làm minh hoạ', Icons.image_outlined),
     if (can('manage_document') && RegExp(r'<img|<oembed', caseSensitive: false).hasMatch(content)) const _A('tagDocument', 'Đặt làm tư liệu ảnh', Icons.photo_library_outlined),
     // Cảm nhận hay: shown in Người nghe kể on the home page (songs only).
-    if (moderator && !isReq && const ['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(type))
+    if (moderator && !isReq && const ['song', 'folk', 'instrumental', 'poem', 'karaoke'].contains(type)) ...[
       featured ? const _A('unfeature', 'Bỏ đánh dấu cảm nhận hay', Icons.star_rounded) : const _A('feature', 'Đánh dấu cảm nhận hay', Icons.star_outline_rounded),
+      if (featured) const _A('excerpt', 'Sửa trích đoạn cảm nhận', Icons.format_quote_rounded),
+    ],
     if (moderator) const _A('move', 'Chuyển bình luận', Icons.open_in_new_rounded),
     if (moderator) _A('hide', 'Ẩn bình luận', Icons.visibility_off_outlined, AppColors.error),
     if (isOwn || moderator) _A('delete', 'Xoá bình luận', Icons.delete_outline_rounded, AppColors.error),
@@ -196,11 +198,19 @@ Future<CommentChange?> showCommentActions(BuildContext context, {required Map<St
       return null;
     case 'feature':
     case 'unfeature':
-      final on = picked.key == 'feature';
+    case 'excerpt':
+      final on = picked.key != 'unfeature';
+      // Marking (or editing): the trích đoạn shown on the home card — copy
+      // 1–3 sentences from the comment; empty shows the comment's opening.
+      String? excerpt;
+      if (on) {
+        excerpt = await _askExcerpt(context, '${comment['featured_excerpt'] ?? ''}', _htmlToText(content));
+        if (excerpt == null) return null;
+      }
       return await guard<CommentChange?>(() async {
-        await auth.authedMutate(r'mutation($id: ID!, $f: Boolean!) { featureComment(id: $id, featured: $f) { id } }', {'id': id, 'f': on});
-        toast(on ? 'Đã đánh dấu cảm nhận hay — sẽ hiện ở Người nghe kể' : 'Đã bỏ đánh dấu cảm nhận hay');
-        return CommentUpdated({'is_featured': on});
+        await auth.authedMutate(r'mutation($id: ID!, $f: Boolean!, $e: String) { featureComment(id: $id, featured: $f, excerpt: $e) { id } }', {'id': id, 'f': on, 'e': ?excerpt});
+        toast(picked.key == 'excerpt' ? 'Đã lưu trích đoạn' : on ? 'Đã đánh dấu cảm nhận hay — sẽ hiện ở Người nghe kể' : 'Đã bỏ đánh dấu cảm nhận hay');
+        return CommentUpdated({'is_featured': on, 'featured_excerpt': ?excerpt});
       });
     case 'move':
       final link = await _askText(context, 'Chuyển bình luận', 'Dán link trang đích (bài hát, chủ đề…)', hint: 'https://bcdcnt.net/bai-hat/…');
@@ -267,6 +277,32 @@ Future<String?> _askText(BuildContext context, String title, String label, {Stri
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
         TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Chuyển')),
+      ],
+    ),
+  );
+}
+
+/// Trích đoạn for the home quote card: prefilled with the saved one, else
+/// the comment itself to cut down. Null = cancelled.
+Future<String?> _askExcerpt(BuildContext context, String saved, String full) {
+  final c = TextEditingController(text: saved.isNotEmpty ? saved : full);
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Trích đoạn cảm nhận'),
+      content: SizedBox(
+        width: 520,
+        child: TextField(
+          controller: c,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          decoration: const InputDecoration(helperText: 'Giữ 1–3 câu hay nhất, nguyên văn (dưới ~280 ký tự). Để trống: hiện phần đầu bình luận.', helperMaxLines: 2),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Huỷ')),
+        TextButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('Lưu')),
       ],
     ),
   );
