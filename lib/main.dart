@@ -67,6 +67,7 @@ import 'widgets/full_player.dart';
 import 'widgets/auth_dialogs.dart';
 import 'widgets/desktop_shell.dart';
 import 'screens/desktop_home_screen.dart';
+import 'screens/events_screen.dart';
 import 'screens/timeline_screen.dart';
 import 'screens/workspace_screen.dart';
 import 'screens/desktop_community_screen.dart';
@@ -462,6 +463,7 @@ final _router = GoRouter(
         GoRoute(path: '/binh-luan', redirect: (c, s) => MediaQuery.sizeOf(c).width >= 900 ? null : '/cong-dong', builder: (c, s) => const CommentsScreen()),
         GoRoute(path: '/cong-dong', pageBuilder: (c, s) => _tabPage(c, s, const DesktopCommunityScreen())),
         GoRoute(path: '/dong-thoi-gian', builder: (c, s) => const TimelineScreen()),
+        GoRoute(path: '/su-kien', builder: (c, s) => EventsScreen(focus: s.uri.queryParameters['id'])),
         GoRoute(path: '/ban-lam-viec', builder: (c, s) => WorkspaceScreen(queue: s.uri.queryParameters['q'], sort: s.uri.queryParameters['s'])),
         GoRoute(
           path: '/search',

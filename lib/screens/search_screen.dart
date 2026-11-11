@@ -1736,6 +1736,7 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
       ];
 
   static const _subKinds = [
+    ('Sự kiện', '/su-kien', Icons.event_rounded, Color(0xFF711313)),
     ('Nhạc thiếu nhi', '/tag/nhac-thieu-nhi', Icons.star_outline_rounded, Color(0xFF8B6914)),
     ('Nhạc nước ngoài', '/tag/nhac-nuoc-ngoai', Icons.public_rounded, Color(0xFF2D5E3A)),
     ('Nhạc nhẹ', '/tag/nhac-nhe', Icons.music_note_outlined, Color(0xFF6B5210)),

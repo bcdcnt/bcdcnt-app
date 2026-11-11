@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/events.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
+import 'events_screen.dart' show EventSheet;
 
 /// "Dòng thời gian" (desktop menu, canvas "Desktop · Dòng thời gian"): one
 /// chart of songs per year written (the sheet's year, else the song's) with
@@ -40,6 +42,8 @@ class _TimelineScreenState extends State<TimelineScreen> {
   bool _loading = true;
   Map<int, int> _counts = {};
   List<Map<String, dynamic>> _composers = [];
+  SiteEvent? _nextEvent;
+  int _eventCount = 0;
   final Set<String> _open = {};
   String? _starting;
   final _scroll = ScrollController();
@@ -53,6 +57,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
     super.initState();
     _load();
     _loadComposers();
+    loadSiteEvents().then((l) {
+      if (!mounted || l.isEmpty) return;
+      final now = DateTime.now();
+      setState(() {
+        _eventCount = l.length;
+        _nextEvent = ([...l]..sort((a, b) => a.daysUntil(now).compareTo(b.daysUntil(now)))).first;
+      });
+    }).catchError((_) {});
     ApiClient.query('query { songYearCounts { year total } }').then((d) {
       final m = <int, int>{};
       for (final e in ((d['songYearCounts'] ?? []) as List).whereType<Map>()) {
@@ -439,7 +451,49 @@ class _TimelineScreenState extends State<TimelineScreen> {
         alignment: Alignment.centerLeft,
         child: TextButton(onPressed: () => context.push('/nhac-si'), child: Text('Xem tất cả nhạc sĩ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
       ),
+      if (_nextEvent case final e?) ...[const SizedBox(height: 24), _eventsCard(e)],
     ]);
+  }
+
+  /// "Sự kiện trong năm": the next event, and the way to the events page.
+  Widget _eventsCard(SiteEvent e) {
+    final now = DateTime.now();
+    final date = e.nextDate(now);
+    final days = e.daysUntil(now);
+    final years = e.yearsOn(date);
+    return Material(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => context.push('/su-kien?id=${e.id}'),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: Text('Sự kiện trong năm', style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: -0.3, color: AppColors.text)))),
+              Text('$_eventCount ngày', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+            ]),
+            const SizedBox(height: 12),
+            Row(children: [
+              EventSheet(day: e.day, month: e.month, small: true),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(days == 0 ? 'HÔM NAY' : 'SẮP TỚI · ${days == 1 ? 'NGÀY MAI' : weekdaysVi[date.weekday - 1].toUpperCase()}', style: body(TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  const SizedBox(height: 2),
+                  Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  const SizedBox(height: 2),
+                  Text([if (years != null && years > 0) '$years năm', '${e.songCount} bài'].join(' · '), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 14),
+            Text('Xem lịch sự kiện ›', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+          ]),
+        ),
+      ),
+    );
   }
 }
 

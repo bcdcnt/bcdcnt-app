@@ -5,11 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/events.dart';
 import '../services/auth.dart';
 import '../services/lunar.dart';
 import '../services/player.dart';
 import '../services/radio_presence.dart';
 import '../widgets/anniversary_rail.dart';
+import 'events_screen.dart' show EventSheet;
 import '../widgets/auth_dialogs.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
@@ -220,9 +222,21 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         if (list.length >= 4) break;
         if (seen.add('${s['id']}')) list.add((s, null));
       }
-      for (final s in await _randomSongs()) {
-        if (list.length >= 6) break;
-        if (seen.add('${s['id']}')) list.add((s, null));
+      // Then what's coming up in the next 30 days, instead of random songs.
+      try {
+        final ahead = (await loadSiteEvents()).where((e) => e.daysUntil(now) > 0 && e.daysUntil(now) <= 30).toList()
+          ..sort((a, b) => a.daysUntil(now).compareTo(b.daysUntil(now)));
+        for (final e in ahead.take(2)) {
+          if (list.length >= 6) break;
+          list.add(({'__event': e, 'id': 'event-${e.id}'}, null));
+        }
+      } catch (_) {}
+      // Nothing at all to tell today: a well-loved song, so it's never empty.
+      if (list.isEmpty) {
+        for (final s in await _randomSongs()) {
+          if (list.length >= 3) break;
+          if (seen.add('${s['id']}')) list.add((s, null));
+        }
       }
       if (!mounted || list.isEmpty) return;
       setState(() { _todayList = list; _todayAt = 0; });
@@ -781,12 +795,22 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       // picture take that place (the date sits in the eyebrow instead).
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         if (_events.isNotEmpty)
-          _CalendarSheet(weekday: _weekdays[now.weekday - 1], day: now.day, month: now.month, year: now.year, lunar: '${lunar.label.replaceAll(' âm lịch', '')}\nnăm ${_canChi(lunar.year)}')
+          GestureDetector(
+            onTap: () => context.push('/su-kien'),
+            child: MouseRegion(cursor: SystemMouseCursors.click, child: _CalendarSheet(weekday: _weekdays[now.weekday - 1], day: now.day, month: now.month, year: now.year, lunar: '${lunar.label.replaceAll(' âm lịch', '')}\nnăm ${_canChi(lunar.year)}')),
+          )
         else
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: Builder(builder: (_) {
               final a = _todayList.isEmpty ? null : _todayList[_todayAt % _todayList.length].$2;
+              if ((_todayList.isEmpty ? null : _todayList[_todayAt % _todayList.length].$1['__event']) case final SiteEvent e) {
+                return GestureDetector(
+                  key: ValueKey('event-${e.id}'),
+                  onTap: () => context.push('/su-kien?id=${e.id}'),
+                  child: MouseRegion(cursor: SystemMouseCursors.click, child: EventSheet(day: e.day, month: e.month, year: e.year, size: 176)),
+                );
+              }
               final shadow = BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.4), blurRadius: 24, offset: const Offset(0, 12));
               // A song on its own keeps the square cover.
               if (a == null) {
@@ -851,6 +875,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
     final (s, a) = _todayList[_todayAt % _todayList.length];
     final n = _todayList.length;
+    if (s['__event'] case final SiteEvent e) return _eventSlide(e, now, n);
     final composer = _first(s['sheet']?['composers']);
     final poet = _first(s['poets']);
     final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
@@ -943,6 +968,44 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     );
   }
 
+  /// An event coming up within the month, in the song-of-the-day slideshow.
+  Widget _eventSlide(SiteEvent e, DateTime now, int n) {
+    final date = e.nextDate(now);
+    final days = e.daysUntil(now);
+    final years = e.yearsOn(date);
+    final when = days == 1 ? 'Ngày mai (${e.day}/${e.month})' : days < 7 ? '${weekdaysVi[date.weekday - 1]} này (${e.day}/${e.month})' : '${weekdaysVi[date.weekday - 1]} ${e.day}/${e.month}';
+    return MouseRegion(
+      onEnter: (_) => _todayHover = true,
+      onExit: (_) => _todayHover = false,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(children: [
+          Expanded(child: _eyebrow('SỰ KIỆN SẮP TỚI')),
+          if (n > 1) _dots(n, _todayAt, (i) => setState(() => _todayAt = i)),
+        ]),
+        const SizedBox(height: 10),
+        Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+        const SizedBox(height: 4),
+        Text('Tuyển tập ${e.songCount} bài', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.only(top: 12),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
+          child: Row(children: [
+            Icon(Icons.event_rounded, size: 15, color: AppColors.accentFg),
+            const SizedBox(width: 6),
+            Expanded(child: Text(years != null && years > 0 ? '$when · $years năm trước, ngày này' : when, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500, color: AppColors.accentFg)))),
+          ]),
+        ),
+        const SizedBox(height: 18),
+        Row(children: [
+          _playPill('Nghe', () => _start('event-${e.id}', e.title, () => loadEventSongs(e.id)), busy: _starting == 'event-${e.id}'),
+          const SizedBox(width: 10),
+          _outlineButton('Đến sự kiện', () => context.push('/su-kien?id=${e.id}')),
+        ]),
+      ]),
+    );
+  }
+
   /// Slideshow dots: the current one a longer wine pill; tap to jump.
   Widget _dots(int n, int at, ValueChanged<int> go, {Color? on}) => Row(mainAxisSize: MainAxisSize.min, children: [
         for (var i = 0; i < n; i++)
@@ -980,6 +1043,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Row(children: [
         Expanded(child: _eyebrow(eyebrow)),
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => context.push('/su-kien'),
+          child: Text('Tất cả sự kiện ›', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        ),
+        if (_events.length > 1) const SizedBox(width: 14),
         if (_events.length > 1)
           InkWell(
             borderRadius: BorderRadius.circular(8),

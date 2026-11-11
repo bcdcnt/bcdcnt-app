@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
+import '../services/events.dart';
+import 'list_search.dart' show foldVi;
 import '../services/player.dart';
 import '../services/theme_provider.dart';
 
@@ -74,6 +76,8 @@ class _CommandPaletteState extends State<CommandPalette> {
   final _listScroll = ScrollController();
   Timer? _debounce;
   List<Map<String, dynamic>> _hits = [];
+  /// "Sắp tới: 14/11 · Chủ đề nông nghiệp" under the events command.
+  String? _nextEventLabel;
   bool _loading = false;
   int _selected = 0;
   static const _rowHeight = 54.0; // matches _PaletteRow padding + content
@@ -84,6 +88,12 @@ class _CommandPaletteState extends State<CommandPalette> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+    loadSiteEvents().then((l) {
+      if (!mounted || l.isEmpty) return;
+      final now = DateTime.now();
+      final e = ([...l]..sort((a, b) => a.daysUntil(now).compareTo(b.daysUntil(now)))).first;
+      setState(() => _nextEventLabel = '${e.daysUntil(now) == 0 ? 'Hôm nay' : 'Sắp tới'}: ${e.day}/${e.month} · ${e.title}');
+    }).catchError((_) {});
   }
 
   @override
@@ -152,6 +162,7 @@ class _CommandPaletteState extends State<CommandPalette> {
       // Navigation
       _PaletteAction(icon: Icons.home_outlined, title: 'Trang chủ', subtitle: 'Đi tới /', run: () => go('/')),
       _PaletteAction(icon: Icons.search, title: 'Tìm kiếm', subtitle: 'Đi tới /search', run: () => go('/search')),
+      _PaletteAction(icon: Icons.event_outlined, title: 'Mở lịch Sự kiện', subtitle: _nextEventLabel ?? 'Các ngày kỷ niệm trong năm', run: () => go('/su-kien')),
       _PaletteAction(icon: Icons.chat_bubble_outline, title: 'Bình luận', subtitle: 'Đi tới /binh-luan', run: () => go('/binh-luan')),
       _PaletteAction(icon: Icons.leaderboard_outlined, title: 'Bảng xếp hạng', subtitle: 'Đi tới /bang-xep-hang', run: () => go('/bang-xep-hang')),
       _PaletteAction(icon: Icons.person_outline_rounded, title: 'Cá nhân', subtitle: 'Đi tới /library', run: () => go('/library')),
@@ -215,8 +226,9 @@ class _CommandPaletteState extends State<CommandPalette> {
   // "tìm" requires typing "tìm").
   bool _matchesAction(_PaletteAction a, String q) {
     if (q.isEmpty) return true;
-    final ql = q.toLowerCase();
-    return a.title.toLowerCase().contains(ql) || (a.subtitle?.toLowerCase().contains(ql) ?? false);
+    // With or without accents: "lich su kien" finds "Mở lịch Sự kiện".
+    final ql = foldVi(q);
+    return foldVi(a.title).contains(ql) || foldVi(a.subtitle ?? '').contains(ql);
   }
 
   void _open(Map<String, dynamic> hit) {
