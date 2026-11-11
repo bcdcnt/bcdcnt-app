@@ -727,10 +727,22 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
       decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(24), border: Border.all(color: _paperEdge)),
+      // An event gets the tear-off calendar; a plain day lets the song's
+      // picture take that place (the date sits in the eyebrow instead).
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        _CalendarSheet(weekday: _weekdays[now.weekday - 1], day: now.day, month: now.month, year: now.year, lunar: '${lunar.label.replaceAll(' âm lịch', '')}\nnăm ${_canChi(lunar.year)}'),
+        if (_events.isNotEmpty)
+          _CalendarSheet(weekday: _weekdays[now.weekday - 1], day: now.day, month: now.month, year: now.year, lunar: '${lunar.label.replaceAll(' âm lịch', '')}\nnăm ${_canChi(lunar.year)}')
+        else
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Container(
+              key: ValueKey(_todayCover()),
+              decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 10))]),
+              child: NetImage(url: _todayCover(), width: 176, height: 176, radius: 18, tint: true),
+            ),
+          ),
         const SizedBox(width: 26),
-        Expanded(child: _events.isNotEmpty ? _eventBody() : _songOfDay()),
+        Expanded(child: _events.isNotEmpty ? _eventBody() : _songOfDay(now)),
       ]),
     );
   }
@@ -760,7 +772,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ),
       );
 
-  Widget _songOfDay() {
+  /// The picture for the song of the day: the composer's portrait on an
+  /// anniversary, else the song's own.
+  String? _todayCover() {
+    if (_todayList.isEmpty) return null;
+    final (s, a) = _todayList[_todayAt % _todayList.length];
+    final avatar = a?.person['avatar'];
+    return (a != null ? (avatar is Map ? avatar['url'] : null) : (s['thumbnail'] as Map?)?['url'])?.toString();
+  }
+
+  Widget _songOfDay(DateTime now) {
     if (_todayList.isEmpty) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _eyebrow('BÀI HÁT HÔM NAY'),
@@ -781,14 +802,22 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (a != null && a.years > 0) '${_when(a.date, a.inDays)} là ${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} của nhạc sĩ.',
     ].join(' ');
     final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
-    final avatar = a?.person['avatar'];
-    final cover = (a != null ? (avatar is Map ? avatar['url'] : null) : (s['thumbnail'] as Map?)?['url'])?.toString();
     return MouseRegion(
       onEnter: (_) => _todayHover = true,
       onExit: (_) => _todayHover = false,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Row(children: [
-        Expanded(child: _eyebrow('BÀI HÁT HÔM NAY')),
+        Expanded(
+          child: Text.rich(
+            TextSpan(children: [
+              const TextSpan(text: 'BÀI HÁT HÔM NAY'),
+              TextSpan(text: ' · ${_weekdays[now.weekday - 1].toUpperCase()} ${now.day}/${now.month}', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.4, color: AppColors.textMuted.withValues(alpha: 0.75))),
+            ]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
+          ),
+        ),
         if (n > 1) _dots(n, _todayAt, (i) => setState(() => _todayAt = i)),
       ]),
       const SizedBox(height: 10),
@@ -797,8 +826,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         layoutBuilder: (cur, prev) => Stack(alignment: Alignment.topLeft, children: [...prev, ?cur]),
         child: Column(key: ValueKey('${s['id']}'), crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        NetImage(url: cover, width: 84, height: 84, radius: 14, tint: true),
-        const SizedBox(width: 16),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('${s['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
