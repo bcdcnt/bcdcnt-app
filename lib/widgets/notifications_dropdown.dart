@@ -46,6 +46,12 @@ class _NotificationsDropdownState extends State<NotificationsDropdown> {
 
   void _open() {
     final overlay = Overlay.of(context);
+    // Bell near the right edge (desktop top bar): the panel lines up with the
+    // bell's right side instead of running off the window.
+    final box = context.findRenderObject() as RenderBox?;
+    final screen = (overlay.context.findRenderObject() as RenderBox?)?.size.width ?? double.infinity;
+    final left = box?.localToGlobal(Offset.zero).dx ?? 0;
+    final alignRight = left + 8 + 360 > screen - 8;
     _overlay = OverlayEntry(builder: (ctx) {
       return Stack(children: [
         // Tap-outside scrim to dismiss.
@@ -63,7 +69,9 @@ class _NotificationsDropdownState extends State<NotificationsDropdown> {
             // there's 328px of space to the LEFT of the bell — true on
             // mobile but the desktop sidebar is only 220px wide, so the
             // popup spilled off-screen behind it.
-            offset: const Offset(8, 40),
+            offset: alignRight ? const Offset(0, 8) : const Offset(8, 40),
+            targetAnchor: alignRight ? Alignment.bottomRight : Alignment.topLeft,
+            followerAnchor: alignRight ? Alignment.topRight : Alignment.topLeft,
             child: Material(
               color: Colors.transparent,
               child: _NotifPanel(onClose: _close),
