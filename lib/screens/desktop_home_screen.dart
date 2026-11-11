@@ -113,7 +113,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   final Map<String, List<Map<String, dynamic>>> _top = {};
   // Người nghe kể · Chung tay xây dựng
   /// Người nghe kể: one cảm nhận hay (left, big) · the newest comments (right).
-  Map<String, dynamic>? _story;
+  List<Map<String, dynamic>> _storyList = [];
+  int _storyAt = 0;
+  bool _storyHover = false;
+  Timer? _storyTimer;
   List<Map<String, dynamic>> _comments = [];
   Map<String, int> _ctv = {};
   List<Map<String, dynamic>> _helpers = [];
@@ -143,6 +146,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void dispose() {
     _topTimer?.cancel();
+    _storyTimer?.cancel();
     super.dispose();
   }
 
@@ -487,11 +491,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  /// The big quote: a comment marked "cảm nhận hay" (is_featured), a
-  /// different one each visit; the longest of a few is told big.
+  /// The big quote: a slideshow of comments marked "cảm nhận hay"
+  /// (is_featured), a different set each visit.
   Future<void> _fetchStory() async {
     try {
-      final d = await ApiClient.query('query { featuredComments(limit: 4) { id snippet likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
+      final d = await ApiClient.query('query { featuredComments(limit: 8) { id snippet likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
       const typenames = {'song': 'Song', 'folk': 'Folk', 'instrumental': 'Instrumental', 'poem': 'Poem', 'karaoke': 'Karaoke'};
       final out = [
         for (final c in _maps(d['featuredComments']))
@@ -512,9 +516,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               },
             },
       ];
-      if (out.isEmpty) return;
-      final longest = out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b);
-      if (mounted) setState(() => _story = out.firstWhere((c) => '${c['text']}'.length == longest));
+      if (out.isEmpty || !mounted) return;
+      setState(() { _storyList = out; _storyAt = 0; });
+      // Next story every 9s; resting the mouse on it holds it.
+      _storyTimer?.cancel();
+      if (out.length > 1) {
+        _storyTimer = Timer.periodic(const Duration(seconds: 9), (_) {
+          if (mounted && !_storyHover) setState(() => _storyAt = (_storyAt + 1) % _storyList.length);
+        });
+      }
     } catch (_) {}
   }
 
@@ -629,7 +639,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     ]),
                   );
                 }),
-                if (_story != null || _comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
+                if (_storyList.isNotEmpty || _comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
                 if (_ctv.isNotEmpty) _together(),
               ]),
             ),
@@ -1144,14 +1154,42 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   Widget _stories() {
-    final big = _story ?? _comments.first;
+    final big = _storyList.isNotEmpty ? _storyList[_storyAt % _storyList.length] : _comments.first;
     final rest = _comments.where((c) => '${c['id']}' != '${big['id']}').take(3).toList();
     final obj = Map<String, dynamic>.from(big['object'] as Map);
-    final quote = Container(
+    final n = _storyList.length;
+    // Dots: one per story, the current one a longer wine pill; tap to jump.
+    final dots = Row(mainAxisSize: MainAxisSize.min, children: [
+      for (var i = 0; i < n; i++)
+        GestureDetector(
+          onTap: () => setState(() => _storyAt = i),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              margin: const EdgeInsets.only(left: 6),
+              width: i == _storyAt ? 20 : 8,
+              height: 8,
+              decoration: BoxDecoration(color: i == _storyAt ? AppColors.wine : _paperEdge, borderRadius: BorderRadius.circular(4)),
+            ),
+          ),
+        ),
+    ]);
+    final quote = MouseRegion(
+      onEnter: (_) => _storyHover = true,
+      onExit: (_) => _storyHover = false,
+      child: Container(
       padding: const EdgeInsets.fromLTRB(30, 26, 30, 24),
       decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(24), border: Border.all(color: _paperEdge)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('“', style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: 84, height: 0.6, fontWeight: FontWeight.w700, color: AppColors.isLight ? const Color(0xFFD8B9B3) : const Color(0xFF5A3A38))),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 350),
+        layoutBuilder: (cur, prev) => Stack(children: [...prev, ?cur]),
+        child: Column(key: ValueKey('${big['id']}'), crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('“', style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: 84, height: 0.6, fontWeight: FontWeight.w700, color: AppColors.isLight ? const Color(0xFFD8B9B3) : const Color(0xFF5A3A38))),
+          const Spacer(),
+          if (n > 1) Padding(padding: const EdgeInsets.only(top: 6), child: dots),
+        ]),
         const SizedBox(height: 4),
         InkWell(
           onTap: () => _openObject(obj, commentId: '${big['id']}'),
@@ -1192,6 +1230,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ),
         ]),
       ]),
+      ),
+    ),
     );
     Widget small(Map<String, dynamic> c) {
       final o = Map<String, dynamic>.from(c['object'] as Map);
@@ -1288,27 +1328,31 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       // Every member who helped this week, face by face: many hands, no words needed.
       if (_helpers.isNotEmpty) ...[
         const SizedBox(height: 14),
-        // Two even rows, however many hands: faces shrink to fit.
+        // One line, however many hands: faces overlap more as there are more.
         LayoutBuilder(builder: (context, c) {
-          final perRow = (_helpers.length + 1) ~/ 2;
-          final size = ((c.maxWidth - (perRow - 1) * 4) / perRow).clamp(18.0, 30.0);
-          Widget row(Iterable<Map<String, dynamic>> us) => Row(children: [
-                for (final (i, u) in us.indexed) ...[
-                  if (i > 0) const SizedBox(width: 4),
-                  Tooltip(
+          const size = 30.0;
+          final n = _helpers.length;
+          final step = n <= 1 ? 0.0 : ((c.maxWidth - size) / (n - 1)).clamp(10.0, size + 4);
+          return SizedBox(
+            height: size,
+            child: Stack(children: [
+              for (final (i, u) in _helpers.indexed)
+                Positioned(
+                  left: i * step,
+                  child: Tooltip(
                     message: '${u['username'] ?? ''}',
                     child: InkWell(
                       customBorder: const CircleBorder(),
                       onTap: () => context.push('/user/${u['id']}'),
-                      child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: size),
+                      child: Container(
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pink, width: 2)),
+                        child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: size - 4),
+                      ),
                     ),
                   ),
-                ],
-              ]);
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            row(_helpers.take(perRow)),
-            if (_helpers.length > perRow) ...[const SizedBox(height: 4), row(_helpers.skip(perRow))],
-          ]);
+                ),
+            ]),
+          );
         }),
       ],
     ]);
