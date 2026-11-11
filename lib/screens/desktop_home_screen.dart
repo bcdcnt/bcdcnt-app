@@ -1288,17 +1288,28 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       // Every member who helped this week, face by face: many hands, no words needed.
       if (_helpers.isNotEmpty) ...[
         const SizedBox(height: 14),
-        Wrap(spacing: 4, runSpacing: 4, children: [
-          for (final u in _helpers)
-            Tooltip(
-              message: '${u['username'] ?? ''}',
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () => context.push('/user/${u['id']}'),
-                child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 30),
-              ),
-            ),
-        ]),
+        // Two even rows, however many hands: faces shrink to fit.
+        LayoutBuilder(builder: (context, c) {
+          final perRow = (_helpers.length + 1) ~/ 2;
+          final size = ((c.maxWidth - (perRow - 1) * 4) / perRow).clamp(18.0, 30.0);
+          Widget row(Iterable<Map<String, dynamic>> us) => Row(children: [
+                for (final (i, u) in us.indexed) ...[
+                  if (i > 0) const SizedBox(width: 4),
+                  Tooltip(
+                    message: '${u['username'] ?? ''}',
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: () => context.push('/user/${u['id']}'),
+                      child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: size),
+                    ),
+                  ),
+                ],
+              ]);
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            row(_helpers.take(perRow)),
+            if (_helpers.length > perRow) ...[const SizedBox(height: 4), row(_helpers.skip(perRow))],
+          ]);
+        }),
       ],
     ]);
     return Container(
