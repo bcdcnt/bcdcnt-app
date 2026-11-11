@@ -1,35 +1,26 @@
 import 'dart:async';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
-import 'comments_screen.dart' show CommentTile;
 import '../services/lunar.dart';
+import '../services/player.dart';
 import '../widgets/anniversary_rail.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 
-// Trang chủ desktop (canvas "Desktop · Trang chủ"): Lời chào + Phát nhanh ·
-// Gợi ý ngày lễ (only near one) · Của bạn (Nghe tiếp | Mới thích | Nghe đi
-// nghe lại) · Nghe nhiều hôm nay · Kỷ niệm tuần này ·
-// Mới cập nhật · Câu chuyện bài hát · Có thể bạn thích · Nhạc sĩ tiêu biểu ·
-// Nghệ sĩ tiêu biểu. Guests get a login invite in place of "Của bạn".
-// Showcase rows stay always visible; only what the member picks has tabs.
+// Trang chủ desktop (canvas "Desktop · Trang chủ", chốt 11/11/2026): nghe là
+// chính, hoài cổ chỉ điểm xuyết. Lời chào + một câu về kho · Tờ lịch (sự kiện
+// hôm nay, hoặc Bài hát hôm nay) | Đài BCĐCNT · Dành cho bạn (4 thẻ phát
+// ngay; khách: lời mời đăng nhập) · Đi qua năm tháng · Mới về kho | Nghe
+// nhiều · Người nghe kể · Chung tay xây dựng. Lối tắt Thư viện nằm ở menu
+// trái; "nghe tiếp" là thanh phát nhớ bài lần trước.
 
 const _songFields = 'id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
 const _personal = 'id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 2) { data { id title slug } }';
-
-
-const _topQuery = '''query DesktopHomeTop {
-  topSongsToday(limit: 8) { $_songFields }
-}''';
-
 
 const _cats = [
   ('Tân nhạc', 'songs'),
@@ -38,12 +29,16 @@ const _cats = [
   ('Tiếng thơ', 'poems'),
   ('Thành viên hát', 'karaokes'),
 ];
+const _catSlugs = ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'];
+const _periods = [('Hôm nay', 'today'), ('Tháng này', 'month'), ('Năm nay', 'year'), ('Tất cả', 'all')];
 const _weekdays = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật'];
-const _tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'};
+const _tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
+final _march = RegExp(r'hành khúc|tiến quân|quốc ca|chiêu hồn|mặc niệm|nhạc hiệu|quân kỳ', caseSensitive: false);
 
 List<Map<String, dynamic>> _maps(dynamic list) => ((list ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
 bool _playable(Map s) => s['file']?['audio_url'] != null || s['file']?['video_url'] != null;
 String _key(Map s) => '${s['file_type'] ?? 'song'}-${s['id']}';
+String _first(dynamic people) => _maps(people is Map ? people['data'] : people).map((p) => '${p['title'] ?? ''}').firstWhere((t) => t.isNotEmpty && t != 'Đang cập nhật', orElse: () => '');
 
 String _greeting(DateTime now) {
   final h = now.hour;
@@ -58,11 +53,32 @@ String _postedAgo(String? createdAt) {
   if (at == null) return '';
   final now = DateTime.now();
   final days = DateTime(now.year, now.month, now.day).difference(DateTime(at.year, at.month, at.day)).inDays;
-  if (days <= 0) return 'Hôm nay';
-  if (days == 1) return 'Hôm qua';
+  if (days <= 0) return 'hôm nay';
+  if (days == 1) return 'hôm qua';
   if (days < 7) return '$days ngày trước';
   return timeago(createdAt);
 }
+
+/// "Ngày mai (12/11)", "Thứ Sáu này (13/11)": a day within the week.
+String _when(DateTime d, int inDays) {
+  if (inDays <= 0) return 'Hôm nay';
+  if (inDays == 1) return 'Ngày mai (${d.day}/${d.month})';
+  return '${_weekdays[d.weekday - 1]} này (${d.day}/${d.month})';
+}
+
+/// "năm Bính Ngọ".
+String _canChi(int y) {
+  const stems = ['Giáp', 'Ất', 'Bính', 'Đinh', 'Mậu', 'Kỷ', 'Canh', 'Tân', 'Nhâm', 'Quý'];
+  const branches = ['Tý', 'Sửu', 'Dần', 'Mão', 'Thìn', 'Tỵ', 'Ngọ', 'Mùi', 'Thân', 'Dậu', 'Tuất', 'Hợi'];
+  return '${stems[(y + 6) % 10]} ${branches[(y + 8) % 12]}';
+}
+
+Color get _paper => AppColors.isLight ? const Color(0xFFFBF6F1) : const Color(0xFF1E1819);
+Color get _paperEdge => AppColors.isLight ? const Color(0xFFEDE1D8) : const Color(0xFF2E2425);
+
+/// Đài channels. "Theo giờ" picks one by the hour: morning songs about the
+/// homeland, folk songs at noon, love songs at night, lullabies late.
+enum _Ch { auto, all, folk, instr }
 
 class DesktopHomeScreen extends StatefulWidget {
   const DesktopHomeScreen({super.key});
@@ -71,36 +87,54 @@ class DesktopHomeScreen extends StatefulWidget {
 }
 
 class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
-  List<Map<String, dynamic>> _comments = [], _top = [];
-  List<Map<String, dynamic>>? _docs;
-  /// Việc của CTV: queue → count (zeros left out).
-  Map<String, int> _ctv = {};
-  List<Map<String, dynamic>> _recent = [], _loved = [], _again = [], _forYou = [];
+  // Kho
+  Map<String, int> _totals = {};
+  // Tờ lịch
+  List<Map<String, dynamic>> _events = [];
+  final Map<String, List<Map<String, dynamic>>> _eventSongs = {};
+  int _eventAt = 0;
+  Map<String, dynamic>? _today;
+  Anniv? _todayAnniv;
   List<Anniv> _anniv = [];
-  int? _topDecade;
-  Map<String, dynamic>? _topComposer;
+  // Đài
+  _Ch _ch = _Ch.auto;
+  final Map<_Ch, List<Map<String, dynamic>>> _radio = {};
+  // Dành cho bạn
   String? _personalFor;
-  bool _loading = true;
-  /// 0 Nghe tiếp · 1 Mới thích · 2 Nghe đi nghe lại (remembered).
-  int _yours = 0;
-  int _cat = 0;
+  List<Map<String, dynamic>> _forYou = [], _forgotten = [];
+  Map<String, dynamic>? _myArtist, _myComposer;
+  // Năm tháng: decade → (songs, a well-known title).
+  List<(int, int, String)> _decades = [];
+  // Mới về kho | Nghe nhiều
+  int _cat = 0, _period = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
+  List<Map<String, dynamic>>? _docs;
+  final Map<String, List<Map<String, dynamic>>> _top = {};
+  // Người nghe kể · Chung tay xây dựng
+  List<Map<String, dynamic>> _comments = [];
+  Map<String, int> _ctv = {};
+  List<Map<String, dynamic>> _helpers = [];
+  int _helperCount = 0;
+
   String? _starting;
   Timer? _topTimer;
 
   @override
   void initState() {
     super.initState();
-    _fetch();
+    _fetchTotals();
+    _loadToday();
+    _loadRadio(_Ch.auto);
+    _fetchDecades();
     _fetchLatest(0);
-    loadAnniversaries(window: 7).then((a) {
-      if (mounted) setState(() => _anniv = a.take(6).toList());
+    _fetchTop(0);
+    _fetchComments();
+    _fetchCtv();
+    _fetchHelpers();
+    _topTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      _top.remove('today');
+      if (_period == 0) _fetchTop(0);
     });
-    SharedPreferences.getInstance().then((p) {
-      final v = p.getInt('desktop_home_yours');
-      if (v != null && mounted) setState(() => _yours = v.clamp(0, 2));
-    });
-    _topTimer = Timer.periodic(const Duration(minutes: 10), (_) => _fetchTop());
   }
 
   @override
@@ -116,91 +150,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final uid = auth.user?['id']?.toString();
     if (!auth.loading && uid != _personalFor) {
       _personalFor = uid;
-      _recent = []; _loved = []; _again = []; _forYou = []; _topDecade = null; _topComposer = null;
+      _forYou = []; _forgotten = []; _myArtist = null; _myComposer = null;
       if (uid != null) _fetchPersonal(auth, uid);
-    }
-  }
-
-  Future<void> _fetch() async {
-    await Future.wait([
-      _fetchComments(),
-      _fetchCtv(),
-      _fetchTop(),
-    ]);
-    if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _fetchTop() async {
-    try {
-      final d = await ApiClient.query(_topQuery);
-      if (!mounted) return;
-      setState(() => _top = _maps(d['topSongsToday']).map((s) => {...s, 'file_type': 'song'}).toList());
-    } catch (_) {}
-  }
-
-  List<Map<String, dynamic>> _objects(dynamic data) {
-    final seen = <String>{};
-    final out = <Map<String, dynamic>>[];
-    for (final e in _maps(data)) {
-      if (e['object'] is! Map) continue;
-      final m = Map<String, dynamic>.from(e['object']);
-      m['file_type'] = _tn[m['__typename']] ?? 'song';
-      if (e['total'] != null) m['plays'] = e['total'];
-      if (_playable(m) && seen.add(_key(m))) out.add(m);
-    }
-    return out;
-  }
-
-  void _fetchPersonal(AuthProvider auth, String uid) {
-    const objs = '__typename ... on Song { $_personal } ... on Folk { $_personal } ... on Instrumental { $_personal } ... on Poem { $_personal }';
-    auth.authedQuery('''query(\$id: ID!) { user(id: \$id) {
-      recentListens(first: 30, page: 1, orderBy: [{column: "id", order: DESC}]) { data { object { $objs } } }
-      loves(first: 30, page: 1, orderBy: [{column: "id", order: DESC}]) { data { object { $objs } } }
-    } }''', {'id': uid}).then((d) {
-      if (mounted && _personalFor == uid) setState(() { _recent = _objects(d['user']?['recentListens']?['data']); _loved = _objects(d['user']?['loves']?['data']); });
-    }).catchError((_) {});
-    ApiClient.query('query(\$w: WhereConditions) { mostListens(first: 20, where: \$w, orderBy: [{column: "total", order: DESC}]) { data { total object { $objs } } } }', {'w': {'column': 'user_id', 'value': uid}}).then((d) {
-      if (mounted && _personalFor == uid) setState(() => _again = _objects(d['mostListens']?['data']).where((s) => ((s['plays'] as num?) ?? 0) >= 3).toList());
-    }).catchError((_) {});
-    auth.authedQuery(r'''query($id: ID) { recommendedSongs(user_id: $id, limit: 30) { id title slug image audio_url video_url play_type file_type artists { id title slug } } }''', {'id': uid}).then((d) {
-      final out = <Map<String, dynamic>>[];
-      for (final m in _maps(d['recommendedSongs'])) {
-        if ((m['audio_url'] == null && m['video_url'] == null) || '${m['image'] ?? ''}'.isEmpty) continue;
-        out.add({
-          'id': m['id'], 'title': m['title'], 'slug': m['slug'], 'thumbnail': {'url': m['image']},
-          'file': {'audio_url': m['audio_url'], 'video_url': m['video_url']}, 'play_type': m['play_type'],
-          'file_type': const {'audio': 'song', 'video': 'song'}[m['file_type']] ?? m['file_type'] ?? 'song',
-          'artists': {'data': m['artists'] ?? []},
-        });
-      }
-      if (mounted && _personalFor == uid) setState(() => _forYou = out);
-    }).catchError((_) {});
-    auth.authedQuery('query { myListeningProfile { top_decade top_composers { id slug title } } }').then((d) {
-      final p = d['myListeningProfile'];
-      if (!mounted || _personalFor != uid || p is! Map) return;
-      setState(() {
-        _topDecade = (p['top_decade'] as num?)?.toInt();
-        final c = _maps(p['top_composers']);
-        _topComposer = c.isEmpty ? null : c.first;
-      });
-    }).catchError((_) {});
-  }
-
-
-  Future<void> _fetchLatest(int i) async {
-    final (_, q) = _cats[i];
-    if (_latest[q] != null) return;
-    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username } }' : 'artists(first: 3) { data { id slug title } }';
-    try {
-      final d = await ApiClient.query('query { $q(first: 8, orderBy: [{column: "id", order: DESC}]) { data { id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } $people } } }');
-      if (!mounted) return;
-      setState(() => _latest[q] = _maps(d[q]?['data']).map((s) {
-            if (q == 'karaokes' && s['users'] != null) s['artists'] = s['users'];
-            s['file_type'] = q.substring(0, q.length - 1);
-            return s;
-          }).toList());
-    } catch (_) {
-      if (mounted) setState(() => _latest[q] = []);
     }
   }
 
@@ -209,8 +160,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     playOrOpen(context, list[at], list, label);
   }
 
-  /// Phát nhanh: fetch a list, then play it.
-  Future<void> _quick(String key, String label, Future<List<Map<String, dynamic>>> Function() load) async {
+  /// Load a list, then play it; [key] shows a spinner on the button meanwhile.
+  Future<void> _start(String key, String label, Future<List<Map<String, dynamic>>> Function() load) async {
     if (_starting != null) return;
     setState(() => _starting = key);
     try {
@@ -222,18 +173,164 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> _songsWhere(Map<String, dynamic>? where) async {
-    final d = await ApiClient.query('query(\$w: WhereConditions) { songs(first: 40, random: true, where: \$w) { data { $_songFields } } }', {'w': where});
-    return _maps(d['songs']?['data']).map((s) => {...s, 'file_type': 'song'}).where(_playable).toList();
+  List<Map<String, dynamic>> _songs(dynamic data, [String kind = 'song']) => _maps(data).map((s) => {...s, 'file_type': kind}).where(_playable).toList();
+
+  // ------------------------------------------------------------ data
+
+  Future<void> _fetchTotals() async {
+    try {
+      final d = await ApiClient.query('query { songs(first: 1) { paginatorInfo { total } } composers(first: 1) { paginatorInfo { total } } artists(first: 1) { paginatorInfo { total } } folks(first: 1) { paginatorInfo { total } } }');
+      int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      if (mounted) setState(() => _totals = {for (final k in ['songs', 'composers', 'artists', 'folks']) k: n(k)});
+    } catch (_) {}
   }
 
-  /// ~30 instrumentals (≈ 2 hours) to listen to in the background: no
-  /// ceremonial music or marches, instruments taking turns so it never runs
-  /// five guitar pieces in a row.
+  /// Tờ lịch: an event running today wins; else a song by the composer
+  /// whose anniversary comes first this week; else one popular song a day.
+  Future<void> _loadToday() async {
+    final now = DateTime.now();
+    final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    unawaited(loadAnniversaries(window: 7).then((a) async {
+      if (!mounted) return;
+      setState(() => _anniv = a);
+      if (_events.isNotEmpty) return;
+      for (final x in a.where((x) => x.route == '/nhac-si/').take(3)) {
+        final s = await _topSongOf(x);
+        if (s != null && mounted) {
+          setState(() { _today = s; _todayAnniv = x; });
+          return;
+        }
+      }
+      await _rotationSong(now);
+    }));
+    try {
+      final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 20, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title description excerpt event_start event_end event_date items(first: 1) { paginatorInfo { total } } } } }''', {
+        'w': {'AND': [
+          {'column': 'is_system', 'value': '1'},
+          {'column': 'is_public', 'value': '1'},
+          {'column': 'event_start', 'operator': 'LTE', 'value': mmdd},
+          {'column': 'event_end', 'operator': 'GTE', 'value': mmdd},
+        ]},
+      });
+      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
+      bool oneDay(Map p) => p['event_start'] == p['event_end'];
+      final list = _maps(d['playlists']?['data']).where((p) => total(p) > 0).toList()
+        ..sort((a, b) {
+          if (oneDay(a) != oneDay(b)) return oneDay(a) ? -1 : 1;
+          final e = '${a['event_end']}'.compareTo('${b['event_end']}');
+          return e != 0 ? e : total(b).compareTo(total(a));
+        });
+      if (!mounted || list.isEmpty) return;
+      setState(() => _events = list);
+      _fetchEventSongs(list.first);
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?> _topSongOf(Anniv a) async {
+    try {
+      final d = await ApiClient.query('query(\$s: String!) { composer(slug: \$s) { songs(first: 6, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } } }', {'s': '${a.person['slug']}'});
+      final l = _songs(d['composer']?['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
+      return l.isEmpty ? null : l.first;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Same song all day, a different one tomorrow.
+  Future<void> _rotationSong(DateTime now) async {
+    final doy = now.difference(DateTime(now.year)).inDays;
+    try {
+      final d = await ApiClient.query('query(\$p: Int) { songs(first: 1, page: \$p, where: {column: "views", operator: GT, value: 20000}, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } }', {'p': doy % 300 + 1});
+      final l = _songs(d['songs']?['data']);
+      if (l.isNotEmpty && mounted) setState(() => _today = l.first);
+    } catch (_) {}
+  }
+
+  Future<void> _fetchEventSongs(Map<String, dynamic> pl) async {
+    final id = '${pl['id']}';
+    if (_eventSongs.containsKey(id)) return;
+    try {
+      // items, not songs: playlist.songs comes back empty for some event playlists.
+      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { items(first: 40, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { $_songFields } } } } } }', {'id': id});
+      final songs = [for (final it in _maps(d['playlist']?['items']?['data'])) if (it['object'] is Map && (it['object'] as Map).isNotEmpty) Map<String, dynamic>.from(it['object'] as Map)]
+          .where(_playable).map((s) => {...s, 'file_type': 'song'}).toList();
+      if (mounted) setState(() => _eventSongs[id] = songs);
+    } catch (_) {}
+  }
+
+  /// "Tối nay: tình ca"… — what "Theo giờ" plays right now.
+  (String, String?, String) get _slot {
+    final h = DateTime.now().hour;
+    if (h >= 5 && h < 11) return ('Sáng nay: quê hương', 'Tình yêu quê hương đất nước', 'song');
+    if (h >= 11 && h < 14) return ('Trưa nay: dân ca', null, 'folk');
+    if (h >= 14 && h < 18) return ('Chiều nay: cả kho', null, 'song');
+    if (h >= 18 && h < 22) return ('Tối nay: tình ca', 'Tình yêu đôi lứa / tình ca', 'song');
+    return ('Đêm nay: khúc ru', 'Hát ru', 'song');
+  }
+
+  String _chLabel(_Ch c) => switch (c) { _Ch.auto => _slot.$1, _Ch.all => 'Cả kho', _Ch.folk => 'Dân ca', _Ch.instr => 'Không lời' };
+
+  Future<List<Map<String, dynamic>>> _radioBatch(_Ch c) async {
+    List<Map<String, dynamic>> out;
+    Future<List<Map<String, dynamic>>> popular() async {
+      final d = await ApiClient.query('query { songs(first: 40, random: true, where: {column: "views", operator: GT, value: 2000}) { data { $_songFields } } }');
+      return _songs(d['songs']?['data']);
+    }
+    Future<List<Map<String, dynamic>>> folk() async {
+      final d = await ApiClient.query('query { folks(first: 40, random: true, where: {column: "views", operator: GT, value: 300}) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+      return _songs(d['folks']?['data'], 'folk');
+    }
+    switch (c) {
+      case _Ch.all:
+        out = await popular();
+      case _Ch.folk:
+        out = await folk();
+      case _Ch.instr:
+        out = await _instrumentalMix();
+      case _Ch.auto:
+        final (_, tag, kind) = _slot;
+        if (kind == 'folk') {
+          out = await folk();
+        } else if (tag != null) {
+          final d = await ApiClient.query('query(\$t: String!) { songsByTag(first: 40, random: true, tag: \$t, where: {column: "views", operator: GT, value: 1000}) { data { $_songFields } } }', {'t': tag});
+          out = _songs(d['songsByTag']?['data']);
+          if (out.length < 10) out = [...out, ...await popular()];
+        } else {
+          out = await popular();
+        }
+    }
+    // Marches never open the stream; they may come later.
+    out.sort((a, b) => (_march.hasMatch('${a['title']}') ? 1 : 0).compareTo(_march.hasMatch('${b['title']}') ? 1 : 0));
+    return out;
+  }
+
+  Future<void> _loadRadio(_Ch c) async {
+    if (_radio[c] != null) return;
+    try {
+      final l = await _radioBatch(c);
+      if (mounted) setState(() => _radio[c] = l);
+    } catch (_) {
+      if (mounted) setState(() => _radio[c] = []);
+    }
+  }
+
+  void _playRadio() {
+    final list = _radio[_ch] ?? const [];
+    if (list.isEmpty) return;
+    _play(list, 'Đài BCĐCNT · ${_chLabel(_ch)}');
+    final ch = _ch;
+    // Endless: near the end of the queue another random batch follows.
+    context.read<PlayerProvider>().setFetchMore((_) => _radioBatch(ch));
+    // Next time it starts fresh.
+    _radio.remove(ch);
+    _loadRadio(ch);
+  }
+
+  /// ~30 instrumentals: no ceremonial music or marches, instruments taking
+  /// turns so it never runs five guitar pieces in a row.
   Future<List<Map<String, dynamic>>> _instrumentalMix() async {
     final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'column': 'views', 'operator': 'GT', 'value': 300}});
     final ceremony = RegExp(r'nghi lễ|quân nhạc|kèn đồng', caseSensitive: false);
-    final march = RegExp(r'hành khúc|tiến quân|quốc ca|chiêu hồn|mặc niệm|nhạc hiệu|quân kỳ', caseSensitive: false);
     final kinds = {
       'guitar': RegExp(r'guitar|ghi-ta|ghita', caseSensitive: false),
       'bau': RegExp(r'đàn bầu', caseSensitive: false),
@@ -241,14 +338,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       'day': RegExp(r'vĩ cầm|violin|piano|dương cầm|đàn tranh|nhị|cello', caseSensitive: false),
     };
     final groups = <String, List<Map<String, dynamic>>>{};
-    for (final s in _maps(d['instrumentals']?['data'])) {
-      final s2 = {...s, 'file_type': 'instrumental'};
-      final who = songByline(s2);
-      if (!_playable(s2) || ceremony.hasMatch(who) || march.hasMatch('${s['title'] ?? ''}')) continue;
+    for (final s in _songs(d['instrumentals']?['data'], 'instrumental')) {
+      final who = songByline(s);
+      if (ceremony.hasMatch(who) || _march.hasMatch('${s['title'] ?? ''}')) continue;
       final k = kinds.keys.firstWhere((k) => kinds[k]!.hasMatch(who), orElse: () => 'other');
-      groups.putIfAbsent(k, () => []).add(s2);
+      groups.putIfAbsent(k, () => []).add(s);
     }
-    // Round-robin over the instruments, fullest first, so they alternate.
     final lists = groups.values.toList()..sort((a, b) => b.length.compareTo(a.length));
     final out = <Map<String, dynamic>>[];
     for (var i = 0; out.length < 30 && lists.any((l) => i < l.length); i++) {
@@ -259,421 +354,134 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return out;
   }
 
-  Future<List<Map<String, dynamic>>> _decadeSongs(int decade) => _songsWhere({'AND': [
-        {'column': 'year', 'operator': 'GTE', 'value': '$decade'},
-        {'column': 'year', 'operator': 'LT', 'value': '${decade + 10}'},
-        {'column': 'views', 'operator': 'GT', 'value': 1000},
-      ]});
-
-  Future<List<Map<String, dynamic>>> _composerSongs(String slug) async {
-    final d = await ApiClient.query('query(\$s: String!) { composer(slug: \$s) { songs(first: 40, orderBy: [{column: "views", order: DESC}]) { data { $_songFields } } } }', {'s': slug});
-    final l = _maps(d['composer']?['songs']?['data']).map((s) => {...s, 'file_type': 'song'}).where(_playable).toList()..shuffle();
-    return l;
-  }
-
-  Future<void> _playAnniv(Anniv a) async {
-    setState(() => _starting = 'anniv-${a.person['slug']}');
-    final songs = await annivSongs(a);
-    if (!mounted) return;
-    setState(() => _starting = null);
-    songs.isEmpty ? context.push('${a.route}${a.person['slug']}') : _play(songs, '${a.role} ${a.person['title'] ?? ''}');
-  }
-
-  // ------------------------------------------------------------------ UI
-
-  @override
-  Widget build(BuildContext context) {
-    final authed = context.select<AuthProvider, bool>((a) => a.isAuthenticated);
-    final name = context.select<AuthProvider, String?>((a) => a.user?['username']?.toString());
-    final now = DateTime.now();
-    // Each song once on the page: rails further down skip what is above.
-    final yoursList = [_recent, _loved, _again][_yours];
-    final seen = <String>{for (final s in [...yoursList, ..._top]) _key(s)};
-    final forYou = [for (final s in _forYou) if (seen.add(_key(s))) s];
-    return Material(
-      color: AppColors.bg,
-      child: LayoutBuilder(builder: (context, c) {
-        final pad = c.maxWidth < 900 ? 28.0 : 40.0;
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(pad, 28, pad, 56),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1200),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                Text(authed ? '${_greeting(now)}${name != null ? ', $name' : ''}' : 'Chào bạn', style: display(TextStyle(fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: AppColors.text))),
-                const SizedBox(height: 6),
-                Text('${_weekdays[now.weekday - 1]}, ${now.day}/${now.month} · ${LunarDate.fromSolar(now).label} âm lịch', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                const SizedBox(height: 18),
-                _quickRow(authed),
-                // Hôm nay: today's event playlists, if any.
-                const _TodayEvents(),
-                ..._yoursBlock(authed),
-                const SizedBox(height: 44),
-                LayoutBuilder(builder: (context, cc) => _section('Nghe nhiều hôm nay', _loading && _top.isEmpty ? _skeletonRows() : _rankGrid(cc.maxWidth >= 760), action: 'Xem tất cả', onAction: () => context.push('/bang-xep-hang'))),
-                if (_anniv.isNotEmpty) ...[_head('Kỷ niệm tuần này'), _annivGrid()],
-                // What is still missing in the catalogue, by the newest songs.
-                if (_ctv.isNotEmpty) _ctvStrip(),
-                _head('Mới cập nhật', tabs: [for (final (l, _) in _cats) l, 'Tư liệu'], tab: _cat, onTab: (i) { setState(() => _cat = i); i < _cats.length ? _fetchLatest(i) : _fetchDocs(); }, action: 'Xem tất cả', onAction: () => context.push(_cat < _cats.length ? '/the-loai/${const ['tan-nhac', 'dan-ca', 'khi-nhac', 'tieng-tho', 'thanh-vien-hat'][_cat]}' : '/tu-lieu')),
-                _cat < _cats.length ? _latestBlock() : _docsBlock(),
-                if (_comments.isNotEmpty) ...[_head('Bình luận mới', action: 'Xem tất cả', onAction: () => context.push('/binh-luan')), _newComments()],
-                if (authed && forYou.isNotEmpty) ...[_head('Có thể bạn thích', action: 'Làm mới', onAction: () => setState(() => _forYou.shuffle())), _cards(forYou, 'Có thể bạn thích')],
-              ]),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  /// Title row: optional tabs right after the title, action at the end.
-  Widget _head(String title, {double top = 44, String? action, VoidCallback? onAction, List<String>? tabs, int tab = 0, ValueChanged<int>? onTab, bool dot = false}) => Padding(
-        padding: EdgeInsets.only(top: top, bottom: 14),
-        child: Row(children: [
-          if (dot) ...[
-            Container(width: 10, height: 10, decoration: BoxDecoration(color: const Color(0xFFC62828), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFC62828).withValues(alpha: 0.18), spreadRadius: 4)])),
-            const SizedBox(width: 12),
-          ],
-          Text(title, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
-          if (tabs != null) ...[
-            const SizedBox(width: 18),
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(children: [
-                  for (var i = 0; i < tabs.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: Material(
-                        color: i == tab ? AppColors.text : AppColors.surface,
-                        borderRadius: BorderRadius.circular(18),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(18),
-                          onTap: () => onTab?.call(i),
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            alignment: Alignment.center,
-                            child: Text(tabs[i], style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: i == tab ? AppColors.bg : AppColors.textSecondary))),
-                          ),
-                        ),
-                      ),
-                    ),
-                ]),
-              ),
-            ),
-          ] else
-            const Spacer(),
-          if (action != null)
-            InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: onAction,
-              child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(action, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
-            ),
-        ]),
-      );
-
-  Widget _section(String title, Widget child, {String? action, VoidCallback? onAction, bool dot = false}) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _head(title, top: 0, action: action, onAction: onAction, dot: dot),
-        child,
-      ]);
-
-  // ---------- Phát nhanh ----------
-  Widget _quickRow(bool authed) {
-    final items = <(String, IconData, String, VoidCallback)>[
-      ('random', Icons.shuffle_rounded, 'Ngẫu nhiên kho nhạc', () => _quick('random', 'Ngẫu nhiên kho nhạc', () => _songsWhere({'column': 'views', 'operator': 'GT', 'value': 2000}))),
-      if (authed && _topDecade != null)
-        ('decade', Icons.play_arrow_rounded, 'Thập niên ${_topDecade! % 100}', () => _quick('decade', 'Thập niên $_topDecade', () => _decadeSongs(_topDecade!))),
-      if (authed && _topComposer != null)
-        ('composer', Icons.play_arrow_rounded, 'Theo ${_topComposer!['title']}', () => _quick('composer', 'Nhạc sĩ ${_topComposer!['title']}', () => _composerSongs('${_topComposer!['slug']}'))),
-      // About two hours of music without words, for listening while working.
-      ('instr', Icons.music_note_rounded, 'Nhạc không lời', () => _quick('instr', 'Nhạc không lời', _instrumentalMix)),
-      if (!authed) ('d70', Icons.play_arrow_rounded, 'Thập niên 70', () => _quick('d70', 'Thập niên 70', () => _decadeSongs(1970))),
-    ];
-    return Wrap(spacing: 10, runSpacing: 10, children: [
-      for (final (k, icon, label, onTap) in items)
-        Material(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(24),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(24),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(6, 6, 18, 6),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: AppColors.wine, shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: _starting == k
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white))
-                      : Icon(icon, size: 20, color: Colors.white),
-                ),
-                const SizedBox(width: 10),
-                Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
-              ]),
-            ),
-          ),
-        ),
-    ]);
-  }
-
-
-  // ---------- Của bạn ----------
-  List<Widget> _yoursBlock(bool authed) {
-    if (!authed) {
-      return [
-        _head('Của bạn'),
-        Container(
-          padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
-          child: Row(children: [
-            Container(width: 64, height: 64, decoration: BoxDecoration(color: AppColors.bg, shape: BoxShape.circle), child: Icon(Icons.favorite_rounded, size: 30, color: AppColors.accentFg)),
-            const SizedBox(width: 22),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Đăng nhập để nghe tiếp bài đang dở', style: body(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
-                const SizedBox(height: 4),
-                Text('Lưu bài yêu thích, tạo playlist, nhận gợi ý theo gu nghe của bạn. Nghe nhạc thì không cần đăng nhập.', style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
-              ]),
-            ),
-            const SizedBox(width: 16),
-            PillButton(label: 'Đăng nhập', height: 48, onTap: () => showDialog(context: context, useRootNavigator: true, builder: (_) => const LoginDialog())),
-            const SizedBox(width: 10),
-            PillButton(label: 'Đăng ký', height: 48, primary: false, onTap: () => showDialog(context: context, useRootNavigator: true, builder: (_) => const RegisterDialog())),
-          ]),
-        ),
-      ];
+  List<Map<String, dynamic>> _objects(dynamic data) {
+    final seen = <String>{};
+    final out = <Map<String, dynamic>>[];
+    for (final e in _maps(data)) {
+      if (e['object'] is! Map) continue;
+      final m = Map<String, dynamic>.from(e['object']);
+      m['file_type'] = _tn[m['__typename']] ?? 'song';
+      if (_playable(m) && seen.add(_key(m))) out.add(m);
     }
-    final lists = [_recent, _loved, _again];
-    final labels = ['Nghe gần đây', 'Yêu thích', 'Nghe đi nghe lại'];
-    final routes = ['/nghe-gan-day', '/yeu-thich', '/thong-ke'];
-    final list = lists[_yours];
-    return [
-      _head('Của bạn',
-          tabs: const ['Nghe tiếp', 'Mới thích', 'Nghe đi nghe lại'],
-          tab: _yours,
-          onTab: (i) {
-            setState(() => _yours = i);
-            SharedPreferences.getInstance().then((p) => p.setInt('desktop_home_yours', i));
-          },
-          action: 'Xem tất cả',
-          onAction: () => context.push(routes[_yours])),
-      if (list.isEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24),
-          child: Text(const ['Bài bạn nghe sẽ hiện ở đây để nghe tiếp.', 'Thả tim một bài để giữ nó ở đây.', 'Bài bạn nghe từ 3 lần trở lên sẽ hiện ở đây.'][_yours], style: AppText.bodyText),
-        )
-      else
-        _cards(list, labels[_yours], badge: (s) => _yours == 1 ? _heartBadge() : (_yours == 2 && s['plays'] != null ? _textBadge('${s['plays']} lần') : null)),
-    ];
+    return out;
   }
 
-  Widget _heartBadge() => Container(
-        width: 28, height: 28,
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), shape: BoxShape.circle),
-        child: Icon(Icons.favorite_rounded, size: 16, color: AppColors.accentLight),
-      );
-  Widget _textBadge(String t) => Container(
-        height: 26,
-        padding: const EdgeInsets.symmetric(horizontal: 9),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), borderRadius: BorderRadius.circular(13)),
-        child: Text(t, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF161112)))),
-      );
-
-  /// One row of song cards: ~160px each, more columns on wider windows.
-  Widget _cards(List<Map<String, dynamic>> list, String label, {Widget? Function(Map<String, dynamic>)? badge}) => LayoutBuilder(builder: (context, c) {
-        final cols = ((c.maxWidth + 18) / 162).floor().clamp(4, 9);
-        final w = (c.maxWidth - (cols - 1) * 18) / cols;
-        final shown = list.take(cols).toList();
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (var i = 0; i < shown.length; i++) ...[
-            if (i > 0) const SizedBox(width: 18),
-            SizedBox(
-              width: w,
-              child: draggableSong(context, shown[i], InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => _play(list, label, i),
-                onSecondaryTap: () => showSongActions(context, shown[i]),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Stack(children: [
-                    SongCover(song: shown[i], size: w, radius: 16),
-                    if (badge?.call(shown[i]) case final b?) Positioned(right: 8, top: 8, child: b),
-                  ]),
-                  const SizedBox(height: 8),
-                  Text('${shown[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
-                  Text(songByline(shown[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                ]),
-              )),
-            ),
-          ],
-        ]);
-      });
-
-  // ---------- Lists ----------
-  Widget _row(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, Widget? trail, String? sub}) => draggableSong(context, s, InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => _play(list, label, i),
-        onSecondaryTap: () => showSongActions(context, s),
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
-          child: Row(children: [
-            ?lead,
-            SongCover(song: s, size: 46, radius: 10),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${s['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-                Text(sub ?? songByline(s, withComposer: true), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-              ]),
-            ),
-            ?trail,
-            // Rows with a badge ("● 3 người") keep it alone; right-click still opens the menu.
-            if (trail == null) IconButton(tooltip: 'Tuỳ chọn', onPressed: () => showSongActions(context, s), icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
-          ]),
-        ),
-      ));
-
-  /// Full-width "Nghe nhiều hôm nay": eight songs in two columns.
-  Widget _rankGrid(bool wide) {
-    String sub(Map<String, dynamic> s) {
-      final a = songByline(s);
-      if (a.isNotEmpty) return a;
-      final c = songByline({'sheet': s['sheet']}, withComposer: true);
-      return c.isEmpty ? '' : 'Nhạc: $c';
-    }
-    Widget r(int i) => _row(_top[i], _top, i, 'Nghe nhiều hôm nay', sub: sub(_top[i]),
-        lead: SizedBox(width: 46, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w300, color: i < 3 ? AppColors.accentFg : AppColors.textMuted)))));
-    final n = _top.length.clamp(0, 8);
-    if (!wide) return Column(children: [for (var i = 0; i < n; i++) r(i)]);
-    final half = (n + 1) ~/ 2;
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Expanded(child: Column(children: [for (var i = 0; i < half; i++) r(i)])),
-      const SizedBox(width: 40),
-      Expanded(child: Column(children: [for (var i = half; i < n; i++) r(i)])),
-    ]);
+  void _fetchPersonal(AuthProvider auth, String uid) {
+    auth.authedQuery(r'''query($id: ID) { recommendedSongs(user_id: $id, limit: 30) { id title slug image audio_url video_url play_type file_type artists { id title slug } } }''', {'id': uid}).then((d) {
+      final out = <Map<String, dynamic>>[];
+      for (final m in _maps(d['recommendedSongs'])) {
+        if (m['audio_url'] == null && m['video_url'] == null) continue;
+        out.add({
+          'id': m['id'], 'title': m['title'], 'slug': m['slug'], 'thumbnail': {'url': m['image']},
+          'file': {'audio_url': m['audio_url'], 'video_url': m['video_url']}, 'play_type': m['play_type'],
+          'file_type': const {'audio': 'song', 'video': 'song'}[m['file_type']] ?? m['file_type'] ?? 'song',
+          'artists': {'data': m['artists'] ?? []},
+        });
+      }
+      if (mounted && _personalFor == uid) setState(() => _forYou = out);
+    }).catchError((_) {});
+    ApiClient.query(r'''query($id: ID!) { a: userTopListens(user_id: $id, type: "artist", period: "month", limit: 3) { id title slug image count } c: userTopListens(user_id: $id, type: "composer", period: "month", limit: 3) { id title slug image count } }''', {'id': uid}).then((d) {
+      // Groups ("Tốp ca…", "Hợp ca…") are not "your singer".
+      final group = RegExp(r'tốp ca|hợp ca|hợp xướng|dàn nhạc|ban nhạc|đồng ca', caseSensitive: false);
+      final a = _maps(d['a']).where((x) => !group.hasMatch('${x['title']}')).toList();
+      final c = _maps(d['c']);
+      if (mounted && _personalFor == uid) setState(() { _myArtist = a.isEmpty ? null : a.first; _myComposer = c.isEmpty ? null : c.first; });
+    }).catchError((_) {});
+    // Lâu rồi chưa nghe: loved, but not in the last ~3 months of listening.
+    const objs = '__typename ... on Song { $_personal } ... on Folk { $_personal } ... on Instrumental { $_personal } ... on Poem { $_personal }';
+    auth.authedQuery('''query(\$id: ID!) { user(id: \$id) {
+      loves(first: 100, page: 1, orderBy: [{column: "id", order: DESC}]) { data { created_at object { $objs } } }
+      recentListens(first: 300, page: 1, orderBy: [{column: "id", order: DESC}]) { data { created_at object { __typename ... on Song { id } ... on Folk { id } ... on Instrumental { id } ... on Poem { id } } } }
+    } }''', {'id': uid}).then((d) {
+      final cutoff = DateTime.now().subtract(const Duration(days: 90));
+      final heard = <String>{};
+      for (final e in _maps(d['user']?['recentListens']?['data'])) {
+        final at = DateTime.tryParse('${e['created_at'] ?? ''}'.replaceFirst(' ', 'T'));
+        final o = e['object'];
+        if (at != null && at.isAfter(cutoff) && o is Map) heard.add('${_tn[o['__typename']] ?? 'song'}-${o['id']}');
+      }
+      final loved = _maps(d['user']?['loves']?['data']).where((e) {
+        final at = DateTime.tryParse('${e['created_at'] ?? ''}'.replaceFirst(' ', 'T'));
+        return at == null || at.isBefore(cutoff);
+      }).toList();
+      final out = _objects(loved).where((s) => !heard.contains(_key(s))).toList()..shuffle();
+      if (mounted && _personalFor == uid) setState(() => _forgotten = out);
+    }).catchError((_) {});
   }
 
-  Widget _skeletonRows() => Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
-
-  // ---------- Kỷ niệm ----------
-  Widget _annivGrid() => LayoutBuilder(builder: (context, c) {
-        const cols = 3;
-        final w = (c.maxWidth - (cols - 1) * 16) / cols;
-        return Wrap(spacing: 16, runSpacing: 16, children: [
-          for (final a in _anniv.take(6))
-            SizedBox(
-              width: w,
-              child: Material(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(18),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => context.push('${a.route}${a.person['slug']}'),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-                    child: Row(children: [
-                      NetImage(url: a.person['avatar']?['url']?.toString(), width: 60, height: 60, circle: true, tint: true),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(annivWhen(a).toUpperCase(), style: body(TextStyle(fontSize: 12, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
-                          Text('${a.person['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
-                          Text(annivYears(a), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
-                        ]),
-                      ),
-                      IconButton.filled(
-                        tooltip: 'Nghe các bài của ${a.person['title'] ?? ''}',
-                        style: IconButton.styleFrom(backgroundColor: AppColors.wine, fixedSize: const Size(44, 44)),
-                        onPressed: () => _playAnniv(a),
-                        icon: _starting == 'anniv-${a.person['slug']}'
-                            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white))
-                            : const Icon(Icons.play_arrow_rounded, color: Colors.white),
-                      ),
-                    ]),
-                  ),
-                ),
-              ),
-            ),
-        ]);
-      });
-
-  // ---------- Mới cập nhật ----------
-  Widget _latestBlock() {
-    final list = _latest[_cats[_cat].$2];
-    if (list == null) return _skeletonRows();
-    if (list.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa tải được, thử lại sau.', style: AppText.bodyText));
-    final label = 'Mới cập nhật · ${_cats[_cat].$1}';
-    Widget col(int from) => Column(children: [
-          for (var i = from; i < list.length && i < from + 4; i++)
-            _row(list[i], list, i, label, sub: [songByline(list[i]), _postedAgo(list[i]['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · ')),
-        ]);
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: col(0)), const SizedBox(width: 36), Expanded(child: col(4))]);
+  Future<List<Map<String, dynamic>>> _personSongs(String type, String slug) async {
+    final d = await ApiClient.query('query(\$s: String!) { $type(slug: \$s) { songs(first: 60, orderBy: [{column: "views", order: DESC}]) { data { $_songFields } } } }', {'s': slug});
+    return _songs(d[type]?['songs']?['data'])..shuffle();
   }
 
-  // ---------- Nhờ bạn giúp sức ----------
-  /// Pictures, tags, lyrics still missing across the whole catalogue — shown
-  /// to everyone to invite help; same totals as the Bàn làm việc queues.
-  Future<void> _fetchCtv() async {
+  Future<void> _fetchDecades() async {
     try {
-      final d = await ApiClient.query('''query {
-        no_image: songs(first: 1, where: {column: "image_id", operator: IS_NULL}) { paginatorInfo { total } }
-        no_tag: sheets(first: 1, untagged: true) { paginatorInfo { total } }
-        no_lyric: songs(first: 1, where: {OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}) { paginatorInfo { total } }
-      }''');
-      int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
-      if (mounted) setState(() => _ctv = {for (final k in ['no_image', 'no_tag', 'no_lyric']) if (n(k) > 0) k: n(k)});
+      final d = await ApiClient.query('query { songYearCounts { year total } }');
+      final counts = <int, int>{};
+      for (final r in _maps(d['songYearCounts'])) {
+        final y = (r['year'] as num?)?.toInt() ?? 0;
+        if (y < 1940) continue;
+        final dec = y >= 2010 ? 2010 : y ~/ 10 * 10;
+        counts[dec] = (counts[dec] ?? 0) + ((r['total'] as num?)?.toInt() ?? 0);
+      }
+      final decs = counts.keys.toList()..sort();
+      // One well-known title per decade, in one request.
+      final q = decs.map((y) => 'd$y: songsByYear(from: $y, to: ${y == 2010 ? 2100 : y + 10}, first: 1) { data { title } }').join(' ');
+      final t = await ApiClient.query('query { $q }');
+      if (!mounted) return;
+      setState(() => _decades = [for (final y in decs) (y, counts[y]!, '${_maps(t['d$y']?['data']).firstOrNull?['title'] ?? ''}')]);
     } catch (_) {}
   }
 
-  /// A zero hides its item, all zero hides the strip. Each item opens its queue.
-  Widget _ctvStrip() {
-    const labels = {'no_image': 'bài chờ ảnh minh hoạ', 'no_tag': 'bản nhạc chờ gắn tag', 'no_lyric': 'bài chờ lời'};
-    return Container(
-      margin: const EdgeInsets.only(top: 44),
-      constraints: const BoxConstraints(minHeight: 56),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.isLight ? const Color(0xFFFBF3F3) : AppColors.accentSoft.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.isLight ? const Color(0xFFEBD3D3) : AppColors.accentSoft),
-      ),
-      child: LayoutBuilder(builder: (context, box) {
-      final link = TextButton(onPressed: () => context.push('/ban-lam-viec'), child: Text('Mở Bàn làm việc ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg))));
-      final items = <Widget>[
-        Text('NHỜ BẠN GIÚP SỨC', style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-        for (final e in _ctv.entries) ...[
-          InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => context.push('/ban-lam-viec?q=${e.key}&s=new'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  constraints: const BoxConstraints(minWidth: 28),
-                  height: 24,
-                  padding: const EdgeInsets.symmetric(horizontal: 7),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: AppColors.wine, borderRadius: BorderRadius.circular(12)),
-                  child: Text(formatInt(e.value), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white))),
-                ),
-                const SizedBox(width: 8),
-                Text(labels[e.key]!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-              ]),
-            ),
-          ),
-        ],
-      ];
-      // Wide: one line, the link on the right edge. Narrow: wraps instead of overflowing.
-      if (box.maxWidth >= 1000) return Row(children: [for (final w in items) ...[w, const SizedBox(width: 18)], const Spacer(), link]);
-      return Wrap(spacing: 18, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [...items, link]);
-      }),
-    );
+  Future<List<Map<String, dynamic>>> _decadeSongs(int y) async {
+    final d = await ApiClient.query('query { songsByYear(from: $y, to: ${y == 2010 ? 2100 : y + 10}, first: 80) { data { $_songFields } } }');
+    return _songs(d['songsByYear']?['data'])..shuffle();
   }
 
-  // ---------- Bình luận mới ----------
+  Future<void> _fetchLatest(int i) async {
+    final (_, q) = _cats[i];
+    if (_latest[q] != null) return;
+    final people = q == 'karaokes' ? 'users(first: 3) { data { id slug: username title: username } }' : 'artists(first: 3) { data { id slug title } }';
+    final sheet = q == 'songs' ? 'sheet { composers(first: 2) { data { id slug title } } }' : '';
+    try {
+      final d = await ApiClient.query('query { $q(first: 7, orderBy: [{column: "id", order: DESC}]) { data { id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } uploader { username } $people $sheet } } }');
+      if (!mounted) return;
+      setState(() => _latest[q] = _maps(d[q]?['data']).map((s) {
+            if (q == 'karaokes' && s['users'] != null) s['artists'] = s['users'];
+            s['file_type'] = q.substring(0, q.length - 1);
+            return s;
+          }).toList());
+    } catch (_) {
+      if (mounted) setState(() => _latest[q] = []);
+    }
+  }
+
+  Future<void> _fetchDocs() async {
+    if (_docs != null) return;
+    try {
+      final d = await ApiClient.query('query { documents(first: 7, orderBy: [{column: "id", order: DESC}]) { data { id title type created_at thumbnail { url } uploader { username } } } }');
+      if (mounted) setState(() => _docs = _maps(d['documents']?['data']));
+    } catch (_) {
+      if (mounted) setState(() => _docs = []);
+    }
+  }
+
+  Future<void> _fetchTop(int i) async {
+    final p = _periods[i].$2;
+    if (_top[p] != null) return;
+    try {
+      if (p == 'today') {
+        final d = await ApiClient.query('query { topSongsToday(limit: 7) { $_songFields } }');
+        if (mounted) setState(() => _top[p] = _songs(d['topSongsToday']));
+      } else {
+        final d = await ApiClient.query('query(\$p: String) { statisticListen(period: \$p, type: "song", first: 7) { data { object { ... on Song { $_songFields } } } } }', {'p': p});
+        if (mounted) setState(() => _top[p] = [for (final e in _maps(d['statisticListen']?['data'])) if (e['object'] is Map) {...Map<String, dynamic>.from(e['object']), 'file_type': 'song'}].where(_playable).toList());
+      }
+    } catch (_) {
+      if (mounted) setState(() => _top[p] = []);
+    }
+  }
+
   Future<void> _fetchComments() async {
     try {
       final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at is_request user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
@@ -682,7 +490,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       for (final c in _maps(d['latestComments']?['data'])) {
         final who = '${c['user']?['id'] ?? ''}';
         final obj = c['object'];
-        if (who.isEmpty || obj is! Map || obj['title'] == null) continue;
+        // Requests ("nhờ bổ sung…") are work, not stories.
+        if (who.isEmpty || obj is! Map || obj['title'] == null || c['is_request'] == true || c['is_request'] == 1) continue;
         final raw = '${c['content'] ?? ''}';
         // Lyrics pasted as a comment (numbered verses, many short lines) are not a story.
         final lines = raw.split(RegExp(r'<br\s*/?>|</p>|\n', caseSensitive: false)).map((l) => l.replaceAll(RegExp(r'<[^>]*>'), '').trim()).where((l) => l.isNotEmpty).toList();
@@ -691,6 +500,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         if (lyricLike || text.length < 30 || !seen.add(who)) continue;
         out.add({...c, 'text': text});
         if (out.length == 4) break;
+      }
+      // The longest one is the story told big.
+      if (out.length > 1) {
+        final i = out.indexWhere((c) => '${c['text']}'.length == out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b));
+        out.insert(0, out.removeAt(i));
       }
       if (mounted) setState(() => _comments = out);
     } catch (_) {}
@@ -706,336 +520,1043 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return '${cut.substring(0, cut.lastIndexOf(' '))}…';
   }
 
-  /// Same tiles as Cộng đồng › Bình luận mới, two columns.
-  Widget _newComments() {
-    void open(Map<String, dynamic> obj, {String? commentId}) {
-      final kind = const {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem'}['${obj['__typename']}'] ?? 'song';
-      // From a comment: land on the song's comments, that comment lit up.
-      context.push(commentId != null ? '/$kind/${obj['id']}?binh-luan=1' : '/$kind/${obj['id']}', extra: {...obj, 'file_type': kind, 'highlightCommentId': ?commentId});
-    }
-    Widget item(Map<String, dynamic> c) => Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
-          child: CommentTile(comment: c, onOpenObject: open, padding: const EdgeInsets.symmetric(vertical: 18), maxLines: 3),
+  /// Pictures, lyrics, tags still missing across the whole catalogue — the
+  /// same totals as the Bàn làm việc queues.
+  Future<void> _fetchCtv() async {
+    try {
+      final d = await ApiClient.query('''query {
+        songs(first: 1) { paginatorInfo { total } }
+        sheets(first: 1) { paginatorInfo { total } }
+        no_image: songs(first: 1, where: {column: "image_id", operator: IS_NULL}) { paginatorInfo { total } }
+        no_lyric: songs(first: 1, where: {OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}) { paginatorInfo { total } }
+        no_tag: sheets(first: 1, untagged: true) { paginatorInfo { total } }
+      }''');
+      int n(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      if (mounted) setState(() => _ctv = {'songs': n('songs'), 'sheets': n('sheets'), 'no_image': n('no_image'), 'no_lyric': n('no_lyric'), 'no_tag': n('no_tag')});
+    } catch (_) {}
+  }
+
+  /// Members who earned points since Monday: how many, and a few faces.
+  Future<void> _fetchHelpers() async {
+    final now = DateTime.now();
+    final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final from = '${monday.year}-${monday.month.toString().padLeft(2, '0')}-${monday.day.toString().padLeft(2, '0')}';
+    try {
+      final d = await ApiClient.query('query(\$w: WhereConditions) { points(first: 500, where: \$w) { data { point user { id username avatar { url } } } } }', {'w': {'column': 'created_at', 'operator': 'GTE', 'value': from}});
+      final by = <String, (Map<String, dynamic>, int)>{};
+      for (final p in _maps(d['points']?['data'])) {
+        final u = p['user'];
+        if (u is! Map) continue;
+        final id = '${u['id']}';
+        by[id] = (Map<String, dynamic>.from(u), (by[id]?.$2 ?? 0) + ((p['point'] as num?)?.toInt() ?? 0));
+      }
+      final list = by.values.toList()..sort((a, b) => b.$2.compareTo(a.$2));
+      if (mounted) setState(() { _helperCount = list.length; _helpers = [for (final x in list.take(5)) x.$1]; });
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------------------ UI
+
+  @override
+  Widget build(BuildContext context) {
+    final authed = context.select<AuthProvider, bool>((a) => a.isAuthenticated);
+    final name = context.select<AuthProvider, String?>((a) => a.user?['username']?.toString());
+    final now = DateTime.now();
+    return Material(
+      color: AppColors.bg,
+      child: LayoutBuilder(builder: (context, c) {
+        final pad = c.maxWidth < 900 ? 28.0 : 40.0;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(pad, 28, pad, 56),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1200),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Text('${_greeting(now)}${authed && name != null ? ', $name' : ''}', style: display(TextStyle(fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: AppColors.text))),
+                const SizedBox(height: 6),
+                _stats(),
+                const SizedBox(height: 22),
+                LayoutBuilder(builder: (context, cc) {
+                  final today = _todayCard(now);
+                  final radio = _radioCard();
+                  if (cc.maxWidth < 980) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [today, const SizedBox(height: 20), radio]);
+                  return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(flex: 13, child: today), const SizedBox(width: 20), Expanded(flex: 10, child: radio)]));
+                }),
+                ...(authed ? _forYouBlock() : _guestInvite()),
+                if (_decades.isNotEmpty) ...[_head('Đi qua năm tháng', action: 'Mở Dòng thời gian', onAction: () => context.push('/dong-thoi-gian')), _decadeChart()],
+                const SizedBox(height: 48),
+                LayoutBuilder(builder: (context, cc) {
+                  final latest = _latestCol();
+                  final top = _topCol();
+                  if (cc.maxWidth < 900) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [latest, const SizedBox(height: 40), top]);
+                  return IntrinsicHeight(
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Expanded(flex: 17, child: latest),
+                      Padding(padding: const EdgeInsets.symmetric(horizontal: 28), child: VerticalDivider(width: 1, thickness: 1, color: AppColors.border)),
+                      Expanded(flex: 10, child: top),
+                    ]),
+                  );
+                }),
+                if (_comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
+                if (_ctv.isNotEmpty) _together(),
+              ]),
+            ),
+          ),
         );
-    return LayoutBuilder(builder: (context, c) {
-      if (c.maxWidth < 760) return Column(children: [for (final x in _comments) item(x)]);
-      // Rows of two, each pair as tall as its taller comment, so the rules line up.
-      return Column(children: [
-        for (var i = 0; i < _comments.length; i += 2)
-          IntrinsicHeight(
-            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Expanded(child: item(_comments[i])),
-              const SizedBox(width: 36),
-              Expanded(child: i + 1 < _comments.length ? item(_comments[i + 1]) : const SizedBox()),
-            ]),
+      }),
+    );
+  }
+
+  Widget _stats() {
+    if (_totals.isEmpty) return const SizedBox(height: 20);
+    final mute = body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    final b = body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text));
+    return Text.rich(TextSpan(style: mute, children: [
+      const TextSpan(text: 'Hôm nay kho có '),
+      TextSpan(text: formatInt(_totals['songs']), style: b),
+      const TextSpan(text: ' bài hát của '),
+      TextSpan(text: formatInt(_totals['composers']), style: b),
+      const TextSpan(text: ' nhạc sĩ, '),
+      TextSpan(text: formatInt(_totals['artists']), style: b),
+      const TextSpan(text: ' nghệ sĩ — và '),
+      TextSpan(text: formatInt(_totals['folks']), style: b),
+      const TextSpan(text: ' làn điệu dân ca.'),
+    ]));
+  }
+
+  /// Title row, action at the end.
+  Widget _head(String title, {double top = 48, String? action, VoidCallback? onAction}) => Padding(
+        padding: EdgeInsets.only(top: top, bottom: 16),
+        child: Row(children: [
+          Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text)))),
+          if (action != null)
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onAction,
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text('$action ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+            ),
+        ]),
+      );
+
+  Widget _chips(List<String> labels, int sel, ValueChanged<int> onTap) => Wrap(spacing: 6, runSpacing: 6, children: [
+        for (var i = 0; i < labels.length; i++)
+          Material(
+            color: i == sel ? AppColors.text : AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => onTap(i),
+              child: Container(
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 13),
+                child: Center(widthFactor: 1, child: Text(labels[i], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: i == sel ? AppColors.bg : AppColors.textSecondary)))),
+              ),
+            ),
           ),
       ]);
-    });
+
+  Widget _playDot(double size, {Color? bg, Color? fg, bool busy = false}) => Container(
+        width: size, height: size,
+        decoration: BoxDecoration(color: bg ?? AppColors.wine, shape: BoxShape.circle),
+        alignment: Alignment.center,
+        child: busy
+            ? SizedBox(width: size * 0.4, height: size * 0.4, child: CircularProgressIndicator(strokeWidth: 2.2, color: fg ?? Colors.white))
+            : Icon(Icons.play_arrow_rounded, size: size * 0.56, color: fg ?? Colors.white),
+      );
+
+  // ---------- Tờ lịch ----------
+  Widget _todayCard(DateTime now) {
+    final lunar = LunarDate.fromSolar(now);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+      decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(24), border: Border.all(color: _paperEdge)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        _CalendarSheet(weekday: _weekdays[now.weekday - 1], day: now.day, month: now.month, year: now.year, lunar: '${lunar.label.replaceAll(' âm lịch', '')}\nnăm ${_canChi(lunar.year)}'),
+        const SizedBox(width: 26),
+        Expanded(child: _events.isNotEmpty ? _eventBody() : _songOfDay()),
+      ]),
+    );
   }
 
-  // ---------- Tư liệu (tab của Mới cập nhật) ----------
-  Future<void> _fetchDocs() async {
-    if (_docs != null) return;
-    try {
-      final d = await ApiClient.query('query { documents(first: 8, orderBy: [{column: "id", order: DESC}]) { data { id title type created_at thumbnail { url } uploader { username } } } }');
-      if (mounted) setState(() => _docs = _maps(d['documents']?['data']));
-    } catch (_) {
-      if (mounted) setState(() => _docs = []);
+  Widget _eyebrow(String t) => Text(t, style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.textMuted)));
+
+  Widget _outlineButton(String label, VoidCallback onTap) => Material(
+        color: AppColors.isLight ? Colors.white : AppColors.surface,
+        shape: StadiumBorder(side: BorderSide(color: _paperEdge)),
+        child: InkWell(customBorder: const StadiumBorder(), onTap: onTap, child: Container(height: 38, padding: const EdgeInsets.symmetric(horizontal: 14), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))))),
+      );
+
+  Widget _playPill(String label, VoidCallback? onTap, {bool busy = false}) => Material(
+        color: AppColors.wine,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(5, 5, 16, 5),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              _playDot(28, bg: Colors.white, fg: AppColors.wine, busy: busy),
+              const SizedBox(width: 8),
+              Text(label, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white))),
+            ]),
+          ),
+        ),
+      );
+
+  Widget _upcoming(Set<String> skip) {
+    final list = _anniv.where((a) => !skip.contains('${a.route}${a.person['id']}')).take(2).toList();
+    if (list.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.only(top: 12),
+      decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
+      child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        Padding(padding: const EdgeInsets.only(right: 4), child: _eyebrow('SẮP TỚI')),
+        for (final a in list)
+          Material(
+            color: AppColors.isLight ? Colors.white : AppColors.surface,
+            shape: StadiumBorder(side: BorderSide(color: _paperEdge)),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: () => context.push('${a.route}${a.person['slug']}'),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(3, 3, 10, 3),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  NetImage(url: a.person['avatar']?['url']?.toString(), width: 22, height: 22, circle: true, tint: true),
+                  const SizedBox(width: 7),
+                  Text('${a.date.day}/${a.date.month}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  const SizedBox(width: 6),
+                  Text('${a.person['title'] ?? ''}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
+                ]),
+              ),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  Widget _songOfDay() {
+    final s = _today;
+    if (s == null) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _eyebrow('BÀI HÁT HÔM NAY'),
+        const SizedBox(height: 12),
+        const Skeleton(width: 260, height: 24),
+        const SizedBox(height: 10),
+        const Skeleton(width: 200, height: 14),
+      ]);
     }
-  }
-
-  Widget _docsBlock() {
-    final list = _docs;
-    if (list == null) return _skeletonRows();
-    if (list.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa tải được, thử lại sau.', style: AppText.bodyText));
-    const kinds = {'image': ('Ảnh', Icons.image_outlined), 'audio': ('Âm thanh', Icons.graphic_eq_rounded), 'video': ('Video', Icons.videocam_outlined), 'news': ('Bài viết', Icons.article_outlined), 'sheet': ('Bản nhạc', Icons.library_music_outlined)};
-    Widget row(Map<String, dynamic> d) {
-      final k = kinds['${d['type']}'] ?? ('Tư liệu', Icons.folder_outlined);
-      final thumb = d['thumbnail']?['url']?.toString();
-      return InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => context.push('/tu-lieu/chi-tiet/${d['id']}'),
-        child: Container(
-          height: 64,
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
-          child: Row(children: [
-            thumb != null
-                ? NetImage(url: thumb, width: 46, height: 46, radius: 10, tint: true)
-                : Container(width: 46, height: 46, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)), child: Icon(k.$2, color: AppColors.textMuted)),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${d['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
-                Text([k.$1, if (d['uploader']?['username'] != null) '${d['uploader']['username']}', _postedAgo(d['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+    final composer = _first(s['sheet']?['composers']);
+    final poet = _first(s['poets']);
+    final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
+    final singers = songByline(s);
+    final a = _todayAnniv;
+    final story = [
+      if (composer.isNotEmpty && year != null) poet.isNotEmpty ? 'Nhạc sĩ $composer phổ thơ $poet năm $year.' : 'Nhạc sĩ $composer viết bài hát này năm $year.',
+      if (a != null && a.years > 0) '${_when(a.date, a.inDays)} là ${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} của nhạc sĩ.',
+    ].join(' ');
+    final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
+    final avatar = a?.person['avatar'];
+    final cover = (a != null ? (avatar is Map ? avatar['url'] : null) : (s['thumbnail'] as Map?)?['url'])?.toString();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      _eyebrow('BÀI HÁT HÔM NAY'),
+      const SizedBox(height: 10),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        NetImage(url: cover, width: 84, height: 84, radius: 14, tint: true),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('${s['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+            const SizedBox(height: 4),
+            Text.rich(
+              TextSpan(children: [
+                TextSpan(text: line),
+                if (line.isNotEmpty && singers.isNotEmpty) const TextSpan(text: ' · '),
+                TextSpan(text: singers, style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
               ]),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
             ),
           ]),
         ),
-      );
-    }
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Expanded(child: Column(children: [for (final d in list.take(4)) row(d)])),
-      const SizedBox(width: 36),
-      Expanded(child: Column(children: [for (final d in list.skip(4).take(4)) row(d)])),
+      ]),
+      if (story.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Text(story, maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+      ],
+      const SizedBox(height: 14),
+      Row(children: [
+        _playPill('Nghe', () => _play([s], 'Bài hát hôm nay')),
+        const SizedBox(width: 10),
+        _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
+      ]),
+      _upcoming({if (a != null) '${a.route}${a.person['id']}'}),
     ]);
-  }
-
-}
-
-/// "Hôm nay": the event playlists running today (event_start ≤ today ≤
-/// event_end, set in the playlist's settings) as a tear-off calendar page —
-/// canvas "Desktop · Trang chủ — khối Sự kiện B". Several at once: the
-/// pages stack and "Tiếp: <next>" / ‹ › / ←→ flip between them, wrapping
-/// round; never on its own.
-/// Nothing running → nothing shown.
-class _TodayEvents extends StatefulWidget {
-  const _TodayEvents();
-  @override
-  State<_TodayEvents> createState() => _TodayEventsState();
-}
-
-class _TodayEventsState extends State<_TodayEvents> {
-  List<Map<String, dynamic>> _events = [];
-  final Map<String, List<Map<String, dynamic>>> _songs = {};
-  int _at = 0;
-  bool _hover = false;
-
-  static String _mmdd(DateTime d) => '${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  @override
-  void initState() {
-    super.initState();
-    HardwareKeyboard.instance.addHandler(_onKey);
-    _load();
-  }
-
-  @override
-  void dispose() {
-    HardwareKeyboard.instance.removeHandler(_onKey);
-    super.dispose();
-  }
-
-  bool _onKey(KeyEvent e) {
-    if (!_hover || _events.length < 2 || e is! KeyDownEvent || typingInField()) return false;
-    if (e.logicalKey == LogicalKeyboardKey.arrowLeft) { _go(_at - 1); return true; }
-    if (e.logicalKey == LogicalKeyboardKey.arrowRight) { _go(_at + 1); return true; }
-    return false;
-  }
-
-  Future<void> _load() async {
-    final today = _mmdd(DateTime.now());
-    try {
-      final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 20, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title description excerpt event_start event_end event_date items(first: 1) { paginatorInfo { total } } } } }''', {
-        'w': {'AND': [
-          {'column': 'is_system', 'value': '1'},
-          {'column': 'is_public', 'value': '1'},
-          {'column': 'event_start', 'operator': 'LTE', 'value': today},
-          {'column': 'event_end', 'operator': 'GTE', 'value': today},
-        ]},
-      });
-      int total(Map p) => ((p['items']?['paginatorInfo']?['total'] as num?) ?? 0).toInt();
-      bool oneDay(Map p) => p['event_start'] == p['event_end'];
-      final list = _maps(d['playlists']?['data']).where((p) => total(p) > 0).toList()
-        ..sort((a, b) {
-          // One-day events first, then the one ending soonest, then more songs.
-          if (oneDay(a) != oneDay(b)) return oneDay(a) ? -1 : 1;
-          final e = '${a['event_end']}'.compareTo('${b['event_end']}');
-          return e != 0 ? e : total(b).compareTo(total(a));
-        });
-      if (!mounted || list.isEmpty) return;
-      setState(() => _events = list);
-      _fetchSongs(list.first);
-    } catch (_) {}
-  }
-
-  Future<void> _fetchSongs(Map<String, dynamic> pl) async {
-    final id = '${pl['id']}';
-    if (_songs.containsKey(id)) return;
-    try {
-      // items, not songs: playlist.songs comes back empty for some event playlists.
-      final d = await ApiClient.query('query(\$id: ID!) { playlist(id: \$id) { items(first: 12, orderBy: [{column: "position", order: ASC}]) { data { object { ... on Song { $_songFields } } } } } }', {'id': id});
-      final songs = [for (final it in _maps(d['playlist']?['items']?['data'])) if (it['object'] is Map && (it['object'] as Map).isNotEmpty) Map<String, dynamic>.from(it['object'] as Map)]
-          .where(_playable).map((s) => {...s, 'file_type': 'song'}).toList();
-      if (mounted) setState(() => _songs[id] = songs);
-    } catch (_) {}
-  }
-
-  /// Wraps round: past the last event comes the first again.
-  void _go(int i) {
-    i %= _events.length;
-    setState(() => _at = i);
-    _fetchSongs(_events[i]);
   }
 
   String _plain(dynamic html) => '${html ?? ''}'.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
-  @override
-  Widget build(BuildContext context) {
-    if (_events.isEmpty) return const SizedBox.shrink();
-    final ev = _events[_at];
+  /// An event running today (event_start ≤ today ≤ event_end) takes the
+  /// place of the song of the day; several: "Tiếp: …" flips, wrapping.
+  Widget _eventBody() {
+    final ev = _events[_eventAt];
     final id = '${ev['id']}';
-    final songs = _songs[id] ?? const <Map<String, dynamic>>[];
+    final songs = _eventSongs[id] ?? const <Map<String, dynamic>>[];
     final title = '${ev['title'] ?? ''}';
-    final date = DateTime.tryParse('${ev['event_date'] ?? ''}');
-    // No original date: the page shows the day the event leads up to.
-    final parts = '${ev['event_end'] ?? ''}'.split('-');
-    final day = date?.day ?? int.tryParse(parts.last) ?? DateTime.now().day;
-    final month = date?.month ?? int.tryParse(parts.first) ?? DateTime.now().month;
-    final today = _mmdd(DateTime.now());
-    final onDay = date != null && _mmdd(date) == today;
-    final ago = date != null ? DateTime.now().year - date.year : 0;
-    final end = '${ev['event_end'] ?? ''}'.split('-');
-    final eyebrow = onDay && ago > 0
-        ? '$ago NĂM TRƯỚC, NGÀY NÀY'
-        : ev['event_start'] != ev['event_end'] && end.length == 2 ? 'ĐẾN ${end[1]}/${end[0]}' : 'HÔM NAY';
     final desc = _plain(ev['excerpt']).isNotEmpty ? _plain(ev['excerpt']) : _plain(ev['description']);
-    final many = _events.length > 1;
-    Widget circle(IconData icon, VoidCallback? onTap) => Material(
-          color: AppColors.surface,
-          shape: const CircleBorder(),
-          child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: SizedBox(width: 40, height: 40, child: Icon(icon, size: 22, color: onTap == null ? AppColors.textMuted.withValues(alpha: 0.45) : AppColors.text))),
-        );
-    return MouseRegion(
-      onEnter: (_) => _hover = true,
-      onExit: (_) => _hover = false,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 36, bottom: 14),
-          child: Row(children: [
-            Text('Hôm nay', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
-            const Spacer(),
-            if (many) ...[
-              // Names the next event instead of "1 / 2", so it is clear what is there.
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _go(_at + 1),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text('Tiếp: ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 320),
-                      child: Text('${_events[(_at + 1) % _events.length]['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
-                    ),
+    final end = '${ev['event_end'] ?? ''}'.split('-');
+    final eyebrow = ev['event_start'] != ev['event_end'] && end.length == 2 ? 'HÔM NAY · ĐẾN ${end[1]}/${end[0]}' : 'HÔM NAY';
+    void go(int i) {
+      setState(() => _eventAt = i % _events.length);
+      _fetchEventSongs(_events[_eventAt]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        Expanded(child: _eyebrow(eyebrow)),
+        if (_events.length > 1)
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => go(_eventAt + 1),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 260),
+              child: Text('Tiếp: ${_events[(_eventAt + 1) % _events.length]['title'] ?? ''} ›', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+            ),
+          ),
+      ]),
+      const SizedBox(height: 8),
+      Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+      const SizedBox(height: 8),
+      Text(desc.isNotEmpty ? desc : '${(ev['items']?['paginatorInfo']?['total'] as num?)?.toInt() ?? songs.length} bài', maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+      const SizedBox(height: 14),
+      Row(children: [
+        _playPill(songs.length > 1 ? 'Phát tất cả' : 'Phát', songs.isEmpty ? null : () => _play(songs, title)),
+        const SizedBox(width: 10),
+        _outlineButton('Xem playlist', () => context.push('/playlist/$id')),
+      ]),
+      _upcoming(const {}),
+    ]);
+  }
+
+  // ---------- Đài ----------
+  Widget _radioCard() {
+    final list = _radio[_ch];
+    final first = list?.firstOrNull;
+    const soft = Color(0xFFE3CFCB);
+    final player = context.watch<PlayerProvider>();
+    final onAir = player.isPlaying && (player.sourceLabel ?? '').startsWith('Đài BCĐCNT');
+    Widget chip(String label, _Ch c) {
+      final sel = c == _ch;
+      return Material(
+        color: sel ? Colors.white : Colors.white.withValues(alpha: 0.10),
+        shape: StadiumBorder(side: BorderSide(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.18))),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: () {
+            setState(() => _ch = c);
+            _loadRadio(c);
+          },
+          child: Container(height: 32, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const RadialGradient(center: Alignment(0.7, -1.0), radius: 1.3, colors: [Color(0xFF7A2424), Color(0xFF4A1617), Color(0xFF341011)], stops: [0, 0.55, 1]),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
+          const SizedBox(width: 8),
+          Expanded(child: Text('ĐÀI BCĐCNT · ${_chLabel(_ch).toUpperCase()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: Color(0xFFEBC2BC))))),
+        ]),
+        const SizedBox(height: 12),
+        Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
+        const SizedBox(height: 20),
+        Material(
+          color: Colors.white.withValues(alpha: 0.07),
+          borderRadius: BorderRadius.circular(18),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(18),
+            onTap: first == null ? null : (onAir ? player.togglePlay : _playRadio),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
+              child: Row(children: [
+                Container(
+                  width: 56, height: 56,
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  alignment: Alignment.center,
+                  child: list == null
+                      ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.wine))
+                      : Icon(onAir ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32, color: AppColors.wine),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(onAir ? 'ĐANG PHÁT' : 'MỞ ĐẦU BẰNG', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Color(0xFFD9B6B0)))),
+                    Text(onAir ? '${player.currentSong?['title'] ?? ''}' : '${first?['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
+                    Text(songByline((onAir ? player.currentSong : first) ?? const <String, dynamic>{}), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
                   ]),
                 ),
+                if (onAir) const NowPlayingBars(color: Colors.white),
+              ]),
+            ),
+          ),
+        ),
+        if (!onAir && list != null && list.length > 2) ...[
+          const SizedBox(height: 12),
+          for (var i = 1; i <= 2; i++)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text.rich(
+                TextSpan(children: [
+                  TextSpan(text: '${i + 1}  ', style: const TextStyle(color: Color(0xFFD9B6B0))),
+                  TextSpan(text: '${list[i]['title'] ?? ''}', style: const TextStyle(color: Colors.white)),
+                  TextSpan(text: ' · ${songByline(list[i])}', style: const TextStyle(color: Color(0xFFD9B6B0), fontWeight: FontWeight.w600)),
+                ]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
               ),
+            ),
+        ],
+        const Spacer(),
+        const SizedBox(height: 14),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          chip('Theo giờ', _Ch.auto),
+          chip('Cả kho', _Ch.all),
+          chip('Dân ca', _Ch.folk),
+          chip('Không lời', _Ch.instr),
+        ]),
+      ]),
+    );
+  }
+
+  // ---------- Dành cho bạn ----------
+  List<Widget> _forYouBlock() {
+    final cards = <Widget>[
+      if (_forYou.isNotEmpty)
+        _MixCard(
+          cover: Stack(fit: StackFit.expand, children: [
+            const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFC79A3E), Color(0xFF7A5414)]))),
+            Positioned(right: 18, top: 12, child: Icon(Icons.auto_awesome_rounded, size: 72, color: Colors.white.withValues(alpha: 0.28))),
+          ]),
+          eyebrow: 'GỢI Ý HÔM NAY',
+          title: '${_forYou.length} bài bạn chưa nghe',
+          sub: 'Hợp gu bạn · đổi mỗi sáng',
+          busy: false,
+          onPlay: () => _play(_forYou, 'Gợi ý hôm nay'),
+        ),
+      if (_myArtist != null)
+        _MixCard(
+          cover: NetImage(url: _myArtist!['image']?.toString(), tint: true),
+          eyebrow: 'GIỌNG CA CỦA BẠN',
+          title: '${_myArtist!['title'] ?? ''}',
+          sub: 'Nghe nhiều nhất tháng này · ${_myArtist!['count'] ?? 0} lượt',
+          busy: _starting == 'artist',
+          onPlay: () => _start('artist', 'Giọng ca ${_myArtist!['title'] ?? ''}', () => _personSongs('artist', '${_myArtist!['slug']}')),
+        ),
+      if (_myComposer != null)
+        _MixCard(
+          cover: NetImage(url: _myComposer!['image']?.toString(), tint: true),
+          eyebrow: 'NHẠC SĨ CỦA BẠN',
+          title: '${_myComposer!['title'] ?? ''}',
+          sub: '${_myComposer!['count'] ?? 0} lượt tháng này · phát cả kho',
+          busy: _starting == 'composer',
+          onPlay: () => _start('composer', 'Nhạc sĩ ${_myComposer!['title'] ?? ''}', () => _personSongs('composer', '${_myComposer!['slug']}')),
+        ),
+      if (_forgotten.length >= 5)
+        _MixCard(
+          cover: _Mosaic(songs: _forgotten.take(4).toList(), sepia: true),
+          eyebrow: 'LÂU RỒI CHƯA NGHE',
+          title: '${_forgotten.length} bài bạn từng thích',
+          sub: 'Hơn 3 tháng chưa mở lại',
+          busy: false,
+          onPlay: () => _play(_forgotten, 'Lâu rồi chưa nghe'),
+        ),
+    ];
+    if (cards.isEmpty) return const [];
+    return [
+      _head('Dành cho bạn', top: 40),
+      LayoutBuilder(builder: (context, c) {
+        final cols = c.maxWidth < 760 ? 2 : 4;
+        final w = (c.maxWidth - (cols - 1) * 18) / cols;
+        return Wrap(spacing: 18, runSpacing: 18, children: [for (final x in cards) SizedBox(width: w, child: x)]);
+      }),
+    ];
+  }
+
+  List<Widget> _guestInvite() => [
+        const SizedBox(height: 40),
+        Container(
+          padding: const EdgeInsets.fromLTRB(26, 22, 26, 22),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+          child: Row(children: [
+            for (final (c1, c2, icon) in const [(Color(0xFFC79A3E), Color(0xFF7A5414), Icons.auto_awesome_rounded), (Color(0xFFC0392B), Color(0xFF711313), Icons.favorite_rounded)]) ...[
+              Container(width: 64, height: 64, decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), gradient: LinearGradient(colors: [c1, c2])), child: Icon(icon, size: 28, color: Colors.white)),
               const SizedBox(width: 10),
-              circle(Icons.chevron_left_rounded, () => _go(_at - 1)),
-              const SizedBox(width: 8),
-              circle(Icons.chevron_right_rounded, () => _go(_at + 1)),
-            ] else
-              TextButton(onPressed: () => context.push('/playlist/$id'), child: Text('Mở playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+            ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Dành cho bạn', style: body(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+                const SizedBox(height: 4),
+                Text('Đăng nhập để có gợi ý theo gu nghe, lưu bài yêu thích và nghe tiếp từ chỗ đã dừng.', style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              ]),
+            ),
+            const SizedBox(width: 16),
+            PillButton(label: 'Đăng nhập', height: 44, onTap: () => showDialog(context: context, useRootNavigator: true, builder: (_) => const LoginDialog())),
+            const SizedBox(width: 10),
+            PillButton(label: 'Đăng ký', height: 44, primary: false, onTap: () => showDialog(context: context, useRootNavigator: true, builder: (_) => const RegisterDialog())),
           ]),
         ),
-        Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(22)),
-          // Song cards only as many as fit beside the text (narrow windows: fewer).
-          child: LayoutBuilder(builder: (context, box) {
-          // Text keeps ~340px; song cards fill the rest (up to five), so no hole in between.
-          // The text takes what it needs (~360px); the song cards share the rest
-          // evenly (each 130–190px wide), so there is no hole in the middle.
-          const textW = 360.0;
-          final behind = (_events.length - 1).clamp(0, 2);
-          final rest = box.maxWidth - (150 + behind * 8) - 28 - textW - 24;
-          final n = [songs.length, (rest / 144).floor(), 4].reduce((a, b) => a < b ? a : b);
-          final text = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(eyebrow, style: body(TextStyle(fontSize: 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                const SizedBox(height: 6),
-                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 28, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
-                ...[
-                  const SizedBox(height: 8),
-                  // No description: at least say how much there is to hear.
-                  Text(desc.isNotEmpty ? desc : '${(ev['items']?['paginatorInfo']?['total'] as num?)?.toInt() ?? songs.length} bài', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, color: AppColors.textSecondary))),
-                ],
-                const SizedBox(height: 16),
-                Row(children: [
-                  PillButton(label: songs.length > 1 ? 'Phát tất cả' : 'Phát', icon: Icons.play_arrow_rounded, height: 44, onTap: songs.isEmpty ? null : () => playOrOpen(context, songs.first, songs, title)),
-                  const SizedBox(width: 10),
-                  Material(
-                    color: AppColors.isLight ? Colors.white : const Color(0xFF2A2021),
-                    borderRadius: BorderRadius.circular(22),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(22),
-                      onTap: () => context.push('/playlist/$id'),
-                      child: Container(height: 44, padding: const EdgeInsets.symmetric(horizontal: 18), alignment: Alignment.center, child: Text('Xem playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))),
-                    ),
-                  ),
-                ]),
-              ]);
-          final cardW = n > 0 ? ((rest - (n - 1) * 14) / n).clamp(0.0, 190.0) : 0.0;
-          return Row(children: [
-            _Calendar(day: day, month: month, year: date?.year, behind: (_events.length - 1).clamp(0, 2)),
-            const SizedBox(width: 28),
-            if (n > 0) SizedBox(width: textW, child: text) else Expanded(child: text),
-            if (n > 0) ...[
-            const SizedBox(width: 24),
-            // Song cards share the remaining width; tops aligned.
-            Expanded(child: Row(mainAxisAlignment: MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            for (var i = 0; i < n; i++) ...[
-              if (i > 0) const SizedBox(width: 14),
-              SizedBox(
-                width: cardW,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => playOrOpen(context, songs[i], songs, title),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    SongCover(song: songs[i], size: cardW, radius: 12),
-                    const SizedBox(height: 8),
-                    Text('${songs[i]['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.25, fontWeight: FontWeight.w800, color: AppColors.text))),
-                    Text(songByline(songs[i]), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                  ]),
-                ),
-              ),
-            ],
-            ])),
-            ],
-          ]);
-          }),
+      ];
+
+  // ---------- Đi qua năm tháng ----------
+  Widget _decadeChart() {
+    final max = _decades.map((d) => d.$2).reduce((a, b) => a > b ? a : b);
+    final lo = AppColors.isLight ? const Color(0xFFEEE0DD) : const Color(0xFF3A2A2B);
+    final hi = AppColors.isLight ? const Color(0xFFC07A74) : const Color(0xFF9C4A45);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(26, 22, 26, 20),
+      decoration: BoxDecoration(color: AppColors.isLight ? const Color(0xFFFAF7F6) : AppColors.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.borderSubtle)),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        for (final (i, (y, n, title)) in _decades.indexed) ...[
+          if (i > 0) const SizedBox(width: 16),
+          Expanded(
+            child: _DecadeBar(
+              label: y == 2010 ? 'Từ 2010' : (y >= 2000 ? '2000–09' : 'Thập niên ${y % 100}'),
+              count: n,
+              title: title,
+              height: (96 * n / max).clamp(6, 96).toDouble(),
+              color: Color.lerp(lo, hi, (n / max))!,
+              busy: _starting == 'dec$y',
+              onTap: () => _start('dec$y', y == 2010 ? 'Từ 2010' : 'Thập niên ${y % 100}', () => _decadeSongs(y)),
+            ),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  // ---------- Mới về kho | Nghe nhiều ----------
+  Widget _listRow(Map<String, dynamic> s, List<Map<String, dynamic>> list, int i, String label, {Widget? lead, required String sub}) => draggableSong(context, s, _HoverRow(
+        onTap: () => _play(list, label, i),
+        onMore: () => showSongActions(context, s),
+        lead: lead,
+        cover: SongCover(song: s, size: 44, radius: 10),
+        title: '${s['title'] ?? ''}',
+        sub: sub,
+        last: i == list.length - 1,
+      ));
+
+  Widget _latestCol() {
+    final docs = _cat == _cats.length;
+    final list = docs ? null : _latest[_cats[_cat].$2];
+    Widget content;
+    if (docs) {
+      content = _docsList();
+    } else if (list == null) {
+      content = Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
+    } else if (list.isEmpty) {
+      content = Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa tải được, thử lại sau.', style: AppText.bodyText));
+    } else {
+      final label = 'Mới về kho · ${_cats[_cat].$1}';
+      content = Column(children: [
+        for (var i = 0; i < list.length; i++)
+          _listRow(list[i], list, i, label, sub: [
+            songByline(list[i], withComposer: _cat == 0 && songByline(list[i]).isEmpty),
+            if (list[i]['uploader']?['username'] != null) '${list[i]['uploader']['username']}',
+            _postedAgo(list[i]['created_at']?.toString()),
+          ].where((x) => x.isNotEmpty).join(' · ')),
+      ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _head('Mới về kho', top: 0, action: 'Xem tất cả', onAction: () => context.push(docs ? '/tu-lieu' : '/the-loai/${_catSlugs[_cat]}')),
+      _chips([for (final (l, _) in _cats) l, 'Tư liệu'], _cat, (i) {
+        setState(() => _cat = i);
+        i < _cats.length ? _fetchLatest(i) : _fetchDocs();
+      }),
+      const SizedBox(height: 10),
+      content,
+    ]);
+  }
+
+  Widget _docsList() {
+    final list = _docs;
+    if (list == null) return Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
+    const kinds = {'image': ('Ảnh', Icons.image_outlined), 'audio': ('Âm thanh', Icons.graphic_eq_rounded), 'video': ('Video', Icons.videocam_outlined), 'news': ('Bài viết', Icons.article_outlined), 'sheet': ('Bản nhạc', Icons.library_music_outlined)};
+    return Column(children: [
+      for (final (i, d) in list.indexed)
+        Builder(builder: (context) {
+          final k = kinds['${d['type']}'] ?? ('Tư liệu', Icons.folder_outlined);
+          final thumb = d['thumbnail']?['url']?.toString();
+          return _HoverRow(
+            onTap: () => context.push('/tu-lieu/chi-tiet/${d['id']}'),
+            cover: thumb != null
+                ? NetImage(url: thumb, width: 44, height: 44, radius: 10, tint: true)
+                : Container(width: 44, height: 44, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(10)), child: Icon(k.$2, color: AppColors.textMuted)),
+            title: '${d['title'] ?? ''}',
+            sub: [k.$1, if (d['uploader']?['username'] != null) '${d['uploader']['username']}', _postedAgo(d['created_at']?.toString())].where((x) => x.isNotEmpty).join(' · '),
+            last: i == list.length - 1,
+          );
+        }),
+    ]);
+  }
+
+  Widget _topCol() {
+    final p = _periods[_period].$2;
+    final list = _top[p];
+    Widget content;
+    if (list == null) {
+      content = Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
+    } else if (list.isEmpty) {
+      content = Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('Chưa có số liệu.', style: AppText.bodyText));
+    } else {
+      final label = 'Nghe nhiều · ${_periods[_period].$1}';
+      content = Column(children: [
+        for (var i = 0; i < list.length; i++)
+          _HoverRow(
+            onTap: () => _play(list, label, i),
+            onMore: () => showSongActions(context, list[i]),
+            lead: SizedBox(width: 28, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: i < 3 ? 24 : 20, fontWeight: FontWeight.w800, letterSpacing: -1, color: i < 3 ? AppColors.accentFg : AppColors.textMuted.withValues(alpha: 0.6))))),
+            title: '${list[i]['title'] ?? ''}',
+            sub: songByline(list[i]).isNotEmpty ? songByline(list[i]) : songByline(list[i], withComposer: true),
+            last: i == list.length - 1,
+          ),
+      ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _head('Nghe nhiều', top: 0, action: 'Bảng xếp hạng', onAction: () => context.push('/bang-xep-hang')),
+      _chips([for (final (l, _) in _periods) l], _period, (i) {
+        setState(() => _period = i);
+        _fetchTop(i);
+      }),
+      const SizedBox(height: 10),
+      content,
+    ]);
+  }
+
+  // ---------- Người nghe kể ----------
+  void _openObject(Map<String, dynamic> obj, {String? commentId}) {
+    final kind = _tn['${obj['__typename']}'] ?? 'song';
+    context.push(commentId != null ? '/$kind/${obj['id']}?binh-luan=1' : '/$kind/${obj['id']}', extra: {...obj, 'file_type': kind, 'highlightCommentId': ?commentId});
+  }
+
+  Widget _likes(Map c, {double size = 18}) {
+    final n = (c['likes'] as num?)?.toInt() ?? 0;
+    if (n <= 0) return const SizedBox.shrink();
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.favorite_border_rounded, size: size, color: AppColors.textMuted),
+      const SizedBox(width: 5),
+      Text('$n', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+    ]);
+  }
+
+  Widget _stories() {
+    final big = _comments.first;
+    final rest = _comments.skip(1).take(3).toList();
+    final obj = Map<String, dynamic>.from(big['object'] as Map);
+    final quote = Container(
+      padding: const EdgeInsets.fromLTRB(30, 26, 30, 24),
+      decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(24), border: Border.all(color: _paperEdge)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('“', style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: 84, height: 0.6, fontWeight: FontWeight.w700, color: AppColors.isLight ? const Color(0xFFD8B9B3) : const Color(0xFF5A3A38))),
+        const SizedBox(height: 4),
+        InkWell(
+          onTap: () => _openObject(obj, commentId: '${big['id']}'),
+          child: Text('${big['text']}', maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: 21, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text)),
         ),
+        const Spacer(),
+        const SizedBox(height: 18),
+        Row(children: [
+          UserAvatar(url: big['user']?['avatar']?['url']?.toString(), name: '${big['user']?['username'] ?? ''}', size: 40),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${big['user']?['username'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+              Row(children: [
+                Text(timeago(big['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                const SizedBox(width: 8),
+                _likes(big),
+              ]),
+            ]),
+          ),
+          Material(
+            color: AppColors.isLight ? Colors.white : AppColors.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: _paperEdge)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () => _openObject(obj),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  NetImage(url: obj['thumbnail']?['url']?.toString(), width: 32, height: 32, radius: 8, tint: true),
+                  const SizedBox(width: 10),
+                  ConstrainedBox(constraints: const BoxConstraints(maxWidth: 220), child: Text('${obj['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                  const SizedBox(width: 10),
+                  if (_playable(obj)) InkWell(customBorder: const CircleBorder(), onTap: () => _play([{...obj, 'file_type': _tn['${obj['__typename']}'] ?? 'song'}], 'Người nghe kể'), child: _playDot(30, bg: AppColors.accentSoft, fg: AppColors.accentFg)),
+                ]),
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+    Widget small(Map<String, dynamic> c) {
+      final o = Map<String, dynamic>.from(c['object'] as Map);
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: AppColors.border)),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(16),
+            onTap: () => _openObject(o, commentId: '${c['id']}'),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  UserAvatar(url: c['user']?['avatar']?['url']?.toString(), name: '${c['user']?['username'] ?? ''}', size: 28),
+                  const SizedBox(width: 10),
+                  Text('${c['user']?['username'] ?? ''}', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  const SizedBox(width: 8),
+                  Text(timeago(c['created_at']?.toString()), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('${o['title'] ?? ''}', textAlign: TextAlign.right, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accentFg)))),
+                ]),
+                const SizedBox(height: 7),
+                Text('${c['text']}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text))),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+    return LayoutBuilder(builder: (context, c) {
+      if (c.maxWidth < 900 || rest.isEmpty) return SizedBox(height: 300, child: quote);
+      return SizedBox(
+        height: 318,
+        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Expanded(flex: 13, child: quote),
+          const SizedBox(width: 20),
+          Expanded(flex: 10, child: Column(children: [for (final (i, x) in rest.indexed) ...[if (i > 0) const SizedBox(height: 12), small(x)]])),
+        ]),
+      );
+    });
+  }
+
+  // ---------- Chung tay xây dựng ----------
+  Widget _together() {
+    int pct(String done, String total) {
+      final t = _ctv[total] ?? 0;
+      return t <= 0 ? 0 : (100 * (t - (_ctv[done] ?? 0)) / t).round().clamp(0, 100);
+    }
+    final pink = AppColors.isLight ? const Color(0xFFFBF3F3) : const Color(0xFF241819);
+    final pinkEdge = AppColors.isLight ? const Color(0xFFF1DEDE) : const Color(0xFF3A2A2B);
+    final items = [
+      (Icons.image_rounded, _ctv['no_image'] ?? 0, 'bài chờ ảnh minh hoạ', pct('no_image', 'songs'), 'Thêm ảnh', 'no_image'),
+      (Icons.description_rounded, _ctv['no_lyric'] ?? 0, 'bài chờ chép lời', pct('no_lyric', 'songs'), 'Chép lời', 'no_lyric'),
+      (Icons.sell_rounded, _ctv['no_tag'] ?? 0, 'bản nhạc chờ gắn tag', pct('no_tag', 'sheets'), 'Gắn tag', 'no_tag'),
+    ];
+    Widget meter((IconData, int, String, int, String, String) m) => Expanded(
+          child: Material(
+            color: AppColors.isLight ? Colors.white : AppColors.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: pinkEdge)),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => context.push('/ban-lam-viec?q=${m.$6}&s=new'),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Container(width: 34, height: 34, decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(10)), child: Icon(m.$1, size: 18, color: AppColors.accentFg)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(formatInt(m.$2), style: display(TextStyle(fontSize: 22, height: 1.1, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                        Text(m.$3, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                      ]),
+                    ),
+                  ]),
+                  const SizedBox(height: 14),
+                  ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: m.$4 / 100, minHeight: 6, backgroundColor: AppColors.accentSoft, color: AppColors.accentLight)),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Text('Đã xong ${m.$4}%', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                    const Spacer(),
+                    Text('${m.$5} ›', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  ]),
+                ]),
+              ),
+            ),
+          ),
+        );
+    final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Text('CHUNG TAY XÂY DỰNG', style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+      const SizedBox(height: 6),
+      Text('Kho nhạc này do chính người nghe cùng làm.', style: display(TextStyle(fontSize: 21, height: 1.25, letterSpacing: -0.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+      if (_helperCount > 0) ...[
+        const SizedBox(height: 12),
+        Row(children: [
+          SizedBox(
+            width: 28.0 + (_helpers.length - 1) * 20,
+            height: 28,
+            child: Stack(children: [
+              for (final (i, u) in _helpers.indexed)
+                Positioned(left: i * 20.0, child: Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pink, width: 2)), child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 24))),
+            ]),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
+              TextSpan(children: [const TextSpan(text: 'Tuần này '), TextSpan(text: '$_helperCount người', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)), const TextSpan(text: ' đã góp tay')]),
+              style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+            ),
+          ),
+        ]),
+      ],
+    ]);
+    return Container(
+      margin: const EdgeInsets.only(top: 48),
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+      decoration: BoxDecoration(color: pink, borderRadius: BorderRadius.circular(24), border: Border.all(color: pinkEdge)),
+      child: LayoutBuilder(builder: (context, c) {
+        if (c.maxWidth < 900) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [intro, const SizedBox(height: 16), IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final (i, m) in items.indexed) ...[if (i > 0) const SizedBox(width: 12), meter(m)]]))]);
+        return IntrinsicHeight(
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            SizedBox(width: 290, child: Align(alignment: Alignment.centerLeft, child: intro)),
+            for (final m in items) ...[const SizedBox(width: 18), meter(m)],
+          ]),
+        );
+      }),
+    );
+  }
+}
+
+/// A calendar page: weekday band, the day, month and year, lunar date.
+class _CalendarSheet extends StatelessWidget {
+  final String weekday, lunar;
+  final int day, month, year;
+  const _CalendarSheet({required this.weekday, required this.day, required this.month, required this.year, required this.lunar});
+
+  @override
+  Widget build(BuildContext context) {
+    final sheet = AppColors.isLight ? Colors.white : const Color(0xFF2A2021);
+    return SizedBox(
+      width: 148,
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(
+          decoration: BoxDecoration(color: sheet, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.10 : 0.4), blurRadius: 22, offset: const Offset(0, 10))]),
+          clipBehavior: Clip.antiAlias,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(color: AppColors.wine, height: 36, alignment: Alignment.center, child: Text(weekday.toUpperCase(), style: body(const TextStyle(fontSize: 13, letterSpacing: 1.5, fontWeight: FontWeight.w800, color: Colors.white)))),
+            Padding(padding: const EdgeInsets.only(top: 12), child: Text('$day', style: display(TextStyle(fontSize: 72, height: 1, letterSpacing: -3, fontWeight: FontWeight.w800, color: AppColors.text)))),
+            Padding(padding: const EdgeInsets.only(top: 6), child: Text('tháng $month, $year', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+            Container(margin: const EdgeInsets.fromLTRB(16, 10, 16, 0), height: 1, color: AppColors.border),
+            Padding(padding: const EdgeInsets.fromLTRB(8, 8, 8, 14), child: Text(lunar, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, height: 1.35, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
+          ]),
+        ),
+        // The two rings it hangs from.
+        for (final x in [38.0, 100.0]) Positioned(left: x, top: -7, child: Container(width: 10, height: 16, decoration: BoxDecoration(color: AppColors.isLight ? const Color(0xFF5A2A26) : const Color(0xFF8A5A56), borderRadius: BorderRadius.circular(5)))),
       ]),
     );
   }
 }
 
-/// A tear-off calendar page; [behind] more pages peek out when several
-/// events fall on the same day.
-class _Calendar extends StatelessWidget {
-  final int day, month;
-  final int? year;
-  final int behind;
-  const _Calendar({required this.day, required this.month, this.year, this.behind = 0});
-
-  Widget _page({bool face = true}) => Container(
-        width: 150,
-        // Dark theme: a dark sheet, not a white glare.
-        decoration: BoxDecoration(color: AppColors.isLight ? Colors.white : const Color(0xFF2A2021), borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 8))]),
-        clipBehavior: Clip.antiAlias,
-        child: Column(children: [
-          Container(color: AppColors.wine, height: 34, alignment: Alignment.center, child: Text('THÁNG $month', style: body(const TextStyle(fontSize: 14, letterSpacing: 1, fontWeight: FontWeight.w800, color: Colors.white)))),
-          Padding(padding: const EdgeInsets.only(top: 12), child: Text(face ? day.toString().padLeft(2, '0') : '', style: display(TextStyle(fontSize: 72, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: AppColors.text)))),
-          // No year known: no empty line under the day.
-          if (year != null)
-            Padding(padding: const EdgeInsets.fromLTRB(0, 4, 0, 14), child: Text(face ? 'năm $year' : ' ', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textMuted))))
-          else
-            const SizedBox(height: 16),
-        ]),
-      );
-
+/// "Dành cho bạn": a 16:10 cover with the name on it; ▶ shows on hover.
+class _MixCard extends StatefulWidget {
+  final Widget cover;
+  final String eyebrow, title, sub;
+  final bool busy;
+  final VoidCallback onPlay;
+  const _MixCard({required this.cover, required this.eyebrow, required this.title, required this.sub, required this.busy, required this.onPlay});
   @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 150 + behind * 8.0,
-        child: Stack(clipBehavior: Clip.none, children: [
-          for (var k = behind; k > 0; k--)
-            Positioned(
-              left: 0, top: 0,
-              child: Transform.translate(
-                offset: Offset(6.0 * k, -6.0 * k),
-                child: Transform.rotate(angle: 0.044 * k, child: Opacity(opacity: 1 - 0.25 * k, child: _page(face: false))),
+  State<_MixCard> createState() => _MixCardState();
+}
+
+class _MixCardState extends State<_MixCard> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onPlay,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            AspectRatio(
+              aspectRatio: 16 / 10,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: _hover ? [BoxShadow(color: const Color(0xFF3C1414).withValues(alpha: 0.18), blurRadius: 20, offset: const Offset(0, 8))] : const []),
+                child: Stack(fit: StackFit.expand, children: [
+                  widget.cover,
+                  const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x00000000), Color(0xB8140606)], stops: [0.4, 1]))),
+                  Positioned(
+                    left: 14, right: 64, bottom: 12,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(widget.eyebrow, style: body(TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Colors.white.withValues(alpha: 0.85)))),
+                      const SizedBox(height: 2),
+                      Text(widget.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 18, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                    ]),
+                  ),
+                  Positioned(
+                    right: 10, bottom: 10,
+                    child: AnimatedOpacity(
+                      opacity: _hover || widget.busy ? 1 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(color: AppColors.wine, shape: BoxShape.circle),
+                        alignment: Alignment.center,
+                        child: widget.busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white)) : const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 26),
+                      ),
+                    ),
+                  ),
+                ]),
               ),
             ),
-          _page(),
-        ]),
+            const SizedBox(height: 8),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Text(widget.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+          ]),
+        ),
+      );
+}
+
+/// Four covers in a square grid.
+class _Mosaic extends StatelessWidget {
+  final List<Map<String, dynamic>> songs;
+  final bool sepia;
+  const _Mosaic({required this.songs, this.sepia = false});
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(int i) => i < songs.length
+        ? NetImage(url: songs[i]['thumbnail']?['url']?.toString(), tint: true)
+        : Container(color: AppColors.surface);
+    final grid = Column(children: [
+      Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cell(0)), Expanded(child: cell(1))])),
+      Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cell(2)), Expanded(child: cell(3))])),
+    ]);
+    if (!sepia) return grid;
+    return ColorFiltered(colorFilter: const ColorFilter.matrix([0.39, 0.77, 0.19, 0, 0, 0.35, 0.69, 0.17, 0, 0, 0.27, 0.53, 0.13, 0, 0, 0, 0, 0, 1, 0]), child: grid);
+  }
+}
+
+class _DecadeBar extends StatefulWidget {
+  final String label, title;
+  final int count;
+  final double height;
+  final Color color;
+  final bool busy;
+  final VoidCallback onTap;
+  const _DecadeBar({required this.label, required this.count, required this.title, required this.height, required this.color, required this.busy, required this.onTap});
+  @override
+  State<_DecadeBar> createState() => _DecadeBarState();
+}
+
+class _DecadeBarState extends State<_DecadeBar> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            SizedBox(
+              height: 132,
+              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                // Hover: the count turns into "▶ Nghe".
+                SizedBox(
+                  height: 22,
+                  child: _hover || widget.busy
+                      ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          widget.busy ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg)) : Icon(Icons.play_arrow_rounded, size: 16, color: AppColors.accentFg),
+                          const SizedBox(width: 3),
+                          Text('Nghe', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                        ])
+                      : Text(formatInt(widget.count), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+                ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  height: widget.height,
+                  decoration: BoxDecoration(
+                    color: _hover ? AppColors.wine : widget.color,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12), bottom: Radius.circular(3)),
+                  ),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
+            Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+            const SizedBox(height: 2),
+            Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          ]),
+        ),
+      );
+}
+
+/// A 64px list row: cover (▶ over it on hover), title, one grey line,
+/// ♡ and ⋯ on hover.
+class _HoverRow extends StatefulWidget {
+  final VoidCallback onTap;
+  final VoidCallback? onMore;
+  final Widget? lead;
+  final Widget? cover;
+  final String title, sub;
+  final bool last;
+  const _HoverRow({required this.onTap, this.onMore, this.lead, this.cover, required this.title, required this.sub, this.last = false});
+  @override
+  State<_HoverRow> createState() => _HoverRowState();
+}
+
+class _HoverRowState extends State<_HoverRow> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onSecondaryTap: widget.onMore,
+          child: Container(
+            height: 64,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              color: _hover ? AppColors.surface.withValues(alpha: 0.7) : Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            foregroundDecoration: BoxDecoration(border: widget.last || _hover ? null : Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+            child: Row(children: [
+              if (widget.lead != null) ...[widget.lead!, const SizedBox(width: 14)],
+              if (widget.cover != null) ...[
+                Stack(children: [
+                  widget.cover!,
+                  if (_hover)
+                    Positioned.fill(child: Container(decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.play_arrow_rounded, color: Colors.white))),
+                ]),
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  if (widget.sub.isNotEmpty) Text(widget.sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ]),
+              ),
+              if (widget.onMore != null)
+                Opacity(
+                  opacity: _hover ? 1 : 0.55,
+                  child: IconButton(tooltip: 'Tuỳ chọn', onPressed: widget.onMore, icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
+                ),
+            ]),
+          ),
+        ),
       );
 }

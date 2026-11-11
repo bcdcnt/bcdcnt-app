@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'dart:ui' show Offset;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:just_audio/just_audio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'offline_store.dart';
 import 'play_tracker.dart';
 import 'analytics.dart';
@@ -85,6 +87,11 @@ class PlayerProvider extends ChangeNotifier {
   // error signal the shell turns into a "Không phát được bài này" toast.
   bool _isLoading = false;
   final ValueNotifier<int> playErrorTick = ValueNotifier(0);
+  // The last song comes back on launch, paused where it stopped (no "Nghe
+  // tiếp" card needed): [_restored] until ▶ loads it, then [_resumeAt] seeks.
+  bool _restored = false;
+  Duration? _resumeAt;
+  DateTime _lastSave = DateTime.fromMillisecondsSinceEpoch(0);
 
   Map<String, dynamic>? get currentSong => _currentSong;
   List<Map<String, dynamic>> get queue => _queue;
@@ -144,6 +151,7 @@ class PlayerProvider extends ChangeNotifier {
         _tracker?.onResume();
       } else {
         _tracker?.onPause();
+        _saveLast();
       }
       notifyListeners();
     });
@@ -156,6 +164,7 @@ class PlayerProvider extends ChangeNotifier {
       if (pos > Duration.zero) _lastGoodPosition = pos;
       positionNotifier.value = pos;
       _tracker?.onTimeUpdate();
+      if (_isPlaying && DateTime.now().difference(_lastSave) > const Duration(seconds: 15)) _saveLast();
     });
     _player.durationStream.listen((dur) {
       _duration = dur ?? Duration.zero;
@@ -189,6 +198,47 @@ class PlayerProvider extends ChangeNotifier {
       }
     }, onError: (Object e, StackTrace __) => _onStreamError(e));
     _player.playbackEventStream.listen((_) {}, onError: (Object e, StackTrace __) => _onStreamError(e));
+    _restoreLast();
+  }
+
+  static const _lastKey = 'player_last';
+
+  /// Song, part of the queue and position, for [_restoreLast] next launch.
+  Future<void> _saveLast() async {
+    final song = _currentSong;
+    if (song == null || _restored) return;
+    _lastSave = DateTime.now();
+    try {
+      final from = (_currentIndex - 20).clamp(0, _queue.length);
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_lastKey, jsonEncode({
+        'song': song,
+        'queue': _queue.skip(from).take(60).toList(),
+        'index': _currentIndex - from,
+        'label': _sourceLabel,
+        'pos': _position.inMilliseconds,
+      }));
+    } catch (_) {}
+  }
+
+  Future<void> _restoreLast() async {
+    try {
+      final raw = (await SharedPreferences.getInstance()).getString(_lastKey);
+      if (raw == null || _currentSong != null) return;
+      final m = jsonDecode(raw) as Map;
+      final song = Map<String, dynamic>.from(m['song'] as Map);
+      _queue = [for (final s in (m['queue'] as List? ?? const [])) if (s is Map) Map<String, dynamic>.from(s)];
+      if (_queue.isEmpty) _queue = [song];
+      _currentIndex = ((m['index'] as num?)?.toInt() ?? 0).clamp(0, _queue.length - 1);
+      _currentSong = song;
+      _sourceLabel = m['label']?.toString();
+      _position = Duration(milliseconds: (m['pos'] as num?)?.toInt() ?? 0);
+      positionNotifier.value = _position;
+      final d = song['file']?['duration'];
+      if (d is num) _duration = Duration(milliseconds: (d * 1000).round());
+      _restored = true;
+      notifyListeners();
+    } catch (_) {}
   }
 
   void _onStreamError(Object e) {
@@ -338,6 +388,7 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> playSong(Map<String, dynamic> song, [List<Map<String, dynamic>>? list, String source = 'manual', String? sourceLabel]) async {
+    _restored = false;
     _currentSong = song;
     _lastGoodPosition = Duration.zero;
     if (list != null) {
@@ -396,6 +447,11 @@ class PlayerProvider extends ChangeNotifier {
         await _player.setUrl(url);
       }
       if (gen != _loadGen) return;
+      // Resuming the song restored at launch: back to where it stopped.
+      if (_resumeAt case final at?) {
+        _resumeAt = null;
+        await _player.seek(at);
+      }
       // play() completes only when playback stops: don't await it, or the
       // queue refill below would wait until the user pauses.
       unawaited(_player.play().catchError((Object e) { if (gen == _loadGen) _onStreamError(e); }));
@@ -405,6 +461,7 @@ class PlayerProvider extends ChangeNotifier {
       if (gen == _loadGen) _reportPlayError();
     }
     _maybeRefillQueue();
+    _saveLast();
   }
 
   /// Replace the queue without changing the currently-playing song.
@@ -472,8 +529,10 @@ class PlayerProvider extends ChangeNotifier {
     _currentIndex = 0;
     _fetchMore = null;
     _sourceLabel = null;
+    _restored = false;
     notifyListeners();
     await _player.stop();
+    SharedPreferences.getInstance().then((p) => p.remove(_lastKey)).catchError((_) => false);
   }
 
   /// Pause if playing (e.g. a voice/audio clip in a comment starts).
@@ -482,6 +541,12 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> togglePlay() async {
+    // Restored at launch, nothing loaded yet: load it and pick up at the spot.
+    if (_restored && _currentSong != null) {
+      _resumeAt = _position;
+      await playSong(_currentSong!, null, 'manual');
+      return;
+    }
     if (_player.playing) {
       await _player.pause();
     } else {
@@ -507,6 +572,11 @@ class PlayerProvider extends ChangeNotifier {
   }
 
   Future<void> seek(Duration pos) async {
+    if (_restored) {
+      _position = pos;
+      positionNotifier.value = pos;
+      return;
+    }
     await _player.seek(pos);
   }
 

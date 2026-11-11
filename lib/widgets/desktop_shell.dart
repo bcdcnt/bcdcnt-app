@@ -229,8 +229,19 @@ class _SideNavState extends State<_SideNav> {
         Expanded(
           child: ListView(padding: EdgeInsets.zero, children: [
             if (auth.isAuthenticated) ...[
+              // Thư viện: places to go (the home page has the play-now cards).
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 22, 0, 6),
+                child: Text('THƯ VIỆN', style: body(TextStyle(fontSize: 12, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+              ),
+              for (final (label, route, icon) in const [
+                ('Yêu thích', '/yeu-thich', Icons.favorite_rounded),
+                ('Nghe gần đây', '/nghe-gan-day', Icons.history_rounded),
+                ('Nghe đi nghe lại', '/thong-ke', Icons.repeat_rounded),
+              ])
+                _LibraryRow(label: label, icon: icon, active: path == route, onTap: () => context.push(route)),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 0, 6),
                 child: Row(children: [
                   Expanded(child: Text('PLAYLIST CỦA TÔI', maxLines: 1, softWrap: false, overflow: TextOverflow.fade, style: body(TextStyle(fontSize: 12, letterSpacing: 0.6, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
                   IconButton(
@@ -286,6 +297,35 @@ class _SideNavState extends State<_SideNav> {
       ]),
     );
   }
+}
+
+/// A Thư viện row: 40 tall, 20px icon, 14px label (canvas menu trái).
+class _LibraryRow extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+  const _LibraryRow({required this.label, required this.icon, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: active ? AppColors.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          hoverColor: AppColors.surfaceHover,
+          onTap: onTap,
+          child: SizedBox(
+            height: 40,
+            child: Row(children: [
+              const SizedBox(width: 14),
+              Icon(icon, size: 20, color: active ? AppColors.accentFg : AppColors.textSecondary),
+              const SizedBox(width: 12),
+              Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: active ? AppColors.accentFg : AppColors.text)))),
+            ]),
+          ),
+        ),
+      );
 }
 
 class _NavRow extends StatelessWidget {
