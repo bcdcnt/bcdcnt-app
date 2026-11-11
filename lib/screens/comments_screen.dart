@@ -38,7 +38,9 @@ const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
     }
   }''';
 
-const _featuredQuery = 'query { featuredComments(limit: 30) { id snippet likes created_at user_id username user_avatar song_id song_title song_slug song_image audio_url file_type } }';
+/// Every cảm nhận hay, most-loved first, [_featuredPage] at a time.
+const _featuredPage = 20;
+const _featuredQuery = r'query($n: Int, $o: Int) { featuredComments(limit: $n, ordered: true, offset: $o) { id snippet likes created_at user_id username user_avatar song_id song_title song_slug song_image audio_url file_type } }';
 
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
@@ -118,7 +120,7 @@ class _CommentsFeedState extends State<CommentsFeed> {
   }
 
   void _onScroll() {
-    if (_filter == 0 || _loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _page >= _lastPage) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
@@ -147,7 +149,7 @@ class _CommentsFeedState extends State<CommentsFeed> {
     try {
       List<Map<String, dynamic>> list;
       if (filter == 0) {
-        final d = await ApiClient.query(_featuredQuery);
+        final d = await ApiClient.query(_featuredQuery, {'n': _featuredPage, 'o': (page - 1) * _featuredPage});
         list = ((d['featuredComments'] ?? []) as List).whereType<Map>().map((c) {
           final m = Map<String, dynamic>.from(c);
           return <String, dynamic>{
@@ -167,8 +169,9 @@ class _CommentsFeedState extends State<CommentsFeed> {
             },
           };
         }).toList();
-        newPage = 1;
-        newLast = 1;
+        newPage = page;
+        // No total from the API: a full page means there may be more.
+        newLast = list.length < _featuredPage ? page : page + 1;
       } else {
         // "Mới nhất" is every new comment, requests included (tagged in the
         // row); "Yêu cầu bổ sung" is the requests alone.
