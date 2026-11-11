@@ -1017,12 +1017,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         shape: StadiumBorder(side: BorderSide(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.18))),
         child: InkWell(
           customBorder: const StadiumBorder(),
+          // Picking a channel tunes in right away.
           onTap: () async {
-            if (c == _ch) return;
+            if (c == _ch) {
+              if (!onAir) _playRadio();
+              return;
+            }
             setState(() => _ch = c);
             await _loadRadio(c);
-            // On air: the new channel takes over at once.
-            if (onAir && mounted && _ch == c) _playRadio();
+            if (mounted && _ch == c) _playRadio();
           },
           child: Container(height: 32, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
         ),
