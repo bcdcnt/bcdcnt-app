@@ -995,7 +995,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     if (onAir) Text(songByline(player.currentSong ?? const <String, dynamic>{}), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
                   ]),
                 ),
-                if (onAir) const NowPlayingBars(color: Colors.white),
+                // On air: live bars; at rest a still waveform (canvas Đài).
+                if (onAir) const NowPlayingBars(color: Colors.white) else const _StillWave(),
               ]),
             ),
           ),
@@ -1798,4 +1799,17 @@ class _RipplePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RipplePainter old) => old.t != t;
+}
+
+/// A still waveform beside the Đài's play button when nothing plays.
+class _StillWave extends StatelessWidget {
+  const _StillWave();
+  static const _h = <double>[6, 12, 18, 10, 22, 16, 8, 20, 26, 14, 9, 18, 24, 12, 7, 16];
+  @override
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+        for (final (i, h) in _h.indexed) ...[
+          if (i > 0) const SizedBox(width: 3),
+          Container(width: 3, height: h, decoration: BoxDecoration(color: Colors.white.withValues(alpha: i > 9 ? 0.25 : 0.7), borderRadius: BorderRadius.circular(2))),
+        ],
+      ]);
 }
