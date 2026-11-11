@@ -827,9 +827,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         shape: StadiumBorder(side: BorderSide(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.18))),
         child: InkWell(
           customBorder: const StadiumBorder(),
-          onTap: () {
+          onTap: () async {
+            if (c == _ch) return;
             setState(() => _ch = c);
-            _loadRadio(c);
+            await _loadRadio(c);
+            // On air: the new channel takes over at once.
+            if (onAir && mounted && _ch == c) _playRadio();
           },
           child: Container(height: 32, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
         ),
@@ -871,9 +874,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(onAir ? 'ĐANG PHÁT' : 'MỞ ĐẦU BẰNG', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Color(0xFFD9B6B0)))),
-                    Text(onAir ? '${player.currentSong?['title'] ?? ''}' : '${first?['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
-                    Text(songByline((onAir ? player.currentSong : first) ?? const <String, dynamic>{}), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
+                    Text(onAir ? 'ĐANG PHÁT' : 'BẤM ĐỂ NGHE', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Color(0xFFD9B6B0)))),
+                    // Before it starts, no titles: what plays is a surprise.
+                    Text(onAir ? '${player.currentSong?['title'] ?? ''}' : _chLabel(_ch).replaceFirst(RegExp(r'^.*: '), '').replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase()), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
+                    Text(onAir ? songByline(player.currentSong ?? const <String, dynamic>{}) : 'Bài đầu tiên là một bất ngờ', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
                   ]),
                 ),
                 if (onAir) const NowPlayingBars(color: Colors.white),
@@ -881,23 +885,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ),
         ),
-        if (!onAir && list != null && list.length > 2) ...[
-          const SizedBox(height: 12),
-          for (var i = 1; i <= 2; i++)
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Text.rich(
-                TextSpan(children: [
-                  TextSpan(text: '${i + 1}  ', style: const TextStyle(color: Color(0xFFD9B6B0))),
-                  TextSpan(text: '${list[i]['title'] ?? ''}', style: const TextStyle(color: Colors.white)),
-                  TextSpan(text: ' · ${songByline(list[i])}', style: const TextStyle(color: Color(0xFFD9B6B0), fontWeight: FontWeight.w600)),
-                ]),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-              ),
-            ),
-        ],
         const Spacer(),
         const SizedBox(height: 14),
         // One line that slides sideways (drag, wheel or trackpad), however many channels.
