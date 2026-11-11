@@ -800,6 +800,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             : 'mutation(\$id: ID!) { unlove(lovable_id: \$id, lovable_type: "$_resolvedType") { id } }',
         {'id': widget.songId},
       );
+      lovesChanged.value++;
     } catch (e) {
       // Rollback, and say so: a heart that silently un-fills looks broken.
       if (mounted) {

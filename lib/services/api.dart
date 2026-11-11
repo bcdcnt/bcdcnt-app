@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, ValueNotifier;
 import '../constants/theme.dart';
 
 /// A GraphQL error from the API. [toString] keeps the historical
@@ -22,6 +22,9 @@ class ApiException implements Exception {
   @override
   String toString() => 'Exception: $message';
 }
+
+/// Bumped after a song is loved/unloved, so counts elsewhere (menu trái) refresh.
+final ValueNotifier<int> lovesChanged = ValueNotifier(0);
 
 class ApiClient {
   /// Every HTTP call gives up after this long; the resulting TimeoutException

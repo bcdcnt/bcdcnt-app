@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'hover_effects.dart';
 import '../constants/theme.dart';
+import '../services/api.dart' show formatInt, lovesChanged;
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/theme_provider.dart';
@@ -153,12 +154,35 @@ class _SideNav extends StatefulWidget {
 class _SideNavState extends State<_SideNav> {
   List<Map<String, dynamic>> _playlists = [];
   String? _for;
+  /// Songs loved, beside "Yêu thích"; refreshed when a heart is tapped.
+  int _loves = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    lovesChanged.addListener(_onLoves);
+  }
+
+  void _onLoves() {
+    final auth = context.read<AuthProvider>();
+    if (auth.isAuthenticated) _loadLoves(auth);
+  }
+
+  void _loadLoves(AuthProvider auth) {
+    final uid = auth.user?['id']?.toString();
+    if (uid == null) return;
+    auth.authedQuery(r'query($id: ID!) { user(id: $id) { loves(first: 1) { paginatorInfo { total } } } }', {'id': uid}).then((d) {
+      final n = (d['user']?['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      if (mounted && _for == uid && n != _loves) setState(() => _loves = n);
+    }).catchError((_) {});
+  }
   /// BQT: uploads waiting for a decision, for the Bàn làm việc badge.
   int _pending = 0;
   Timer? _pendingTimer;
 
   @override
   void dispose() {
+    lovesChanged.removeListener(_onLoves);
     _pendingTimer?.cancel();
     super.dispose();
   }
@@ -179,8 +203,10 @@ class _SideNavState extends State<_SideNav> {
     _pending = 0;
     if (uid == null) {
       _playlists = [];
+      _loves = 0;
       return;
     }
+    _loadLoves(auth);
     // Refreshed every few minutes; the workspace itself has the live list.
     _loadPending(auth);
     _pendingTimer = Timer.periodic(const Duration(minutes: 5), (_) => _loadPending(auth));
@@ -239,7 +265,7 @@ class _SideNavState extends State<_SideNav> {
                 ('Nghe gần đây', '/nghe-gan-day', Icons.history_rounded),
                 ('Nghe đi nghe lại', '/thong-ke', Icons.repeat_rounded),
               ])
-                _LibraryRow(label: label, icon: icon, active: path == route, onTap: () => context.push(route)),
+                _LibraryRow(label: label, icon: icon, count: route == '/yeu-thich' ? _loves : 0, active: path == route, onTap: () => context.push(route)),
               Padding(
                 padding: const EdgeInsets.fromLTRB(14, 14, 0, 6),
                 child: Row(children: [
@@ -305,7 +331,9 @@ class _LibraryRow extends StatelessWidget {
   final IconData icon;
   final bool active;
   final VoidCallback onTap;
-  const _LibraryRow({required this.label, required this.icon, required this.active, required this.onTap});
+  /// Shown greyed at the end when above zero.
+  final int count;
+  const _LibraryRow({required this.label, required this.icon, required this.active, required this.onTap, this.count = 0});
 
   @override
   Widget build(BuildContext context) => Material(
@@ -322,6 +350,8 @@ class _LibraryRow extends StatelessWidget {
               Icon(icon, size: 20, color: active ? AppColors.accentFg : AppColors.textSecondary),
               const SizedBox(width: 12),
               Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: active ? AppColors.accentFg : AppColors.text)))),
+              if (count > 0) Text(formatInt(count), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+              const SizedBox(width: 10),
             ]),
           ),
         ),

@@ -496,6 +496,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ? 'mutation(\$id: ID!) { love(lovable_id: \$id, lovable_type: "$type") { id } }'
           : 'mutation(\$id: ID!) { unlove(lovable_id: \$id, lovable_type: "$type") { id } }';
       await auth.authedMutate(mutation, {'id': song['id'].toString()});
+      lovesChanged.value++;
     } catch (e) {
       if (!mounted) return;
       // Only undo if the user is still on that song; the heart now shows

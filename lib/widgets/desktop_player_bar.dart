@@ -332,6 +332,7 @@ class _NowExtrasState extends State<_NowExtras> {
     _nowInfo.value = _NowInfo(info.key)..meta = info.meta..loved = now;
     try {
       await auth.authedMutate('mutation(\$id: ID!) { ${now ? 'love' : 'unlove'}(lovable_id: \$id, lovable_type: "$type") { id } }', {'id': '${widget.song['id']}'});
+      lovesChanged.value++;
     } catch (e) {
       if (_nowInfo.value?.key == info.key) _nowInfo.value = _NowInfo(info.key)..meta = info.meta..loved = !now;
       if (mounted) {
