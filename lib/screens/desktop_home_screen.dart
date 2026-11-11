@@ -8,6 +8,7 @@ import '../services/api.dart';
 import '../services/auth.dart';
 import '../services/lunar.dart';
 import '../services/player.dart';
+import '../services/radio_presence.dart';
 import '../widgets/anniversary_rail.dart';
 import '../widgets/auth_dialogs.dart';
 import '../widgets/song_row.dart';
@@ -103,6 +104,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Timer? _todayTimer;
   // Đài
   _Ch _ch = _Ch.auto;
+  /// "N người đang nghe cùng": count + a few faces, refreshed each minute.
   final Map<_Ch, List<Map<String, dynamic>>> _radio = {};
   // Dành cho bạn
   String? _personalFor;
@@ -134,6 +136,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _fetchTotals();
     _loadToday();
     _loadRadio(_Ch.auto);
+    RadioPresence.instance.watch();
     _fetchDecades();
     _fetchLatest(0);
     _fetchTop(0);
@@ -150,6 +153,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void dispose() {
     _topTimer?.cancel();
+    RadioPresence.instance.unwatch();
     _storyTimer?.cancel();
     _todayTimer?.cancel();
     super.dispose();
@@ -920,12 +924,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       );
     }
     return Container(
-      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: const RadialGradient(center: Alignment(0.7, -1.0), radius: 1.3, colors: [Color(0xFF7A2424), Color(0xFF4A1617), Color(0xFF341011)], stops: [0, 0.55, 1]),
       ),
+      child: Stack(children: [
+      // Sound spreading from the corner: still rings at rest, rippling while on air.
+      Positioned(right: -110, top: -110, child: IgnorePointer(child: _Ripples(active: onAir))),
+      Padding(
+      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
@@ -934,7 +942,33 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ]),
         const SizedBox(height: 12),
         Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
-        const SizedBox(height: 20),
+        // Not alone: how many are listening on the site right now, with faces.
+        ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
+          valueListenable: RadioPresence.instance.listeners,
+          builder: (context, l, _) {
+            final (n, faces) = l;
+            // Counting yourself, "1 người" is just you: show it from two.
+            if (n < 2) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Row(children: [
+                if (faces.isNotEmpty) ...[
+                  SizedBox(
+                    width: 22.0 + (faces.length - 1) * 15,
+                    height: 22,
+                    child: Stack(children: [
+                      for (final (i, u) in faces.indexed)
+                        Positioned(left: i * 15.0, child: Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF4A1617), width: 1.5)), child: UserAvatar(url: u['avatar']?.toString(), name: '${u['username'] ?? ''}', size: 19))),
+                    ]),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(child: Text('$n người đang nghe cùng bạn', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFEBC2BC))))),
+              ]),
+            );
+          },
+        ),
+        const SizedBox(height: 18),
         Material(
           color: Colors.white.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(18),
@@ -976,6 +1010,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           chip('Không lời', _Ch.instr),
           chip('Tiếng thơ', _Ch.poem),
         ]),
+      ]),
+      ),
       ]),
     );
   }
@@ -1696,4 +1732,70 @@ class _SlideRowState extends State<_SlideRow> {
           ),
         ),
       );
+}
+
+/// Rings spreading from the Đài card's corner, like sound going out over the
+/// air: faint and still when nothing plays, rippling outwards while on air.
+class _Ripples extends StatefulWidget {
+  final bool active;
+  const _Ripples({required this.active});
+  @override
+  State<_Ripples> createState() => _RipplesState();
+}
+
+class _RipplesState extends State<_Ripples> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(seconds: 4));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _c.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_Ripples old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !_c.isAnimating) _c.repeat();
+    if (!widget.active && _c.isAnimating) _c.stop();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: 300,
+        height: 300,
+        child: AnimatedBuilder(animation: _c, builder: (_, _) => CustomPaint(painter: _RipplePainter(widget.active ? _c.value : null))),
+      );
+}
+
+class _RipplePainter extends CustomPainter {
+  /// null = at rest (two still rings); else 0…1 phase of the spreading rings.
+  final double? t;
+  _RipplePainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = size.center(Offset.zero);
+    final max = size.width / 2;
+    final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    if (t == null) {
+      for (final (r, a) in [(0.47, 0.10), (0.73, 0.08)]) {
+        canvas.drawCircle(c, max * r, p..color = Colors.white.withValues(alpha: a));
+      }
+      return;
+    }
+    // Three rings, a third of a cycle apart; each grows and fades out.
+    for (var k = 0; k < 3; k++) {
+      final f = (t! + k / 3) % 1;
+      canvas.drawCircle(c, max * (0.25 + 0.75 * f), p..color = Colors.white.withValues(alpha: 0.16 * (1 - f)));
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RipplePainter old) => old.t != t;
 }

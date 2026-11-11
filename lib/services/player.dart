@@ -427,7 +427,10 @@ class PlayerProvider extends ChangeNotifier {
     final type = songKind(song);
     final dur = (song['file']?['duration'] is num) ? (song['file']['duration'] as num).toDouble() : null;
     if (id != null) {
-      _tracker?.startSession(songId: id, objectType: type, songDuration: dur, source: source);
+      // Everything the Đài plays (first song and each one after) is a radio
+      // listen — the Đài's "N người đang nghe cùng" counts only these.
+      final src = (_sourceLabel ?? '').startsWith('Đài BCĐCNT') ? 'radio' : source;
+      _tracker?.startSession(songId: id, objectType: type, songDuration: dur, source: src);
       // Fire-and-forget GA4 event so dashboards can see which sources
       // (manual click vs auto-queue) actually convert into plays.
       // Title is included so reports stay readable without joining
@@ -435,7 +438,7 @@ class PlayerProvider extends ChangeNotifier {
       Analytics.logEvent('song_play', {
         'song_id': id,
         'song_type': type,
-        'source': source,
+        'source': src,
         if (song['title'] != null) 'song_title': song['title'].toString(),
       });
     }

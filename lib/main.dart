@@ -79,6 +79,7 @@ import 'widgets/update_banner.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_session/audio_session.dart';
 import 'services/analytics.dart';
+import 'services/radio_presence.dart';
 
 void main() async {
   // window_manager is desktop-only (used for the FullPlayer fullscreen
@@ -144,6 +145,8 @@ void main() async {
   await MediaSession.init();
   OfflineStore.instance.load();
   runApp(const BcdcntApp());
+  // Tab switches inside the shell don't reach the navigator observer.
+  _router.routerDelegate.addListener(_logRouteChange);
   _maybeAutoOpenFullPlayer();
   _maybeOpenAuthDialog();
   _maybeScrollForShot();
@@ -332,6 +335,15 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
           }''';
       // An upload heard on the Bàn làm việc isn't in the archive yet.
       if ('${p.toVariables()['object_id']}'.startsWith('upload-')) return;
+      // Same listen to GA4, so listening time and auto-next vs. tapped plays
+      // can be read there too (song_play only marks the start).
+      Analytics.logEvent('listen', {
+        'song_id': p.objectId,
+        'song_type': p.objectType,
+        'source': p.toVariables()['source'],
+        'duration_played': p.durationPlayed,
+        'completed': p.completed ? 1 : 0,
+      });
       try {
         if (auth.isAuthenticated) {
           await auth.authedMutate(m, p.toVariables());
@@ -340,6 +352,8 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
         }
       } catch (_) {}
     });
+    // Đài presence: "N người đang nghe cùng bạn".
+    RadioPresence.instance.bind(player, auth);
     // Lock-screen / Control Center Now Playing card follows this player.
     MediaSession.bind(player);
     // Apply current cached user (if already restored from prefs) immediately.
@@ -391,11 +405,8 @@ final GlobalKey<NavigatorState> rootNavigatorKey = GlobalKey<NavigatorState>();
 // onException would miss successful navigations; the listener on the
 // router's routerDelegate gets called on every change.
 class _AnalyticsObserver extends NavigatorObserver {
-  void _report(Route<dynamic>? route) {
-    final name = route?.settings.name;
-    if (name == null || name.isEmpty) return;
-    Analytics.logScreenView(name);
-  }
+  // By path, after the router has settled on the new location (deduped).
+  void _report(Route<dynamic>? route) => WidgetsBinding.instance.addPostFrameCallback((_) => _logRouteChange());
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
@@ -424,6 +435,16 @@ String _initialLocation() {
     if (r != null && r.isNotEmpty) return r;
   }
   return '/';
+}
+
+
+String? _lastLoggedPath;
+/// GA4 page_view on every route change, by path (route names are often empty).
+void _logRouteChange() {
+  final path = _router.routerDelegate.currentConfiguration.uri.path;
+  if (path.isEmpty || path == _lastLoggedPath) return;
+  _lastLoggedPath = path;
+  Analytics.logScreenView(path);
 }
 
 final _router = GoRouter(

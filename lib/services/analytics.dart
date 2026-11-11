@@ -30,6 +30,11 @@ class Analytics {
   static const _clientIdKey = "bcdcnt_ga_client_id";
 
   static String? _clientId;
+  // GA4 only counts users and sessions for Measurement Protocol events that
+  // carry a session_id and engagement_time_msec. A session ends after 30
+  // minutes without events, like gtag.js.
+  static int? _sessionId;
+  static int _lastEventMs = 0;
   static String? _appVersion;
   static String? _appPlatform;
   static bool _initStarted = false;
@@ -59,7 +64,20 @@ class Analytics {
     if (!_initDone.isCompleted) _initDone.complete();
   }
 
+  /// This device's persistent id (also used for Đài presence).
+  static Future<String?> clientId() async {
+    await init();
+    return _clientId;
+  }
+
   static bool get _enabled => _apiSecret.isNotEmpty && _clientId != null;
+
+  static int _session() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (_sessionId == null || now - _lastEventMs > 30 * 60 * 1000) _sessionId = now ~/ 1000;
+    _lastEventMs = now;
+    return _sessionId!;
+  }
 
   /// GA4 client_id format is "<random>.<timestamp>" by web convention
   /// — easier to debug in real-time view if it looks like the gtag.js
@@ -90,6 +108,8 @@ class Analytics {
     final merged = <String, Object?>{
       "platform": _appPlatform,
       "app_version": _appVersion,
+      "session_id": _session(),
+      "engagement_time_msec": 100,
       ...?params,
     };
     // GA4 rejects null values; drop them before serialising.
@@ -115,8 +135,13 @@ class Analytics {
 
   /// Convenience for the GA4-canonical `screen_view` event so GoRouter
   /// listeners don't need to re-spell the param keys.
-  static Future<void> logScreenView(String screenName) =>
-      logEvent("screen_view", {"screen_name": screenName});
+  /// Sent as page_view (the property is a web stream, where screen_view is
+  /// dropped), at app://bcdcnt/<path> so app pages sort apart from the site's.
+  static Future<void> logScreenView(String screenName) => logEvent("page_view", {
+        "page_location": "app://bcdcnt${screenName.startsWith('/') ? screenName : '/$screenName'}",
+        "page_title": screenName,
+        "screen_name": screenName,
+      });
 
   /// Stamp the logged-in user against subsequent events. Pass null on
   /// logout so the next session doesn't keep attributing to them.
@@ -130,7 +155,7 @@ class Analytics {
         if (userId != null) "logged_in": {"value": "true"},
       },
       "events": [
-        {"name": "user_identify", "params": {"platform": _appPlatform}},
+        {"name": "user_identify", "params": {"platform": _appPlatform, "session_id": _session(), "engagement_time_msec": 100}},
       ],
     });
     try {
