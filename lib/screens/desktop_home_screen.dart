@@ -76,7 +76,7 @@ String _canChi(int y) {
 Color get _paper => AppColors.isLight ? const Color(0xFFFBF6F1) : const Color(0xFF1E1819);
 Color get _paperEdge => AppColors.isLight ? const Color(0xFFEDE1D8) : const Color(0xFF2E2425);
 
-/// Đài channels. "Theo giờ" picks one by the hour: morning songs about the
+/// Đài channels. "Tự động" picks one by the hour: morning songs about the
 /// homeland, folk songs at noon, love songs at night, lullabies late.
 enum _Ch { auto, all, folk, instr, poem }
 
@@ -256,17 +256,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     } catch (_) {}
   }
 
-  /// "Tối nay: tình ca"… — what "Theo giờ" plays right now.
+  /// "Tối nay: tình ca"… — what "Tự động" plays right now.
   (String, String?, String) get _slot {
     final h = DateTime.now().hour;
     if (h >= 5 && h < 11) return ('Sáng nay: quê hương', 'Tình yêu quê hương đất nước', 'song');
     if (h >= 11 && h < 14) return ('Trưa nay: dân ca', null, 'folk');
-    if (h >= 14 && h < 18) return ('Chiều nay: cả kho', null, 'song');
+    if (h >= 14 && h < 18) return ('Chiều nay: tân nhạc', null, 'song');
     if (h >= 18 && h < 22) return ('Tối nay: tình ca', 'Tình yêu đôi lứa / tình ca', 'song');
     return ('Đêm nay: khúc ru', 'Hát ru', 'song');
   }
 
-  String _chLabel(_Ch c) => switch (c) { _Ch.auto => _slot.$1, _Ch.all => 'Cả kho', _Ch.folk => 'Dân ca', _Ch.instr => 'Không lời', _Ch.poem => 'Tiếng thơ' };
+  String _chLabel(_Ch c) => switch (c) { _Ch.auto => _slot.$1, _Ch.all => 'Tân nhạc', _Ch.folk => 'Dân ca', _Ch.instr => 'Không lời', _Ch.poem => 'Tiếng thơ' };
 
   Future<List<Map<String, dynamic>>> _radioBatch(_Ch c) async {
     List<Map<String, dynamic>> out;
@@ -894,8 +894,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const Spacer(),
         const SizedBox(height: 14),
         Wrap(spacing: 6, runSpacing: 6, children: [
-          chip('Theo giờ', _Ch.auto),
-          chip('Cả kho', _Ch.all),
+          chip('Tự động', _Ch.auto),
+          chip('Tân nhạc', _Ch.all),
           chip('Dân ca', _Ch.folk),
           chip('Không lời', _Ch.instr),
           chip('Tiếng thơ', _Ch.poem),
