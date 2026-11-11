@@ -102,7 +102,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<(Map<String, dynamic>, Anniv?)> _todayList = [];
   int _todayAt = 0;
   /// Only well-loved songs today (nothing to remember): the phone hides the block.
-  bool _todayFallback = false;
   bool _todayHover = false;
   /// Nghe tiếp (phone): the member's latest listens.
   List<Map<String, dynamic>> _recent = [];
@@ -138,14 +137,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadToday();
     _loadRadio(_Ch.auto);
     RadioPresence.instance.watch();
     _fetchLatest(0);
     _fetchTop(0);
-    _fetchStory();
     // Desktop-only blocks.
     if (!widget.mobile) {
+      _loadToday();
+      _fetchStory();
       _fetchTotals();
       _fetchDecades();
       _fetchComments();
@@ -245,7 +244,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
       } catch (_) {}
       // Nothing at all to tell today: a well-loved song, so it's never empty.
-      final fallback = list.isEmpty;
       if (list.isEmpty) {
         for (final s in await _randomSongs()) {
           if (list.length >= 3) break;
@@ -253,7 +251,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
       }
       if (!mounted || list.isEmpty) return;
-      setState(() { _todayList = list; _todayAt = 0; _todayFallback = fallback; });
+      setState(() { _todayList = list; _todayAt = 0; });
       _todayTimer?.cancel();
       if (list.length > 1) {
         _todayTimer = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -753,8 +751,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   // ---------- Phone ----------
-  /// Trang chủ on a phone: greeting · search · Bài hát hôm nay (compact) ·
-  /// Đài · Nghe tiếp · Dành cho bạn · Nghe nhiều · Mới về kho · Người nghe kể.
+  /// Trang chủ on a phone, built for listening: greeting · search · Đài ·
+  /// Nghe tiếp · Dành cho bạn · Nghe nhiều · Mới về kho.
   Widget _mobileBuild(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final authed = auth.isAuthenticated;
@@ -762,7 +760,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final unread = (auth.user?['unread'] is num) ? (auth.user!['unread'] as num).toInt() : 0;
     final now = DateTime.now();
     const side = EdgeInsets.symmetric(horizontal: 20);
-    final showToday = _events.isNotEmpty || (_todayList.isNotEmpty && !_todayFallback);
     return Material(
       color: AppColors.bg,
       child: SafeArea(
@@ -809,8 +806,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ),
               ),
             ),
-            if (showToday) Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _todayCompact(now)),
-            Padding(padding: EdgeInsets.fromLTRB(20, showToday ? 14 : 18, 20, 0), child: _radioCard()),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _radioCard()),
             if (authed && _recent.isNotEmpty) ...[
               Padding(padding: side, child: _head('Nghe tiếp', top: 28, action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day'))),
               Rail(
@@ -827,7 +823,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: authed ? _forYouBlock() : _mobileInvite())),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _topCol()),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _latestCol()),
-            if (_storyList.isNotEmpty) Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_head('Người nghe kể', top: 32, action: 'Vào Cộng đồng', onAction: () => context.go('/cong-dong')), _stories()])),
           ]),
         ),
       ),
@@ -857,144 +852,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ]),
         ),
       ];
-
-  /// Bài hát hôm nay on a phone (canvas option B): picture, title, a round
-  /// play button; under a hairline the reason and the way to the person.
-  Widget _todayCompact(DateTime now) {
-    Widget? pic;
-    String eyebrow = 'BÀI HÁT HÔM NAY', title = '', byline = '';
-    (IconData, Color, String)? why;
-    String link;
-    VoidCallback onLink;
-    VoidCallback? onPlay;
-    var busy = false;
-    var dotColor = AppColors.wine;
-    if (_events.isNotEmpty) {
-      final ev = _events[_eventAt];
-      final id = '${ev['id']}';
-      final songs = _eventSongs[id] ?? const <Map<String, dynamic>>[];
-      eyebrow = 'HÔM NAY';
-      title = '${ev['title'] ?? ''}';
-      byline = '${(ev['items']?['paginatorInfo']?['total'] as num?)?.toInt() ?? songs.length} bài';
-      pic = EventSheet(day: now.day, month: now.month, size: 68, small: true);
-      why = (Icons.event_rounded, AppColors.accentFg, 'Kỷ niệm hôm nay');
-      link = 'Sự kiện';
-      onLink = () => context.push('/su-kien?id=$id');
-      onPlay = songs.isEmpty ? null : () => _play(songs, title);
-    } else {
-      final (s, a) = _todayList[_todayAt % _todayList.length];
-      if (s['__event'] case final SiteEvent e) {
-        final date = e.nextDate(now);
-        final days = e.daysUntil(now);
-        final years = e.yearsOn(date);
-        final when = days == 1 ? 'Ngày mai (${e.day}/${e.month})' : days < 7 ? '${weekdaysVi[date.weekday - 1]} này (${e.day}/${e.month})' : '${weekdaysVi[date.weekday - 1]} ${e.day}/${e.month}';
-        eyebrow = 'SỰ KIỆN SẮP TỚI';
-        title = e.title;
-        byline = 'Tuyển tập ${e.songCount} bài';
-        pic = EventSheet(day: e.day, month: e.month, small: true);
-        why = (Icons.event_rounded, AppColors.accentFg, years != null && years > 0 ? '$when · $years năm trước' : when);
-        link = 'Sự kiện';
-        onLink = () => context.push('/su-kien?id=${e.id}');
-        busy = _starting == 'event-${e.id}';
-        onPlay = () => _start('event-${e.id}', e.title, () => loadEventSongs(e.id));
-      } else {
-        final recent = a != null && _isRecent(a);
-        final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
-        final age = year == null ? 0 : now.year - year;
-        final yob = a == null ? null : int.tryParse('${a.person['yob'] ?? ''}'.trim());
-        if (recent) {
-          eyebrow = 'TƯỞNG NHỚ';
-          dotColor = AppColors.textSecondary;
-        }
-        title = '${s['title'] ?? ''}';
-        final composer = _first(s['sheet']?['composers']);
-        final singers = songByline(s);
-        byline = [if (composer.isNotEmpty) composer, if (singers.isNotEmpty) singers].join(' · ');
-        why = recent
-            ? (Icons.local_florist_rounded, AppColors.textSecondary, '${a.role} ${a.person['title'] ?? ''} vừa qua đời ngày ${a.date.day}/${a.date.month}${yob != null && yob > 1800 ? ', hưởng thọ ${a.date.year - yob} tuổi' : ''}')
-            : a != null && a.years > 0
-                ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.accentFg : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''}')
-                : age >= 40 && age % 10 == 0
-                    ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
-                    : null;
-        final shadow = BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.4), blurRadius: 14, offset: const Offset(0, 6));
-        pic = a != null
-            ? SizedBox(width: 68, height: 68, child: FittedBox(child: _Portrait(url: _todayCover(), mourning: recent, shadow: shadow)))
-            : NetImage(url: _todayCover(), width: 68, height: 68, radius: 14, tint: true);
-        if (a != null) {
-          link = a.route == '/nghe-si/' ? 'Nghệ sĩ' : 'Nhạc sĩ';
-          onLink = () => context.push('${a.route}${a.person['slug']}');
-        } else {
-          link = 'Bài hát';
-          onLink = () => context.push('/song/${s['id']}', extra: s);
-        }
-        onPlay = recent
-            ? () => _start('recent', 'Tưởng nhớ ${a.person['title'] ?? ''}', () => _songsOf(a, 20))
-            : () => _play([s], 'Bài hát hôm nay');
-        busy = _starting == 'recent';
-      }
-    }
-    final n = _events.isNotEmpty ? _events.length : _todayList.length;
-    final at = _events.isNotEmpty ? _eventAt : _todayAt;
-    void go(int i) => setState(() {
-          if (_events.isNotEmpty) {
-            _eventAt = i % _events.length;
-            _fetchEventSongs(_events[_eventAt]);
-          } else {
-            _todayAt = i % _todayList.length;
-          }
-        });
-    return GestureDetector(
-      // Swipe for the next one.
-      onHorizontalDragEnd: n < 2 ? null : (d) => go(at + ((d.primaryVelocity ?? 0) < 0 ? 1 : n - 1)),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(20), border: Border.all(color: _paperEdge)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Expanded(child: Text(eyebrow, style: body(TextStyle(fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
-            if (n > 1) _dots(n, at, go, on: dotColor),
-          ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            pic,
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 18, height: 1.2, fontWeight: FontWeight.w800, color: AppColors.text))),
-                if (byline.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(byline, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-                ],
-              ]),
-            ),
-            const SizedBox(width: 10),
-            InkWell(customBorder: const CircleBorder(), onTap: onPlay, child: _playDot(44, busy: busy)),
-          ]),
-          ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.only(top: 9),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
-              child: Row(children: [
-                if (why != null) ...[
-                  Icon(why.$1, size: 15, color: why.$2),
-                  const SizedBox(width: 5),
-                  Expanded(child: Text(why.$3, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w500, color: why.$2)))),
-                ] else
-                  const Spacer(),
-                InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: onLink,
-                    child: Padding(padding: const EdgeInsets.fromLTRB(10, 6, 0, 6), child: Text('$link ›', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
-                  ),
-              ]),
-            ),
-          ],
-        ]),
-      ),
-    );
-  }
 
   Widget _stats() {
     if (_totals.isEmpty) return const SizedBox(height: 20);
@@ -1027,7 +884,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ]),
       );
 
-  Widget _chips(List<String> labels, int sel, ValueChanged<int> onTap) => Wrap(spacing: 6, runSpacing: 6, children: [
+  Widget _chips(List<String> labels, int sel, ValueChanged<int> onTap) {
+    final chips = [
         for (var i = 0; i < labels.length; i++)
           Material(
             color: i == sel ? AppColors.text : AppColors.surface,
@@ -1042,7 +900,20 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               ),
             ),
           ),
-      ]);
+      ];
+    if (!widget.mobile) return Wrap(spacing: 6, runSpacing: 6, children: chips);
+    // Phone: one row that scrolls sideways, fading at the right edge so the
+    // chips past it read as "more".
+    return ShaderMask(
+      shaderCallback: (r) => const LinearGradient(colors: [Colors.black, Colors.black, Colors.transparent], stops: [0, .88, 1]).createShader(r),
+      blendMode: BlendMode.dstIn,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.only(right: 24),
+        child: Row(children: [for (final (i, c) in chips.indexed) Padding(padding: EdgeInsets.only(left: i == 0 ? 0 : 6), child: c)]),
+      ),
+    );
+  }
 
   Widget _playDot(double size, {Color? bg, Color? fg, bool busy = false}) => Container(
         width: size, height: size,
