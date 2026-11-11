@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -893,7 +894,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ],
         const Spacer(),
         const SizedBox(height: 14),
-        Wrap(spacing: 6, runSpacing: 6, children: [
+        // One line that slides sideways (drag, wheel or trackpad), however many channels.
+        _SlideRow(children: [
           chip('Tự động', _Ch.auto),
           chip('Tân nhạc', _Ch.all),
           chip('Dân ca', _Ch.folk),
@@ -1524,6 +1526,67 @@ class _HoverRowState extends State<_HoverRow> {
                   child: IconButton(tooltip: 'Tuỳ chọn', onPressed: widget.onMore, icon: Icon(Icons.more_horiz_rounded, color: AppColors.textMuted)),
                 ),
             ]),
+          ),
+        ),
+      );
+}
+
+/// Chips on one line that scroll sideways: mouse drag, wheel (turned
+/// sideways) and trackpad; the right edge fades while more is hidden.
+class _SlideRow extends StatefulWidget {
+  final List<Widget> children;
+  const _SlideRow({required this.children});
+  @override
+  State<_SlideRow> createState() => _SlideRowState();
+}
+
+class _SlideRowState extends State<_SlideRow> {
+  final _ctrl = ScrollController();
+  bool _more = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_check);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _check() {
+    if (!_ctrl.hasClients) return;
+    final more = _ctrl.position.extentAfter > 1;
+    if (more != _more) setState(() => _more = more);
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        height: 32,
+        child: Listener(
+          // A plain wheel scrolls the row instead of the page.
+          onPointerSignal: (e) {
+            if (e is PointerScrollEvent && _ctrl.hasClients && _ctrl.position.maxScrollExtent > 0) {
+              final d = e.scrollDelta.dx != 0 ? e.scrollDelta.dx : e.scrollDelta.dy;
+              GestureBinding.instance.pointerSignalResolver.register(e, (_) => _ctrl.jumpTo((_ctrl.offset + d).clamp(0.0, _ctrl.position.maxScrollExtent)));
+            }
+          },
+          child: ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (r) => LinearGradient(colors: [Colors.white, Colors.white, _more ? Colors.transparent : Colors.white], stops: const [0, 0.88, 1]).createShader(r),
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false, dragDevices: {PointerDeviceKind.mouse, PointerDeviceKind.touch, PointerDeviceKind.trackpad}),
+              child: ListView.separated(
+                controller: _ctrl,
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.children.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (_, i) => widget.children[i],
+              ),
+            ),
           ),
         ),
       );
