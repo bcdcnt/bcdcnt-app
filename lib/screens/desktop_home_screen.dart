@@ -95,8 +95,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<Map<String, dynamic>> _events = [];
   final Map<String, List<Map<String, dynamic>>> _eventSongs = {};
   int _eventAt = 0;
-  Map<String, dynamic>? _today;
-  Anniv? _todayAnniv;
+  /// Bài hát hôm nay: a slideshow — songs by this week's anniversary
+  /// composers first, then random well-loved songs.
+  List<(Map<String, dynamic>, Anniv?)> _todayList = [];
+  int _todayAt = 0;
+  bool _todayHover = false;
+  Timer? _todayTimer;
   // Đài
   _Ch _ch = _Ch.auto;
   final Map<_Ch, List<Map<String, dynamic>>> _radio = {};
@@ -147,6 +151,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   void dispose() {
     _topTimer?.cancel();
     _storyTimer?.cancel();
+    _todayTimer?.cancel();
     super.dispose();
   }
 
@@ -200,14 +205,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     unawaited(loadAnniversaries(window: 7).then((a) async {
       if (!mounted) return;
       if (_events.isNotEmpty) return;
+      final list = <(Map<String, dynamic>, Anniv?)>[];
+      final seen = <String>{};
       for (final x in a.where((x) => x.route == '/nhac-si/').take(3)) {
         final s = await _topSongOf(x);
-        if (s != null && mounted) {
-          setState(() { _today = s; _todayAnniv = x; });
-          return;
-        }
+        if (s != null && seen.add('${s['id']}')) list.add((s, x));
       }
-      await _rotationSong(now);
+      for (final s in await _randomSongs()) {
+        if (list.length >= 6) break;
+        if (seen.add('${s['id']}')) list.add((s, null));
+      }
+      if (!mounted || list.isEmpty) return;
+      setState(() { _todayList = list; _todayAt = 0; });
+      _todayTimer?.cancel();
+      if (list.length > 1) {
+        _todayTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+          if (mounted && !_todayHover && _events.isEmpty) setState(() => _todayAt = (_todayAt + 1) % _todayList.length);
+        });
+      }
     }));
     try {
       final d = await ApiClient.query(r'''query($w: WhereConditions) { playlists(first: 20, orderBy: [{column: "id", order: DESC}], where: $w) { data { id title description excerpt event_start event_end event_date items(first: 1) { paginatorInfo { total } } } } }''', {
@@ -242,14 +257,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  /// Same song all day, a different one tomorrow.
-  Future<void> _rotationSong(DateTime now) async {
-    final doy = now.difference(DateTime(now.year)).inDays;
+  /// Well-loved songs, a different handful each visit (no marches first).
+  Future<List<Map<String, dynamic>>> _randomSongs() async {
     try {
-      final d = await ApiClient.query('query(\$p: Int) { songs(first: 1, page: \$p, where: {column: "views", operator: GT, value: 20000}, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } }', {'p': doy % 300 + 1});
-      final l = _songs(d['songs']?['data']);
-      if (l.isNotEmpty && mounted) setState(() => _today = l.first);
-    } catch (_) {}
+      final d = await ApiClient.query('query { songs(first: 10, random: true, where: {AND: [{column: "views", operator: GT, value: 20000}, {column: "empty_file", value: 0}]}) { data { $_songFields poets(first: 1) { data { id slug title } } } } }');
+      return _songs(d['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   Future<void> _fetchEventSongs(Map<String, dynamic> pl) async {
@@ -748,8 +763,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       );
 
   Widget _songOfDay() {
-    final s = _today;
-    if (s == null) {
+    if (_todayList.isEmpty) {
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _eyebrow('BÀI HÁT HÔM NAY'),
         const SizedBox(height: 12),
@@ -758,11 +772,12 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const Skeleton(width: 200, height: 14),
       ]);
     }
+    final (s, a) = _todayList[_todayAt % _todayList.length];
+    final n = _todayList.length;
     final composer = _first(s['sheet']?['composers']);
     final poet = _first(s['poets']);
     final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
     final singers = songByline(s);
-    final a = _todayAnniv;
     final story = [
       if (composer.isNotEmpty && year != null) poet.isNotEmpty ? 'Nhạc sĩ $composer phổ thơ $poet năm $year.' : 'Nhạc sĩ $composer viết bài hát này năm $year.',
       if (a != null && a.years > 0) '${_when(a.date, a.inDays)} là ${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} của nhạc sĩ.',
@@ -770,9 +785,19 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
     final avatar = a?.person['avatar'];
     final cover = (a != null ? (avatar is Map ? avatar['url'] : null) : (s['thumbnail'] as Map?)?['url'])?.toString();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      _eyebrow('BÀI HÁT HÔM NAY'),
+    return MouseRegion(
+      onEnter: (_) => _todayHover = true,
+      onExit: (_) => _todayHover = false,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Row(children: [
+        Expanded(child: _eyebrow('BÀI HÁT HÔM NAY')),
+        if (n > 1) _dots(n, _todayAt, (i) => setState(() => _todayAt = i)),
+      ]),
       const SizedBox(height: 10),
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 300),
+        layoutBuilder: (cur, prev) => Stack(alignment: Alignment.topLeft, children: [...prev, ?cur]),
+        child: Column(key: ValueKey('${s['id']}'), crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         NetImage(url: cover, width: 84, height: 84, radius: 14, tint: true),
         const SizedBox(width: 16),
@@ -803,8 +828,29 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const SizedBox(width: 10),
         _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
       ]),
-    ]);
+        ]),
+      ),
+    ]),
+    );
   }
+
+  /// Slideshow dots: the current one a longer wine pill; tap to jump.
+  Widget _dots(int n, int at, ValueChanged<int> go) => Row(mainAxisSize: MainAxisSize.min, children: [
+        for (var i = 0; i < n; i++)
+          GestureDetector(
+            onTap: () => go(i),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(left: 6),
+                width: i == at ? 20 : 8,
+                height: 8,
+                decoration: BoxDecoration(color: i == at ? AppColors.wine : _paperEdge, borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          ),
+      ]);
 
   String _plain(dynamic html) => '${html ?? ''}'.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
@@ -1160,23 +1206,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final rest = _comments.where((c) => '${c['id']}' != '${big['id']}').take(3).toList();
     final obj = Map<String, dynamic>.from(big['object'] as Map);
     final n = _storyList.length;
-    // Dots: one per story, the current one a longer wine pill; tap to jump.
-    final dots = Row(mainAxisSize: MainAxisSize.min, children: [
-      for (var i = 0; i < n; i++)
-        GestureDetector(
-          onTap: () => setState(() => _storyAt = i),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: const EdgeInsets.only(left: 6),
-              width: i == _storyAt ? 20 : 8,
-              height: 8,
-              decoration: BoxDecoration(color: i == _storyAt ? AppColors.wine : _paperEdge, borderRadius: BorderRadius.circular(4)),
-            ),
-          ),
-        ),
-    ]);
+    final dots = _dots(n, _storyAt, (i) => setState(() => _storyAt = i));
     final quote = MouseRegion(
       onEnter: (_) => _storyHover = true,
       onExit: (_) => _storyHover = false,
