@@ -62,17 +62,8 @@ String _postedAgo(String? createdAt) {
   return timeago(createdAt);
 }
 
-/// "(13/11/1949 – 8/11/2021)": whatever parts of the dates are known.
-String _lifespan(Map p) {
-  String d(String k) {
-    final y = int.tryParse('${p['yo$k'] ?? ''}'.trim()), m = int.tryParse('${p['mo$k'] ?? ''}'.trim()), day = int.tryParse('${p['do$k'] ?? ''}'.trim());
-    if (y == null || y < 1800) return '';
-    return day != null && m != null && day > 0 && m > 0 ? '$day/$m/$y' : '$y';
-  }
-  final b = d('b'), x = d('d');
-  if (b.isEmpty && x.isEmpty) return '';
-  return x.isEmpty ? '($b)' : '(${b.isEmpty ? '?' : b} – $x)';
-}
+/// Passed away this year, within the week: years since is 0.
+bool _isRecent(Anniv a) => !a.birth && a.years == 0;
 
 /// "năm Bính Ngọ".
 String _canChi(int y) {
@@ -216,6 +207,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (_events.isNotEmpty) return;
       final list = <(Map<String, dynamic>, Anniv?)>[];
       final seen = <String>{};
+      for (final x in await _recentlyPassed(now)) {
+        final s = await _topSongOf(x);
+        if (s != null && seen.add('${s['id']}')) list.add((s, x));
+      }
       for (final x in a) {
         if (list.length >= 3) break;
         final s = await _topSongOf(x);
@@ -262,13 +257,45 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   Future<Map<String, dynamic>?> _topSongOf(Anniv a) async {
+    final l = await _songsOf(a, 6);
+    return l.isEmpty ? null : l.first;
+  }
+
+  /// The person's best-known songs, marches left out.
+  Future<List<Map<String, dynamic>>> _songsOf(Anniv a, int n) async {
     final type = a.route == '/nhac-si/' ? 'composer' : 'artist';
     try {
-      final d = await ApiClient.query('query(\$s: String!) { $type(slug: \$s) { songs(first: 6, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } } }', {'s': '${a.person['slug']}'});
-      final l = _songs(d[type]?['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
-      return l.isEmpty ? null : l.first;
+      final d = await ApiClient.query('query(\$s: String!, \$n: Int!) { $type(slug: \$s) { songs(first: \$n, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } } }', {'s': '${a.person['slug']}', 'n': n});
+      return _songs(d[type]?['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
     } catch (_) {
-      return null;
+      return const [];
+    }
+  }
+
+  /// Composers and artists who passed away in the last 7 days (this year):
+  /// they lead the slideshow as "Tưởng nhớ".
+  Future<List<Anniv>> _recentlyPassed(DateTime now) async {
+    final today = DateTime(now.year, now.month, now.day);
+    final from = today.subtract(const Duration(days: 7));
+    const f = 'id title slug views dob mob yob dod mod yod avatar { url }';
+    String q(String type) => '$type: $type(first: 20, where: {AND: [{column: "yod", value: "${now.year}"}, {column: "mod", operator: IN, value: \$m}]}, orderBy: [{column: "views", order: DESC}]) { data { $f } }';
+    try {
+      final m = {from.month, today.month};
+      final d = await ApiClient.query('query(\$m: Mixed) { ${q('composers')} ${q('artists')} }', {'m': [for (final x in m) ...['$x', x.toString().padLeft(2, '0')]]});
+      final out = <Anniv>[];
+      for (final (key, route, role) in [('composers', '/nhac-si/', 'Nhạc sĩ'), ('artists', '/nghe-si/', 'Nghệ sĩ')]) {
+        for (final p in _maps(d[key]?['data'])) {
+          final day = int.tryParse('${p['dod']}'.trim()), month = int.tryParse('${p['mod']}'.trim());
+          if (day == null || month == null) continue;
+          final date = DateTime(now.year, month, day);
+          if (date.month != month || date.isBefore(from) || date.isAfter(today)) continue;
+          out.add(Anniv(p, route, role, false, date, 0, date.difference(today).inDays));
+        }
+      }
+      out.sort((a, b) => b.date.compareTo(a.date));
+      return out.take(2).toList();
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -759,15 +786,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
             child: Builder(builder: (_) {
-              // The person being remembered sits in a round portrait; a song
-              // on its own keeps the square cover.
-              final round = _todayList.isNotEmpty && _todayList[_todayAt % _todayList.length].$2 != null;
-              final shadow = [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 10))];
-              return Container(
-                key: ValueKey(_todayCover()),
-                decoration: round ? BoxDecoration(shape: BoxShape.circle, boxShadow: shadow) : BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: shadow),
-                child: NetImage(url: _todayCover(), width: 176, height: 176, radius: 18, circle: round, tint: true),
-              );
+              final a = _todayList.isEmpty ? null : _todayList[_todayAt % _todayList.length].$2;
+              final shadow = BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.4), blurRadius: 24, offset: const Offset(0, 12));
+              // A song on its own keeps the square cover.
+              if (a == null) {
+                return Container(
+                  key: ValueKey(_todayCover()),
+                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [shadow]),
+                  child: NetImage(url: _todayCover(), width: 176, height: 176, radius: 18, tint: true),
+                );
+              }
+              return _Portrait(key: ValueKey(_todayCover()), url: _todayCover(), mourning: _isRecent(a), shadow: shadow);
             }),
           ),
         const SizedBox(width: 26),
@@ -828,15 +857,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final singers = songByline(s);
     final age = year == null ? 0 : now.year - year;
     // Why this song today: the anniversary, or the song's round birthday.
-    final (IconData, Color, String)? why = a != null && a.years > 0
-        ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.wine : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''} ${_lifespan(a.person)}'.trim())
+    final recent = a != null && _isRecent(a);
+    final yob = a == null ? null : int.tryParse('${a.person['yob'] ?? ''}'.trim());
+    final (IconData, Color, String)? why = recent
+        ? (Icons.local_florist_rounded, AppColors.textSecondary, '${a.role} ${a.person['title'] ?? ''} vừa qua đời ngày ${a.date.day}/${a.date.month}${yob != null && yob > 1800 ? ', hưởng thọ ${a.date.year - yob} tuổi' : ''}')
+        : a != null && a.years > 0
+        ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.wine : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''}')
         : age >= 40 && age % 10 == 0
             ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
             : null;
-    final composers = _maps(s['sheet']?['composers']?['data']);
-    final String? personRoute = a != null
-        ? '${a.route}${a.person['slug']}'
-        : composers.isNotEmpty && '${composers.first['slug'] ?? ''}'.isNotEmpty ? '/nhac-si/${composers.first['slug']}' : null;
+    // Someone remembered: straight to their page; a song alone: to the song.
+    final String? personRoute = a != null ? '${a.route}${a.person['slug']}' : null;
     final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
     return MouseRegion(
       onEnter: (_) => _todayHover = true,
@@ -846,14 +877,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         Expanded(
           child: Text.rich(
             TextSpan(children: [
-              const TextSpan(text: 'BÀI HÁT HÔM NAY'),
+              TextSpan(text: recent ? 'TƯỞNG NHỚ' : 'BÀI HÁT HÔM NAY'),
             ]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.textMuted)),
           ),
         ),
-        if (n > 1) _dots(n, _todayAt, (i) => setState(() => _todayAt = i)),
+        if (n > 1) _dots(n, _todayAt, (i) => setState(() => _todayAt = i), on: recent ? AppColors.textSecondary : null),
       ]),
       const SizedBox(height: 10),
       AnimatedSwitcher(
@@ -892,11 +923,19 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ],
       const SizedBox(height: 18),
       Row(children: [
-        _playPill('Nghe', () => _play([s], 'Bài hát hôm nay')),
+        _playPill('Nghe', () async {
+          // In memory of someone: their songs, best known first.
+          if (recent) {
+            final l = await _songsOf(a, 20);
+            if (mounted) _play(l.isEmpty ? [s] : l, 'Tưởng nhớ ${a.person['title'] ?? ''}');
+            return;
+          }
+          _play([s], 'Bài hát hôm nay');
+        }),
         const SizedBox(width: 10),
         personRoute != null
             ? _outlineButton(personRoute.startsWith('/nghe-si/') ? 'Đến nghệ sĩ' : 'Đến nhạc sĩ', () => context.push(personRoute))
-            : _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
+            : _outlineButton('Đến bài hát', () => context.push('/song/${s['id']}', extra: s)),
       ]),
         ]),
       ),
@@ -905,7 +944,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   /// Slideshow dots: the current one a longer wine pill; tap to jump.
-  Widget _dots(int n, int at, ValueChanged<int> go) => Row(mainAxisSize: MainAxisSize.min, children: [
+  Widget _dots(int n, int at, ValueChanged<int> go, {Color? on}) => Row(mainAxisSize: MainAxisSize.min, children: [
         for (var i = 0; i < n; i++)
           GestureDetector(
             onTap: () => go(i),
@@ -916,7 +955,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 margin: const EdgeInsets.only(left: 6),
                 width: i == at ? 20 : 8,
                 height: 8,
-                decoration: BoxDecoration(color: i == at ? AppColors.wine : _paperEdge, borderRadius: BorderRadius.circular(4)),
+                decoration: BoxDecoration(color: i == at ? (on ?? AppColors.wine) : _paperEdge, borderRadius: BorderRadius.circular(4)),
               ),
             ),
           ),
@@ -1005,35 +1044,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
           const SizedBox(width: 8),
           Expanded(child: Text('ĐÀI BCĐCNT · ${_chLabel(_ch).toUpperCase()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: Color(0xFFEBC2BC))))),
+          // Not alone: how many are listening to the Đài right now.
+          ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
+            valueListenable: RadioPresence.instance.listeners,
+            builder: (context, l, _) => l.$1 < 2
+                // Counting yourself, one is just you: show it from two.
+                ? const SizedBox.shrink()
+                : Padding(padding: const EdgeInsets.only(left: 10), child: Text('${l.$1} đang nghe', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.4, fontWeight: FontWeight.w700, color: Colors.white)))),
+          ),
         ]),
         const SizedBox(height: 12),
         Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
-        // Not alone: how many are listening on the site right now, with faces.
-        ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
-          valueListenable: RadioPresence.instance.listeners,
-          builder: (context, l, _) {
-            final (n, faces) = l;
-            // Counting yourself, "1 người" is just you: show it from two.
-            if (n < 2) return const SizedBox.shrink();
-            return Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Row(children: [
-                if (faces.isNotEmpty) ...[
-                  SizedBox(
-                    width: 22.0 + (faces.length - 1) * 15,
-                    height: 22,
-                    child: Stack(children: [
-                      for (final (i, u) in faces.indexed)
-                        Positioned(left: i * 15.0, child: Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF4A1617), width: 1.5)), child: UserAvatar(url: u['avatar']?.toString(), name: '${u['username'] ?? ''}', size: 19))),
-                    ]),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                Flexible(child: Text('$n người đang nghe cùng bạn', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFFEBC2BC))))),
-              ]),
-            );
-          },
-        ),
         const SizedBox(height: 18),
         Material(
           color: Colors.white.withValues(alpha: 0.07),
@@ -1878,4 +1899,51 @@ class _StillWave extends StatelessWidget {
           Container(width: 3, height: h, decoration: BoxDecoration(color: Colors.white.withValues(alpha: i > 9 ? 0.25 : 0.7), borderRadius: BorderRadius.circular(2))),
         ],
       ]);
+}
+
+/// The person on the song-of-the-day card: an old round print — sepia,
+/// cream mount, darker edges. In mourning: black and white with a black
+/// ribbon across the corner.
+class _Portrait extends StatelessWidget {
+  final String? url;
+  final bool mourning;
+  final BoxShadow shadow;
+  const _Portrait({super.key, required this.url, required this.mourning, required this.shadow});
+
+  static const _sepia = ColorFilter.matrix([
+    0.393 * 0.9, 0.769 * 0.9, 0.189 * 0.9, 0, 6,
+    0.349 * 0.9, 0.686 * 0.9, 0.168 * 0.9, 0, 4,
+    0.272 * 0.9, 0.534 * 0.9, 0.131 * 0.9, 0, 2,
+    0, 0, 0, 1, 0,
+  ]);
+  static const _grey = ColorFilter.matrix([
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0.2126, 0.7152, 0.0722, 0, 0,
+    0, 0, 0, 1, 0,
+  ]);
+
+  @override
+  Widget build(BuildContext context) {
+    final mount = mourning ? const Color(0xFFE6E2E0) : const Color(0xFFF4EADC);
+    final edge = mourning ? const Color(0xFFBDB6B4) : const Color(0xFFE3D3BE);
+    return Container(
+      width: 188,
+      height: 188,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: mount, border: Border.all(color: edge), boxShadow: [shadow]),
+      padding: const EdgeInsets.all(5),
+      child: ClipOval(
+        child: Stack(fit: StackFit.expand, children: [
+          ColorFiltered(colorFilter: mourning ? _grey : _sepia, child: NetImage(url: url, width: 176, height: 176)),
+          const DecoratedBox(decoration: BoxDecoration(gradient: RadialGradient(colors: [Color(0x00000000), Color(0x00000000), Color(0x52462814)], stops: [0, 0.55, 1]))),
+          if (mourning)
+            Positioned(
+              top: 20,
+              right: -38,
+              child: Transform.rotate(angle: 0.785, child: Container(width: 140, height: 20, decoration: BoxDecoration(color: const Color(0xFF1A1415), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 3, offset: const Offset(0, 1))]))),
+            ),
+        ]),
+      ),
+    );
+  }
 }
