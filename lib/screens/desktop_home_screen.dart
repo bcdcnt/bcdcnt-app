@@ -549,23 +549,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     } catch (_) {}
   }
 
-  /// The small cards: the newest comments — one per member, no requests,
-  /// no pasted lyrics.
+  /// The small cards: the three newest comments, three different people.
   Future<void> _fetchComments() async {
     try {
-      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at is_request user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
+      final d = await ApiClient.query('''query { latestComments(first: 30, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
       final seen = <String>{};
       final out = <Map<String, dynamic>>[];
       for (final c in _maps(d['latestComments']?['data'])) {
         final who = '${c['user']?['id'] ?? ''}';
         final obj = c['object'];
-        if (who.isEmpty || obj is! Map || obj['title'] == null || c['is_request'] == true || c['is_request'] == 1) continue;
-        final raw = '${c['content'] ?? ''}';
-        final lines = raw.split(RegExp(r'<br\s*/?>|</p>|\n', caseSensitive: false)).map((l) => l.replaceAll(RegExp(r'<[^>]*>'), '').trim()).where((l) => l.isNotEmpty).toList();
-        final lyricLike = RegExp(r'^\s*(\d+|đk|điệp khúc)\s*[-.:)]', caseSensitive: false).hasMatch(lines.isEmpty ? '' : lines.first) || (lines.length >= 4 && lines.every((l) => l.length < 60));
-        final text = _sentences(raw);
-        if (lyricLike || text.length < 30 || !seen.add(who)) continue;
-        out.add({...c, 'text': text});
+        if (who.isEmpty || obj is! Map || obj['title'] == null || !seen.add(who)) continue;
+        out.add({...c, 'text': _sentences('${c['content'] ?? ''}')});
         if (out.length == 3) break;
       }
       if (mounted) setState(() => _comments = out);
@@ -1263,7 +1257,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         InkWell(
           onTap: () => _openObject(obj, commentId: '${big['id']}'),
           // Longer trích đoạn: a little smaller so ~280 chars still fit.
-          child: Text('${big['text']}', maxLines: 5, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: '${big['text']}'.length > 180 ? 18 : 21, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text)),
+          child: Text('${big['text']}', maxLines: 4, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Georgia', fontFamilyFallback: const ['Times New Roman', 'serif'], fontSize: '${big['text']}'.length > 180 ? 18 : 21, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text)),
         ),
         if (big['cut'] == true) ...[
           const SizedBox(height: 8),
@@ -1343,7 +1337,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return LayoutBuilder(builder: (context, c) {
       if (c.maxWidth < 900 || rest.isEmpty) return SizedBox(height: 300, child: quote);
       return SizedBox(
-        height: 318,
+        height: 330,
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Expanded(flex: 13, child: quote),
           const SizedBox(width: 20),
