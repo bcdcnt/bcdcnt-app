@@ -78,7 +78,7 @@ Color get _paperEdge => AppColors.isLight ? const Color(0xFFEDE1D8) : const Colo
 
 /// Đài channels. "Theo giờ" picks one by the hour: morning songs about the
 /// homeland, folk songs at noon, love songs at night, lullabies late.
-enum _Ch { auto, all, folk, instr }
+enum _Ch { auto, all, folk, instr, poem }
 
 class DesktopHomeScreen extends StatefulWidget {
   const DesktopHomeScreen({super.key});
@@ -95,7 +95,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   int _eventAt = 0;
   Map<String, dynamic>? _today;
   Anniv? _todayAnniv;
-  List<Anniv> _anniv = [];
   // Đài
   _Ch _ch = _Ch.auto;
   final Map<_Ch, List<Map<String, dynamic>>> _radio = {};
@@ -192,7 +191,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final mmdd = '${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     unawaited(loadAnniversaries(window: 7).then((a) async {
       if (!mounted) return;
-      setState(() => _anniv = a);
       if (_events.isNotEmpty) return;
       for (final x in a.where((x) => x.route == '/nhac-si/').take(3)) {
         final s = await _topSongOf(x);
@@ -268,7 +266,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     return ('Đêm nay: khúc ru', 'Hát ru', 'song');
   }
 
-  String _chLabel(_Ch c) => switch (c) { _Ch.auto => _slot.$1, _Ch.all => 'Cả kho', _Ch.folk => 'Dân ca', _Ch.instr => 'Không lời' };
+  String _chLabel(_Ch c) => switch (c) { _Ch.auto => _slot.$1, _Ch.all => 'Cả kho', _Ch.folk => 'Dân ca', _Ch.instr => 'Không lời', _Ch.poem => 'Tiếng thơ' };
 
   Future<List<Map<String, dynamic>>> _radioBatch(_Ch c) async {
     List<Map<String, dynamic>> out;
@@ -287,6 +285,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         out = await folk();
       case _Ch.instr:
         out = await _instrumentalMix();
+      case _Ch.poem:
+        final d = await ApiClient.query('query { poems(first: 40, random: true) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+        out = _songs(d['poems']?['data'], 'poem');
       case _Ch.auto:
         final (_, tag, kind) = _slot;
         if (kind == 'folk') {
@@ -704,38 +705,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         ),
       );
 
-  Widget _upcoming(Set<String> skip) {
-    final list = _anniv.where((a) => !skip.contains('${a.route}${a.person['id']}')).take(2).toList();
-    if (list.isEmpty) return const SizedBox.shrink();
-    return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.only(top: 12),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
-      child: Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        Padding(padding: const EdgeInsets.only(right: 4), child: _eyebrow('SẮP TỚI')),
-        for (final a in list)
-          Material(
-            color: AppColors.isLight ? Colors.white : AppColors.surface,
-            shape: StadiumBorder(side: BorderSide(color: _paperEdge)),
-            child: InkWell(
-              customBorder: const StadiumBorder(),
-              onTap: () => context.push('${a.route}${a.person['slug']}'),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(3, 3, 10, 3),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  NetImage(url: a.person['avatar']?['url']?.toString(), width: 22, height: 22, circle: true, tint: true),
-                  const SizedBox(width: 7),
-                  Text('${a.date.day}/${a.date.month}', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                  const SizedBox(width: 6),
-                  Text('${a.person['title'] ?? ''}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text))),
-                ]),
-              ),
-            ),
-          ),
-      ]),
-    );
-  }
-
   Widget _songOfDay() {
     final s = _today;
     if (s == null) {
@@ -792,7 +761,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const SizedBox(width: 10),
         _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
       ]),
-      _upcoming({if (a != null) '${a.route}${a.person['id']}'}),
     ]);
   }
 
@@ -835,7 +803,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         const SizedBox(width: 10),
         _outlineButton('Xem playlist', () => context.push('/playlist/$id')),
       ]),
-      _upcoming(const {}),
     ]);
   }
 
@@ -931,6 +898,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           chip('Cả kho', _Ch.all),
           chip('Dân ca', _Ch.folk),
           chip('Không lời', _Ch.instr),
+          chip('Tiếng thơ', _Ch.poem),
         ]),
       ]),
     );
