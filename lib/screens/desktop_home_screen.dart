@@ -62,11 +62,16 @@ String _postedAgo(String? createdAt) {
   return timeago(createdAt);
 }
 
-/// "Ngày mai (12/11)", "Thứ Sáu này (13/11)": a day within the week.
-String _when(DateTime d, int inDays) {
-  if (inDays <= 0) return 'Hôm nay';
-  if (inDays == 1) return 'Ngày mai (${d.day}/${d.month})';
-  return '${_weekdays[d.weekday - 1]} này (${d.day}/${d.month})';
+/// "(13/11/1949 – 8/11/2021)": whatever parts of the dates are known.
+String _lifespan(Map p) {
+  String d(String k) {
+    final y = int.tryParse('${p['yo$k'] ?? ''}'.trim()), m = int.tryParse('${p['mo$k'] ?? ''}'.trim()), day = int.tryParse('${p['do$k'] ?? ''}'.trim());
+    if (y == null || y < 1800) return '';
+    return day != null && m != null && day > 0 && m > 0 ? '$day/$m/$y' : '$y';
+  }
+  final b = d('b'), x = d('d');
+  if (b.isEmpty && x.isEmpty) return '';
+  return x.isEmpty ? '($b)' : '(${b.isEmpty ? '?' : b} – $x)';
 }
 
 /// "năm Bính Ngọ".
@@ -211,9 +216,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       if (_events.isNotEmpty) return;
       final list = <(Map<String, dynamic>, Anniv?)>[];
       final seen = <String>{};
-      for (final x in a.where((x) => x.route == '/nhac-si/').take(3)) {
+      for (final x in a) {
+        if (list.length >= 3) break;
         final s = await _topSongOf(x);
         if (s != null && seen.add('${s['id']}')) list.add((s, x));
+      }
+      for (final s in await _roundYearSongs(now.year)) {
+        if (list.length >= 4) break;
+        if (seen.add('${s['id']}')) list.add((s, null));
       }
       for (final s in await _randomSongs()) {
         if (list.length >= 6) break;
@@ -252,12 +262,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   Future<Map<String, dynamic>?> _topSongOf(Anniv a) async {
+    final type = a.route == '/nhac-si/' ? 'composer' : 'artist';
     try {
-      final d = await ApiClient.query('query(\$s: String!) { composer(slug: \$s) { songs(first: 6, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } } }', {'s': '${a.person['slug']}'});
-      final l = _songs(d['composer']?['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
+      final d = await ApiClient.query('query(\$s: String!) { $type(slug: \$s) { songs(first: 6, orderBy: [{column: "views", order: DESC}]) { data { $_songFields poets(first: 1) { data { id slug title } } } } } }', {'s': '${a.person['slug']}'});
+      final l = _songs(d[type]?['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
       return l.isEmpty ? null : l.first;
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Songs written a round 40/50/60/70/80 years ago, well-known ones
+  /// shuffled so each visit brings a different one.
+  Future<List<Map<String, dynamic>>> _roundYearSongs(int year) async {
+    try {
+      final years = [for (var n = 40; n <= 80; n += 10) year - n];
+      final d = await ApiClient.query('query(\$y: Mixed) { songs(first: 20, orderBy: [{column: "views", order: DESC}], where: {AND: [{column: "empty_file", value: 0}, {HAS: {relation: "sheet", condition: {column: "year", operator: IN, value: \$y}}}]}) { data { $_songFields poets(first: 1) { data { id slug title } } } } }', {'y': years});
+      return _songs(d['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList()..shuffle();
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -735,11 +758,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         else
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 300),
-            child: Container(
-              key: ValueKey(_todayCover()),
-              decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 10))]),
-              child: NetImage(url: _todayCover(), width: 176, height: 176, radius: 18, tint: true),
-            ),
+            child: Builder(builder: (_) {
+              // The person being remembered sits in a round portrait; a song
+              // on its own keeps the square cover.
+              final round = _todayList.isNotEmpty && _todayList[_todayAt % _todayList.length].$2 != null;
+              final shadow = [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 22, offset: const Offset(0, 10))];
+              return Container(
+                key: ValueKey(_todayCover()),
+                decoration: round ? BoxDecoration(shape: BoxShape.circle, boxShadow: shadow) : BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: shadow),
+                child: NetImage(url: _todayCover(), width: 176, height: 176, radius: 18, circle: round, tint: true),
+              );
+            }),
           ),
         const SizedBox(width: 26),
         Expanded(child: _events.isNotEmpty ? _eventBody() : _songOfDay(now)),
@@ -797,10 +826,17 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final poet = _first(s['poets']);
     final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
     final singers = songByline(s);
-    final story = [
-      if (composer.isNotEmpty && year != null) poet.isNotEmpty ? 'Nhạc sĩ $composer phổ thơ $poet năm $year.' : 'Nhạc sĩ $composer viết bài hát này năm $year.',
-      if (a != null && a.years > 0) '${_when(a.date, a.inDays)} là ${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} của nhạc sĩ.',
-    ].join(' ');
+    final age = year == null ? 0 : now.year - year;
+    // Why this song today: the anniversary, or the song's round birthday.
+    final (IconData, Color, String)? why = a != null && a.years > 0
+        ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.wine : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''} ${_lifespan(a.person)}'.trim())
+        : age >= 40 && age % 10 == 0
+            ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
+            : null;
+    final composers = _maps(s['sheet']?['composers']?['data']);
+    final String? personRoute = a != null
+        ? '${a.route}${a.person['slug']}'
+        : composers.isNotEmpty && '${composers.first['slug'] ?? ''}'.isNotEmpty ? '/nhac-si/${composers.first['slug']}' : null;
     final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
     return MouseRegion(
       onEnter: (_) => _todayHover = true,
@@ -811,7 +847,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           child: Text.rich(
             TextSpan(children: [
               const TextSpan(text: 'BÀI HÁT HÔM NAY'),
-              TextSpan(text: ' · ${_weekdays[now.weekday - 1].toUpperCase()} ${now.day}/${now.month}', style: TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.4, color: AppColors.textMuted.withValues(alpha: 0.75))),
             ]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -843,15 +878,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ]),
         ),
       ]),
-      if (story.isNotEmpty) ...[
-        const SizedBox(height: 12),
-        Text(story, maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+      if (why != null) ...[
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.only(top: 12),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
+          child: Row(children: [
+            Icon(why.$1, size: 15, color: why.$2),
+            const SizedBox(width: 6),
+            Expanded(child: Text(why.$3, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w500, color: why.$2)))),
+          ]),
+        ),
       ],
-      const SizedBox(height: 14),
+      const SizedBox(height: 18),
       Row(children: [
         _playPill('Nghe', () => _play([s], 'Bài hát hôm nay')),
         const SizedBox(width: 10),
-        _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
+        personRoute != null
+            ? _outlineButton(personRoute.startsWith('/nghe-si/') ? 'Đến nghệ sĩ' : 'Đến nhạc sĩ', () => context.push(personRoute))
+            : _outlineButton('Lời bài hát', () => context.push('/song/${s['id']}', extra: s)),
       ]),
         ]),
       ),
