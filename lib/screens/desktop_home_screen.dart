@@ -814,7 +814,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             if (authed && _recent.isNotEmpty) ...[
               Padding(padding: side, child: _head('Nghe tiếp', top: 28, action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day'))),
               Rail(
-                height: 196,
+                height: 224,
                 count: _recent.length,
                 builder: (_, i) => RailCard(
                   cover: SongCover(song: _recent[i], size: 128, radius: 0),
