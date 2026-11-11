@@ -1777,13 +1777,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Text(
             item[key] ?? '',
-            style: body(TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w600,
-              color: AppColors.accentLight,
-              decoration: TextDecoration.underline,
-              decorationColor: AppColors.accent,
-              decorationStyle: TextDecorationStyle.dotted,
-            )),
+            style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg)),
           ),
           ),
         ),
@@ -1801,6 +1795,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   }
 }
 
+/// One credit row on the phone: muted label in a fixed column, the names
+/// (red, tappable) beside it, wrapping under themselves.
 class _MetaLine extends StatelessWidget {
   final String label;
   final List<InlineSpan> children;
@@ -1808,18 +1804,28 @@ class _MetaLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: RichText(
-        textScaler: MediaQuery.textScalerOf(context),
-        text: TextSpan(
-          style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary, height: 1.5)),
-          children: [
-            TextSpan(text: '$label ', style: TextStyle(color: AppColors.textMuted)),
-            ...children,
-          ],
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: scaler.scale(78),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          ),
         ),
-      ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: RichText(
+            textScaler: scaler,
+            text: TextSpan(
+              style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textSecondary, height: 1.45)),
+              children: children,
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -2299,7 +2305,9 @@ class _OverflowActionPill extends StatelessWidget {
 }
 
 
-/// Phone header (2026-11): cover beside kind · year and the title.
+/// Phone header (canvas BaiHat_DauTrang_PA, 12/11): a square picture the
+/// width of the page, then kind · year · note on one small line and the
+/// title. No picture: a wine-red sleeve with a record's grooves, no words.
 class _MobileHeader extends StatelessWidget {
   final Map<String, dynamic> song;
   final String? thumb;
@@ -2312,75 +2320,110 @@ class _MobileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = (song['title'] ?? '').toString();
-    final subtitle = (song['subtitle'] ?? '').toString();
+    var note = (song['subtitle'] ?? '').toString().trim();
+    if (note.startsWith('(') && note.endsWith(')')) note = note.substring(1, note.length - 1).trim();
     final head = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text([kind, if (year != null) year!].join(' · ').toUpperCase(), style: AppText.eyebrow),
+        Text.rich(
+          TextSpan(children: [
+            TextSpan(text: [kind, if (year != null) year!].join(' · ').toUpperCase()),
+            if (note.isNotEmpty)
+              TextSpan(text: ' · $note', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.2)),
+          ]),
+          style: body(TextStyle(fontSize: 11, height: 1.5, fontWeight: FontWeight.w800, letterSpacing: 1.1, color: AppColors.textMuted)),
+        ),
         const SizedBox(height: 4),
-        Text(noOrphan(title), style: display(TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: AppColors.text))),
-        if (subtitle.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle, style: AppText.meta)),
+        Text(noOrphan(title), style: display(TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
       ],
     );
+    final Widget picture;
     if (videoPlayer != null) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        ClipRRect(borderRadius: BorderRadius.circular(18), child: videoPlayer!),
-        const SizedBox(height: 16),
-        head,
-      ]);
-    }
-    // A wide banner with the title over its darkened foot: the same frame
-    // whatever the title's length, nothing left blank beside a small cover.
-    final thumb = this.thumb;
-    return GestureDetector(
-      onTap: onArtworkTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.45), blurRadius: 20, offset: const Offset(0, 8))]),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: SizedBox(
-            height: 210,
-            child: LayoutBuilder(builder: (context, c) {
-              final fallback = OverflowBox(maxHeight: double.infinity, child: GeneratedCover(title: title, size: c.maxWidth, radius: 0));
-              return Stack(fit: StackFit.expand, children: [
-                if (thumb == null || thumb.isEmpty)
-                  fallback
-                else
-                  CachedNetworkImage(
-                    imageUrl: cdnImg(thumb, 640),
-                    fit: BoxFit.cover,
-                    placeholder: (_, _) => Container(color: AppColors.surfaceLight),
-                    errorWidget: (_, _, _) => fallback,
-                  ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      stops: [0.3, 1],
-                      colors: [Color(0x00161112), Color(0xD1161112)],
+      picture = ClipRRect(borderRadius: BorderRadius.circular(18), child: videoPlayer!);
+    } else {
+      final thumb = this.thumb;
+      final sleeve = const _RecordSleeve();
+      picture = GestureDetector(
+        onTap: thumb == null || thumb.isEmpty ? null : onArtworkTap,
+        child: AspectRatio(
+          aspectRatio: 1,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: thumb == null || thumb.isEmpty
+                ? sleeve
+                : Stack(fit: StackFit.expand, children: [
+                    CachedNetworkImage(
+                      imageUrl: cdnImg(thumb, 900),
+                      fit: BoxFit.cover,
+                      placeholder: (_, _) => Container(color: AppColors.surfaceLight),
+                      errorWidget: (_, _, _) => sleeve,
                     ),
-                  ),
-                ),
-                Positioned(
-                  left: 18, right: 18, bottom: 16,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text([kind, if (year != null) year!].join(' · ').toUpperCase(), style: AppText.eyebrow.copyWith(color: const Color(0xFFF6E8DE))),
-                      const SizedBox(height: 4),
-                      Text(noOrphan(title), maxLines: 3, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 26, height: 1.15, fontWeight: FontWeight.w800, color: Colors.white))),
-                      if (subtitle.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.meta.copyWith(color: Colors.white.withValues(alpha: 0.85)))),
-                    ],
-                  ),
-                ),
-              ]);
-            }),
+                    Positioned(
+                      right: 10, bottom: 10,
+                      child: Container(
+                        width: 30, height: 30,
+                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), shape: BoxShape.circle),
+                        child: const Icon(Icons.open_in_full_rounded, size: 15, color: Colors.white),
+                      ),
+                    ),
+                  ]),
           ),
         ),
-      ),
-    );
+      );
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      picture,
+      const SizedBox(height: 16),
+      head,
+    ]);
   }
+}
+
+/// Stand-in for a missing picture: wine-red paper and a record's grooves
+/// rising from the lower-right corner. No words — the title sits below.
+class _RecordSleeve extends StatelessWidget {
+  const _RecordSleeve();
+
+  @override
+  Widget build(BuildContext context) => const DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment(-0.6, -1),
+            end: Alignment(0.6, 1),
+            colors: [Color(0xFF9B2C27), Color(0xFF7A1A1B), Color(0xFF5A1213)],
+            stops: [0, 0.5, 1],
+          ),
+        ),
+        child: CustomPaint(painter: _GroovesPainter(), child: SizedBox.expand()),
+      );
+}
+
+class _GroovesPainter extends CustomPainter {
+  const _GroovesPainter();
+
+  // (diameter as a share of the side, opacity): drawn on a 350 side first.
+  static const _rings = [(1.6, .16), (1.457, .11), (1.329, .19), (1.2, .10), (1.086, .16), (.971, .09), (.857, .14), (.749, .08), (.646, .12), (.549, .07)];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.shortestSide;
+    final c = Offset(size.width - s * .2, size.height - s * .2);
+    for (final (d, a) in _rings) {
+      canvas.drawCircle(c, s * d / 2, Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = const Color(0xFFFFECE6).withValues(alpha: a));
+    }
+    // A soft sheen from the top-left, like light on a paper sleeve.
+    canvas.drawRect(Offset.zero & size, Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.center,
+        colors: [Colors.white.withValues(alpha: .10), Colors.white.withValues(alpha: 0)],
+      ).createShader(Offset.zero & size));
+  }
+
+  @override
+  bool shouldRepaint(_GroovesPainter old) => false;
 }

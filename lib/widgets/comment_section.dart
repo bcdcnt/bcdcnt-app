@@ -1157,8 +1157,8 @@ class _CommentSectionState extends State<CommentSection> {
                         // and the like target wouldn't be the
                         // current text anyway.
                         if (_editingId != c['id']?.toString()) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                          // 48pt targets with words: older readers miss bare
-                          // 14px icons.
+                          // Same look on every width (desktop's): heart + count,
+                          // "Trả lời" as a word. Phones keep a 44pt tap height.
                           Semantics(
                             button: true,
                             excludeSemantics: true,
@@ -1167,13 +1167,13 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _love(c['id'].toString(), isLoved),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(minHeight: compact ? 32 : 48, minWidth: compact ? 0 : 48),
+                                constraints: BoxConstraints(minHeight: compact ? 32 : 44),
                                 child: Padding(
-                                  padding: EdgeInsets.only(left: compact ? 0 : 6, right: compact ? 14 : 6),
+                                  padding: const EdgeInsets.only(right: 14),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: compact ? 17 : 20, color: isLoved ? AppColors.error : AppColors.textMuted),
-                                    if (loveCount > 0 || !compact) SizedBox(width: compact ? 5 : 6),
-                                    if (loveCount > 0 || !compact) Text(loveCount > 0 ? '$loveCount' : 'Thích', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: isLoved ? AppColors.error : AppColors.textSecondary)),
+                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 17, color: isLoved ? AppColors.error : AppColors.textMuted),
+                                    if (loveCount > 0) const SizedBox(width: 5),
+                                    if (loveCount > 0) Text('$loveCount', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: isLoved ? AppColors.error : AppColors.textSecondary)),
                                   ]),
                                 ),
                               ),
@@ -1184,15 +1184,11 @@ class _CommentSectionState extends State<CommentSection> {
                               borderRadius: BorderRadius.circular(24),
                               onTap: () => _replyTo(user['username']?.toString() ?? c['nickname']?.toString()),
                               child: ConstrainedBox(
-                                constraints: BoxConstraints(minHeight: compact ? 32 : 48, minWidth: compact ? 0 : 48),
+                                constraints: BoxConstraints(minHeight: compact ? 32 : 44),
                                 child: Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 6),
+                                  padding: EdgeInsets.zero,
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    if (!compact) ...[
-                                      Icon(Icons.reply_rounded, size: 20, color: AppColors.textMuted),
-                                      const SizedBox(width: 6),
-                                    ],
-                                    Text('Trả lời', style: TextStyle(fontSize: 14, fontWeight: compact ? FontWeight.w700 : FontWeight.w600, color: AppColors.textSecondary)),
+                                    Text('Trả lời', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
                                   ]),
                                 ),
                               ),

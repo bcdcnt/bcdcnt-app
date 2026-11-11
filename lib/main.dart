@@ -431,6 +431,9 @@ class _AnalyticsObserver extends NavigatorObserver {
 // BCDCNT_INITIAL_ROUTE=/nghe-si/thanh-huyen — without synthetic clicks.
 // No-op on web (Platform.environment is unavailable there) and in normal use.
 String _initialLocation() {
+  // Same hook for the simulator, at build time: --dart-define=BCDCNT_INITIAL_ROUTE=/song/137.
+  const built = String.fromEnvironment('BCDCNT_INITIAL_ROUTE');
+  if (built.isNotEmpty) return built;
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
     final r = Platform.environment['BCDCNT_INITIAL_ROUTE'];
     if (r != null && r.isNotEmpty) return r;
