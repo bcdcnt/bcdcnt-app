@@ -112,10 +112,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<Map<String, dynamic>>? _docs;
   final Map<String, List<Map<String, dynamic>>> _top = {};
   // Người nghe kể · Chung tay xây dựng
+  /// Người nghe kể: one cảm nhận hay (left, big) · the newest comments (right).
+  Map<String, dynamic>? _story;
   List<Map<String, dynamic>> _comments = [];
   Map<String, int> _ctv = {};
   List<Map<String, dynamic>> _helpers = [];
-  int _helperCount = 0;
 
   String? _starting;
   Timer? _topTimer;
@@ -129,6 +130,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     _fetchDecades();
     _fetchLatest(0);
     _fetchTop(0);
+    _fetchStory();
     _fetchComments();
     _fetchCtv();
     _fetchHelpers();
@@ -485,9 +487,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }
   }
 
-  /// Người nghe kể: comments marked "cảm nhận hay" (is_featured), a random
-  /// few each visit; the longest is told big.
-  Future<void> _fetchComments() async {
+  /// The big quote: a comment marked "cảm nhận hay" (is_featured), a
+  /// different one each visit; the longest of a few is told big.
+  Future<void> _fetchStory() async {
     try {
       final d = await ApiClient.query('query { featuredComments(limit: 4) { id snippet likes created_at username user_avatar song_id song_title song_image audio_url video_url play_type file_type } }');
       const typenames = {'song': 'Song', 'folk': 'Folk', 'instrumental': 'Instrumental', 'poem': 'Poem', 'karaoke': 'Karaoke'};
@@ -510,9 +512,30 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
               },
             },
       ];
-      if (out.length > 1) {
-        final longest = out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b);
-        out.insert(0, out.removeAt(out.indexWhere((c) => '${c['text']}'.length == longest)));
+      if (out.isEmpty) return;
+      final longest = out.map((c) => '${c['text']}'.length).reduce((a, b) => a > b ? a : b);
+      if (mounted) setState(() => _story = out.firstWhere((c) => '${c['text']}'.length == longest));
+    } catch (_) {}
+  }
+
+  /// The small cards: the newest comments — one per member, no requests,
+  /// no pasted lyrics.
+  Future<void> _fetchComments() async {
+    try {
+      final d = await ApiClient.query('''query { latestComments(first: 40, orderBy: [{column: "created_at", order: DESC}]) { data { id content likes created_at is_request user { id username avatar { url } } object { __typename ... on Song { id title slug thumbnail { url } file { audio_url video_url } } ... on Folk { id title slug thumbnail { url } file { audio_url } } ... on Instrumental { id title slug thumbnail { url } file { audio_url } } ... on Poem { id title slug thumbnail { url } file { audio_url } } } } } }''');
+      final seen = <String>{};
+      final out = <Map<String, dynamic>>[];
+      for (final c in _maps(d['latestComments']?['data'])) {
+        final who = '${c['user']?['id'] ?? ''}';
+        final obj = c['object'];
+        if (who.isEmpty || obj is! Map || obj['title'] == null || c['is_request'] == true || c['is_request'] == 1) continue;
+        final raw = '${c['content'] ?? ''}';
+        final lines = raw.split(RegExp(r'<br\s*/?>|</p>|\n', caseSensitive: false)).map((l) => l.replaceAll(RegExp(r'<[^>]*>'), '').trim()).where((l) => l.isNotEmpty).toList();
+        final lyricLike = RegExp(r'^\s*(\d+|đk|điệp khúc)\s*[-.:)]', caseSensitive: false).hasMatch(lines.isEmpty ? '' : lines.first) || (lines.length >= 4 && lines.every((l) => l.length < 60));
+        final text = _sentences(raw);
+        if (lyricLike || text.length < 30 || !seen.add(who)) continue;
+        out.add({...c, 'text': text});
+        if (out.length == 3) break;
       }
       if (mounted) setState(() => _comments = out);
     } catch (_) {}
@@ -559,7 +582,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         by[id] = (Map<String, dynamic>.from(u), (by[id]?.$2 ?? 0) + ((p['point'] as num?)?.toInt() ?? 0));
       }
       final list = by.values.toList()..sort((a, b) => b.$2.compareTo(a.$2));
-      if (mounted) setState(() { _helperCount = list.length; _helpers = [for (final x in list.take(5)) x.$1]; });
+      if (mounted) setState(() { _helpers = [for (final x in list) x.$1]; });
     } catch (_) {}
   }
 
@@ -606,7 +629,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     ]),
                   );
                 }),
-                if (_comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
+                if (_story != null || _comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
                 if (_ctv.isNotEmpty) _together(),
               ]),
             ),
@@ -877,7 +900,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     Text(onAir ? 'ĐANG PHÁT' : 'BẤM ĐỂ NGHE', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Color(0xFFD9B6B0)))),
                     // Before it starts, no titles: what plays is a surprise.
                     Text(onAir ? '${player.currentSong?['title'] ?? ''}' : _chLabel(_ch).replaceFirst(RegExp(r'^.*: '), '').replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase()), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
-                    Text(onAir ? songByline(player.currentSong ?? const <String, dynamic>{}) : 'Bài đầu tiên là một bất ngờ', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
+                    if (onAir) Text(songByline(player.currentSong ?? const <String, dynamic>{}), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
                   ]),
                 ),
                 if (onAir) const NowPlayingBars(color: Colors.white),
@@ -1121,8 +1144,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   Widget _stories() {
-    final big = _comments.first;
-    final rest = _comments.skip(1).take(3).toList();
+    final big = _story ?? _comments.first;
+    final rest = _comments.where((c) => '${c['id']}' != '${big['id']}').take(3).toList();
     final obj = Map<String, dynamic>.from(big['object'] as Map);
     final quote = Container(
       padding: const EdgeInsets.fromLTRB(30, 26, 30, 24),
@@ -1262,24 +1285,19 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       Text('CHUNG TAY XÂY DỰNG', style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
       const SizedBox(height: 6),
       Text('Kho nhạc này do chính người nghe cùng làm.', style: display(TextStyle(fontSize: 21, height: 1.25, letterSpacing: -0.3, fontWeight: FontWeight.w800, color: AppColors.text))),
-      if (_helperCount > 0) ...[
-        const SizedBox(height: 12),
-        Row(children: [
-          SizedBox(
-            width: 28.0 + (_helpers.length - 1) * 20,
-            height: 28,
-            child: Stack(children: [
-              for (final (i, u) in _helpers.indexed)
-                Positioned(left: i * 20.0, child: Container(decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pink, width: 2)), child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 24))),
-            ]),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text.rich(
-              TextSpan(children: [const TextSpan(text: 'Tuần này '), TextSpan(text: '$_helperCount người', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)), const TextSpan(text: ' đã góp tay')]),
-              style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+      // Every member who helped this week, face by face: many hands, no words needed.
+      if (_helpers.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        Wrap(spacing: 4, runSpacing: 4, children: [
+          for (final u in _helpers)
+            Tooltip(
+              message: '${u['username'] ?? ''}',
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => context.push('/user/${u['id']}'),
+                child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: 30),
+              ),
             ),
-          ),
         ]),
       ],
     ]);
@@ -1289,12 +1307,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       decoration: BoxDecoration(color: pink, borderRadius: BorderRadius.circular(24), border: Border.all(color: pinkEdge)),
       child: LayoutBuilder(builder: (context, c) {
         if (c.maxWidth < 900) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [intro, const SizedBox(height: 16), IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final (i, m) in items.indexed) ...[if (i > 0) const SizedBox(width: 12), meter(m)]]))]);
-        return IntrinsicHeight(
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            SizedBox(width: 290, child: Align(alignment: Alignment.centerLeft, child: intro)),
-            for (final m in items) ...[const SizedBox(width: 18), meter(m)],
-          ]),
-        );
+        // Meters keep their own height, centred beside the (taller) faces.
+        return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          SizedBox(width: 290, child: intro),
+          for (final m in items) ...[const SizedBox(width: 18), meter(m)],
+        ]);
       }),
     );
   }
