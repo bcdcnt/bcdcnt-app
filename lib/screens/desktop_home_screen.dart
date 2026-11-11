@@ -20,7 +20,7 @@ import '../widgets/ui.dart';
 // nhiều · Người nghe kể · Chung tay xây dựng. Lối tắt Thư viện nằm ở menu
 // trái; "nghe tiếp" là thanh phát nhớ bài lần trước.
 
-const _songFields = 'id slug title subtitle views created_at play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
+const _songFields = 'id slug title subtitle views created_at play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } sheet { year composers(first: 2) { data { id slug title } } }';
 const _personal = 'id title slug play_type thumbnail { url } file { audio_url video_url } artists(first: 2) { data { id title slug } }';
 
 const _cats = [
@@ -37,7 +37,8 @@ const _tn = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Po
 final _march = RegExp(r'hành khúc|tiến quân|quốc ca|chiêu hồn|mặc niệm|nhạc hiệu|quân kỳ', caseSensitive: false);
 
 List<Map<String, dynamic>> _maps(dynamic list) => ((list ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-bool _playable(Map s) => s['file']?['audio_url'] != null || s['file']?['video_url'] != null;
+/// Has a file to play — and not one marked lost (empty_file = 1).
+bool _playable(Map s) => s['empty_file'] != 1 && (s['file']?['audio_url'] != null || s['file']?['video_url'] != null);
 String _key(Map s) => '${s['file_type'] ?? 'song'}-${s['id']}';
 String _first(dynamic people) => _maps(people is Map ? people['data'] : people).map((p) => '${p['title'] ?? ''}').firstWhere((t) => t.isNotEmpty && t != 'Đang cập nhật', orElse: () => '');
 
@@ -272,11 +273,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Future<List<Map<String, dynamic>>> _radioBatch(_Ch c) async {
     List<Map<String, dynamic>> out;
     Future<List<Map<String, dynamic>>> popular() async {
-      final d = await ApiClient.query('query { songs(first: 40, random: true, where: {column: "views", operator: GT, value: 2000}) { data { $_songFields } } }');
+      final d = await ApiClient.query('query { songs(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 2000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }');
       return _songs(d['songs']?['data']);
     }
     Future<List<Map<String, dynamic>>> folk() async {
-      final d = await ApiClient.query('query { folks(first: 40, random: true, where: {column: "views", operator: GT, value: 300}) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+      final d = await ApiClient.query('query { folks(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 300}, {column: "empty_file", value: 0}]}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
       return _songs(d['folks']?['data'], 'folk');
     }
     switch (c) {
@@ -287,14 +288,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _Ch.instr:
         out = await _instrumentalMix();
       case _Ch.poem:
-        final d = await ApiClient.query('query { poems(first: 40, random: true) { data { id slug title subtitle views play_type thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+        final d = await ApiClient.query('query { poems(first: 40, random: true, where: {column: "empty_file", value: 0}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
         out = _songs(d['poems']?['data'], 'poem');
       case _Ch.auto:
         final (_, tag, kind) = _slot;
         if (kind == 'folk') {
           out = await folk();
         } else if (tag != null) {
-          final d = await ApiClient.query('query(\$t: String!) { songsByTag(first: 40, random: true, tag: \$t, where: {column: "views", operator: GT, value: 1000}) { data { $_songFields } } }', {'t': tag});
+          final d = await ApiClient.query('query(\$t: String!) { songsByTag(first: 40, random: true, tag: \$t, where: {AND: [{column: "views", operator: GT, value: 1000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }', {'t': tag});
           out = _songs(d['songsByTag']?['data']);
           if (out.length < 10) out = [...out, ...await popular()];
         } else {
@@ -331,7 +332,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// ~30 instrumentals: no ceremonial music or marches, instruments taking
   /// turns so it never runs five guitar pieces in a row.
   Future<List<Map<String, dynamic>>> _instrumentalMix() async {
-    final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'column': 'views', 'operator': 'GT', 'value': 300}});
+    final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'AND': [{'column': 'views', 'operator': 'GT', 'value': 300}, {'column': 'empty_file', 'value': 0}]}});
     final ceremony = RegExp(r'nghi lễ|quân nhạc|kèn đồng', caseSensitive: false);
     final kinds = {
       'guitar': RegExp(r'guitar|ghi-ta|ghita', caseSensitive: false),
