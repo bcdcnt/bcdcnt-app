@@ -751,7 +751,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   // ---------- Phone ----------
-  /// Trang chủ on a phone, built for listening: greeting · search · Đài ·
+  /// Trang chủ on a phone, built for listening (search has its own tab): greeting · Đài ·
   /// Nghe tiếp · Dành cho bạn · Nghe nhiều · Mới về kho.
   Widget _mobileBuild(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -782,29 +782,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 else
                   PillButton(label: 'Đăng nhập', height: 38, onTap: () => context.push('/dang-nhap')),
               ]),
-            ),
-            // Search: where most people go next from here.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              child: Material(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(24),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(24),
-                  onTap: () => context.go('/search'),
-                  child: SizedBox(
-                    height: 48,
-                    child: Row(children: [
-                      const SizedBox(width: 16),
-                      Icon(Icons.search_rounded, size: 22, color: AppColors.textMuted),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text('Tìm bài, nhạc sĩ, câu hát…', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
-                      Icon(Icons.mic_none_rounded, size: 22, color: AppColors.accentFg),
-                      const SizedBox(width: 16),
-                    ]),
-                  ),
-                ),
-              ),
             ),
             Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _radioCard()),
             if (authed && _recent.isNotEmpty) ...[
