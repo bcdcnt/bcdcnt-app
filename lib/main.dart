@@ -615,7 +615,7 @@ class _MobileShellState extends State<_MobileShell> {
   PlayerProvider? _player;
 
   static Widget _buildTab(int i) => switch (i) {
-        0 => const HomeMobileScreen(),
+        0 => const DesktopHomeScreen(mobile: true),
         1 => const SearchScreen(),
         2 => const CommunityScreen(),
         _ => const LibraryScreen(),

@@ -82,7 +82,10 @@ Color get _paperEdge => AppColors.isLight ? const Color(0xFFEDE1D8) : const Colo
 enum _Ch { auto, all, folk, instr, poem }
 
 class DesktopHomeScreen extends StatefulWidget {
-  const DesktopHomeScreen({super.key});
+  /// The phone layout (canvas "Trang chủ mobile — đề xuất"): the same
+  /// blocks, fewer of them, one column.
+  final bool mobile;
+  const DesktopHomeScreen({super.key, this.mobile = false});
   @override
   State<DesktopHomeScreen> createState() => _DesktopHomeScreenState();
 }
@@ -98,7 +101,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// composers first, then random well-loved songs.
   List<(Map<String, dynamic>, Anniv?)> _todayList = [];
   int _todayAt = 0;
+  /// Only well-loved songs today (nothing to remember): the phone hides the block.
+  bool _todayFallback = false;
   bool _todayHover = false;
+  /// Nghe tiếp (phone): the member's latest listens.
+  List<Map<String, dynamic>> _recent = [];
   Timer? _todayTimer;
   // Đài
   _Ch _ch = _Ch.auto;
@@ -131,17 +138,20 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchTotals();
     _loadToday();
     _loadRadio(_Ch.auto);
     RadioPresence.instance.watch();
-    _fetchDecades();
     _fetchLatest(0);
     _fetchTop(0);
     _fetchStory();
-    _fetchComments();
-    _fetchCtv();
-    _fetchHelpers();
+    // Desktop-only blocks.
+    if (!widget.mobile) {
+      _fetchTotals();
+      _fetchDecades();
+      _fetchComments();
+      _fetchCtv();
+      _fetchHelpers();
+    }
     _topTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       _top.remove('today');
       if (_period == 0) _fetchTop(0);
@@ -164,8 +174,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final uid = auth.user?['id']?.toString();
     if (!auth.loading && uid != _personalFor) {
       _personalFor = uid;
-      _forYou = []; _forgotten = []; _myArtist = null; _myComposer = null;
-      if (uid != null) _fetchPersonal(auth, uid);
+      _forYou = []; _forgotten = []; _myArtist = null; _myComposer = null; _recent = [];
+      if (uid != null) {
+        _fetchPersonal(auth, uid);
+        if (widget.mobile) _fetchRecent(auth, uid);
+      }
     }
   }
 
@@ -232,6 +245,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
       } catch (_) {}
       // Nothing at all to tell today: a well-loved song, so it's never empty.
+      final fallback = list.isEmpty;
       if (list.isEmpty) {
         for (final s in await _randomSongs()) {
           if (list.length >= 3) break;
@@ -239,7 +253,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         }
       }
       if (!mounted || list.isEmpty) return;
-      setState(() { _todayList = list; _todayAt = 0; });
+      setState(() { _todayList = list; _todayAt = 0; _todayFallback = fallback; });
       _todayTimer?.cancel();
       if (list.length > 1) {
         _todayTimer = Timer.periodic(const Duration(seconds: 10), (_) {
@@ -501,6 +515,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }).catchError((_) {});
   }
 
+  Future<void> _fetchRecent(AuthProvider auth, String uid) async {
+    try {
+      final d = await auth.authedQuery('''query(\$id: ID!) { user(id: \$id) { recentListens(first: 12, page: 1, orderBy: [{column: "id", order: DESC}]) { data { object { __typename ... on Song { $_personal } ... on Folk { $_personal } ... on Instrumental { $_personal } ... on Poem { $_personal } } } } } }''', {'id': uid});
+      final seen = <String>{};
+      final out = [for (final s in _objects(d['user']?['recentListens']?['data'])) if (seen.add(_key(s))) s];
+      if (mounted && _personalFor == uid) setState(() => _recent = out);
+    } catch (_) {}
+  }
+
   Future<List<Map<String, dynamic>>> _personSongs(String type, String slug) async {
     final d = await ApiClient.query('query(\$s: String!) { $type(slug: \$s) { songs(first: 60, orderBy: [{column: "views", order: DESC}]) { data { $_songFields } } } }', {'s': slug});
     return _songs(d[type]?['songs']?['data'])..shuffle();
@@ -679,6 +702,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.mobile) return _mobileBuild(context);
     final authed = context.select<AuthProvider, bool>((a) => a.isAuthenticated);
     final name = context.select<AuthProvider, String?>((a) => a.user?['username']?.toString());
     final now = DateTime.now();
@@ -725,6 +749,250 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ),
         );
       }),
+    );
+  }
+
+  // ---------- Phone ----------
+  /// Trang chủ on a phone: greeting · search · Bài hát hôm nay (compact) ·
+  /// Đài · Nghe tiếp · Dành cho bạn · Nghe nhiều · Mới về kho · Người nghe kể.
+  Widget _mobileBuild(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final authed = auth.isAuthenticated;
+    final name = auth.user?['username']?.toString();
+    final unread = (auth.user?['unread'] is num) ? (auth.user!['unread'] as num).toInt() : 0;
+    final now = DateTime.now();
+    const side = EdgeInsets.symmetric(horizontal: 20);
+    final showToday = _events.isNotEmpty || (_todayList.isNotEmpty && !_todayFallback);
+    return Material(
+      color: AppColors.bg,
+      child: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          color: AppColors.accent,
+          onRefresh: () async {
+            _top.remove(_periods[_period].$2);
+            _latest.remove(_cats[_cat].$2);
+            await Future.wait([_fetchTop(_period), _fetchLatest(_cat)]);
+          },
+          child: ListView(padding: const EdgeInsets.only(bottom: 32), children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Row(children: [
+                Expanded(child: Text('${_greeting(now)}${authed && name != null ? ', $name' : ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: AppColors.text)))),
+                const SizedBox(width: 12),
+                if (authed)
+                  RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: unread > 0, onTap: () => context.push('/thong-bao'))
+                else
+                  PillButton(label: 'Đăng nhập', height: 38, onTap: () => context.push('/dang-nhap')),
+              ]),
+            ),
+            // Search: where most people go next from here.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: Material(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(24),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(24),
+                  onTap: () => context.go('/search'),
+                  child: SizedBox(
+                    height: 48,
+                    child: Row(children: [
+                      const SizedBox(width: 16),
+                      Icon(Icons.search_rounded, size: 22, color: AppColors.textMuted),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text('Tìm bài, nhạc sĩ, câu hát…', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+                      Icon(Icons.mic_none_rounded, size: 22, color: AppColors.accentFg),
+                      const SizedBox(width: 16),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+            if (showToday) Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _todayCompact(now)),
+            Padding(padding: EdgeInsets.fromLTRB(20, showToday ? 14 : 18, 20, 0), child: _radioCard()),
+            if (authed && _recent.isNotEmpty) ...[
+              Padding(padding: side, child: _head('Nghe tiếp', top: 28, action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day'))),
+              Rail(
+                height: 196,
+                count: _recent.length,
+                builder: (_, i) => RailCard(
+                  cover: SongCover(song: _recent[i], size: 128, radius: 0),
+                  title: '${_recent[i]['title'] ?? ''}',
+                  subtitle: songByline(_recent[i]),
+                  onTap: () => playOrOpen(context, _recent[i], _recent, 'Nghe gần đây'),
+                ),
+              ),
+            ],
+            Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: authed ? _forYouBlock() : _mobileInvite())),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _topCol()),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _latestCol()),
+            if (_storyList.isNotEmpty) Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [_head('Người nghe kể', top: 32, action: 'Vào Cộng đồng', onAction: () => context.go('/cong-dong')), _stories()])),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _mobileInvite() => [
+        _head('Dành cho bạn', top: 28),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              for (final (c1, c2, icon) in const [(Color(0xFFC79A3E), Color(0xFF7A5414), Icons.auto_awesome_rounded), (Color(0xFFC0392B), Color(0xFF711313), Icons.favorite_rounded), (Color(0xFF5A6B7A), Color(0xFF2E3A44), Icons.history_rounded)]) ...[
+                Container(width: 48, height: 48, decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: [c1, c2])), child: Icon(icon, size: 22, color: Colors.white)),
+                const SizedBox(width: 8),
+              ],
+            ]),
+            const SizedBox(height: 12),
+            Text('Đăng nhập để có gợi ý theo gu nghe, lưu bài yêu thích và nghe tiếp từ chỗ đã dừng.', style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            const SizedBox(height: 14),
+            Row(children: [
+              Expanded(child: PillButton(label: 'Đăng nhập', height: 44, onTap: () => context.push('/dang-nhap'))),
+              const SizedBox(width: 10),
+              Expanded(child: PillButton(label: 'Đăng ký', height: 44, primary: false, onTap: () => context.push('/dang-ky'))),
+            ]),
+          ]),
+        ),
+      ];
+
+  /// Bài hát hôm nay on a phone (canvas option B): picture, title, a round
+  /// play button; under a hairline the reason and the way to the person.
+  Widget _todayCompact(DateTime now) {
+    Widget? pic;
+    String eyebrow = 'BÀI HÁT HÔM NAY', title = '', byline = '';
+    (IconData, Color, String)? why;
+    String link;
+    VoidCallback onLink;
+    VoidCallback? onPlay;
+    var busy = false;
+    var dotColor = AppColors.wine;
+    if (_events.isNotEmpty) {
+      final ev = _events[_eventAt];
+      final id = '${ev['id']}';
+      final songs = _eventSongs[id] ?? const <Map<String, dynamic>>[];
+      eyebrow = 'HÔM NAY';
+      title = '${ev['title'] ?? ''}';
+      byline = '${(ev['items']?['paginatorInfo']?['total'] as num?)?.toInt() ?? songs.length} bài';
+      pic = EventSheet(day: now.day, month: now.month, size: 68, small: true);
+      why = (Icons.event_rounded, AppColors.accentFg, 'Kỷ niệm hôm nay');
+      link = 'Sự kiện';
+      onLink = () => context.push('/su-kien?id=$id');
+      onPlay = songs.isEmpty ? null : () => _play(songs, title);
+    } else {
+      final (s, a) = _todayList[_todayAt % _todayList.length];
+      if (s['__event'] case final SiteEvent e) {
+        final date = e.nextDate(now);
+        final days = e.daysUntil(now);
+        final years = e.yearsOn(date);
+        final when = days == 1 ? 'Ngày mai (${e.day}/${e.month})' : days < 7 ? '${weekdaysVi[date.weekday - 1]} này (${e.day}/${e.month})' : '${weekdaysVi[date.weekday - 1]} ${e.day}/${e.month}';
+        eyebrow = 'SỰ KIỆN SẮP TỚI';
+        title = e.title;
+        byline = 'Tuyển tập ${e.songCount} bài';
+        pic = EventSheet(day: e.day, month: e.month, small: true);
+        why = (Icons.event_rounded, AppColors.accentFg, years != null && years > 0 ? '$when · $years năm trước' : when);
+        link = 'Sự kiện';
+        onLink = () => context.push('/su-kien?id=${e.id}');
+        busy = _starting == 'event-${e.id}';
+        onPlay = () => _start('event-${e.id}', e.title, () => loadEventSongs(e.id));
+      } else {
+        final recent = a != null && _isRecent(a);
+        final year = int.tryParse('${s['sheet']?['year'] ?? ''}');
+        final age = year == null ? 0 : now.year - year;
+        final yob = a == null ? null : int.tryParse('${a.person['yob'] ?? ''}'.trim());
+        if (recent) {
+          eyebrow = 'TƯỞNG NHỚ';
+          dotColor = AppColors.textSecondary;
+        }
+        title = '${s['title'] ?? ''}';
+        final composer = _first(s['sheet']?['composers']);
+        final singers = songByline(s);
+        byline = [if (composer.isNotEmpty) composer, if (singers.isNotEmpty) singers].join(' · ');
+        why = recent
+            ? (Icons.local_florist_rounded, AppColors.textSecondary, '${a.role} ${a.person['title'] ?? ''} vừa qua đời ngày ${a.date.day}/${a.date.month}${yob != null && yob > 1800 ? ', hưởng thọ ${a.date.year - yob} tuổi' : ''}')
+            : a != null && a.years > 0
+                ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.accentFg : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''}')
+                : age >= 40 && age % 10 == 0
+                    ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
+                    : null;
+        final shadow = BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.14 : 0.4), blurRadius: 14, offset: const Offset(0, 6));
+        pic = a != null
+            ? SizedBox(width: 68, height: 68, child: FittedBox(child: _Portrait(url: _todayCover(), mourning: recent, shadow: shadow)))
+            : NetImage(url: _todayCover(), width: 68, height: 68, radius: 14, tint: true);
+        if (a != null) {
+          link = a.route == '/nghe-si/' ? 'Nghệ sĩ' : 'Nhạc sĩ';
+          onLink = () => context.push('${a.route}${a.person['slug']}');
+        } else {
+          link = 'Bài hát';
+          onLink = () => context.push('/song/${s['id']}', extra: s);
+        }
+        onPlay = recent
+            ? () => _start('recent', 'Tưởng nhớ ${a.person['title'] ?? ''}', () => _songsOf(a, 20))
+            : () => _play([s], 'Bài hát hôm nay');
+        busy = _starting == 'recent';
+      }
+    }
+    final n = _events.isNotEmpty ? _events.length : _todayList.length;
+    final at = _events.isNotEmpty ? _eventAt : _todayAt;
+    void go(int i) => setState(() {
+          if (_events.isNotEmpty) {
+            _eventAt = i % _events.length;
+            _fetchEventSongs(_events[_eventAt]);
+          } else {
+            _todayAt = i % _todayList.length;
+          }
+        });
+    return GestureDetector(
+      // Swipe for the next one.
+      onHorizontalDragEnd: n < 2 ? null : (d) => go(at + ((d.primaryVelocity ?? 0) < 0 ? 1 : n - 1)),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: _paper, borderRadius: BorderRadius.circular(20), border: Border.all(color: _paperEdge)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(child: Text(eyebrow, style: body(TextStyle(fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
+            if (n > 1) _dots(n, at, go, on: dotColor),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            pic,
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 18, height: 1.2, fontWeight: FontWeight.w800, color: AppColors.text))),
+                if (byline.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(byline, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ],
+              ]),
+            ),
+            const SizedBox(width: 10),
+            InkWell(customBorder: const CircleBorder(), onTap: onPlay, child: _playDot(44, busy: busy)),
+          ]),
+          ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.only(top: 9),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: _paperEdge))),
+              child: Row(children: [
+                if (why != null) ...[
+                  Icon(why.$1, size: 15, color: why.$2),
+                  const SizedBox(width: 5),
+                  Expanded(child: Text(why.$3, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, height: 1.35, fontWeight: FontWeight.w500, color: why.$2)))),
+                ] else
+                  const Spacer(),
+                InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: onLink,
+                    child: Padding(padding: const EdgeInsets.fromLTRB(10, 6, 0, 6), child: Text('$link ›', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
+                  ),
+              ]),
+            ),
+          ],
+        ]),
+      ),
     );
   }
 
@@ -1125,9 +1393,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 : Padding(padding: const EdgeInsets.only(left: 10), child: Text('${l.$1} đang nghe', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.4, fontWeight: FontWeight.w700, color: Colors.white)))),
           ),
         ]),
-        const SizedBox(height: 12),
-        Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
-        const SizedBox(height: 18),
+        if (!widget.mobile) ...[
+          const SizedBox(height: 12),
+          Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
+        ],
+        SizedBox(height: widget.mobile ? 14 : 18),
         Material(
           color: Colors.white.withValues(alpha: 0.07),
           borderRadius: BorderRadius.circular(18),
@@ -1160,7 +1430,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ),
         ),
-        const Spacer(),
+        if (widget.mobile) const SizedBox(height: 14) else const Spacer(),
         const SizedBox(height: 14),
         // One line that slides sideways (drag, wheel or trackpad), however many channels.
         _SlideRow(children: [
