@@ -13,6 +13,7 @@ import '../services/radio_presence.dart';
 import '../widgets/anniversary_rail.dart';
 import 'events_screen.dart' show EventSheet;
 import '../widgets/auth_dialogs.dart';
+import '../widgets/brand_logo.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 
@@ -41,6 +42,16 @@ final _march = RegExp(r'hành khúc|tiến quân|quốc ca|chiêu hồn|mặc ni
 
 List<Map<String, dynamic>> _maps(dynamic list) => ((list ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
 /// Has a file to play — and not one marked lost (empty_file = 1).
+/// The periods of Dòng thời gian (desktop): [from, to) · name. `to` 0 = now.
+const _eras = [
+  (1930, 1945, 'Tiền chiến', 'Nhạc tiền chiến'),
+  (1945, 1954, 'Chống Pháp', 'Kháng chiến chống Pháp'),
+  (1954, 1975, 'Chống Mỹ', 'Kháng chiến chống Mỹ'),
+  (1975, 1986, 'Sau giải phóng', 'Sau giải phóng'),
+  (1986, 2000, 'Đổi mới', 'Thời kỳ Đổi mới'),
+  (2000, 0, 'Sau 2000', 'Sau năm 2000'),
+];
+
 bool _playable(Map s) => s['empty_file'] != 1 && (s['file']?['audio_url'] != null || s['file']?['video_url'] != null);
 String _key(Map s) => '${s['file_type'] ?? 'song'}-${s['id']}';
 String _first(dynamic people) => _maps(people is Map ? people['data'] : people).map((p) => '${p['title'] ?? ''}').firstWhere((t) => t.isNotEmpty && t != 'Đang cập nhật', orElse: () => '');
@@ -103,8 +114,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   int _todayAt = 0;
   /// Only well-loved songs today (nothing to remember): the phone hides the block.
   bool _todayHover = false;
-  /// Nghe tiếp (phone): the member's latest listens.
-  List<Map<String, dynamic>> _recent = [];
+  /// Theo năm tháng (phone): per period, songs written then + a cover.
+  List<(int, String?)>? _eraInfo;
   Timer? _todayTimer;
   // Đài
   _Ch _ch = _Ch.auto;
@@ -141,6 +152,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     RadioPresence.instance.watch();
     _fetchLatest(0);
     _fetchTop(0);
+    if (widget.mobile) _fetchEras();
     // Desktop-only blocks.
     if (!widget.mobile) {
       _loadToday();
@@ -173,11 +185,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final uid = auth.user?['id']?.toString();
     if (!auth.loading && uid != _personalFor) {
       _personalFor = uid;
-      _forYou = []; _forgotten = []; _myArtist = null; _myComposer = null; _recent = [];
-      if (uid != null) {
-        _fetchPersonal(auth, uid);
-        if (widget.mobile) _fetchRecent(auth, uid);
-      }
+      _forYou = []; _forgotten = []; _myArtist = null; _myComposer = null;
+      if (uid != null) _fetchPersonal(auth, uid);
     }
   }
 
@@ -340,7 +349,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// Well-loved songs, a different handful each visit (no marches first).
   Future<List<Map<String, dynamic>>> _randomSongs() async {
     try {
-      final d = await ApiClient.query('query { songs(first: 10, random: true, where: {AND: [{column: "views", operator: GT, value: 20000}, {column: "empty_file", value: 0}]}) { data { $_songFields poets(first: 1) { data { id slug title } } } } }');
+      final d = await ApiClient.query('query { songs(first: 10, random: true, where: {AND: [{column: "views", operator: GT, value: 20000}, {column: "empty_file", value: 0}]}) { data { $_songFields poets(first: 1) { data { id slug title } } } } }', null, true);
       return _songs(d['songs']?['data']).where((s) => !_march.hasMatch('${s['title']}')).toList();
     } catch (_) {
       return const [];
@@ -374,11 +383,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Future<List<Map<String, dynamic>>> _radioBatch(_Ch c) async {
     List<Map<String, dynamic>> out;
     Future<List<Map<String, dynamic>>> popular() async {
-      final d = await ApiClient.query('query { songs(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 2000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }');
+      final d = await ApiClient.query('query { songs(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 2000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }', null, true);
       return _songs(d['songs']?['data']);
     }
     Future<List<Map<String, dynamic>>> folk() async {
-      final d = await ApiClient.query('query { folks(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 300}, {column: "empty_file", value: 0}]}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+      final d = await ApiClient.query('query { folks(first: 40, random: true, where: {AND: [{column: "views", operator: GT, value: 300}, {column: "empty_file", value: 0}]}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }', null, true);
       return _songs(d['folks']?['data'], 'folk');
     }
     switch (c) {
@@ -389,14 +398,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       case _Ch.instr:
         out = await _instrumentalMix();
       case _Ch.poem:
-        final d = await ApiClient.query('query { poems(first: 40, random: true, where: {column: "empty_file", value: 0}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }');
+        final d = await ApiClient.query('query { poems(first: 40, random: true, where: {column: "empty_file", value: 0}) { data { id slug title subtitle views play_type empty_file thumbnail { url } file { audio_url video_url duration } artists(first: 3) { data { id slug title } } } } }', null, true);
         out = _songs(d['poems']?['data'], 'poem');
       case _Ch.auto:
         final (_, tag, kind) = _slot;
         if (kind == 'folk') {
           out = await folk();
         } else if (tag != null) {
-          final d = await ApiClient.query('query(\$t: String!) { songsByTag(first: 40, random: true, tag: \$t, where: {AND: [{column: "views", operator: GT, value: 1000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }', {'t': tag});
+          final d = await ApiClient.query('query(\$t: String!) { songsByTag(first: 40, random: true, tag: \$t, where: {AND: [{column: "views", operator: GT, value: 1000}, {column: "empty_file", value: 0}]}) { data { $_songFields } } }', {'t': tag}, true);
           out = _songs(d['songsByTag']?['data']);
           if (out.length < 10) out = [...out, ...await popular()];
         } else {
@@ -433,7 +442,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   /// ~30 instrumentals: no ceremonial music or marches, instruments taking
   /// turns so it never runs five guitar pieces in a row.
   Future<List<Map<String, dynamic>>> _instrumentalMix() async {
-    final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'AND': [{'column': 'views', 'operator': 'GT', 'value': 300}, {'column': 'empty_file', 'value': 0}]}});
+    final d = await ApiClient.query('query(\$w: WhereConditions) { instrumentals(first: 100, random: true, where: \$w) { data { $_songFields } } }', {'w': {'AND': [{'column': 'views', 'operator': 'GT', 'value': 300}, {'column': 'empty_file', 'value': 0}]}}, true);
     final ceremony = RegExp(r'nghi lễ|quân nhạc|kèn đồng', caseSensitive: false);
     final kinds = {
       'guitar': RegExp(r'guitar|ghi-ta|ghita', caseSensitive: false),
@@ -513,13 +522,24 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     }).catchError((_) {});
   }
 
-  Future<void> _fetchRecent(AuthProvider auth, String uid) async {
+  /// One query: how many songs each period has, and its best-known song's cover.
+  Future<void> _fetchEras() async {
+    final q = [for (final (i, (from, to, _, _)) in _eras.indexed) 'e$i: songsByYear(from: $from, to: ${to == 0 ? DateTime.now().year + 1 : to}, first: 1, sort: "views") { data { thumbnail { url } } paginatorInfo { total } }'].join(' ');
     try {
-      final d = await auth.authedQuery('''query(\$id: ID!) { user(id: \$id) { recentListens(first: 12, page: 1, orderBy: [{column: "id", order: DESC}]) { data { object { __typename ... on Song { $_personal } ... on Folk { $_personal } ... on Instrumental { $_personal } ... on Poem { $_personal } } } } } }''', {'id': uid});
-      final seen = <String>{};
-      final out = [for (final s in _objects(d['user']?['recentListens']?['data'])) if (seen.add(_key(s))) s];
-      if (mounted && _personalFor == uid) setState(() => _recent = out);
+      final d = await ApiClient.query('query { $q }');
+      if (!mounted) return;
+      setState(() => _eraInfo = [
+            for (var i = 0; i < _eras.length; i++)
+              ((d['e$i']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0, _maps(d['e$i']?['data']).firstOrNull?['thumbnail']?['url']?.toString()),
+          ]);
     } catch (_) {}
+  }
+
+  /// A period's best-known songs, shuffled: "nghe liền mạch" one era.
+  Future<List<Map<String, dynamic>>> _eraSongs(int i) async {
+    final (from, to, _, _) = _eras[i];
+    final d = await ApiClient.query('query(\$f: Int!, \$t: Int!) { songsByYear(from: \$f, to: \$t, first: 60, sort: "views") { data { $_songFields } } }', {'f': from, 't': to == 0 ? DateTime.now().year + 1 : to});
+    return _songs(d['songsByYear']?['data'])..shuffle();
   }
 
   Future<List<Map<String, dynamic>>> _personSongs(String type, String slug) async {
@@ -775,7 +795,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
               child: Row(children: [
-                Expanded(child: Text('${_greeting(now)}${authed && name != null ? ', $name' : ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: AppColors.text)))),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${weekdaysVi[now.weekday - 1]} · ${now.day} tháng ${now.month}'.toUpperCase(), style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                    const SizedBox(height: 2),
+                    Text('${_greeting(now)}${authed && name != null ? ', $name' : ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: AppColors.text))),
+                  ]),
+                ),
                 const SizedBox(width: 12),
                 if (authed)
                   RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: unread > 0, onTap: () => context.push('/thong-bao'))
@@ -783,21 +809,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   PillButton(label: 'Đăng nhập', height: 38, onTap: () => context.push('/dang-nhap')),
               ]),
             ),
-            Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _radioCard()),
-            if (authed && _recent.isNotEmpty) ...[
-              Padding(padding: side, child: _head('Nghe tiếp', top: 28, action: 'Xem tất cả', onAction: () => context.push('/nghe-gan-day'))),
-              Rail(
-                height: 224,
-                count: _recent.length,
-                builder: (_, i) => RailCard(
-                  cover: SongCover(song: _recent[i], size: 128, radius: 0),
-                  title: '${_recent[i]['title'] ?? ''}',
-                  subtitle: songByline(_recent[i]),
-                  onTap: () => playOrOpen(context, _recent[i], _recent, 'Nghe gần đây'),
-                ),
-              ),
-            ],
-            Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: authed ? _forYouBlock() : _mobileInvite())),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _mobileRadioCard()),
+            if (authed) Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _forYouBlock())),
+            ..._eraRail(),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _topCol()),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _latestCol()),
           ]),
@@ -805,30 +819,6 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ),
     );
   }
-
-  List<Widget> _mobileInvite() => [
-        _head('Dành cho bạn', top: 28),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              for (final (c1, c2, icon) in const [(Color(0xFFC79A3E), Color(0xFF7A5414), Icons.auto_awesome_rounded), (Color(0xFFC0392B), Color(0xFF711313), Icons.favorite_rounded), (Color(0xFF5A6B7A), Color(0xFF2E3A44), Icons.history_rounded)]) ...[
-                Container(width: 48, height: 48, decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), gradient: LinearGradient(colors: [c1, c2])), child: Icon(icon, size: 22, color: Colors.white)),
-                const SizedBox(width: 8),
-              ],
-            ]),
-            const SizedBox(height: 12),
-            Text('Đăng nhập để có gợi ý theo gu nghe, lưu bài yêu thích và nghe tiếp từ chỗ đã dừng.', style: body(TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-            const SizedBox(height: 14),
-            Row(children: [
-              Expanded(child: PillButton(label: 'Đăng nhập', height: 44, onTap: () => context.push('/dang-nhap'))),
-              const SizedBox(width: 10),
-              Expanded(child: PillButton(label: 'Đăng ký', height: 44, primary: false, onTap: () => context.push('/dang-ky'))),
-            ]),
-          ]),
-        ),
-      ];
 
   Widget _stats() {
     if (_totals.isEmpty) return const SizedBox(height: 20);
@@ -1294,6 +1284,155 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     );
   }
 
+  // ---------- Đài (phone) ----------
+  /// One frame for both states, only the content changes: before anything
+  /// plays the app logo and "Bật một lần, nghe cả ngày"; on air the song,
+  /// its singers, live bars and what comes next.
+  Widget _mobileRadioCard() {
+    final list = _radio[_ch];
+    const soft = Color(0xFFE3CFCB), muted = Color(0xFFD9B6B0);
+    final player = context.watch<PlayerProvider>();
+    final song = player.currentSong;
+    final radio = song != null && RadioPresence.isRadio(player);
+    final playing = radio && player.isPlaying;
+    final next = radio && player.currentIndex + 1 < player.queue.length ? player.queue[player.currentIndex + 1] : null;
+    Widget chip(String label, _Ch c) {
+      final sel = c == _ch;
+      return Material(
+        color: sel ? Colors.white : Colors.white.withValues(alpha: 0.10),
+        shape: StadiumBorder(side: BorderSide(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.18))),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          // Picking a channel tunes in right away; every tap, even on the
+          // channel already playing, brings a new random batch.
+          onTap: () async {
+            if (c != _ch) setState(() => _ch = c);
+            await _loadRadio(c);
+            if (mounted && _ch == c) _playRadio();
+          },
+          child: Container(height: 34, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
+        ),
+      );
+    }
+    final onTap = radio ? player.togglePlay : (list == null || list.isEmpty ? null : _playRadio);
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        gradient: const RadialGradient(center: Alignment(0.8, -1.0), radius: 1.4, colors: [Color(0xFF842A27), Color(0xFF4E1718), Color(0xFF331011)], stops: [0, 0.55, 1]),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(
+          height: 16,
+          child: Row(children: [
+            Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
+            const SizedBox(width: 8),
+            Expanded(child: Text(radio ? 'ĐÀI BCĐCNT · ĐANG PHÁT' : 'ĐÀI BCĐCNT · PHÁT 24/7', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, letterSpacing: 1.1, fontWeight: FontWeight.w800, color: Color(0xFFEBC2BC))))),
+            ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
+              valueListenable: RadioPresence.instance.listeners,
+              // Counting yourself, one is just you: show it from two.
+              builder: (context, l, _) => l.$1 < 2 ? const SizedBox.shrink() : Text('${l.$1} đang nghe', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.3, fontWeight: FontWeight.w800, color: Colors.white))),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox(
+            height: 84,
+            child: Row(children: [
+              radio
+                  ? SongCover(song: song, size: 84, radius: 14)
+                  : Container(width: 84, height: 84, decoration: BoxDecoration(color: const Color(0xFFF9F4EA), borderRadius: BorderRadius.circular(14)), alignment: Alignment.center, child: const BrandLogo(height: 56, full: false, onDark: false)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: radio
+                    ? Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('${song['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 20, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                        Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: soft))),
+                        const SizedBox(height: 6),
+                        SizedBox(height: 24, child: Align(alignment: Alignment.centerLeft, child: playing ? const NowPlayingBars(color: Colors.white) : const _StillWave())),
+                      ])
+                    : Text('Bật một lần,\nnghe cả ngày', maxLines: 2, style: display(const TextStyle(fontSize: 20, height: 1.2, letterSpacing: -0.2, fontWeight: FontWeight.w800, color: Colors.white))),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                width: 52, height: 52,
+                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: !radio && list == null
+                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.wine))
+                    : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 30, color: AppColors.wine),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          height: 16,
+          child: Row(children: [
+            Text('Kênh', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted))),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: next != null
+                    ? _Marquee(text: 'Tiếp theo: ${next['title'] ?? ''}${songByline(next).isNotEmpty ? ' · ${songByline(next)}' : ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted)))
+                    : Text(radio ? '' : 'Chọn kênh hoặc bấm ▶', maxLines: 1, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted))),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        _SlideRow(children: [
+          chip('Tự động', _Ch.auto),
+          chip('Tân nhạc', _Ch.all),
+          chip('Dân ca', _Ch.folk),
+          chip('Không lời', _Ch.instr),
+          chip('Tiếng thơ', _Ch.poem),
+        ]),
+      ]),
+    );
+  }
+
+  // ---------- Theo năm tháng (phone) ----------
+  List<Widget> _eraRail() {
+    final info = _eraInfo;
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 32, 20, 14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Theo năm tháng', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
+          const SizedBox(height: 3),
+          Text('Chọn một thời kỳ, nghe liền mạch', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+        ]),
+      ),
+      SizedBox(
+        height: 190,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          itemCount: _eras.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 12),
+          itemBuilder: (_, i) {
+            final (from, to, name, title) = _eras[i];
+            return _EraCard(
+              style: _EraStyle.values[i],
+              years: '$from–${to == 0 ? 'nay' : to}',
+              name: name,
+              count: info?[i].$1,
+              image: info?[i].$2,
+              busy: _starting == 'era$i',
+              onTap: () => _start('era$i', title, () => _eraSongs(i)),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
   // ---------- Dành cho bạn ----------
   List<Widget> _forYouBlock() {
     final cards = <Widget>[
@@ -1414,7 +1553,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   Widget _latestCol() {
     final docs = _cat == _cats.length;
-    final list = docs ? null : _latest[_cats[_cat].$2];
+    final list = docs ? null : _latest[_cats[_cat].$2]?.take(widget.mobile ? 5 : 99).toList();
     Widget content;
     if (docs) {
       content = _docsList();
@@ -1445,7 +1584,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   Widget _docsList() {
-    final list = _docs;
+    final list = _docs?.take(widget.mobile ? 5 : 99).toList();
     if (list == null) return Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
     const kinds = {'image': ('Ảnh', Icons.image_outlined), 'audio': ('Âm thanh', Icons.graphic_eq_rounded), 'video': ('Video', Icons.videocam_outlined), 'news': ('Bài viết', Icons.article_outlined), 'sheet': ('Bản nhạc', Icons.library_music_outlined)};
     return Column(children: [
@@ -1468,7 +1607,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   Widget _topCol() {
     final p = _periods[_period].$2;
-    final list = _top[p];
+    final list = _top[p]?.take(widget.mobile ? 5 : 99).toList();
     Widget content;
     if (list == null) {
       content = Column(children: [for (var i = 0; i < 6; i++) const SkeletonSongRow()]);
@@ -1481,7 +1620,9 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           _HoverRow(
             onTap: () => _play(list, label, i),
             onMore: () => showSongActions(context, list[i]),
-            lead: SizedBox(width: 28, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: i < 3 ? 24 : 20, fontWeight: FontWeight.w800, letterSpacing: -1, color: i < 3 ? AppColors.accentFg : AppColors.textMuted.withValues(alpha: 0.6))))),
+            lead: SizedBox(width: widget.mobile ? 20 : 28, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: widget.mobile ? 18 : (i < 3 ? 24 : 20), fontWeight: FontWeight.w800, letterSpacing: -1, color: i < 3 ? AppColors.accentFg : AppColors.textMuted.withValues(alpha: 0.6))))),
+            // Phone: a cover per song, like Mới về kho below it.
+            cover: widget.mobile ? SongCover(song: list[i], size: 44, radius: 10) : null,
             title: '${list[i]['title'] ?? ''}',
             sub: songByline(list[i]).isNotEmpty ? songByline(list[i]) : songByline(list[i], withComposer: true),
             last: i == list.length - 1,
@@ -1949,6 +2090,150 @@ class _HoverRowState extends State<_HoverRow> {
           ),
         ),
       );
+}
+
+/// How each period looks: an old sepia print, rough black and white, the
+/// war years in red, blue after 1975, the faded yellow of the subsidy era
+/// prints, and today in true colour.
+enum _EraStyle { sepia, bw, red, blue, baocap, now }
+
+class _EraCard extends StatelessWidget {
+  final _EraStyle style;
+  final String years, name;
+  final int? count;
+  final String? image;
+  final bool busy;
+  final VoidCallback onTap;
+  const _EraCard({required this.style, required this.years, required this.name, this.count, this.image, this.busy = false, required this.onTap});
+
+  static const _gray = <double>[0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0, 0, 0, 1, 0];
+  static const _sepia = <double>[0.393, 0.769, 0.189, 0, -20, 0.349, 0.686, 0.168, 0, -26, 0.272, 0.534, 0.131, 0, -34, 0, 0, 0, 1, 0];
+  static List<double> _contrast(double c, double b) {
+    final t = (1 - c) * 128 + b;
+    return [c, 0, 0, 0, t, 0, c, 0, 0, t, 0, 0, c, 0, t, 0, 0, 0, 1, 0];
+  }
+  static List<double> _mul(List<double> a, List<double> b) {
+    final o = List<double>.filled(20, 0);
+    for (var r = 0; r < 4; r++) {
+      for (var c = 0; c < 5; c++) {
+        var v = c == 4 ? a[r * 5 + 4] : 0.0;
+        for (var k = 0; k < 4; k++) {
+          v += a[r * 5 + k] * b[k * 5 + c];
+        }
+        o[r * 5 + c] = v;
+      }
+    }
+    return o;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color end, Color? tint, List<double>? m, Color fg) = switch (style) {
+      _EraStyle.sepia => (const Color(0xFF3B2618), const Color(0xFF3B2618), const Color(0xFF8A5A34), _mul(_contrast(1.1, -28), _mul(_sepia, _gray)), const Color(0xFFF6E9D6)),
+      _EraStyle.bw => (const Color(0xFF1E1D1B), const Color(0xFF1E1D1B), null, _mul(_contrast(1.35, -20), _gray), const Color(0xFFF2EEE6)),
+      _EraStyle.red => (const Color(0xFF8E1F1F), const Color(0xFF8E1F1F), const Color(0xFF8E1F1F), _gray, Colors.white),
+      _EraStyle.blue => (const Color(0xFF1F4F6E), const Color(0xFF1F4F6E), const Color(0xFF1F4F6E), _gray, Colors.white),
+      _EraStyle.baocap => (const Color(0xFFC9A04A), const Color(0xFF8A621E), const Color(0xFFE2B550), _sepia, const Color(0xFFFFF8E8)),
+      _EraStyle.now => (const Color(0xFFFBF7F4), Colors.white, null, null, const Color(0xFF161112)),
+    };
+    final light = style == _EraStyle.now;
+    Widget pic = image == null ? const SizedBox.shrink() : NetImage(url: image, width: 150, height: 190);
+    if (m != null) pic = ColorFiltered(colorFilter: ColorFilter.matrix(m), child: pic);
+    if (tint != null) pic = ColorFiltered(colorFilter: ColorFilter.mode(tint.withValues(alpha: style == _EraStyle.baocap ? 0.55 : 0.9), BlendMode.multiply), child: pic);
+    final sub = TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.4, color: light ? const Color(0xFF665C5E) : fg.withValues(alpha: 0.85));
+    return Semantics(
+      button: true,
+      label: '$name, $years',
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 150,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18), border: light ? Border.all(color: const Color(0xFFECE4E4)) : null),
+          child: Stack(fit: StackFit.expand, children: [
+            pic,
+            if (style == _EraStyle.sepia || style == _EraStyle.bw)
+              DecoratedBox(decoration: BoxDecoration(gradient: RadialGradient(radius: 0.9, colors: [Colors.transparent, Colors.black.withValues(alpha: 0.55)], stops: const [0.55, 1]))),
+            DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [end.withValues(alpha: 0), end.withValues(alpha: light ? 0.92 : 1)], stops: light ? const [0.2, 0.7] : const [0.3, 0.86]))),
+            Positioned(
+              left: 12, right: 12, bottom: 12,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(years, style: body(sub)),
+                const SizedBox(height: 2),
+                Text(name, maxLines: 2, style: display(TextStyle(fontSize: 18, height: 1.15, letterSpacing: -0.3, fontWeight: FontWeight.w800, color: fg))),
+                const SizedBox(height: 4),
+                busy
+                    ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
+                    : Text(count == null ? ' ' : '${formatInt(count)} bài', style: body(sub.copyWith(fontSize: 11, fontWeight: FontWeight.w700))),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// One line that slides sideways when it doesn't fit: rests a moment at
+/// the start, runs through once, rests again. Short text just sits still.
+class _Marquee extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  const _Marquee({required this.text, required this.style});
+  @override
+  State<_Marquee> createState() => _MarqueeState();
+}
+
+class _MarqueeState extends State<_Marquee> with SingleTickerProviderStateMixin {
+  static const _gap = 40.0, _rest = 0.2;
+  late final AnimationController _c = AnimationController(vsync: this);
+  double _dist = 0;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _run(double dist) {
+    if (dist == _dist) return;
+    _dist = dist;
+    _c.stop();
+    if (dist <= 0) return;
+    // ~30 px a second, plus the rest at the start.
+    _c.duration = Duration(milliseconds: (dist / 30 * 1000 / (1 - _rest)).round());
+    _c.repeat();
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
+        final tp = TextPainter(text: TextSpan(text: widget.text, style: widget.style), maxLines: 1, textDirection: TextDirection.ltr, textScaler: MediaQuery.textScalerOf(context))..layout();
+        final w = tp.width;
+        final fits = w <= c.maxWidth;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _run(fits ? 0 : w + _gap);
+        });
+        final text = Text(widget.text, maxLines: 1, softWrap: false, style: widget.style);
+        if (fits) return text;
+        return ShaderMask(
+          shaderCallback: (r) => const LinearGradient(colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent], stops: [0, 0.06, 0.94, 1]).createShader(r),
+          blendMode: BlendMode.dstIn,
+          child: ClipRect(
+            child: AnimatedBuilder(
+              animation: _c,
+              builder: (_, child) {
+                final t = _c.value < _rest ? 0.0 : (_c.value - _rest) / (1 - _rest);
+                return Transform.translate(offset: Offset(-(w + _gap) * t, 0), child: child);
+              },
+              child: OverflowBox(
+                alignment: Alignment.centerLeft,
+                maxWidth: double.infinity,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [text, const SizedBox(width: _gap), text]),
+              ),
+            ),
+          ),
+        );
+      });
 }
 
 /// Chips on one line that scroll sideways: mouse drag, wheel (turned

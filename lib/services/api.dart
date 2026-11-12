@@ -97,7 +97,9 @@ class ApiClient {
     );
   }
 
-  static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables]) async {
+  /// [fresh]: skip the edge cache (POST). For `random: true` reads, which
+  /// would otherwise come back the same until the cached copy expires.
+  static Future<Map<String, dynamic>> query(String q, [Map<String, dynamic>? variables, bool fresh = false]) async {
     // Prefer GET so Cloudflare can serve read queries from the edge cache
     // (cf-cache-status: HIT). POST is never edge-cached (always DYNAMIC) — that
     // was making the app noticeably slower than the web, which uses GET for the
@@ -108,14 +110,16 @@ class ApiClient {
       if (variables != null) 'variables': jsonEncode(variables),
     });
     http.Response? res;
-    try {
-      res = await http.get(uri, headers: _baseHeaders()).timeout(_timeout);
-      if (res.statusCode != 200) res = null;
-    } on TimeoutException {
-      // Slow network: a POST retry would only double the wait (40s).
-      rethrow;
-    } catch (_) {
-      res = null;
+    if (!fresh) {
+      try {
+        res = await http.get(uri, headers: _baseHeaders()).timeout(_timeout);
+        if (res.statusCode != 200) res = null;
+      } on TimeoutException {
+        // Slow network: a POST retry would only double the wait (40s).
+        rethrow;
+      } catch (_) {
+        res = null;
+      }
     }
     res ??= await http.post(
       Uri.parse(apiBase),
