@@ -2082,8 +2082,8 @@ class _HoverRowState extends State<_HoverRow> {
       );
 }
 
-/// One line that slides sideways when it doesn't fit: rests a moment at
-/// the start, runs through once, rests again. Short text just sits still.
+/// A ticker line: the text keeps sliding sideways without pause, repeated
+/// with a gap so the loop is seamless, short or long alike.
 class _Marquee extends StatefulWidget {
   final String text;
   final TextStyle style;
@@ -2093,7 +2093,7 @@ class _Marquee extends StatefulWidget {
 }
 
 class _MarqueeState extends State<_Marquee> with SingleTickerProviderStateMixin {
-  static const _gap = 40.0, _rest = 0.2;
+  static const _gap = 40.0;
   late final AnimationController _c = AnimationController(vsync: this);
   double _dist = 0;
 
@@ -2106,37 +2106,37 @@ class _MarqueeState extends State<_Marquee> with SingleTickerProviderStateMixin 
   void _run(double dist) {
     if (dist == _dist) return;
     _dist = dist;
-    _c.stop();
-    if (dist <= 0) return;
-    // ~30 px a second, plus the rest at the start.
-    _c.duration = Duration(milliseconds: (dist / 30 * 1000 / (1 - _rest)).round());
+    // ~30 px a second, steady.
+    _c.duration = Duration(milliseconds: (dist / 30 * 1000).round());
     _c.repeat();
   }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
         final tp = TextPainter(text: TextSpan(text: widget.text, style: widget.style), maxLines: 1, textDirection: TextDirection.ltr, textScaler: MediaQuery.textScalerOf(context))..layout();
-        final w = tp.width;
-        final fits = w <= c.maxWidth;
+        final step = tp.width + _gap;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _run(fits ? 0 : w + _gap);
+          if (mounted) _run(step);
         });
         final text = Text(widget.text, maxLines: 1, softWrap: false, style: widget.style);
-        if (fits) return text;
-        return ShaderMask(
-          shaderCallback: (r) => const LinearGradient(colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent], stops: [0, 0.06, 0.94, 1]).createShader(r),
-          blendMode: BlendMode.dstIn,
-          child: ClipRect(
-            child: AnimatedBuilder(
-              animation: _c,
-              builder: (_, child) {
-                final t = _c.value < _rest ? 0.0 : (_c.value - _rest) / (1 - _rest);
-                return Transform.translate(offset: Offset(-(w + _gap) * t, 0), child: child);
-              },
-              child: OverflowBox(
-                alignment: Alignment.centerLeft,
-                maxWidth: double.infinity,
-                child: Row(mainAxisSize: MainAxisSize.min, children: [text, const SizedBox(width: _gap), text]),
+        // Enough copies to cover the box plus one step of travel.
+        final copies = (c.maxWidth / step).ceil() + 1;
+        return SizedBox(
+          width: c.maxWidth,
+          child: ShaderMask(
+            shaderCallback: (r) => const LinearGradient(colors: [Colors.transparent, Colors.black, Colors.black, Colors.transparent], stops: [0, 0.06, 0.94, 1]).createShader(r),
+            blendMode: BlendMode.dstIn,
+            child: ClipRect(
+              child: AnimatedBuilder(
+                animation: _c,
+                builder: (_, child) => Transform.translate(offset: Offset(-step * _c.value, 0), child: child),
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  maxWidth: double.infinity,
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    for (var i = 0; i < copies; i++) ...[text, const SizedBox(width: _gap)],
+                  ]),
+                ),
               ),
             ),
           ),
