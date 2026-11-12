@@ -101,7 +101,11 @@ class MiniPlayer extends StatelessWidget {
     if (player.miniCollapsed) return const SizedBox.shrink();
 
     final artists = song['artists'] is List ? song['artists'] : (song['artists']?['data'] ?? []);
-    final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => s.toString().isNotEmpty && s != 'Đang cập nhật').join(', ');
+    String names(dynamic list) => ((list is List ? list : (list?['data'] ?? [])) as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => s.toString().isNotEmpty && s != 'Đang cập nhật').join(', ');
+    // No singer credited: the composer fills the line instead of leaving it empty.
+    var artistText = names(artists);
+    if (artistText.isEmpty) artistText = names(song['composers']);
+    if (artistText.isEmpty) artistText = names(song['sheet']?['composers']);
     final thumb = song['thumbnail']?['url'];
     // Repeat-all wraps to the first song, so Next stays enabled at the end.
     final hasNext = player.hasNext;

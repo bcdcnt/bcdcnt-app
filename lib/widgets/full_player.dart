@@ -386,7 +386,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
       // instrumental / poem used to lose lyrics and likes this way).
       const person = '{ data { id title slug avatar { url } } }';
       final creditFields = switch (type) {
-        'song' => 'composers(first: 5) $person poets(first: 5) $person artists(first: 10) $person',
+        // Some recordings only credit the composer on their sheet.
+        'song' => 'composers(first: 5) $person poets(first: 5) $person artists(first: 10) $person sheet { composers(first: 5) $person poets(first: 5) $person }',
         'folk' => 'composers(first: 5) $person recomposers(first: 5) $person artists(first: 10) $person',
         'instrumental' => 'composers(first: 5) $person artists(first: 10) $person',
         'poem' => 'poets(first: 5) $person artists(first: 10) $person',
@@ -401,10 +402,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         );
         final obj = data[type];
         final lovesData = (obj?['loves']?['data'] ?? []) as List;
-        List<Map<String, dynamic>> people(String key) =>
-            ((obj?[key]?['data'] ?? obj?['sheet']?[key]?['data']) as List? ?? const [])
-                .map((c) => Map<String, dynamic>.from(c as Map))
-                .toList();
+        List<Map<String, dynamic>> people(String key) {
+          final own = obj?[key]?['data'] as List?;
+          return ((own != null && own.isNotEmpty ? own : obj?['sheet']?[key]?['data']) as List? ?? const [])
+              .map((c) => Map<String, dynamic>.from(c as Map))
+              .toList();
+        }
         final composers = people('composers');
         final poets = people('poets');
         final recomposers = ((obj?['recomposers']?['data']) as List? ?? const [])
