@@ -1,7 +1,9 @@
 import 'dart:io' show File, Platform;
+import 'dart:ui' as ui;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'player.dart';
 
@@ -22,6 +24,9 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
   /// The app icon as a local file: the lock-screen cover for songs
   /// without a picture (the system only takes a URI, not an asset).
   Uri? _logo;
+  /// Covers cut square (cover URL → local file): iOS shows the picture at
+  /// its own ratio, so a wide photo became a short strip on the lock screen.
+  final _square = <String, Uri>{};
 
   static MediaSession? _instance;
 
@@ -61,6 +66,30 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
     } catch (_) {}
   }
 
+  /// Fetch the cover, keep its centre square (600 px) as a PNG, then swap
+  /// it into the card if that song is still the one showing.
+  Future<void> _cutSquare(String url, String id) async {
+    _square[url] = Uri.parse(url); // once per cover, even if it fails
+    try {
+      final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return;
+      final img = (await (await ui.instantiateImageCodec(res.bodyBytes)).getNextFrame()).image;
+      final side = img.width < img.height ? img.width : img.height;
+      final src = ui.Rect.fromLTWH((img.width - side) / 2, (img.height - side) / 2, side.toDouble(), side.toDouble());
+      const out = 600.0;
+      final rec = ui.PictureRecorder();
+      ui.Canvas(rec).drawImageRect(img, src, const ui.Rect.fromLTWH(0, 0, out, out), ui.Paint()..filterQuality = ui.FilterQuality.high);
+      final sq = await rec.endRecording().toImage(out.toInt(), out.toInt());
+      final png = await sq.toByteData(format: ui.ImageByteFormat.png);
+      if (png == null) return;
+      final f = File('${(await getTemporaryDirectory()).path}/now_playing_${url.hashCode.toUnsigned(32)}.png');
+      await f.writeAsBytes(png.buffer.asUint8List(), flush: true);
+      _square[url] = f.uri;
+      final item = mediaItem.value;
+      if (item != null && item.id == id) mediaItem.add(item.copyWith(artUri: f.uri));
+    } catch (_) {}
+  }
+
   /// Wire the provider in once it exists (it lives in the widget tree).
   static void bind(PlayerProvider player) {
     final s = _instance;
@@ -91,7 +120,9 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
         if (comps is List) artistText = comps.map((c) => c['title'] ?? '').where((s) => s.toString().isNotEmpty && s != 'Đang cập nhật').join(', ');
       }
       final thumb = song['thumbnail']?['url']?.toString();
-      final art = thumb != null && thumb.isNotEmpty ? Uri.tryParse(thumb) : _logo;
+      final hasThumb = thumb != null && thumb.isNotEmpty;
+      final art = hasThumb ? (_square[thumb] ?? Uri.tryParse(thumb)) : _logo;
+      if (hasThumb && !_square.containsKey(thumb)) _cutSquare(thumb, id);
       mediaItem.add(MediaItem(
         id: id,
         title: (song['title'] ?? '').toString(),
