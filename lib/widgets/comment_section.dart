@@ -1194,23 +1194,25 @@ class _CommentSectionState extends State<CommentSection> {
                               ),
                             ),
                           if (requestBadge(c) case final b?) ...[
-                            // Desktop: just the hand in its colour; who handled it shows on hover.
+                            // Just the hand in its colour, as on desktop; who handled it
+                            // shows on hover (desktop) or a tap (phone).
                             Builder(builder: (ctx) {
                               final who = c['processRequestUser']?['username'] != null && c['request_status'] != null ? '${b.label} bởi ${c['processRequestUser']['username']}' : b.label;
-                              final iconOnly = MediaQuery.sizeOf(ctx).width >= 900;
-                              final chip = Container(
-                                margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
-                                padding: EdgeInsets.symmetric(horizontal: iconOnly ? 6 : 8, vertical: iconOnly ? 4 : 2),
-                                decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Icon(Icons.back_hand_outlined, size: iconOnly ? 14 : 12, color: b.color),
-                                  if (!iconOnly) ...[
-                                    const SizedBox(width: 4),
-                                    Flexible(child: Text(who, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: b.color))),
-                                  ],
-                                ]),
+                              final phone = MediaQuery.sizeOf(ctx).width < 900;
+                              return Tooltip(
+                                message: who,
+                                triggerMode: phone ? TooltipTriggerMode.tap : null,
+                                showDuration: const Duration(seconds: 3),
+                                child: Semantics(
+                                  label: who,
+                                  child: Container(
+                                    margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
+                                    padding: EdgeInsets.all(phone ? 7 : 5),
+                                    decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                                    child: Icon(Icons.back_hand_outlined, size: phone ? 16 : 14, color: b.color),
+                                  ),
+                                ),
                               );
-                              return iconOnly ? Tooltip(message: who, child: chip) : chip;
                             }),
                           ],
                           ])),
