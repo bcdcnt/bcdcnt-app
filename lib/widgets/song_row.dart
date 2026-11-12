@@ -509,9 +509,10 @@ class SongTableHead extends StatelessWidget {
 
 /// Bottom sheet with every secondary action for a song. Opened from the ⋮
 /// button on any song row, long-press, or right-click on desktop.
-/// [onInfo]: on the song page itself, "Xem trang bài hát" gives way to
-/// "Thông tin bài hát" (source, contributor, file details).
-Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {VoidCallback? onRemove, VoidCallback? onInfo}) async {
+/// [onPage]: opened on the song page itself, so no "Xem trang bài hát"
+/// (its "Thông tin" sits in the page's own button row). [onHistory]: that
+/// page's "Lịch sử bản thu", kept here as it's rarely needed.
+Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {VoidCallback? onRemove, bool onPage = false, VoidCallback? onHistory}) async {
   final artists = _people(song['artists']);
   final fileType = songKind(song);
   // Author page by kind, as on the song page: dân ca → soạn giả, thơ → nhà thơ.
@@ -542,11 +543,11 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
           if (hasAudio) saved
               ? const MenuEntry('unsave', 'Xoá khỏi "Đã tải về"', Icons.download_done_rounded, group: 1)
               : const MenuEntry('save', 'Tải về để nghe offline', Icons.download_for_offline_outlined, group: 1),
-          if (onInfo == null) const MenuEntry('detail', 'Xem trang bài hát', Icons.chevron_right_rounded, group: 2),
+          if (!onPage) const MenuEntry('detail', 'Xem trang bài hát', Icons.chevron_right_rounded, group: 2),
           if (composer != null) MenuEntry('composer', 'Đến $composerRole ${composer['title']}', Icons.music_note_outlined, group: 2),
           if (artist != null) MenuEntry('artist', 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'nghệ sĩ'} ${artist['title'] ?? artist['username'] ?? ''}', Icons.mic_none_rounded, group: 2),
           const MenuEntry('share', 'Chia sẻ', Icons.ios_share_rounded, group: 3),
-          if (onInfo != null) const MenuEntry('info', 'Thông tin bài hát', Icons.info_outline_rounded, group: 3),
+          if (onHistory != null) const MenuEntry('history', 'Lịch sử bản thu', Icons.history_rounded, group: 3),
         ])
       : await showModalBottomSheet<String>(
     context: context,
@@ -600,11 +601,11 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
                 OfflineStore.instance.isSaved(song)
                     ? item('unsave', Icons.download_done_rounded, 'Xoá khỏi "Đã tải về"')
                     : item('save', Icons.download_for_offline_outlined, 'Tải về để nghe offline'),
-              if (onInfo == null) item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
+              if (!onPage) item('detail', Icons.info_outline_rounded, 'Xem trang bài hát'),
               if (composer != null) item('composer', Icons.edit_note_rounded, 'Đến $composerRole ${composer['title']}'),
               if (artist != null) item('artist', Icons.person_outline_rounded, 'Đến ${fileType == 'karaoke' ? 'thành viên' : 'nghệ sĩ'} ${artist['title'] ?? artist['username'] ?? ''}'),
               item('share', Icons.ios_share_rounded, 'Chia sẻ (Zalo, Facebook…)'),
-              if (onInfo != null) item('info', Icons.info_outline_rounded, 'Thông tin bài hát'),
+              if (onHistory != null) item('history', Icons.history_rounded, 'Lịch sử bản thu'),
             ],
           ),
         ),
@@ -654,8 +655,8 @@ Future<void> showSongActions(BuildContext context, Map<String, dynamic> song, {V
     case 'detail':
       context.push('/song/${song['id']}', extra: Map<String, dynamic>.from(song));
       break;
-    case 'info':
-      onInfo?.call();
+    case 'history':
+      onHistory?.call();
       break;
     case 'composer':
       context.push('$composerRoute/${composer!['slug']}');

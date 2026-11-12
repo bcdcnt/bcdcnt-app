@@ -1061,7 +1061,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       onPressed: () => showSongAdminSheet(context, song: Map<String, dynamic>.from(song), type: _resolvedType, onRefresh: () => _fetch(fresh: true)),
                     ),
                   if (MediaQuery.of(context).size.width < 900)
-                    IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song), onInfo: () => showSongInfoSheet(context, Map<String, dynamic>.from(song)))),
+                    IconButton(tooltip: 'Tuỳ chọn', icon: Icon(Icons.more_horiz_rounded, color: AppColors.text), onPressed: () => showSongActions(context, Map<String, dynamic>.from(song), onPage: true, onHistory: ((_song?['uploads'] ?? []) as List).isNotEmpty ? _openFileHistory : null)),
                 ],
               ),
 
@@ -1151,7 +1151,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           [
                             if ((song['views'] ?? 0) is num && (song['views'] ?? 0) > 0) '${formatViews((song['views'] as num).toInt())} lượt nghe',
                             if ((song['downloads'] ?? 0) is num && (song['downloads'] ?? 0) > 0) '${formatViews((song['downloads'] as num).toInt())} lượt tải',
-                            // Source, contributor, dates…: ⋯ → "Thông tin bài hát".
+                            // Source, contributor, dates…: the "Thông tin" button below.
                           ].join(' · '),
                           style: AppText.meta,
                         ),
@@ -1227,7 +1227,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           );
                         })),
                         Expanded(child: LabeledAction(icon: Icons.playlist_add_rounded, label: 'Lưu', onTap: _openPlaylistDialog)),
-                        if (uploads.isNotEmpty) Expanded(child: LabeledAction(icon: Icons.history_rounded, label: 'Bản thu', onTap: _openFileHistory)),
+                        // Lịch sử bản thu lives in ⋯; this slot opens the facts sheet.
+                        Expanded(child: LabeledAction(icon: Icons.info_outline_rounded, label: 'Thông tin', onTap: () => showSongInfoSheet(context, Map<String, dynamic>.from(song)))),
                         Expanded(child: LabeledAction(icon: Icons.ios_share_rounded, label: _shareTotal > 0 ? '$_shareTotal chia sẻ' : 'Chia sẻ', onTap: _share)),
                       ]),
                       if (mobileTags != null) ...[const SizedBox(height: 18), mobileTags],

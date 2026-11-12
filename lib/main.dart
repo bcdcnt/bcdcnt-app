@@ -26,6 +26,7 @@ import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/song_detail_screen.dart';
 import 'screens/person_detail_screen.dart';
+import 'screens/era_screen.dart';
 import 'screens/category_detail_screen.dart';
 import 'screens/user_song_list_screen.dart';
 import 'screens/my_playlists_screen.dart';
@@ -516,6 +517,10 @@ final _router = GoRouter(
         GoRoute(
           path: '/the-loai/:slug',
           builder: (c, s) => CategoryDetailScreen(slug: s.pathParameters['slug']!),
+        ),
+        GoRoute(
+          path: '/nam-thang/:slug',
+          builder: (c, s) => EraScreen(slug: s.pathParameters['slug']!, seed: s.extra is Map ? Map<String, dynamic>.from(s.extra as Map) : null),
         ),
         GoRoute(path: '/da-tai-ve', builder: (c, s) => const DownloadsScreen()),
         GoRoute(path: '/yeu-thich', builder: (c, s) => const UserSongListScreen(kind: UserListKind.favorites)),
