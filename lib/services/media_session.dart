@@ -1,6 +1,8 @@
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
 import 'player.dart';
 
 /// Lock-screen / Control Center "Now Playing" card (cover, title, artist,
@@ -17,6 +19,9 @@ import 'player.dart';
 class MediaSession extends BaseAudioHandler with SeekHandler {
   PlayerProvider? _player;
   String? _itemId;
+  /// The app icon as a local file: the lock-screen cover for songs
+  /// without a picture (the system only takes a URI, not an asset).
+  Uri? _logo;
 
   static MediaSession? _instance;
 
@@ -39,6 +44,21 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
     } catch (_) {
       _instance = null;
     }
+    _instance?._loadLogo();
+  }
+
+  Future<void> _loadLogo() async {
+    try {
+      final f = File('${(await getApplicationSupportDirectory()).path}/now_playing_logo.png');
+      if (!await f.exists()) {
+        final b = await rootBundle.load('assets/app_icon.png');
+        await f.writeAsBytes(b.buffer.asUint8List(), flush: true);
+      }
+      _logo = f.uri;
+      // A song without a cover may already be showing.
+      _itemId = null;
+      _sync();
+    } catch (_) {}
   }
 
   /// Wire the provider in once it exists (it lives in the widget tree).
@@ -64,14 +84,20 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
     if (id != _itemId || mediaItem.value?.duration != duration) {
       _itemId = id;
       final artists = song['artists'] is List ? song['artists'] : (song['artists']?['data'] ?? []);
-      final artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => s.toString().isNotEmpty).join(', ');
+      var artistText = (artists as List).map((a) => a['title'] ?? a['username'] ?? '').where((s) => s.toString().isNotEmpty).join(', ');
+      // No singer listed: the composer, so the card never shows a bare title.
+      if (artistText.isEmpty) {
+        final comps = song['sheet']?['composers']?['data'];
+        if (comps is List) artistText = comps.map((c) => c['title'] ?? '').where((s) => s.toString().isNotEmpty && s != 'Đang cập nhật').join(', ');
+      }
       final thumb = song['thumbnail']?['url']?.toString();
+      final art = thumb != null && thumb.isNotEmpty ? Uri.tryParse(thumb) : _logo;
       mediaItem.add(MediaItem(
         id: id,
         title: (song['title'] ?? '').toString(),
         artist: artistText.isEmpty ? null : artistText,
         album: p.sourceLabel ?? 'BCĐCNT',
-        artUri: thumb != null ? Uri.tryParse(thumb) : null,
+        artUri: art,
         duration: duration,
       ));
     }
