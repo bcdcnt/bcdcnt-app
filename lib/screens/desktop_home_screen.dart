@@ -146,7 +146,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     RadioPresence.instance.watch();
     _fetchLatest(0);
     _fetchTop(0);
-    _fetchEras();
+    if (widget.mobile) _fetchEras();
     // Desktop-only blocks.
     if (!widget.mobile) {
       _loadToday();
@@ -1557,7 +1557,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           ],
         ]),
         const SizedBox(height: 18),
-        _EraBand(first: _decades.first.$1, images: [for (final e in _eraInfo ?? const <(int, String?)>[]) e.$2], onTap: (e) => context.push('/nam-thang/${e.slug}')),
+        _EraBand(first: _decades.first.$1, onTap: (e) => context.push('/nam-thang/${e.slug}')),
       ]),
     );
   }
@@ -2281,14 +2281,12 @@ class _PlayingDotState extends State<_PlayingDot> with SingleTickerProviderState
       );
 }
 
-/// The six periods under the decades, in the colours of their home cards,
+/// The six periods under the decades, each in its own colour (as on the phone),
 /// with the turning years below; a tap opens the period's page.
 class _EraBand extends StatelessWidget {
   final int first;
-  /// Each period's cover, treated like its card on the phone home.
-  final List<String?> images;
   final void Function(Era) onTap;
-  const _EraBand({required this.first, required this.images, required this.onTap});
+  const _EraBand({required this.first, required this.onTap});
   @override
   Widget build(BuildContext context) {
     final start = first.toDouble(), end = 2020.0;
@@ -2297,7 +2295,7 @@ class _EraBand extends StatelessWidget {
       return SizedBox(
         height: 50,
         child: Stack(children: [
-          for (final (i, e) in kEras.indexed)
+          for (final e in kEras)
             if (x(e.toYear) - x(e.from) > 4)
               Positioned(
                 left: x(e.from) + 1, width: x(e.toYear) - x(e.from) - 2, top: 0, height: 30,
@@ -2308,16 +2306,12 @@ class _EraBand extends StatelessWidget {
                     child: Tooltip(
                       message: '${e.title} · ${e.years}',
                       child: Container(
-                        clipBehavior: Clip.antiAlias,
                         decoration: BoxDecoration(color: eraBg(e.style), borderRadius: BorderRadius.circular(8), border: e.style == EraStyle.now ? Border.all(color: AppColors.borderSubtle) : null),
-                        child: Stack(fit: StackFit.expand, children: [
-                          EraBackdrop(style: e.style, image: i < images.length ? images[i] : null, wide: true),
-                          Padding(
+                        child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             // Short periods are narrow: the name shrinks instead of losing letters.
                             child: Align(alignment: Alignment.centerLeft, child: FittedBox(fit: BoxFit.scaleDown, child: Text(e.name, maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: eraFg(e.style)))))),
-                          ),
-                        ]),
+                        ),
                       ),
                     ),
                   ),
