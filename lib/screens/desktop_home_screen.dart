@@ -1643,8 +1643,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             onTap: () => _play(list, label, i),
             onMore: () => showSongActions(context, list[i]),
             lead: SizedBox(width: widget.mobile ? 20 : 28, child: Text('${i + 1}', textAlign: TextAlign.center, style: display(TextStyle(fontSize: widget.mobile ? 18 : (i < 3 ? 24 : 20), fontWeight: FontWeight.w800, letterSpacing: -1, color: i < 3 ? AppColors.accentFg : AppColors.textMuted.withValues(alpha: 0.6))))),
-            // Phone: a cover per song, like Mới về kho below it.
-            cover: widget.mobile ? SongCover(song: list[i], size: 44, radius: 10) : null,
+            // A cover per song, like Mới về kho beside it.
+            cover: SongCover(song: list[i], size: 44, radius: 10),
             title: '${list[i]['title'] ?? ''}',
             sub: songByline(list[i]).isNotEmpty ? songByline(list[i]) : songByline(list[i], withComposer: true),
             last: i == list.length - 1,
