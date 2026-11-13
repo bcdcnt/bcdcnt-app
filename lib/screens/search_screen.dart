@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../services/events.dart';
+import '../services/lunar.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
@@ -1681,12 +1683,15 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
   List<Map<String, dynamic>> _playlists = [];
   /// "Tuyển tập": BQT's themed system playlists.
   List<Map<String, dynamic>> _collections = [];
+  /// "Sự kiện": what runs now, what comes next, the two just gone.
+  List<(SiteEvent, DateTime, _EventState)> _events = [];
 
   @override
   void initState() {
     super.initState();
     _fetchPlaylists();
     _fetchCollections();
+    _fetchEvents();
     ApiClient.query(r'query { popularTags(limit: 12) { id name slug song_count sample_images } }').then((d) {
       if (!mounted) return;
       setState(() => _tags = ((d['popularTags'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList());
@@ -1716,6 +1721,54 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
     } catch (_) {}
   }
 
+  Future<void> _fetchEvents() async {
+    try {
+      final all = await loadSiteEvents();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final running = [for (final e in all) if (e.runningOn(now)) (e, e.nextDate(now), _EventState.now)];
+      final ahead = [for (final e in all) if (!e.runningOn(now)) (e, e.nextDate(now), _EventState.next)]..sort((a, b) => a.$2.compareTo(b.$2));
+      final gone = [
+        for (final e in all)
+          if (!e.runningOn(now)) (e, DateTime(e.nextDate(now).year - 1, e.month, e.day), _EventState.past),
+      ].where((x) => !x.$2.isBefore(today.subtract(const Duration(days: 90)))).toList()..sort((a, b) => b.$2.compareTo(a.$2));
+      final list = [...running, ...ahead.take((6 - running.length - 2).clamp(2, 6)), ...gone.take(2)];
+      if (mounted) setState(() => _events = list);
+    } catch (_) {}
+  }
+
+  /// One tear-off sheet per event; a tap opens it on the Sự kiện page.
+  Widget _eventCard((SiteEvent, DateTime, _EventState) x, double w) {
+    final (e, date, state) = x;
+    final (label, color) = switch (state) {
+      _EventState.now => ('Đang diễn ra', const Color(0xFF2F8A5E)),
+      _EventState.next => ('Sắp tới', AppColors.accentFg),
+      _EventState.past => ('Đã qua', AppColors.textMuted),
+    };
+    return SizedBox(
+      width: w,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => context.push('/su-kien?id=${e.id}'),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _EventSheet(day: date.day, month: date.month, under: e.year != null ? 'Năm ${e.year}' : LunarDate.fromSolar(date).label, size: w, faded: state == _EventState.past),
+          const SizedBox(height: 10),
+          Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.3, fontWeight: FontWeight.w800, color: AppColors.text))),
+          const SizedBox(height: 2),
+          Text.rich(
+            TextSpan(children: [
+              TextSpan(text: label, style: TextStyle(fontWeight: FontWeight.w800, color: color)),
+              if (e.songCount > 0) TextSpan(text: ' · ${e.songCount} bài'),
+            ]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+          ),
+        ]),
+      ),
+    );
+  }
+
   /// "Playlist cộng đồng" (moved here from Trang chủ): members' own public
   /// playlists.
   Future<void> _fetchPlaylists() async {
@@ -1736,7 +1789,6 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
       ];
 
   static const _subKinds = [
-    ('Sự kiện', '/su-kien', Icons.event_rounded, Color(0xFF711313)),
     ('Nhạc thiếu nhi', '/tag/nhac-thieu-nhi', Icons.star_outline_rounded, Color(0xFF8B6914)),
     ('Nhạc nước ngoài', '/tag/nhac-nuoc-ngoai', Icons.public_rounded, Color(0xFF2D5E3A)),
     ('Nhạc nhẹ', '/tag/nhac-nhe', Icons.music_note_outlined, Color(0xFF6B5210)),
@@ -1846,6 +1898,16 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
       if (_tags.isNotEmpty) ...[
         title('Chủ đề', action: 'Tất cả', onAction: () => context.push('/tag')),
         Wrap(spacing: 10, runSpacing: 10, children: [for (final t in _tags) BrandChip(label: '${t['name']}', onTap: () => context.push('/tag/${t['slug']}'))]),
+      ],
+      if (_events.isNotEmpty) ...[
+        title('Sự kiện', action: 'Xem lịch sự kiện', onAction: () => context.push('/su-kien')),
+        LayoutBuilder(builder: (context, c) {
+          final cols = ((c.maxWidth + 18) / 188).floor().clamp(4, 8);
+          final w = (c.maxWidth - (cols - 1) * 18) / cols;
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (var i = 0; i < cols && i < _events.length; i++) ...[if (i > 0) const SizedBox(width: 18), _eventCard(_events[i], w)],
+          ]);
+        }),
       ],
       if (_playlists.isNotEmpty) ...[title('Playlist cộng đồng', action: 'Xem tất cả', onAction: () => context.push('/playlist')), _cardRow(_playlists, owner: true)],
       title('Kho tư liệu'),
@@ -1986,6 +2048,10 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
           ),
         ],
         const NewDocumentsRail(),
+        if (_events.isNotEmpty) ...[
+          SectionTitle('Sự kiện', action: 'Xem lịch', onAction: () => context.push('/su-kien')),
+          Rail(height: 246, count: _events.length, builder: (_, i) => Padding(padding: const EdgeInsets.only(top: 6), child: _eventCard(_events[i], 148))),
+        ],
         // Below "Tư liệu mới": shown, not tucked into a list, so it gets taps.
         if (_playlists.isNotEmpty) ...[
           SectionTitle('Playlist cộng đồng', onAction: () => context.push('/playlist')),
@@ -2017,6 +2083,64 @@ class _BrowseBlocksState extends State<_BrowseBlocks> {
         // The rail above already links there; keep a way in if it didn't load.
         if (_playlists.isEmpty) ListItem(icon: Icons.queue_music_rounded, title: 'Playlist cộng đồng', onTap: () => context.push('/playlist')),
       ],
+    );
+  }
+}
+
+enum _EventState { now, next, past }
+
+/// A tear-off calendar sheet like Trang chủ's: two rings, the month on a
+/// wine band, the day large, and under it the year it happened (or, for a
+/// feast with no year, its lunar date).
+class _EventSheet extends StatelessWidget {
+  final int day, month;
+  final String under;
+  final double size;
+  final bool faded;
+  const _EventSheet({required this.day, required this.month, required this.under, required this.size, this.faded = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final r = size > 150 ? 14.0 : 12.0;
+    Widget ring() => Container(width: 8, height: 14, decoration: BoxDecoration(color: const Color(0xFF4A2A2A), borderRadius: BorderRadius.circular(4)));
+    return Opacity(
+      opacity: faded ? 0.55 : 1,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(clipBehavior: Clip.none, children: [
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.isLight ? Colors.white : AppColors.surface,
+                borderRadius: BorderRadius.circular(r),
+                border: Border.all(color: AppColors.isLight ? const Color(0xFFEFE6E4) : AppColors.border),
+                boxShadow: [BoxShadow(color: const Color(0xFF3C1414).withValues(alpha: AppColors.isLight ? 0.12 : 0.4), blurRadius: 18, offset: const Offset(0, 6))],
+              ),
+              child: Column(children: [
+                Container(
+                  height: size * 0.24,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: const Color(0xFF6E1B17), borderRadius: BorderRadius.vertical(top: Radius.circular(r - 1))),
+                  child: Text('THÁNG $month', style: body(TextStyle(fontSize: size > 150 ? 13 : 12, letterSpacing: 1, fontWeight: FontWeight.w800, color: Colors.white))),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      Text('$day', style: display(TextStyle(fontSize: size * 0.42, height: 1, letterSpacing: -2, fontWeight: FontWeight.w800, color: AppColors.text))),
+                      const SizedBox(height: 6),
+                      FittedBox(fit: BoxFit.scaleDown, child: Text(under, maxLines: 1, style: body(TextStyle(fontSize: size > 150 ? 13 : 12, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
+                    ]),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          Positioned(top: -6, left: size * 0.28 - 4, child: ring()),
+          Positioned(top: -6, right: size * 0.28 - 4, child: ring()),
+        ]),
+      ),
     );
   }
 }
