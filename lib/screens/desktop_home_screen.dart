@@ -117,7 +117,10 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   List<Map<String, dynamic>> _forYou = [], _forgotten = [];
   Map<String, dynamic>? _myArtist, _myComposer;
   // Năm tháng: decade → (songs, a well-known title).
-  List<(int, int, String)> _decades = [];
+  /// (decade, songs, its 3 best-known songs).
+  List<(int, int, List<Map<String, dynamic>>)> _decades = [];
+  /// Songs per year written, for the sparkline in a hovered bar.
+  Map<int, int> _yearCounts = {};
   // Mới về kho | Nghe nhiều
   int _cat = 0, _period = 0;
   final Map<String, List<Map<String, dynamic>>> _latest = {};
@@ -143,7 +146,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     RadioPresence.instance.watch();
     _fetchLatest(0);
     _fetchTop(0);
-    if (widget.mobile) _fetchEras();
+    _fetchEras();
     // Desktop-only blocks.
     if (!widget.mobile) {
       _loadToday();
@@ -542,18 +545,23 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     try {
       final d = await ApiClient.query('query { songYearCounts { year total } }');
       final counts = <int, int>{};
+      final years = <int, int>{};
       for (final r in _maps(d['songYearCounts'])) {
         final y = (r['year'] as num?)?.toInt() ?? 0;
         if (y < 1940) continue;
+        years[y] = (r['total'] as num?)?.toInt() ?? 0;
         final dec = y >= 2010 ? 2010 : y ~/ 10 * 10;
         counts[dec] = (counts[dec] ?? 0) + ((r['total'] as num?)?.toInt() ?? 0);
       }
       final decs = counts.keys.toList()..sort();
-      // One well-known title per decade, in one request.
-      final q = decs.map((y) => 'd$y: songsByYear(from: $y, to: ${y == 2010 ? 2100 : y + 10}, first: 1) { data { title } }').join(' ');
+      // The three best-known songs of each decade, in one request.
+      final q = decs.map((y) => 'd$y: songsByYear(from: $y, to: ${y == 2010 ? 2100 : y + 10}, first: 3) { data { $_songFields } }').join(' ');
       final t = await ApiClient.query('query { $q }');
       if (!mounted) return;
-      setState(() => _decades = [for (final y in decs) (y, counts[y]!, '${_maps(t['d$y']?['data']).firstOrNull?['title'] ?? ''}')]);
+      setState(() {
+        _yearCounts = years;
+        _decades = [for (final y in decs) (y, counts[y]!, _songs(t['d$y']?['data']))];
+      });
     } catch (_) {}
   }
 
@@ -1504,28 +1512,52 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ];
 
   // ---------- Đi qua năm tháng ----------
+  static String _decadeName(int y) => y == 2010 ? 'Từ 2010' : (y >= 2000 ? '2000–09' : 'Thập niên ${y % 100}');
+
   Widget _decadeChart() {
     final max = _decades.map((d) => d.$2).reduce((a, b) => a > b ? a : b);
     final lo = AppColors.isLight ? const Color(0xFFEEE0DD) : const Color(0xFF3A2A2B);
     final hi = AppColors.isLight ? const Color(0xFFC07A74) : const Color(0xFF9C4A45);
+    // The decade of the song playing gets a pulsing dot.
+    return Selector<PlayerProvider, int?>(
+      selector: (_, p) {
+        final s = p.currentSong;
+        final y = int.tryParse('${s?['sheet']?['year'] ?? s?['year'] ?? ''}');
+        return y == null || y < 1940 ? null : (y >= 2010 ? 2010 : y ~/ 10 * 10);
+      },
+      builder: (context, playingDec, _) => _decadeBox(max, lo, hi, playingDec),
+    );
+  }
+
+  Widget _decadeBox(int max, Color lo, Color hi, int? playingDec) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(26, 22, 26, 20),
+      padding: const EdgeInsets.fromLTRB(26, 22, 26, 18),
       decoration: BoxDecoration(color: AppColors.isLight ? const Color(0xFFFAF7F6) : AppColors.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.borderSubtle)),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-        for (final (i, (y, n, title)) in _decades.indexed) ...[
-          if (i > 0) const SizedBox(width: 16),
-          Expanded(
-            child: _DecadeBar(
-              label: y == 2010 ? 'Từ 2010' : (y >= 2000 ? '2000–09' : 'Thập niên ${y % 100}'),
-              count: n,
-              title: title,
-              height: (96 * n / max).clamp(6, 96).toDouble(),
-              color: Color.lerp(lo, hi, (n / max))!,
-              busy: _starting == 'dec$y',
-              onTap: () => _start('dec$y', y == 2010 ? 'Từ 2010' : 'Thập niên ${y % 100}', () => _decadeSongs(y)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          for (final (i, (y, n, songs)) in _decades.indexed) ...[
+            if (i > 0) const SizedBox(width: 16),
+            Expanded(
+              child: _DecadeBar(
+                decade: y,
+                label: _decadeName(y),
+                count: n,
+                songs: songs,
+                years: [for (var k = y; k < (y == 2010 ? DateTime.now().year + 1 : y + 10); k++) (k, _yearCounts[k] ?? 0)],
+                height: (96 * n / max).clamp(6, 96).toDouble(),
+                color: Color.lerp(lo, hi, (n / max))!,
+                busy: _starting == 'dec$y',
+                playing: playingDec == y,
+                popLeft: i >= _decades.length - 3,
+                onTap: () => _start('dec$y', _decadeName(y), () => _decadeSongs(y)),
+                onPlaySong: (list, at) => _play(list, _decadeName(y), at),
+                onMore: () => context.push('/dong-thoi-gian'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ]),
+        const SizedBox(height: 18),
+        _EraBand(first: _decades.first.$1, images: [for (final e in _eraInfo ?? const <(int, String?)>[]) e.$2], onTap: (e) => context.push('/nam-thang/${e.slug}')),
       ]),
     );
   }
@@ -1968,59 +2000,336 @@ class _Mosaic extends StatelessWidget {
 }
 
 class _DecadeBar extends StatefulWidget {
-  final String label, title;
-  final int count;
+  final int decade, count;
+  final String label;
+  final List<Map<String, dynamic>> songs;
+  final List<(int, int)> years;
   final double height;
   final Color color;
-  final bool busy;
-  final VoidCallback onTap;
-  const _DecadeBar({required this.label, required this.count, required this.title, required this.height, required this.color, required this.busy, required this.onTap});
+  final bool busy, playing, popLeft;
+  final VoidCallback onTap, onMore;
+  final void Function(List<Map<String, dynamic>> list, int at) onPlaySong;
+  const _DecadeBar({required this.decade, required this.label, required this.count, required this.songs, required this.years, required this.height, required this.color, required this.busy, required this.playing, required this.popLeft, required this.onTap, required this.onPlaySong, required this.onMore});
   @override
   State<_DecadeBar> createState() => _DecadeBarState();
 }
 
+/// One decade: the bar (taller, with songs per year, on hover), its
+/// best-known song under the name, and on hover a card beside it with the
+/// three best-known songs and Phát thập niên.
 class _DecadeBarState extends State<_DecadeBar> {
-  bool _hover = false;
+  final _link = LayerLink();
+  final _pop = OverlayPortalController();
+  Timer? _hide;
+  bool _hover = false, _coverHover = false;
+
   @override
-  Widget build(BuildContext context) => MouseRegion(
+  void dispose() {
+    _hide?.cancel();
+    super.dispose();
+  }
+
+  void _enter() {
+    _hide?.cancel();
+    if (!_hover) setState(() => _hover = true);
+    if (!_pop.isShowing && widget.songs.isNotEmpty) _pop.show();
+  }
+
+  // A short grace so the pointer can travel from the bar onto the card.
+  void _leave() {
+    _hide?.cancel();
+    _hide = Timer(const Duration(milliseconds: 160), () {
+      if (!mounted) return;
+      setState(() => _hover = false);
+      if (_pop.isShowing) _pop.hide();
+    });
+  }
+
+  Widget _card() {
+    final peak = widget.years.fold<(int, int)>((0, 0), (a, b) => b.$2 > a.$2 ? b : a);
+    final to = widget.decade == 2010 ? 'nay' : '${widget.decade + 9}';
+    return MouseRegion(
+      onEnter: (_) => _enter(),
+      onExit: (_) => _leave(),
+      child: Material(
+        color: AppColors.isLight ? Colors.white : AppColors.surface,
+        elevation: 0,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: 330,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.borderSubtle),
+            boxShadow: [BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: 0.18 * AppColors.shadowMul), blurRadius: 40, offset: const Offset(0, 18))],
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('${widget.decade}–$to · ${formatInt(widget.count)} BÀI', style: body(TextStyle(fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+            if (peak.$2 > 0) ...[
+              const SizedBox(height: 2),
+              Text('Nhiều nhất năm ${peak.$1} · ${formatInt(peak.$2)} bài', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            ],
+            const SizedBox(height: 6),
+            for (final (i, s) in widget.songs.indexed)
+              _PopSongRow(song: s, onTap: () => widget.onPlaySong(widget.songs, i)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: PillButton(onTap: widget.onTap, icon: Icons.play_arrow, label: 'Phát ${widget.label.toLowerCase()}', primary: true, height: 36)),
+              const SizedBox(width: 8),
+              PillButton(onTap: widget.onMore, label: 'Xem tất cả ›', primary: false, height: 36),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final song = widget.songs.firstOrNull;
+    final grow = _hover ? 40.0 : 0.0;
+    return OverlayPortal(
+      controller: _pop,
+      overlayChildBuilder: (_) => Positioned(
+        left: 0, top: 0,
+        child: CompositedTransformFollower(
+          link: _link,
+          targetAnchor: widget.popLeft ? Alignment.topLeft : Alignment.topRight,
+          followerAnchor: widget.popLeft ? Alignment.topRight : Alignment.topLeft,
+          offset: Offset(widget.popLeft ? -12 : 12, 0),
+          child: _card(),
+        ),
+      ),
+      child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            SizedBox(
-              height: 132,
+        onEnter: (_) => _enter(),
+        onExit: (_) => _leave(),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          GestureDetector(
+            onTap: widget.onTap,
+            child: SizedBox(
+              height: 172,
               child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
-                // Hover: the count turns into "▶ Nghe".
                 SizedBox(
                   height: 22,
-                  child: _hover || widget.busy
-                      ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          widget.busy ? SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg)) : Icon(Icons.play_arrow_rounded, size: 16, color: AppColors.accentFg),
-                          const SizedBox(width: 3),
-                          Text('Nghe', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                        ])
-                      : Text(formatInt(widget.count), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+                  child: widget.busy
+                      ? Center(child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg)))
+                      : Text(formatInt(widget.count), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _hover ? AppColors.accentFg : AppColors.textMuted))),
                 ),
                 const SizedBox(height: 4),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  height: widget.height,
-                  decoration: BoxDecoration(
-                    color: _hover ? AppColors.wine : widget.color,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(12), bottom: Radius.circular(3)),
+                CompositedTransformTarget(
+                  link: _link,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOut,
+                    height: widget.height + grow,
+                    decoration: BoxDecoration(
+                      color: _hover ? AppColors.wine : widget.color,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12), bottom: Radius.circular(3)),
+                    ),
+                    child: Stack(clipBehavior: Clip.none, fit: StackFit.expand, children: [
+                      if (_hover) Padding(padding: const EdgeInsets.fromLTRB(8, 18, 8, 8), child: _YearSpark(years: widget.years)),
+                      if (widget.playing) const Positioned(top: -7, right: 10, child: _PlayingDot()),
+                    ]),
                   ),
                 ),
               ]),
             ),
-            const SizedBox(height: 12),
-            Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
-            const SizedBox(height: 2),
-            Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(onTap: widget.onTap, child: Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 34,
+            child: song == null
+                ? null
+                : GestureDetector(
+                    onTap: () => widget.onPlaySong([song], 0),
+                    child: Row(children: [
+                      MouseRegion(
+                        onEnter: (_) => setState(() => _coverHover = true),
+                        onExit: (_) => setState(() => _coverHover = false),
+                        child: Stack(children: [
+                          SongCover(song: song, size: 30, radius: 7),
+                          if (_coverHover)
+                            Container(width: 30, height: 30, decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(7)), child: const Icon(Icons.play_arrow_rounded, size: 18, color: Colors.white)),
+                        ]),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('${song['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
+                    ]),
+                  ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _PopSongRow extends StatefulWidget {
+  final Map<String, dynamic> song;
+  final VoidCallback onTap;
+  const _PopSongRow({required this.song, required this.onTap});
+  @override
+  State<_PopSongRow> createState() => _PopSongRowState();
+}
+
+class _PopSongRowState extends State<_PopSongRow> {
+  bool _hover = false;
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.song;
+    final by = songByline(s).isNotEmpty ? songByline(s) : songByline(s, withComposer: true);
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+          decoration: BoxDecoration(color: _hover ? AppColors.surface.withValues(alpha: 0.7) : Colors.transparent, borderRadius: BorderRadius.circular(10)),
+          child: Row(children: [
+            SongCover(song: s, size: 40, radius: 8),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${s['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                Text([by, if (s['views'] != null) '${formatViews((s['views'] as num).toInt())} lượt nghe'].where((x) => x.isNotEmpty).join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              ]),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(color: _hover ? AppColors.wine : AppColors.wine.withValues(alpha: 0.08), shape: BoxShape.circle),
+              child: Icon(Icons.play_arrow_rounded, size: 18, color: _hover ? Colors.white : AppColors.accentFg),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Songs per year across a decade, as a white line inside the hovered bar,
+/// the busiest year named above its peak.
+class _YearSpark extends StatelessWidget {
+  final List<(int, int)> years;
+  const _YearSpark({required this.years});
+  @override
+  Widget build(BuildContext context) {
+    if (years.length < 2) return const SizedBox.shrink();
+    final peak = years.indexed.fold<(int, (int, int))>((0, years.first), (a, b) => b.$2.$2 > a.$2.$2 ? b : a);
+    return LayoutBuilder(builder: (context, c) {
+      final x = c.maxWidth * peak.$1 / (years.length - 1);
+      return Stack(clipBehavior: Clip.none, children: [
+        Positioned.fill(child: CustomPaint(painter: _SparkPainter([for (final y in years) y.$2.toDouble()]))),
+        if (peak.$2.$2 > 0)
+          Positioned(left: (x - 14).clamp(0, c.maxWidth - 28), top: -14, child: Text('${peak.$2.$1}', style: body(const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)))),
+      ]);
+    });
+  }
+}
+
+class _SparkPainter extends CustomPainter {
+  final List<double> v;
+  _SparkPainter(this.v);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final m = v.reduce((a, b) => a > b ? a : b);
+    if (m <= 0) return;
+    final path = Path();
+    for (var i = 0; i < v.length; i++) {
+      final p = Offset(size.width * i / (v.length - 1), size.height * (1 - v[i] / m));
+      i == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+    }
+    canvas.drawPath(path, Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeJoin = StrokeJoin.round);
+  }
+
+  @override
+  bool shouldRepaint(_SparkPainter o) => o.v != v;
+}
+
+/// The red dot over the decade of the song playing, breathing slowly.
+class _PlayingDot extends StatefulWidget {
+  const _PlayingDot();
+  @override
+  State<_PlayingDot> createState() => _PlayingDotState();
+}
+
+class _PlayingDotState extends State<_PlayingDot> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400))..repeat();
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _c,
+        builder: (_, _) => Container(
+          width: 14, height: 14,
+          decoration: BoxDecoration(color: const Color(0xFFC8312B), shape: BoxShape.circle, boxShadow: [
+            BoxShadow(color: const Color(0xFFC8312B).withValues(alpha: 0.28 * (1 - _c.value)), spreadRadius: 2 + 8 * _c.value),
           ]),
         ),
       );
+}
+
+/// The six periods under the decades, in the colours of their home cards,
+/// with the turning years below; a tap opens the period's page.
+class _EraBand extends StatelessWidget {
+  final int first;
+  /// Each period's cover, treated like its card on the phone home.
+  final List<String?> images;
+  final void Function(Era) onTap;
+  const _EraBand({required this.first, required this.images, required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    final start = first.toDouble(), end = 2020.0;
+    return LayoutBuilder(builder: (context, c) {
+      double x(num y) => c.maxWidth * ((y.clamp(start, end) - start) / (end - start));
+      return SizedBox(
+        height: 50,
+        child: Stack(children: [
+          for (final (i, e) in kEras.indexed)
+            if (x(e.toYear) - x(e.from) > 4)
+              Positioned(
+                left: x(e.from) + 1, width: x(e.toYear) - x(e.from) - 2, top: 0, height: 30,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () => onTap(e),
+                    child: Tooltip(
+                      message: '${e.title} · ${e.years}',
+                      child: Container(
+                        clipBehavior: Clip.antiAlias,
+                        decoration: BoxDecoration(color: eraBg(e.style), borderRadius: BorderRadius.circular(8), border: e.style == EraStyle.now ? Border.all(color: AppColors.borderSubtle) : null),
+                        child: Stack(fit: StackFit.expand, children: [
+                          EraBackdrop(style: e.style, image: i < images.length ? images[i] : null, wide: true),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            // Short periods are narrow: the name shrinks instead of losing letters.
+                            child: Align(alignment: Alignment.centerLeft, child: FittedBox(fit: BoxFit.scaleDown, child: Text(e.name, maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: eraFg(e.style)))))),
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          for (final y in [for (final e in kEras.skip(1)) e.from])
+            if (y > start && y < end)
+              Positioned(left: x(y) - 20, width: 40, top: 34, child: Text('$y', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
+        ]),
+      );
+    });
+  }
 }
 
 /// A 64px list row: cover (▶ over it on hover), title, one grey line,
