@@ -696,22 +696,11 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     } catch (_) {}
   }
 
-  /// Members who earned points since Monday: how many, and a few faces.
+  /// The members who gave most (Top cống hiến), faces for Chung tay xây dựng.
   Future<void> _fetchHelpers() async {
-    final now = DateTime.now();
-    final monday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
-    final from = '${monday.year}-${monday.month.toString().padLeft(2, '0')}-${monday.day.toString().padLeft(2, '0')}';
     try {
-      final d = await ApiClient.query('query(\$w: WhereConditions) { points(first: 500, where: \$w) { data { point user { id username avatar { url } } } } }', {'w': {'column': 'created_at', 'operator': 'GTE', 'value': from}});
-      final by = <String, (Map<String, dynamic>, int)>{};
-      for (final p in _maps(d['points']?['data'])) {
-        final u = p['user'];
-        if (u is! Map) continue;
-        final id = '${u['id']}';
-        by[id] = (Map<String, dynamic>.from(u), (by[id]?.$2 ?? 0) + ((p['point'] as num?)?.toInt() ?? 0));
-      }
-      final list = by.values.toList()..sort((a, b) => b.$2.compareTo(a.$2));
-      if (mounted) setState(() { _helpers = [for (final x in list) x.$1]; });
+      final d = await ApiClient.query(r'query { topMember(field: "point", first: 18) { data { id username avatar { url } } } }');
+      if (mounted) setState(() => _helpers = _maps(d['topMember']?['data']));
     } catch (_) {}
   }
 
@@ -740,7 +729,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 const SizedBox(height: 22),
                 LayoutBuilder(builder: (context, cc) {
                   final today = _todayCard(now);
-                  final radio = _radioCard();
+                  final radio = _radioCard(big: true);
                   if (cc.maxWidth < 980) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [today, const SizedBox(height: 20), radio]);
                   return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(flex: 13, child: today), const SizedBox(width: 20), Expanded(flex: 10, child: radio)]));
                 }),
@@ -808,7 +797,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   PillButton(label: 'Đăng nhập', height: 38, onTap: () => context.push('/dang-nhap')),
               ]),
             ),
-            Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _mobileRadioCard()),
+            Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _radioCard()),
             if (authed) Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _forYouBlock())),
             ..._eraRail(),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _topCol()),
@@ -1178,116 +1167,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   }
 
   // ---------- Đài ----------
-  Widget _radioCard() {
-    final list = _radio[_ch];
-    final first = list?.firstOrNull;
-    const soft = Color(0xFFE3CFCB);
-    final player = context.watch<PlayerProvider>();
-    final onAir = player.isPlaying && (player.sourceLabel ?? '').startsWith('Đài BCĐCNT');
-    Widget chip(String label, _Ch c) {
-      final sel = c == _ch;
-      return Material(
-        color: sel ? Colors.white : Colors.white.withValues(alpha: 0.10),
-        shape: StadiumBorder(side: BorderSide(color: sel ? Colors.white : Colors.white.withValues(alpha: 0.18))),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          // Picking a channel tunes in right away.
-          onTap: () async {
-            if (c == _ch) {
-              if (!onAir) _playRadio();
-              return;
-            }
-            setState(() => _ch = c);
-            await _loadRadio(c);
-            if (mounted && _ch == c) _playRadio();
-          },
-          child: Container(height: 32, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
-        ),
-      );
-    }
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const RadialGradient(center: Alignment(0.7, -1.0), radius: 1.3, colors: [Color(0xFF7A2424), Color(0xFF4A1617), Color(0xFF341011)], stops: [0, 0.55, 1]),
-      ),
-      child: Stack(children: [
-      // Sound spreading from the corner: still rings at rest, rippling while on air.
-      Positioned(right: -110, top: -110, child: IgnorePointer(child: _Ripples(active: onAir))),
-      Padding(
-      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
-          const SizedBox(width: 8),
-          Expanded(child: Text('ĐÀI BCĐCNT · ${_chLabel(_ch).toUpperCase()}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: Color(0xFFEBC2BC))))),
-          // Not alone: how many are listening to the Đài right now.
-          ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
-            valueListenable: RadioPresence.instance.listeners,
-            builder: (context, l, _) => l.$1 < 2
-                // Counting yourself, one is just you: show it from two.
-                ? const SizedBox.shrink()
-                : Padding(padding: const EdgeInsets.only(left: 10), child: Text('${l.$1} đang nghe', style: body(const TextStyle(fontSize: 12, letterSpacing: 0.4, fontWeight: FontWeight.w700, color: Colors.white)))),
-          ),
-        ]),
-        if (!widget.mobile) ...[
-          const SizedBox(height: 12),
-          Text('Bấm một lần,\nnghe cả buổi.', style: display(const TextStyle(fontSize: 26, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: Colors.white))),
-        ],
-        SizedBox(height: widget.mobile ? 14 : 18),
-        Material(
-          color: Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(18),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(18),
-            onTap: first == null ? null : (onAir ? player.togglePlay : _playRadio),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-              child: Row(children: [
-                Container(
-                  width: 56, height: 56,
-                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                  alignment: Alignment.center,
-                  child: list == null
-                      ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.wine))
-                      : Icon(onAir ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32, color: AppColors.wine),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(onAir ? 'ĐANG PHÁT' : 'BẤM ĐỂ NGHE', style: body(const TextStyle(fontSize: 11, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: Color(0xFFD9B6B0)))),
-                    // Before it starts, no titles: what plays is a surprise.
-                    Text(onAir ? '${player.currentSong?['title'] ?? ''}' : _chLabel(_ch).replaceFirst(RegExp(r'^.*: '), '').replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase()), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
-                    if (onAir) Text(songByline(player.currentSong ?? const <String, dynamic>{}), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: soft))),
-                  ]),
-                ),
-                // On air: live bars; at rest a still waveform (canvas Đài).
-                if (onAir) const NowPlayingBars(color: Colors.white) else const _StillWave(),
-              ]),
-            ),
-          ),
-        ),
-        if (widget.mobile) const SizedBox(height: 14) else const Spacer(),
-        const SizedBox(height: 14),
-        // One line that slides sideways (drag, wheel or trackpad), however many channels.
-        _SlideRow(children: [
-          chip('Tự động', _Ch.auto),
-          chip('Tân nhạc', _Ch.all),
-          chip('Dân ca', _Ch.folk),
-          chip('Không lời', _Ch.instr),
-          chip('Tiếng thơ', _Ch.poem),
-        ]),
-      ]),
-      ),
-      ]),
-    );
-  }
-
-  // ---------- Đài (phone) ----------
+  // ---------- Đài ----------
   /// One frame for both states, only the content changes: before anything
   /// plays the app logo and "Bật một lần, nghe cả ngày"; on air the song,
-  /// its singers, live bars and what comes next.
-  Widget _mobileRadioCard() {
+  /// its singers, live bars and what comes next. [big]: the desktop home,
+  /// same card a size up, stretched to the height of Bài hát hôm nay.
+  Widget _radioCard({bool big = false}) {
+    double z(double phone, double desk) => big ? desk : phone;
     final list = _radio[_ch];
     const soft = Color(0xFFE3CFCB), muted = Color(0xFFD9B6B0);
     final player = context.watch<PlayerProvider>();
@@ -1309,25 +1195,25 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             await _loadRadio(c);
             if (mounted && _ch == c) _playRadio();
           },
-          child: Container(height: 34, padding: const EdgeInsets.symmetric(horizontal: 13), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
+          child: Container(height: z(34, 38), padding: EdgeInsets.symmetric(horizontal: z(13, 15)), child: Center(widthFactor: 1, child: Text(label, style: body(TextStyle(fontSize: z(13, 14), fontWeight: FontWeight.w800, color: sel ? AppColors.wine : const Color(0xFFF3E7E4)))))),
         ),
       );
     }
     final onTap = radio ? player.togglePlay : (list == null || list.isEmpty ? null : _playRadio);
     return Container(
       clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(horizontal: z(16, 24), vertical: z(16, 22)),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: const RadialGradient(center: Alignment(0.8, -1.0), radius: 1.4, colors: [Color(0xFF842A27), Color(0xFF4E1718), Color(0xFF331011)], stops: [0, 0.55, 1]),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
-          height: 16,
+          height: z(16, 18),
           child: Row(children: [
             Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
             const SizedBox(width: 8),
-            Expanded(child: Text(radio ? 'ĐÀI BCĐCNT · ĐANG PHÁT' : 'ĐÀI BCĐCNT · PHÁT 24/7', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 11, letterSpacing: 1.1, fontWeight: FontWeight.w800, color: Color(0xFFEBC2BC))))),
+            Expanded(child: Text(radio ? 'ĐÀI BCĐCNT · ĐANG PHÁT' : 'ĐÀI BCĐCNT · PHÁT 24/7', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: z(11, 12), letterSpacing: z(1.1, 1.2), fontWeight: FontWeight.w800, color: const Color(0xFFEBC2BC))))),
             ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
               valueListenable: RadioPresence.instance.listeners,
               // Counting yourself, one is just you: show it from two.
@@ -1335,51 +1221,52 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ]),
         ),
-        const SizedBox(height: 12),
+        if (!big) const SizedBox(height: 12),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,
           child: SizedBox(
-            height: 84,
+            height: z(84, 88),
             child: Row(children: [
               radio
-                  ? SongCover(song: song, size: 84, radius: 14)
-                  : Container(width: 84, height: 84, decoration: BoxDecoration(color: const Color(0xFFF9F4EA), borderRadius: BorderRadius.circular(14)), alignment: Alignment.center, child: const BrandLogo(height: 56, full: false, onDark: false)),
-              const SizedBox(width: 14),
+                  ? SongCover(song: song, size: z(84, 88), radius: 14)
+                  : Container(width: z(84, 88), height: z(84, 88), decoration: BoxDecoration(color: const Color(0xFFF9F4EA), borderRadius: BorderRadius.circular(14)), alignment: Alignment.center, child: BrandLogo(height: z(56, 60), full: false, onDark: false)),
+              SizedBox(width: z(14, 18)),
               Expanded(
                 child: radio
                     ? Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('${song['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 20, height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
-                        Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: soft))),
+                        Text('${song['title'] ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: z(20, 24), height: 1.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                        Text(songByline(song), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: z(14, 15), fontWeight: FontWeight.w600, color: soft))),
                         const SizedBox(height: 6),
                         SizedBox(height: 24, child: Align(alignment: Alignment.centerLeft, child: playing ? const NowPlayingBars(color: Colors.white) : const _StillWave())),
                       ])
-                    : Text('Bật một lần,\nnghe cả ngày', maxLines: 2, style: display(const TextStyle(fontSize: 20, height: 1.2, letterSpacing: -0.2, fontWeight: FontWeight.w800, color: Colors.white))),
+                    : Text('Bật một lần,\nnghe cả ngày', maxLines: 2, style: display(TextStyle(fontSize: z(20, 26), height: 1.2, letterSpacing: z(-0.2, -0.3), fontWeight: FontWeight.w800, color: Colors.white))),
               ),
               const SizedBox(width: 10),
               Container(
-                width: 52, height: 52,
+                width: z(52, 60), height: z(52, 60),
                 decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
                 alignment: Alignment.center,
                 child: !radio && list == null
                     ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.wine))
-                    : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 30, color: AppColors.wine),
+                    : Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, size: z(30, 32), color: AppColors.wine),
               ),
             ]),
           ),
         ),
-        const SizedBox(height: 14),
+        if (!big) const SizedBox(height: 14),
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
-          height: 16,
+          height: z(16, 18),
           child: Row(children: [
-            Text('Kênh', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted))),
+            Text('Kênh', style: body(TextStyle(fontSize: z(12, 13), fontWeight: FontWeight.w700, color: muted))),
             const SizedBox(width: 16),
             Expanded(
               child: Align(
                 alignment: Alignment.centerRight,
                 child: next != null
-                    ? _Marquee(text: 'Tiếp theo: ${next['title'] ?? ''}${songByline(next).isNotEmpty ? ' · ${songByline(next)}' : ''}', style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted)))
-                    : Text(radio ? '' : 'Chọn kênh hoặc bấm ▶', maxLines: 1, style: body(const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: muted))),
+                    ? _Marquee(text: 'Tiếp theo: ${next['title'] ?? ''}${songByline(next).isNotEmpty ? ' · ${songByline(next)}' : ''}', style: body(TextStyle(fontSize: z(12, 13), fontWeight: FontWeight.w700, color: muted)))
+                    : Text(radio ? '' : 'Chọn kênh hoặc bấm ▶', maxLines: 1, style: body(TextStyle(fontSize: z(12, 13), fontWeight: FontWeight.w700, color: muted))),
               ),
             ),
           ]),
@@ -1391,6 +1278,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           chip('Dân ca', _Ch.folk),
           chip('Không lời', _Ch.instr),
           chip('Tiếng thơ', _Ch.poem),
+        ]),
         ]),
       ]),
     );
@@ -1822,7 +1710,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(formatInt(m.$2), style: display(TextStyle(fontSize: 22, height: 1.1, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-                        Text(m.$3, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                        // Narrow beside the faces: the line shrinks rather than losing words.
+                        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(m.$3, maxLines: 1, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
                       ]),
                     ),
                   ]),
@@ -1839,51 +1728,52 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             ),
           ),
         );
-    final intro = Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Text('CHUNG TAY XÂY DỰNG', style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
-      const SizedBox(height: 6),
-      Text('Kho nhạc này do chính người nghe cùng làm.', style: display(TextStyle(fontSize: 21, height: 1.25, letterSpacing: -0.3, fontWeight: FontWeight.w800, color: AppColors.text))),
-      // Every member who helped this week, face by face: many hands, no words needed.
-      if (_helpers.isNotEmpty) ...[
-        const SizedBox(height: 14),
-        // One line, however many hands: faces overlap more as there are more.
-        LayoutBuilder(builder: (context, c) {
-          const size = 30.0;
-          final n = _helpers.length;
-          final step = n <= 1 ? 0.0 : ((c.maxWidth - size) / (n - 1)).clamp(10.0, size + 4);
-          return SizedBox(
-            height: size,
-            child: Stack(children: [
-              for (final (i, u) in _helpers.indexed)
-                Positioned(
-                  left: i * step,
-                  child: Tooltip(
-                    message: '${u['username'] ?? ''}',
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () => context.push('/user/${u['id']}'),
-                      child: Container(
-                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: pink, width: 2)),
-                        child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: size - 4),
-                      ),
-                    ),
-                  ),
-                ),
-            ]),
-          );
-        }),
-      ],
-    ]);
+    // Top cống hiến, face by face in a grid as tall as the meters beside it.
+    Widget face(Map<String, dynamic> u, double size) => Tooltip(
+          message: '${u['username'] ?? ''}',
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () => context.push('/user/${u['id']}'),
+            child: UserAvatar(url: u['avatar']?['url']?.toString(), name: '${u['username'] ?? ''}', size: size),
+          ),
+        );
+    Widget faces() {
+      const cols = 6, size = 36.0;
+      final rows = [for (var r = 0; r * cols < _helpers.length && r < 3; r++) _helpers.skip(r * cols).take(cols).toList()];
+      return Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        for (final row in rows)
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            for (var k = 0; k < cols; k++) k < row.length ? face(row[k], size) : const SizedBox(width: size),
+          ]),
+      ]);
+    }
+    final head = Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(children: [
+        Text('CHUNG TAY XÂY DỰNG', style: body(TextStyle(fontSize: 12, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        const Spacer(),
+        InkWell(
+          onTap: () => context.push('/bang-xep-hang/cong-hien'),
+          child: Text('Top cống hiến ›', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        ),
+      ]),
+    );
+    final meters = [for (final (i, m) in items.indexed) ...[if (i > 0) const SizedBox(width: 18), meter(m)]];
     return Container(
       margin: const EdgeInsets.only(top: 48),
-      padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+      padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
       decoration: BoxDecoration(color: pink, borderRadius: BorderRadius.circular(24), border: Border.all(color: pinkEdge)),
       child: LayoutBuilder(builder: (context, c) {
-        if (c.maxWidth < 900) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [intro, const SizedBox(height: 16), IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final (i, m) in items.indexed) ...[if (i > 0) const SizedBox(width: 12), meter(m)]]))]);
-        // Meters keep their own height, centred beside the (taller) faces.
-        return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          SizedBox(width: 290, child: intro),
-          for (final m in items) ...[const SizedBox(width: 18), meter(m)],
+        final narrow = c.maxWidth < 900;
+        return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          head,
+          if (narrow && _helpers.isNotEmpty) ...[SizedBox(height: 132, child: faces()), const SizedBox(height: 16)],
+          IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (!narrow && _helpers.isNotEmpty) ...[SizedBox(width: 280, child: faces()), const SizedBox(width: 18)],
+              ...meters,
+            ]),
+          ),
         ]);
       }),
     );
@@ -2506,72 +2396,6 @@ class _SlideRowState extends State<_SlideRow> {
           ),
         ),
       );
-}
-
-/// Rings spreading from the Đài card's corner, like sound going out over the
-/// air: faint and still when nothing plays, rippling outwards while on air.
-class _Ripples extends StatefulWidget {
-  final bool active;
-  const _Ripples({required this.active});
-  @override
-  State<_Ripples> createState() => _RipplesState();
-}
-
-class _RipplesState extends State<_Ripples> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(seconds: 4));
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.active) _c.repeat();
-  }
-
-  @override
-  void didUpdateWidget(_Ripples old) {
-    super.didUpdateWidget(old);
-    if (widget.active && !_c.isAnimating) _c.repeat();
-    if (!widget.active && _c.isAnimating) _c.stop();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        width: 300,
-        height: 300,
-        child: AnimatedBuilder(animation: _c, builder: (_, _) => CustomPaint(painter: _RipplePainter(widget.active ? _c.value : null))),
-      );
-}
-
-class _RipplePainter extends CustomPainter {
-  /// null = at rest (two still rings); else 0…1 phase of the spreading rings.
-  final double? t;
-  _RipplePainter(this.t);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final c = size.center(Offset.zero);
-    final max = size.width / 2;
-    final p = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.2;
-    if (t == null) {
-      for (final (r, a) in [(0.47, 0.10), (0.73, 0.08)]) {
-        canvas.drawCircle(c, max * r, p..color = Colors.white.withValues(alpha: a));
-      }
-      return;
-    }
-    // Three rings, a third of a cycle apart; each grows and fades out.
-    for (var k = 0; k < 3; k++) {
-      final f = (t! + k / 3) % 1;
-      canvas.drawCircle(c, max * (0.25 + 0.75 * f), p..color = Colors.white.withValues(alpha: 0.16 * (1 - f)));
-    }
-  }
-
-  @override
-  bool shouldRepaint(_RipplePainter old) => old.t != t;
 }
 
 /// A still waveform beside the Đài's play button when nothing plays.
