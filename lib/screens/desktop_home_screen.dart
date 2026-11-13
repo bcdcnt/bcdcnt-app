@@ -1942,16 +1942,20 @@ class _DecadeBarState extends State<_DecadeBar> {
       onEnter: (_) => _enter(),
       onExit: (_) => _leave(),
       child: Material(
-        color: AppColors.isLight ? Colors.white : AppColors.surface,
-        elevation: 0,
-        borderRadius: BorderRadius.circular(16),
+        type: MaterialType.transparency,
         child: Container(
-          width: 330,
+          width: 340,
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          // Floats over the chart's pale panel: solid white, a firm edge and
+          // a deep shadow so it never melts into the page.
           decoration: BoxDecoration(
+            color: AppColors.isLight ? Colors.white : AppColors.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.borderSubtle),
-            boxShadow: [BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: 0.18 * AppColors.shadowMul), blurRadius: 40, offset: const Offset(0, 18))],
+            border: Border.all(color: AppColors.isLight ? const Color(0xFFE4D6D4) : AppColors.border),
+            boxShadow: [
+              BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: AppColors.isLight ? 0.22 : 0.5), blurRadius: 36, offset: const Offset(0, 16)),
+              BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 6, offset: const Offset(0, 2)),
+            ],
           ),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('${widget.decade}–$to · ${formatInt(widget.count)} BÀI', style: body(TextStyle(fontSize: 11, letterSpacing: 1, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
@@ -1964,7 +1968,7 @@ class _DecadeBarState extends State<_DecadeBar> {
               _PopSongRow(song: s, onTap: () => widget.onPlaySong(widget.songs, i)),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: PillButton(onTap: widget.onTap, icon: Icons.play_arrow, label: 'Phát ${widget.label.toLowerCase()}', primary: true, height: 36)),
+              Expanded(child: PillButton(onTap: widget.onTap, icon: Icons.play_arrow, label: 'Phát tất cả', primary: true, height: 36)),
               const SizedBox(width: 8),
               PillButton(onTap: widget.onMore, label: 'Xem tất cả ›', primary: false, height: 36),
             ]),
