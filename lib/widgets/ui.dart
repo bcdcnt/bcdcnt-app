@@ -206,7 +206,9 @@ class BrandChip extends StatelessWidget {
   final IconData? icon;
   /// Soft red variant ("Đang được tìm").
   final bool soft;
-  const BrandChip({super.key, required this.label, this.selected = false, this.onTap, this.icon, this.soft = false});
+  /// Faded lead-in before the label, e.g. the "#" of a tag.
+  final String? prefix;
+  const BrandChip({super.key, required this.label, this.selected = false, this.onTap, this.icon, this.soft = false, this.prefix});
 
   @override
   Widget build(BuildContext context) {
@@ -235,6 +237,7 @@ class BrandChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
+              if (prefix != null) Text(prefix!, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: fg.withValues(alpha: 0.5)))),
               Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: fg))),
             ],
           ),

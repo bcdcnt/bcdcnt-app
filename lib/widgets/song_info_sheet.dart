@@ -123,7 +123,7 @@ Future<void> showSongInfoSheet(BuildContext context, Map<String, dynamic> song) 
             Divider(height: 1, color: AppColors.border),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 14, 24, 4),
-              child: Text('THÔNG TIN BÀI HÁT', style: AppText.eyebrow.copyWith(color: AppColors.textMuted)),
+              child: Text('THÔNG TIN BẢN THU', style: AppText.eyebrow.copyWith(color: AppColors.textMuted)),
             ),
             for (final (label, value) in _songFacts(context, song, beforeOpen: () => Navigator.pop(ctx))) row(label, value),
             Padding(

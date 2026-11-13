@@ -109,6 +109,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   bool _lyricsAutoScroll = true;
 
   final ScrollController _roomScroll = ScrollController();
+  // Desktop: the right column (lyrics, comments, credits) stays closed
+  // until "Lời bài hát" is pressed, so the player has the whole width.
+  bool _roomOpen = false;
   bool get _isDesktopOS => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
   bool get _isPhoneOS => !kIsWeb && (Platform.isIOS || Platform.isAndroid);
 
@@ -845,22 +848,21 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     padding: const EdgeInsets.fromLTRB(64, 4, 48, 28),
                     child: LayoutBuilder(builder: (context, box) {
                       // The cover gives way first, so the controls always fit.
-                      final art = (box.maxHeight - 345).clamp(220.0, math.min(480.0, box.maxWidth * 0.42)).toDouble();
-                      return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                        SizedBox(
-                          width: art,
-                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            isVideoSong(song) ? _mobileVideo(player, song, art) : _mobileArtwork(thumb, art, player.isPlaying, song),
-                            const SizedBox(height: 26),
-                            Row(children: [
+                      final art = _roomOpen
+                          ? (box.maxHeight - 345).clamp(220.0, math.min(480.0, box.maxWidth * 0.42)).toDouble()
+                          : (box.maxHeight - 345).clamp(200.0, 460.0).toDouble();
+                      final center = !_roomOpen;
+                      final titleRow = Row(children: [
+                              // Balances the heart so the title sits mid-screen.
+                              if (center) const SizedBox(width: 50),
                               Expanded(
                                 child: InkWell(
                                   onTap: () => _openSongDetail(song),
-                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                    Text(song['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 32, height: 1.15, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
+                                  child: Column(crossAxisAlignment: center ? CrossAxisAlignment.center : CrossAxisAlignment.start, children: [
+                                    Text(song['title'] ?? '', textAlign: center ? TextAlign.center : TextAlign.start, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 32, height: 1.15, letterSpacing: -0.6, fontWeight: FontWeight.w800, color: Colors.white))),
                                     if (subline.isNotEmpty) ...[
                                       const SizedBox(height: 4),
-                                      Text(subline, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xBFFFFFFF)))),
+                                      Text(subline, textAlign: center ? TextAlign.center : TextAlign.start, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Color(0xBFFFFFFF)))),
                                     ],
                                   ]),
                                 ),
@@ -871,11 +873,8 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                 icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? AppColors.love : Colors.white),
                                 onPressed: () => _handleLove(song),
                               ),
-                            ]),
-                            const SizedBox(height: 12),
-                            _mobileScrubber(player),
-                            const SizedBox(height: 6),
-                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                            ]);
+                      final controls = Row(mainAxisAlignment: center ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween, spacing: center ? 40 : 0, children: [
                               _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
                               IconButton(tooltip: 'Bài trước (⇧←)', iconSize: 42, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white), onPressed: player.playPrev),
                               Material(
@@ -896,15 +895,43 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               ),
                               IconButton(tooltip: 'Bài tiếp (⇧→)', iconSize: 42, icon: const Icon(Icons.skip_next_rounded, color: Colors.white), onPressed: player.playNext),
                               _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
-                            ]),
+                            ]);
+                      final pills = [
+                        _pill(hasLyrics ? Icons.notes_rounded : Icons.info_outline_rounded, hasLyrics ? 'Lời bài hát' : 'Thông tin bài', () => setState(() => _roomOpen = !_roomOpen), on: _roomOpen),
+                        _pill(Icons.bedtime_outlined, player.hasSleepTimer ? 'Đang hẹn' : 'Hẹn giờ', _showSleepSheet, active: player.hasSleepTimer),
+                        _pill(Icons.queue_music_rounded, 'Danh sách', _showQueueSheet),
+                      ];
+                      final artwork = isVideoSong(song) ? _mobileVideo(player, song, art) : _mobileArtwork(thumb, art, player.isPlaying, song);
+                      // Lời tắt: one centred column, the scrubber running the width.
+                      if (!_roomOpen) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 56),
+                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            SizedBox(width: art, child: artwork),
+                            const SizedBox(height: 26),
+                            titleRow,
+                            const SizedBox(height: 12),
+                            _mobileScrubber(player),
+                            const SizedBox(height: 6),
+                            controls,
                             const SizedBox(height: 20),
-                            Row(children: [
-                              if (hasLyrics) Expanded(child: _pill(Icons.notes_rounded, 'Lời bài hát', () => _roomScroll.animateTo(0, duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic))),
-                              if (hasLyrics) const SizedBox(width: 8),
-                              Expanded(child: _pill(Icons.bedtime_outlined, player.hasSleepTimer ? 'Đang hẹn' : 'Hẹn giờ', _showSleepSheet, active: player.hasSleepTimer)),
-                              const SizedBox(width: 8),
-                              Expanded(child: _pill(Icons.queue_music_rounded, 'Danh sách', _showQueueSheet)),
-                            ]),
+                            Row(mainAxisAlignment: MainAxisAlignment.center, spacing: 10, children: [for (final p in pills) SizedBox(width: 160, child: p)]),
+                          ]),
+                        );
+                      }
+                      return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        SizedBox(
+                          width: art,
+                          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            artwork,
+                            const SizedBox(height: 26),
+                            titleRow,
+                            const SizedBox(height: 12),
+                            _mobileScrubber(player),
+                            const SizedBox(height: 6),
+                            controls,
+                            const SizedBox(height: 20),
+                            Row(spacing: 8, children: [for (final p in pills) Expanded(child: p)]),
                           ]),
                         ),
                         const SizedBox(width: 56),
@@ -1195,8 +1222,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
     );
   }
 
-  Widget _pill(IconData icon, String label, VoidCallback onTap, {bool active = false}) => Material(
-        color: active ? const Color(0x33FFFFFF) : const Color(0x1AFFFFFF),
+  // [on]: a toggle that is switched on (light pill, wine text).
+  Widget _pill(IconData icon, String label, VoidCallback onTap, {bool active = false, bool on = false}) => Material(
+        color: on ? const Color(0xFFF3ECEA) : (active ? const Color(0x33FFFFFF) : const Color(0x1AFFFFFF)),
         borderRadius: BorderRadius.circular(20),
         child: InkWell(
           borderRadius: BorderRadius.circular(20),
@@ -1209,9 +1237,9 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 18, color: Colors.white),
+                Icon(icon, size: 18, color: on ? AppColors.wine : Colors.white),
                 const SizedBox(width: 6),
-                Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)))),
+                Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: on ? AppColors.wine : Colors.white)))),
               ],
             ),
           ),

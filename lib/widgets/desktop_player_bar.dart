@@ -144,7 +144,7 @@ class DesktopPlayerBar extends StatelessWidget {
                   ),
                 ),
               ],
-              _Labelled(icon: Icons.open_in_full_rounded, label: 'Toàn màn', onTap: () => openFullPlayer(player)),
+              _Labelled(icon: Icons.fullscreen_rounded, label: 'Toàn màn', onTap: () => openFullPlayer(player)),
             ]),
         ),
       ]),

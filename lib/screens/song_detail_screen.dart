@@ -956,7 +956,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         padding: pad,
         itemCount: tags.length,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => BrandChip(label: '${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
+        itemBuilder: (_, i) => BrandChip(prefix: '#', label: '${tags[i]['name'] ?? ''}', onTap: () => context.push('/tag/${tags[i]['slug']}')),
       ),
     ));
 
@@ -1730,7 +1730,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       child: RichText(
         textScaler: MediaQuery.textScalerOf(context),
         text: TextSpan(children: [
-          TextSpan(text: '$label: ', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
+          // "Lời: phỏng thơ" already has its colon: no second one.
+          TextSpan(text: label.contains(':') ? '$label ' : '$label: ', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
           ...valueSpans,
         ]),
       ),
@@ -1997,7 +1998,7 @@ String _formatIntStatic(dynamic v) {
 
 String _typeLabelFor(String t) {
   switch (t) {
-    case 'song': return 'Bài hát';
+    case 'song': return 'Tân nhạc';
     case 'folk': return 'Dân ca';
     case 'instrumental': return 'Khí nhạc';
     case 'poem': return 'Tiếng thơ';
@@ -2079,6 +2080,9 @@ class _DesktopHero extends StatelessWidget {
     final showPause = isCurrent && isPlaying;
 
     final year = '${song['sheet']?['year'] ?? ''}'.trim();
+    // Same line as the phone: TÂN NHẠC · 1992 · bản 1.
+    var note = (subtitle ?? '').trim();
+    if (note.startsWith('(') && note.endsWith(')')) note = note.substring(1, note.length - 1).trim();
     // "Hồ sơ hiện vật": a dark band made from the song's own picture
     // (blurred, tinted) with the cover, title and the main actions on it;
     // credits, figures and tags follow on the page below.
@@ -2121,8 +2125,11 @@ class _DesktopHero extends StatelessWidget {
                 const SizedBox(width: 28),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                    Text(
-                      [_typeLabelFor(resolvedType), if (year.isNotEmpty && year != '0') 'sáng tác $year'].join(' · ').toUpperCase(),
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(text: [_typeLabelFor(resolvedType), if (year.isNotEmpty && year != '0') year].join(' · ').toUpperCase()),
+                        if (note.isNotEmpty) TextSpan(text: ' · $note', style: const TextStyle(letterSpacing: 0.3)),
+                      ]),
                       style: body(const TextStyle(fontSize: 13, letterSpacing: 1, fontWeight: FontWeight.w800, color: Color(0xFFF6E8DE))),
                     ),
                     const SizedBox(height: 8),
@@ -2131,12 +2138,6 @@ class _DesktopHero extends StatelessWidget {
                       maxLines: 2, overflow: TextOverflow.ellipsis,
                       style: display(const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white, height: 1.08, letterSpacing: -0.9)),
                     ),
-                    // "(bản 1)": its own line under the title, the band has room.
-                    if (subtitle != null && subtitle.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: Color(0xCCFFFFFF)))),
-                      ),
                     const SizedBox(height: 18),
                     // Action cluster
                     Wrap(spacing: 10, runSpacing: 10, children: [
@@ -2148,7 +2149,8 @@ class _DesktopHero extends StatelessWidget {
                       ),
                       _PrimaryActionPill(
                         icon: isLoved ? Icons.favorite : Icons.favorite_border,
-                        label: loveCount > 0 ? '$loveCount yêu thích' : 'Yêu thích',
+                        // The count is told by the names line below.
+                        label: 'Yêu thích',
                         onTap: onLove,
                         activeAccent: isLoved,
                       ),
@@ -2173,14 +2175,14 @@ class _DesktopHero extends StatelessWidget {
                                   left: i * 20.0,
                                   child: Container(
                                     width: 28, height: 28,
-                                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xFF2E080A), width: 2), color: AppColors.surfaceLight),
+                                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xE6FFFFFF), width: 2), color: AppColors.surfaceLight),
                                     child: ClipOval(child: _LoverAvatar(love: loves[i])),
                                   ),
                                 ),
                             ]),
                           ),
                           const SizedBox(width: 8),
-                          Text('đã thích', style: body(const TextStyle(fontSize: 13, color: Color(0xCCFFFFFF), decoration: TextDecoration.underline, decorationStyle: TextDecorationStyle.dotted, decorationColor: Color(0xCCFFFFFF)))),
+                          Text.rich(_loversLine(loves, loveCount), style: body(const TextStyle(fontSize: 14, color: Color(0xD9FFFFFF)))),
                         ]),
                       ),
                     ],
@@ -2201,6 +2203,28 @@ class _DesktopHero extends StatelessWidget {
   }
 }
 
+/// "Hà, Minh và 59 người khác đã thích": up to three names when that is
+/// everyone, else two names and the rest as a number.
+TextSpan _loversLine(List loves, int total) {
+  final names = [
+    for (final l in loves)
+      if (l is Map && '${l['user']?['username'] ?? ''}'.trim().isNotEmpty) '${l['user']['username']}'.trim(),
+  ];
+  total = total < names.length ? names.length : total;
+  const bold = TextStyle(fontWeight: FontWeight.w800, color: Colors.white);
+  if (names.isEmpty) return const TextSpan(text: 'đã thích');
+  final shown = total <= 3 ? names.take(3).toList() : names.take(2).toList();
+  final rest = total - shown.length;
+  final parts = <InlineSpan>[];
+  for (var i = 0; i < shown.length; i++) {
+    if (i > 0) parts.add(TextSpan(text: rest == 0 && i == shown.length - 1 ? ' và ' : ', '));
+    parts.add(TextSpan(text: shown[i], style: bold));
+  }
+  if (rest > 0) parts.add(TextSpan(text: ' và ${formatInt(rest)} người khác'));
+  parts.add(const TextSpan(text: ' đã thích'));
+  return TextSpan(children: parts);
+}
+
 /// Mobile fallback hero — keeps the previous full-bleed banner UX since it
 /// reads better on a narrow viewport than the desktop split layout.
 class _LoverAvatar extends StatelessWidget {
@@ -2217,8 +2241,10 @@ class _LoverAvatar extends StatelessWidget {
     return _initial(name);
   }
 
+  // Each person keeps one colour, so neighbouring initials don't merge.
+  static const _tints = [Color(0xFFB8892F), Color(0xFF1F4F6E), Color(0xFF2F8A5E), Color(0xFF8A5A34), Color(0xFF6B4E9B), Color(0xFFB0473A)];
   Widget _initial(String name) => Container(
-        color: AppColors.accent,
+        color: _tints[name.codeUnits.fold<int>(0, (a, c) => a + c) % _tints.length],
         alignment: Alignment.center,
         child: Text(name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
       );
@@ -2353,22 +2379,13 @@ class _MobileHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             child: thumb == null || thumb.isEmpty
                 ? sleeve
-                : Stack(fit: StackFit.expand, children: [
-                    CachedNetworkImage(
-                      imageUrl: cdnImg(thumb, 900),
-                      fit: BoxFit.cover,
-                      placeholder: (_, _) => Container(color: AppColors.surfaceLight),
-                      errorWidget: (_, _, _) => sleeve,
-                    ),
-                    Positioned(
-                      right: 10, bottom: 10,
-                      child: Container(
-                        width: 30, height: 30,
-                        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), shape: BoxShape.circle),
-                        child: const Icon(Icons.open_in_full_rounded, size: 15, color: Colors.white),
-                      ),
-                    ),
-                  ]),
+                // Tap the picture to see it large; no ⤢ badge on it.
+                : CachedNetworkImage(
+                    imageUrl: cdnImg(thumb, 900),
+                    fit: BoxFit.cover,
+                    placeholder: (_, _) => Container(color: AppColors.surfaceLight),
+                    errorWidget: (_, _, _) => sleeve,
+                  ),
           ),
         ),
       );
