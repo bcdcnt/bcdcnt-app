@@ -109,13 +109,13 @@ class _EventsScreenState extends State<EventsScreen> {
                   const SizedBox(height: 28),
                   const Skeleton(height: 240, radius: 24),
                 ] else if (events.isNotEmpty) ...[
-                  if (_hero case final h?) _heroCard(h, now, c.maxWidth >= 1280),
+                  if (_hero case final h?) _heroCard(h, now, c.maxWidth >= 1280, narrow: c.maxWidth < 600),
                   const SizedBox(height: 44),
                   Text('Cả năm', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: AppColors.text))),
                   const SizedBox(height: 4),
                   Text('Bấm một tháng để nhảy tới · số = số sự kiện', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                   const SizedBox(height: 16),
-                  _monthStrip(events, now),
+                  _monthStrip(events, now, narrow: c.maxWidth < 600),
                   for (var i = 0; i < 12; i++) ...[
                     if (events.any((e) => e.month == (now.month - 1 + i) % 12 + 1)) _monthSection(events, (now.month - 1 + i) % 12 + 1, now, twoCols),
                   ],
@@ -128,11 +128,48 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
-  Widget _heroCard(SiteEvent e, DateTime now, bool wide) {
+  Widget _heroCard(SiteEvent e, DateTime now, bool wide, {bool narrow = false}) {
     final date = e.nextDate(now);
     final days = e.daysUntil(now);
     final running = e.runningOn(now);
     final years = e.yearsOn(date);
+    final eyebrow = years != null && years > 0 ? Text('$years NĂM TRƯỚC, NGÀY NÀY', style: AppText.eyebrow) : null;
+    final play = PillButton(label: 'Phát tất cả · ${e.songCount} bài', icon: Icons.play_arrow_rounded, height: 44, loading: _busy == e.id, onTap: () => _playEvent(e));
+    // White on the grey card (the secondary PillButton is the card's grey).
+    final open = Material(
+      color: AppColors.bg,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: () => context.push('/playlist/${e.id}'),
+        child: Container(height: 44, padding: const EdgeInsets.symmetric(horizontal: 18), alignment: Alignment.center, child: Text('Xem playlist', maxLines: 1, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))),
+      ),
+    );
+    // Phone: the sheet and title side by side, the words and buttons below
+    // at full width (side by side the text had a thumb's width left).
+    final Widget body_ = narrow
+        ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              EventSheet(day: e.day, month: e.month, year: e.year, size: 112),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ?eyebrow,
+                  const SizedBox(height: 6),
+                  Text(e.title, maxLines: 3, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 22, height: 1.2, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+                ]),
+              ),
+            ]),
+            if (e.excerpt.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(e.excerpt, maxLines: 4, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, fontWeight: FontWeight.w500, color: AppColors.textSecondary))),
+            ],
+            const SizedBox(height: 16),
+            play,
+            const SizedBox(height: 10),
+            open,
+          ])
+        : const SizedBox.shrink();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       const SizedBox(height: 28),
       Row(children: [
@@ -142,14 +179,14 @@ class _EventsScreenState extends State<EventsScreen> {
       const SizedBox(height: 16),
       Container(
         key: _eventKeys.putIfAbsent(e.id, GlobalKey.new),
-        padding: const EdgeInsets.fromLTRB(32, 28, 28, 28),
+        padding: narrow ? const EdgeInsets.all(20) : const EdgeInsets.fromLTRB(32, 28, 28, 28),
         decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(24)),
-        child: Row(children: [
+        child: narrow ? body_ : Row(children: [
           EventSheet(day: e.day, month: e.month, year: e.year),
           const SizedBox(width: 32),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (years != null && years > 0) Text('$years NĂM TRƯỚC, NGÀY NÀY', style: AppText.eyebrow),
+              ?eyebrow,
               const SizedBox(height: 6),
               Text(e.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 28, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
               if (e.excerpt.isNotEmpty) ...[
@@ -157,19 +194,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 Text(e.excerpt, maxLines: 3, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, height: 1.5, fontWeight: FontWeight.w500, color: AppColors.textSecondary))),
               ],
               const SizedBox(height: 16),
-              Wrap(spacing: 10, runSpacing: 10, children: [
-                PillButton(label: 'Phát tất cả · ${e.songCount} bài', icon: Icons.play_arrow_rounded, height: 44, loading: _busy == e.id, onTap: () => _playEvent(e)),
-                // White on the grey card (the secondary PillButton is the card's grey).
-                Material(
-                  color: AppColors.bg,
-                  shape: const StadiumBorder(),
-                  child: InkWell(
-                    customBorder: const StadiumBorder(),
-                    onTap: () => context.push('/playlist/${e.id}'),
-                    child: Container(height: 44, padding: const EdgeInsets.symmetric(horizontal: 18), alignment: Alignment.center, child: Text('Xem playlist', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))),
-                  ),
-                ),
-              ]),
+              Wrap(spacing: 10, runSpacing: 10, children: [play, open]),
             ]),
           ),
           if (wide && _heroSongs.isNotEmpty) ...[
@@ -196,9 +221,18 @@ class _EventsScreenState extends State<EventsScreen> {
     ]);
   }
 
-  Widget _monthStrip(List<SiteEvent> events, DateTime now) => Row(children: [
-        for (var m = 1; m <= 12; m++) ...[
-          if (m > 1) const SizedBox(width: 8),
+  // Phone: two rows of six, twelve in a row left each month a sliver.
+  Widget _monthStrip(List<SiteEvent> events, DateTime now, {bool narrow = false}) => narrow
+      ? Column(children: [
+          _monthRow(events, now, 1, 6),
+          const SizedBox(height: 8),
+          _monthRow(events, now, 7, 12),
+        ])
+      : _monthRow(events, now, 1, 12);
+
+  Widget _monthRow(List<SiteEvent> events, DateTime now, int from, int to) => Row(children: [
+        for (var m = from; m <= to; m++) ...[
+          if (m > from) const SizedBox(width: 8),
           Expanded(child: Builder(builder: (_) {
             final n = events.where((e) => e.month == m).length;
             final cur = m == now.month;
