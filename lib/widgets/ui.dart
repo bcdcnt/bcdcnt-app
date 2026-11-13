@@ -399,7 +399,9 @@ class LabeledAction extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
   final bool active;
-  const LabeledAction({super.key, required this.icon, required this.label, this.onTap, this.active = false});
+  /// Icon colour when [active]; a heart passes [AppColors.love].
+  final Color? activeColor;
+  const LabeledAction({super.key, required this.icon, required this.label, this.onTap, this.active = false, this.activeColor});
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -422,7 +424,7 @@ class LabeledAction extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(color: active ? AppColors.accentSoft : AppColors.surface, shape: BoxShape.circle),
-                  child: Icon(icon, size: 22, color: active ? AppColors.accentLight : AppColors.text),
+                  child: Icon(icon, size: 22, color: active ? (activeColor ?? AppColors.accentLight) : AppColors.text),
                 ),
                 const SizedBox(height: 6),
                 Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
@@ -710,7 +712,7 @@ class PersonBubble extends StatelessWidget {
                     width: 28,
                     height: 28,
                     decoration: BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle, border: Border.all(color: AppColors.bg, width: 2)),
-                    child: Icon(Icons.favorite_rounded, size: 15, color: AppColors.accentLight),
+                    child: Icon(Icons.favorite_rounded, size: 15, color: AppColors.love),
                   ),
                 ),
             ]),

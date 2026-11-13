@@ -637,7 +637,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
               child: Row(children: [
-                Icon(Icons.favorite, size: 18, color: AppColors.accentLight),
+                Icon(Icons.favorite, size: 18, color: AppColors.love),
                 const SizedBox(width: 8),
                 Expanded(child: Text('$total người yêu thích', style: display(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
                 IconButton(icon: Icon(Icons.close, color: AppColors.textMuted), onPressed: () => Navigator.of(ctx).pop()),
@@ -1208,7 +1208,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           onLongPressHint: loves.isNotEmpty ? 'xem ai đã thích' : null,
                           child: GestureDetector(
                             onLongPress: loves.isNotEmpty ? () => _showLoversSheet(loves) : null,
-                            child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: _loveTotal > 0 ? '$_loveTotal thích' : 'Yêu thích', active: _isLoved, onTap: _toggleLove),
+                            child: LabeledAction(icon: _isLoved ? Icons.favorite_rounded : Icons.favorite_border_rounded, label: _loveTotal > 0 ? '$_loveTotal thích' : 'Yêu thích', active: _isLoved, activeColor: AppColors.love, onTap: _toggleLove),
                           ),
                         )),
                         if (!noMedia) Expanded(child: Builder(builder: (ctx) {
@@ -2254,7 +2254,7 @@ class _PrimaryActionPill extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(22)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 20, color: fg),
+            Icon(icon, size: 20, color: activeAccent ? AppColors.love : fg),
             const SizedBox(width: 8),
             Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: fg))),
           ]),

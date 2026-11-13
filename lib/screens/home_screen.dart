@@ -1654,7 +1654,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(width: 8),
             Expanded(child: Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)))),
             if (likes > 0) ...[
-              Icon(Icons.favorite, size: 12, color: AppColors.accent),
+              Icon(Icons.favorite, size: 12, color: AppColors.love),
               const SizedBox(width: 3),
               Text('$likes', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.accent))),
             ],

@@ -1171,7 +1171,7 @@ class _CommentSectionState extends State<CommentSection> {
                                 child: Padding(
                                   padding: const EdgeInsets.only(right: 14),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 17, color: isLoved ? AppColors.error : AppColors.textMuted),
+                                    Icon(isLoved ? Icons.favorite : Icons.favorite_border, size: 17, color: isLoved ? AppColors.love : AppColors.textMuted),
                                     if (loveCount > 0) const SizedBox(width: 5),
                                     if (loveCount > 0) Text('$loveCount', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: isLoved ? AppColors.error : AppColors.textSecondary)),
                                   ]),

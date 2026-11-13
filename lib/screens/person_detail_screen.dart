@@ -844,7 +844,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               height: 52,
               padding: const EdgeInsets.symmetric(horizontal: 18),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon, size: 22, color: on ? const Color(0xFFE8A3A0) : Colors.white),
+                Icon(icon, size: 22, color: on ? AppColors.love : Colors.white),
                 const SizedBox(width: 8),
                 Text(label, style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
               ]),
@@ -1505,7 +1505,7 @@ class _CountPill extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: count > 0 ? 16 : 13),
             alignment: Alignment.center,
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(icon, size: 20, color: color),
+              Icon(icon, size: 20, color: active ? AppColors.love : color),
               if (count > 0) ...[
                 const SizedBox(width: 6),
                 Text(formatViews(count), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: color))),

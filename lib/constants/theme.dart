@@ -12,6 +12,9 @@ class AppColors {
   static Color accent = const Color(0xFF711313);
   static Color accentLight = const Color(0xFF8E1F1F);
   static Color accentSoft = const Color(0xFFF8EDED);
+  /// A heart that is on (đã thích), the same red on every screen and on
+  /// both light pages and the dark player.
+  static const love = Color(0xFFD23B3B);
   static Color text = const Color(0xFF161112);
   static Color textSecondary = const Color(0xFF4F4547);
   // #665C5E: 5.3:1 on surfaceLight (the old #73686A was 4.45:1).

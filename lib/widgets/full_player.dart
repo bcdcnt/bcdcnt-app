@@ -868,7 +868,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                               IconButton(
                                 tooltip: _liked ? 'Bỏ yêu thích' : 'Yêu thích',
                                 iconSize: 34,
-                                icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? const Color(0xFFE8A3A0) : Colors.white),
+                                icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? AppColors.love : Colors.white),
                                 onPressed: () => _handleLove(song),
                               ),
                             ]),
@@ -1067,7 +1067,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                     IconButton(
                                       tooltip: _liked ? 'Bỏ yêu thích' : 'Yêu thích',
                                       iconSize: 30,
-                                      icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? const Color(0xFFE8A3A0) : Colors.white),
+                                      icon: Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _liked ? AppColors.love : Colors.white),
                                       onPressed: () {
                                         HapticFeedback.lightImpact();
                                         _handleLove(song);

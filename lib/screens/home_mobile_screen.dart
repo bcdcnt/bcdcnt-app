@@ -566,7 +566,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), shape: BoxShape.circle),
-                        child: const Icon(Icons.favorite_rounded, size: 16, color: Color(0xFF8E1F1F)),
+                        child: const Icon(Icons.favorite_rounded, size: 16, color: AppColors.love),
                       ),
                     ),
                   ]),

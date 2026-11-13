@@ -315,7 +315,7 @@ class _NowExtrasState extends State<_NowExtras> {
         return IconButton(
           tooltip: loved ? 'Bỏ yêu thích' : 'Yêu thích',
           onPressed: mine == null ? null : () => _toggle(mine),
-          icon: Icon(loved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 24, color: loved ? AppColors.accentLight : AppColors.textMuted),
+          icon: Icon(loved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 24, color: loved ? AppColors.love : AppColors.textMuted),
         );
       },
     );
