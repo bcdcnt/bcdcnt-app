@@ -2306,7 +2306,7 @@ class _EraBand extends StatelessWidget {
                     child: Tooltip(
                       message: '${e.title} · ${e.years}',
                       child: Container(
-                        decoration: BoxDecoration(color: eraBg(e.style), borderRadius: BorderRadius.circular(8), border: e.style == EraStyle.now ? Border.all(color: AppColors.borderSubtle) : null),
+                        decoration: BoxDecoration(color: eraBg(e.style), borderRadius: BorderRadius.circular(8)),
                         child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             // Short periods are narrow: the name shrinks instead of losing letters.

@@ -115,8 +115,7 @@ class _EraScreenState extends State<EraScreen> with PagedLoader {
       decoration: BoxDecoration(
         color: eraBg(e.style),
         borderRadius: BorderRadius.circular(18),
-        border: e.style == EraStyle.now ? Border.all(color: const Color(0xFFECE4E4)) : null,
-        boxShadow: e.style == EraStyle.now ? null : [BoxShadow(color: eraBg(e.style).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
+        boxShadow: [BoxShadow(color: eraBg(e.style).withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 16, offset: const Offset(0, 6))],
       ),
       child: Stack(fit: StackFit.expand, children: [
         EraBackdrop(style: e.style, image: _image, wide: true),

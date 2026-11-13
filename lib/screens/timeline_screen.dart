@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/events.dart';
+import '../widgets/eras.dart' show kEras, eraAccent, eraBg, eraFg, eraSubFg;
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 import 'events_screen.dart' show EventSheet;
@@ -27,6 +28,8 @@ const _eras = [
   (2000, 0, 'Sau 2000', 'Sau năm 2000'),
 ];
 const _first = 1930;
+/// Each period's colour, as on the home cards (same order as [kEras]).
+Color _eraColor(int i) => eraAccent(kEras[i].style);
 const _perPage = 30;
 const _fields = 'id slug title play_type views thumbnail { url } file { audio_url video_url duration } sheet { year composers(first: 2) { data { id slug title } } } artists(first: 3) { data { id slug title } }';
 
@@ -198,9 +201,10 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 _chart(),
                 const SizedBox(height: 30),
                 Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Container(width: 6, height: 66, margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: _eraColor(_era), borderRadius: BorderRadius.circular(3))),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(eyebrow, style: AppText.eyebrow),
+                      Text(eyebrow, style: AppText.eyebrow.copyWith(color: _eraColor(_era))),
                       const SizedBox(height: 4),
                       Text(_label, style: display(TextStyle(fontSize: 34, height: 1.15, letterSpacing: -0.7, fontWeight: FontWeight.w800, color: AppColors.text))),
                     ]),
@@ -222,13 +226,45 @@ class _TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  /// Bars per year from 1930 (the chosen period wine, the chosen year
-  /// darkest; hover shows "1968 · 158 bài"), decade ticks, period bands.
+  /// A period on the band: the chosen one solid in its colour, the others a
+  /// pale wash of theirs.
+  Widget _eraTab(int i, int last) {
+    final on = i == _era && _year == null;
+    return Expanded(
+      // Width follows the years, so a band sits under its bars.
+      flex: _eraTo(i).clamp(_first, last + 1) - _eras[i].$1.clamp(_first, last + 1),
+      child: Padding(
+        padding: EdgeInsets.only(right: i == _eras.length - 1 ? 0 : 4),
+        child: Material(
+          color: on ? eraBg(kEras[i].style) : Color.alphaBlend(_eraColor(i).withValues(alpha: i == _era ? 0.28 : 0.13), AppColors.bg),
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => _pick(era: i),
+            child: Container(
+              height: 50,
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              alignment: Alignment.centerLeft,
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // Short periods are narrow: the name shrinks instead of losing letters.
+                FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(_eras[i].$3, maxLines: 1, style: body(TextStyle(fontSize: 13, letterSpacing: -0.2, fontWeight: FontWeight.w800, color: on ? eraFg(kEras[i].style) : AppColors.text)))),
+                Text('${_eras[i].$1}–${_eras[i].$2 == 0 ? 'nay' : _eras[i].$2}', maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: on ? eraSubFg(kEras[i].style) : AppColors.textMuted))),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Bars per year from 1930 (the chosen period in its colour, the chosen
+  /// year darker; hover shows "1968 · 158 bài"), decade ticks, period bands.
   Widget _chart() {
     final last = _last;
     final n = last - _first + 1;
     final peak = [for (var y = _first; y <= last; y++) _counts[y] ?? 0].fold<int>(1, (a, b) => b > a ? b : a);
     final (from, to) = (_eras[_era].$1, _eraTo(_era));
+    final accent = _eraColor(_era);
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(20)),
@@ -252,7 +288,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
                             heightFactor: (_counts[y] ?? 0) == 0 ? 0.0 : ((_counts[y] ?? 0) / peak).clamp(0.02, 1.0),
                             child: Container(
                               decoration: BoxDecoration(
-                                color: y == _year ? AppColors.text : (y >= from && y < to ? AppColors.wine : AppColors.rose.withValues(alpha: 0.45)),
+                                color: y == _year ? Color.lerp(accent, Colors.black, 0.4) : (y >= from && y < to ? accent : AppColors.rose.withValues(alpha: 0.45)),
                                 borderRadius: const BorderRadius.vertical(top: Radius.circular(2)),
                               ),
                             ),
@@ -271,39 +307,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
                   for (var y = (_first + 9) ~/ 10 * 10; y <= last; y += 10)
                     Positioned(
                       left: (y - _first) / n * c.maxWidth,
-                      child: Text('$y', style: body(TextStyle(fontSize: 12, fontWeight: y >= from && y < to ? FontWeight.w800 : FontWeight.w700, color: y >= from && y < to ? AppColors.accentFg : AppColors.textMuted))),
+                      child: Text('$y', style: body(TextStyle(fontSize: 12, fontWeight: y >= from && y < to ? FontWeight.w800 : FontWeight.w700, color: y >= from && y < to ? accent : AppColors.textMuted))),
                     ),
                 ])),
           ),
           const SizedBox(height: 10),
         ],
         Row(children: [
-          for (var i = 0; i < _eras.length; i++)
-            Expanded(
-              // Width follows the years, so a band sits under its bars.
-              flex: _eraTo(i).clamp(_first, last + 1) - _eras[i].$1.clamp(_first, last + 1),
-              child: Padding(
-                padding: EdgeInsets.only(right: i == _eras.length - 1 ? 0 : 4),
-                child: Material(
-                  color: i == _era && _year == null ? AppColors.wine : (i == _era ? AppColors.accentSoft : AppColors.bg),
-                  borderRadius: BorderRadius.circular(10),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(10),
-                    onTap: () => _pick(era: i),
-                    child: Container(
-                      height: 50,
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      alignment: Alignment.centerLeft,
-                      child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        // Short periods are narrow: the name shrinks instead of losing letters.
-                        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(_eras[i].$3, maxLines: 1, style: body(TextStyle(fontSize: 13, letterSpacing: -0.2, fontWeight: FontWeight.w800, color: i == _era && _year == null ? Colors.white : AppColors.text)))),
-                        Text('${_eras[i].$1}–${_eras[i].$2 == 0 ? 'nay' : _eras[i].$2}', maxLines: 1, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: i == _era && _year == null ? Colors.white70 : AppColors.textMuted))),
-                      ]),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          for (var i = 0; i < _eras.length; i++) _eraTab(i, last),
         ]),
       ]),
     );

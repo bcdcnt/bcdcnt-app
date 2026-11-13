@@ -29,7 +29,7 @@ Era? eraBySlug(String slug) => kEras.where((e) => e.slug == slug).firstOrNull;
 
 /// How each period looks: an old sepia print, rough black and white, the
 /// war years in red, blue after 1975, the faded yellow of the subsidy era
-/// prints, and today in true colour.
+/// prints, and today in true colour on a fresh green.
 enum EraStyle { sepia, bw, red, blue, baocap, now }
 
 const _gray = <double>[0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0, 0, 0, 1, 0];
@@ -62,7 +62,7 @@ List<double> _mul(List<double> a, List<double> b) {
       EraStyle.red => (const Color(0xFF8E1F1F), const Color(0xFF8E1F1F), const Color(0xFF8E1F1F), _gray, Colors.white),
       EraStyle.blue => (const Color(0xFF1F4F6E), const Color(0xFF1F4F6E), const Color(0xFF1F4F6E), _gray, Colors.white),
       EraStyle.baocap => (const Color(0xFFC9A04A), const Color(0xFF8A621E), const Color(0xFFE2B550), _sepia, const Color(0xFFFFF8E8)),
-      EraStyle.now => (const Color(0xFFFBF7F4), Colors.white, null, null, const Color(0xFF161112)),
+      EraStyle.now => (const Color(0xFF2F8A5E), const Color(0xFF2F8A5E), null, null, Colors.white),
     };
 
 /// A period's picture treated in its style, with the fade text sits on:
@@ -76,7 +76,6 @@ class EraBackdrop extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (_, end, tint, m, _) = _look(style);
-    final light = style == EraStyle.now;
     Widget pic = image == null ? const SizedBox.shrink() : NetImage(url: image);
     if (m != null) pic = ColorFiltered(colorFilter: ColorFilter.matrix(m), child: pic);
     if (tint != null) pic = ColorFiltered(colorFilter: ColorFilter.mode(tint.withValues(alpha: style == EraStyle.baocap ? 0.55 : 0.9), BlendMode.multiply), child: pic);
@@ -87,8 +86,8 @@ class EraBackdrop extends StatelessWidget {
       DecoratedBox(
         decoration: BoxDecoration(
           gradient: wide
-              ? LinearGradient(colors: [end.withValues(alpha: light ? 0.96 : 1), end.withValues(alpha: light ? 0.2 : 0.2)], stops: const [0.35, 1])
-              : LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [end.withValues(alpha: 0), end.withValues(alpha: light ? 0.92 : 1)], stops: light ? const [0.2, 0.7] : const [0.3, 0.86]),
+              ? LinearGradient(colors: [end, end.withValues(alpha: 0.2)], stops: const [0.35, 1])
+              : LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [end.withValues(alpha: 0), end], stops: const [0.3, 0.86]),
         ),
       ),
     ]);
@@ -97,7 +96,16 @@ class EraBackdrop extends StatelessWidget {
 
 Color eraBg(EraStyle s) => _look(s).$1;
 Color eraFg(EraStyle s) => _look(s).$5;
-Color eraSubFg(EraStyle s) => s == EraStyle.now ? const Color(0xFF665C5E) : eraFg(s).withValues(alpha: 0.85);
+Color eraSubFg(EraStyle s) => eraFg(s).withValues(alpha: 0.85);
+
+/// A period's colour for marks on a light background (Dòng thời gian bars,
+/// labels): a touch lighter than the card for the darkest ones.
+Color eraAccent(EraStyle s) => switch (s) {
+      EraStyle.sepia => const Color(0xFF8A5A34),
+      EraStyle.bw => const Color(0xFF3A3936),
+      EraStyle.baocap => const Color(0xFFB8892F),
+      _ => eraBg(s),
+    };
 
 /// Home rail card: tap opens the period's page, the round ▶ in the corner
 /// plays it straight away.
@@ -121,7 +129,7 @@ class EraCard extends StatelessWidget {
         child: Container(
           width: 150,
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(color: eraBg(era.style), borderRadius: BorderRadius.circular(18), border: era.style == EraStyle.now ? Border.all(color: const Color(0xFFECE4E4)) : null),
+          decoration: BoxDecoration(color: eraBg(era.style), borderRadius: BorderRadius.circular(18)),
           child: Stack(fit: StackFit.expand, children: [
             EraBackdrop(style: era.style, image: image),
             Positioned(
