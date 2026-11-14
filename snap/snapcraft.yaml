@@ -2,12 +2,17 @@ name: bcdcnt
 title: Bài ca đi cùng năm tháng
 summary: Kho nhạc Việt Nam xưa — nghe, tải, karaoke, bình luận
 description: |
-  BCĐCNT (Bài ca đi cùng năm tháng) là kho lưu trữ những bài hát Việt Nam
-  qua các thời kỳ: hàng chục nghìn bản thu, thông tin nhạc sĩ, ca sĩ, nhà thơ,
-  lời bài hát, karaoke, playlist và cộng đồng người nghe.
+  BCĐCNT (Bài ca đi cùng năm tháng) là kho lưu trữ những bài hát Việt Nam qua các thời kỳ: hơn 14.000 bản thu, thông tin về hơn 1.300 nhạc sĩ và 3.000 nghệ sĩ, nhà thơ, lời bài hát, karaoke, playlist và một cộng đồng người nghe gắn bó từ nhiều năm nay.
 
-  Bản desktop có: trình phát nhạc với hàng đợi, ngẫu nhiên, lặp lại; tìm kiếm
-  nhanh; bảng xếp hạng; bình luận; tải bài hát; phím tắt bàn phím.
+  Bản desktop có:
+  * Trình phát nhạc với hàng đợi, phát ngẫu nhiên, lặp lại, đài phát 24/7
+  * Tìm kiếm nhanh bài hát, nhạc sĩ, nghệ sĩ, câu hát (Ctrl+K)
+  * Dòng thời gian bài hát theo từng giai đoạn lịch sử
+  * Bảng xếp hạng bài hát, nghệ sĩ và thành viên
+  * Bình luận, yêu thích, playlist cá nhân, tải bài hát về máy
+  * Giao diện sáng/tối, phím tắt bàn phím
+
+  Website: https://bcdcnt.net
 website: https://bcdcnt.net
 contact: https://bcdcnt.net
 license: Proprietary
