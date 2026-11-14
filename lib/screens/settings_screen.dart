@@ -827,13 +827,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 8),
                 Expanded(flex: 2, child: _dobPart('Năm sinh', _yob?.toString())),
               ]),
-              Padding(
-                padding: const EdgeInsets.only(top: 6, bottom: 14),
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(text: 'Không bắt buộc', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
-                  const TextSpan(text: ' — bạn có thể để trống. Chạm để chọn, không cần gõ.'),
-                ]), style: body(TextStyle(fontSize: 13, height: 1.4, color: AppColors.textMuted))),
-              ),
+              const SizedBox(height: 12),
               Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
                 Wrap(spacing: 8, runSpacing: 8, children: [
@@ -1114,13 +1108,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ]),
         ),
       ]),
-      Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Text.rich(TextSpan(children: [
-          TextSpan(text: 'Không bắt buộc', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
-          const TextSpan(text: ' — để trống ô nào cũng được · ngày tự khớp với tháng và năm'),
-        ]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-      ),
       const SizedBox(height: 18),
       Align(alignment: Alignment.centerRight, child: _DeskButton('Lưu thông tin', busy: _saving == 'info', onTap: _loaded ? _saveInfo : null)),
       _deskLabel('TÊN ĐĂNG NHẬP'),
@@ -1360,8 +1347,6 @@ class _DobSheetState extends State<_DobSheet> {
           Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(3)))),
           const SizedBox(height: 14),
           Text('Ngày sinh', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
-          const SizedBox(height: 4),
-          Text('Không bắt buộc · ngày tự khớp với tháng và năm', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
           const SizedBox(height: 16),
           Row(children: [Expanded(flex: 5, child: head('NGÀY')), Expanded(flex: 7, child: head('THÁNG')), Expanded(flex: 6, child: head('NĂM'))]),
           SizedBox(
