@@ -40,6 +40,10 @@ class PlayerProvider extends ChangeNotifier {
   final AudioPlayer _player = AudioPlayer();
   Map<String, dynamic>? _currentSong;
   List<Map<String, dynamic>> _queue = [];
+  /// Shuffle plays every song once before any repeats: songs already heard
+  /// this round (kind-id). Cleared when a new queue starts.
+  final Set<String> _shuffleHeard = {};
+  static String _songKey(Map<String, dynamic> s) => '${songKind(s)}-${s['id']}';
   int _currentIndex = 0;
   bool _isPlaying = false;
   Duration _position = Duration.zero;
@@ -209,11 +213,11 @@ class PlayerProvider extends ChangeNotifier {
     if (song == null || _restored) return;
     _lastSave = DateTime.now();
     try {
-      final from = (_currentIndex - 20).clamp(0, _queue.length);
+      final from = (_currentIndex - 50).clamp(0, _queue.length);
       final p = await SharedPreferences.getInstance();
       await p.setString(_lastKey, jsonEncode({
         'song': song,
-        'queue': _queue.skip(from).take(60).toList(),
+        'queue': _queue.skip(from).take(300).toList(),
         'index': _currentIndex - from,
         'label': _sourceLabel,
         'pos': _position.inMilliseconds,
@@ -331,10 +335,17 @@ class PlayerProvider extends ChangeNotifier {
     if (_queue.isEmpty) return null;
     if (_shuffle) {
       if (_queue.length <= 1) return null;
-      final rand = Random();
-      int next;
-      do { next = rand.nextInt(_queue.length); } while (next == _currentIndex);
-      return next;
+      final cur = _currentIndex.clamp(0, _queue.length - 1);
+      _shuffleHeard.add(_songKey(_queue[cur]));
+      var left = [for (var i = 0; i < _queue.length; i++) if (i != cur && !_shuffleHeard.contains(_songKey(_queue[i]))) i];
+      if (left.isEmpty) {
+        // Everything heard once: start a fresh round and keep playing.
+        _shuffleHeard
+          ..clear()
+          ..add(_songKey(_queue[cur]));
+        left = [for (var i = 0; i < _queue.length; i++) if (i != cur) i];
+      }
+      return left[Random().nextInt(left.length)];
     }
     final next = _currentIndex + 1;
     if (next < _queue.length) return next;
@@ -393,6 +404,7 @@ class PlayerProvider extends ChangeNotifier {
     _lastGoodPosition = Duration.zero;
     if (list != null) {
       _queue = list;
+      _shuffleHeard.clear();
       // A refill callback belongs to the queue that registered it (e.g. a
       // song page's suggestions); a new list must not inherit it. Callers
       // that want one set it again right after this call.

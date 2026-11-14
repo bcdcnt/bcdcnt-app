@@ -53,7 +53,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       final data = await ApiClient.query(r'''query($id: ID!) {
         playlist(id: $id) {
           id slug title description event_date is_system is_public thumbnail { url } user { id username avatar { url } }
-          items(first: 200, orderBy: [{column: "position", order: ASC}]) {
+          items(first: 1000, orderBy: [{column: "position", order: ASC}]) {
             data {
               id position type
               object {
