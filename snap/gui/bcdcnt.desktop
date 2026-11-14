@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Bài ca đi cùng năm tháng
+GenericName=Nghe nhạc
+Comment=Kho nhạc Việt Nam xưa — nghe, tải, karaoke, bình luận
+Exec=bcdcnt %U
+Icon=${SNAP}/meta/gui/bcdcnt.png
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Music;Player;
+Keywords=nhạc;bcdcnt;music;
+StartupWMClass=net.bcdcnt.bcdcnt

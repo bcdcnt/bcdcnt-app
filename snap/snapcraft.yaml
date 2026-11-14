@@ -1,0 +1,45 @@
+name: bcdcnt
+title: Bài ca đi cùng năm tháng
+summary: Kho nhạc Việt Nam xưa — nghe, tải, karaoke, bình luận
+description: |
+  BCĐCNT (Bài ca đi cùng năm tháng) là kho lưu trữ những bài hát Việt Nam
+  qua các thời kỳ: hàng chục nghìn bản thu, thông tin nhạc sĩ, ca sĩ, nhà thơ,
+  lời bài hát, karaoke, playlist và cộng đồng người nghe.
+
+  Bản desktop có: trình phát nhạc với hàng đợi, ngẫu nhiên, lặp lại; tìm kiếm
+  nhanh; bảng xếp hạng; bình luận; tải bài hát; phím tắt bàn phím.
+website: https://bcdcnt.net
+contact: https://bcdcnt.net
+license: Proprietary
+icon: snap/gui/bcdcnt.png
+adopt-info: bcdcnt
+base: core24
+grade: stable
+confinement: strict
+platforms:
+  amd64:
+
+# The Flutter bundle is built beforehand by `flutter build linux` (CI passes
+# the dart-define secrets there), so this only repackages it plus libmpv,
+# which media_kit dlopens at runtime for audio playback.
+apps:
+  bcdcnt:
+    command: bcdcnt
+    extensions: [gnome]
+    plugs:
+      - network
+      - network-bind   # loopback redirect for desktop Google sign-in
+      - audio-playback
+      - home           # saving downloaded songs
+    environment:
+      LD_LIBRARY_PATH: $LD_LIBRARY_PATH:$SNAP/lib:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/blas:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/lapack
+
+parts:
+  bcdcnt:
+    plugin: dump
+    source: build/linux/x64/release/bundle
+    stage-packages:
+      - libmpv2
+    override-build: |
+      craftctl default
+      craftctl set version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' "$CRAFT_PROJECT_DIR/pubspec.yaml")"

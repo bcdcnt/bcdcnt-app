@@ -226,6 +226,23 @@ jobs:
           fi
           ls -lh release-zip
 
+      # Snap Store (Ubuntu App Center): snap/snapcraft.yaml repackages the
+      # Linux bundle built above plus libmpv, which media_kit dlopens for
+      # audio. Snap installs auto-update, so update_check.dart skips them.
+      - name: Build snap
+        id: snap
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.target == 'linux'
+        uses: snapcore/action-build@v1
+
+      - name: Publish snap
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.target == 'linux'
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.snap.outputs.snap }}
+          release: stable
+
       - name: Package release zip (Windows)
         if: startsWith(github.ref, 'refs/tags/v') && matrix.target == 'windows'
         shell: pwsh

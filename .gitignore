@@ -53,3 +53,10 @@ google_oauth.json
 # Firebase client config (repo is public; keep local, CI builds without push)
 ios/Runner/GoogleService-Info.plist
 android/app/google-services.json
+
+# snapcraft build output
+/parts/
+/stage/
+/prime/
+/overlay/
+*.snap

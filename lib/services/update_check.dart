@@ -44,10 +44,9 @@ class UpdateCheck {
   /// positives.
   static bool get isSupported {
     if (kIsWeb) return false;
-    return Platform.isWindows ||
-        Platform.isMacOS ||
-        Platform.isLinux ||
-        Platform.isAndroid;
+    // Snap Store installs update themselves; $SNAP is set inside a snap.
+    if (Platform.isLinux) return Platform.environment['SNAP'] == null;
+    return Platform.isWindows || Platform.isMacOS || Platform.isAndroid;
   }
 
   /// Map platform to the artifact filename that CI uploads as a release
