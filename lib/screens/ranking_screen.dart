@@ -1,7 +1,5 @@
-import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -445,11 +443,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                   gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
                 ),
                 padding: const EdgeInsets.all(2),
-                child: ClipOval(
-                  child: item['avatar'] != null
-                      ? CachedNetworkImage(imageUrl: cdnImg((item['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 22))
-                      : const Icon(Icons.person, color: Colors.white, size: 22),
-                ),
+                child: UserAvatar(url: item['avatar']?.toString(), name: item['name']?.toString() ?? '', size: 48),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -490,15 +484,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             ),
           ),
           const SizedBox(width: 10),
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
-            child: ClipOval(
-              child: item['avatar'] != null
-                  ? CachedNetworkImage(imageUrl: cdnImg((item['avatar']).toString(), 160), fit: BoxFit.cover, errorWidget: (_, _, _) => const Icon(Icons.person, color: Colors.white, size: 18))
-                  : const Icon(Icons.person, color: Colors.white, size: 18),
-            ),
-          ),
+          UserAvatar(url: item['avatar']?.toString(), name: item['name']?.toString() ?? '', size: 40),
           const SizedBox(width: 12),
           Expanded(child: Text(item['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
           const SizedBox(width: 8),
