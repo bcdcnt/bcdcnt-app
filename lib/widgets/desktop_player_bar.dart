@@ -8,6 +8,7 @@ import '../services/friendly_error.dart';
 import '../services/player.dart';
 import 'mini_player.dart' show openFullPlayer;
 import 'song_row.dart';
+import 'ui.dart' show keyTip;
 
 /// Which side-panel tab is showing ('lyric' | 'comment' | 'queue'). The
 /// player bar's labelled buttons and the panel share it.
@@ -77,7 +78,7 @@ class DesktopPlayerBar extends StatelessWidget {
               _Icon(tooltip: 'Bài trước', icon: Icons.skip_previous_rounded, size: 32, onTap: player.playPrev, strong: true),
               const SizedBox(width: 10),
               Tooltip(
-                message: player.isPlaying ? 'Tạm dừng (Space)' : 'Phát (Space)',
+                message: keyTip(context, player.isPlaying ? 'Tạm dừng' : 'Phát', 'Space'),
                 child: Material(
                   color: AppColors.wine,
                   shape: const CircleBorder(),
@@ -124,7 +125,7 @@ class DesktopPlayerBar extends StatelessWidget {
               if (!narrow) ...[
                 const SizedBox(width: 2),
                 _Icon(
-                  tooltip: player.muted ? 'Bật tiếng (M)' : 'Tắt tiếng (M)',
+                  tooltip: keyTip(context, player.muted ? 'Bật tiếng' : 'Tắt tiếng', 'M'),
                   icon: player.muted || player.volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded,
                   size: 22,
                   onTap: player.toggleMute,

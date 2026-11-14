@@ -11,7 +11,7 @@ const meQuery = '''query { me {
   unread point listen
   permissions roles { alias }
   player_shuffle player_repeat
-  show_comment_sidebar
+  show_comment_sidebar notification_sound
 }}''';
 
 const _updateMeShuffleMutation = '''mutation(\$v: Boolean) {

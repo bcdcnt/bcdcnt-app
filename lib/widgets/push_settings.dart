@@ -6,12 +6,16 @@ import '../constants/theme.dart';
 import '../services/auth.dart';
 import '../services/push.dart';
 import '../services/friendly_error.dart';
+import 'ui.dart' show DeskToggleRow;
 
 /// Cài đặt → Thông báo điện thoại: system permission, and for members one
 /// switch per kind + quiet hours
 /// (user.push_prefs on the API).
 class PushSettings extends StatefulWidget {
-  const PushSettings({super.key});
+  /// Desktop settings: no permission card (the computer doesn't get push),
+  /// rows in the desktop style. The switches still steer the phone.
+  final bool desktop;
+  const PushSettings({super.key, this.desktop = false});
 
   @override
   State<PushSettings> createState() => _PushSettingsState();
@@ -67,7 +71,7 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   }
 
   Future<void> _load() async {
-    await _loadStatus();
+    if (!widget.desktop) await _loadStatus();
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) return;
@@ -108,12 +112,56 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
     await _loadStatus();
   }
 
+  Widget _desktopBody(int? quietStart, int? quietEnd, bool quietOn) {
+    if (_prefs == null && !_prefsFailed) {
+      return Padding(padding: const EdgeInsets.all(16), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentFg))));
+    }
+    if (_prefs == null) {
+      return Row(children: [
+        Expanded(child: Text('Chưa tải được tuỳ chọn thông báo.', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary)))),
+        TextButton(
+          onPressed: () {
+            setState(() => _prefsFailed = false);
+            _load();
+          },
+          child: Text('Thử lại', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+        ),
+      ]);
+    }
+    String hh(int h) => '${h.toString().padLeft(2, '0')}:00';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 6),
+      for (final k in _kinds) DeskToggleRow(title: k.$3, subtitle: k.$4, value: _prefs![k.$1] != false, onChanged: (v) => _save({k.$1: v})),
+      DeskToggleRow(
+        title: 'Giờ yên lặng',
+        subtitle: quietOn ? 'Không báo từ ${hh(quietStart!)} đến ${hh(quietEnd!)}' : 'Báo cả ngày lẫn đêm',
+        value: quietOn,
+        last: !quietOn,
+        onChanged: (v) => _save(v ? {'quiet_start': 22, 'quiet_end': 7} : {'quiet_start': null, 'quiet_end': null}),
+      ),
+      if (quietOn)
+        Container(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Row(children: [
+            _hourPicker('Từ', quietStart!.clamp(0, 23), (h) => _save({'quiet_start': h})),
+            const SizedBox(width: 24),
+            _hourPicker('Đến', quietEnd!.clamp(0, 23), (h) => _save({'quiet_end': h})),
+          ]),
+        ),
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text('Thông báo từ BQT luôn được gửi.', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      ),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final quietStart = _int(_prefs?['quiet_start']);
     final quietEnd = _int(_prefs?['quiet_end']);
     final quietOn = quietStart != null && quietEnd != null;
+    if (widget.desktop) return _desktopBody(quietStart, quietEnd, quietOn);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _permissionCard(),
       const SizedBox(height: 8),

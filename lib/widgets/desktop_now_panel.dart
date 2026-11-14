@@ -8,6 +8,7 @@ import 'desktop_player_bar.dart' show desktopPanelTab;
 import 'desktop_queue_panel.dart';
 import 'lyrics_text.dart';
 import 'song_row.dart';
+import 'ui.dart' show keyTip;
 
 /// Desktop side panel "beside the song playing": Lời · Bình luận · Hàng đợi.
 /// Follows the song playing unless pinned (the pin keeps the song being read
@@ -52,7 +53,7 @@ class _DesktopNowPanelState extends State<DesktopNowPanel> {
                     onPressed: () => setState(() => _pinned = _pinned != null ? null : Map<String, dynamic>.from(song)),
                     icon: Icon(_pinned != null ? Icons.push_pin_rounded : Icons.push_pin_outlined, size: 20, color: _pinned != null ? AppColors.accentFg : AppColors.textMuted),
                   ),
-                IconButton(tooltip: 'Đóng (Esc)', onPressed: widget.onClose, icon: Icon(Icons.close_rounded, size: 22, color: AppColors.textMuted)),
+                IconButton(tooltip: keyTip(context, 'Đóng', 'Esc'), onPressed: widget.onClose, icon: Icon(Icons.close_rounded, size: 22, color: AppColors.textMuted)),
               ]),
               const SizedBox(height: 10),
               Row(children: [

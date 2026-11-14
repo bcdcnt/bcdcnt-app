@@ -3,9 +3,12 @@ import '../widgets/push_settings.dart';
 import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
+import 'package:flutter/cupertino.dart' show CupertinoPicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
-import '../widgets/ui.dart' show goBack, OfflineBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, DeskRow, DeskToggleRow;
+import '../services/desktop_alerts.dart';
 import '../services/friendly_error.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -42,14 +45,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _avatarUrl;
   String? _bgUrl;
   bool _notificationSound = false;
-  bool _showCommentSidebar = false;
+  String? _email;
 
   final _fullnameCtl = TextEditingController();
   final _phoneCtl = TextEditingController();
   final _addressCtl = TextEditingController();
-  final _dobCtl = TextEditingController();
-  final _mobCtl = TextEditingController();
-  final _yobCtl = TextEditingController();
+  /// Ngày sinh — optional, each part on its own; null = để trống.
+  int? _dob;
+  int? _mob;
+  int? _yob;
   String _gender = '';
 
   final _passwordCtl = TextEditingController();
@@ -92,12 +96,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   /// Clear everything loaded for the previous account (logout / switch).
   void _resetForm() {
-    for (final c in [_fullnameCtl, _phoneCtl, _addressCtl, _dobCtl, _mobCtl, _yobCtl,
+    for (final c in [_fullnameCtl, _phoneCtl, _addressCtl,
         _passwordCtl, _passwordConfirmCtl, _newUsernameCtl, _usernameReasonCtl]) {
       c.clear();
     }
     setState(() {
       _gender = '';
+      _dob = _mob = _yob = null;
+      _email = null;
       _avatarUrl = null;
       _bgUrl = null;
       _usernameReqs = [];
@@ -112,7 +118,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _authRef?.removeListener(_initialFetch);
     _fullnameCtl.dispose(); _phoneCtl.dispose(); _addressCtl.dispose();
-    _dobCtl.dispose(); _mobCtl.dispose(); _yobCtl.dispose();
     _passwordCtl.dispose(); _passwordConfirmCtl.dispose();
     _newUsernameCtl.dispose(); _usernameReasonCtl.dispose();
     _rev.dispose();
@@ -131,7 +136,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final data = await auth.authedQuery('''query {
         me {
           id fullname phone address dob mob yob gender signup_channel
-          notification_sound show_comment_sidebar
+          email notification_sound
           avatar { url } background { url }
           $_usernameReqsField
         }
@@ -146,14 +151,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _fullnameCtl.text = (me['fullname'] ?? '').toString();
         _phoneCtl.text = (me['phone'] ?? '').toString();
         _addressCtl.text = (me['address'] ?? '').toString();
-        _dobCtl.text = (me['dob'] ?? '').toString();
-        _mobCtl.text = (me['mob'] ?? '').toString();
-        _yobCtl.text = (me['yob'] ?? '').toString();
+        // Older free-text values ("5a", "1880") read as blank rather than
+        // showing something the pickers can't hold.
+        _yob = _inRange(me['yob'], minYear, DateTime.now().year);
+        _mob = _inRange(me['mob'], 1, 12);
+        _dob = _inRange(me['dob'], 1, daysIn(_mob, _yob));
+        _email = me['email']?.toString();
         _gender = (me['gender'] ?? '').toString();
         _avatarUrl = me['avatar']?['url'];
         _bgUrl = me['background']?['url'];
         _notificationSound = me['notification_sound'] == true || me['notification_sound'] == 1;
-        _showCommentSidebar = me['show_comment_sidebar'] == true || me['show_comment_sidebar'] == 1;
         _usernameReqs = ((me['changeUsernameRequests']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
       });
@@ -193,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         updateMe(fullname: $fullname, phone: $phone, address: $address, dob: $dob, mob: $mob, yob: $yob, gender: $gender) { id }
       }''', {
         'fullname': _fullnameCtl.text, 'phone': _phoneCtl.text, 'address': _addressCtl.text,
-        'dob': _dobCtl.text, 'mob': _mobCtl.text, 'yob': _yobCtl.text, 'gender': _gender,
+        'dob': _dob?.toString() ?? '', 'mob': _mob?.toString() ?? '', 'yob': _yob?.toString() ?? '', 'gender': _gender,
       });
       _toast('Đã lưu thông tin');
     } catch (e) { _toast(friendlyError(e), error: true); }
@@ -290,24 +297,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await auth.authedMutate(r'''mutation($notification_sound: Boolean) {
         updateMe(notification_sound: $notification_sound) { id }
       }''', {'notification_sound': next});
-      _toast(next ? 'Bật âm thanh thông báo' : 'Tắt âm thanh thông báo');
+      auth.refreshMe();
+      _toast(next ? 'Đã bật âm báo' : 'Đã tắt âm báo');
     } catch (e) {
       if (mounted) setState(() => _notificationSound = !next);
-      _toast(friendlyError(e), error: true);
-    }
-  }
-
-  Future<void> _toggleCommentSidebar() async {
-    final next = !_showCommentSidebar;
-    setState(() => _showCommentSidebar = next);
-    try {
-      final auth = context.read<AuthProvider>();
-      await auth.authedMutate(r'''mutation($show_comment_sidebar: Boolean) {
-        updateMe(show_comment_sidebar: $show_comment_sidebar) { id }
-      }''', {'show_comment_sidebar': next});
-      _toast(next ? 'Bật sidebar bình luận' : 'Tắt sidebar bình luận');
-    } catch (e) {
-      if (mounted) setState(() => _showCommentSidebar = !next);
       _toast(friendlyError(e), error: true);
     }
   }
@@ -324,6 +317,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// Google / Apple sign-up accounts never chose a password (a random one
   /// was mailed), so they confirm by typing "XOÁ" instead.
   bool get _socialOnly => _signupChannel == 'google' || _signupChannel == 'apple';
+
+  static int? _inRange(Object? v, int lo, int hi) {
+    final n = int.tryParse('${v ?? ''}'.trim());
+    return n != null && n >= lo && n <= hi ? n : null;
+  }
+
+  /// Sets one part of the birth date; the day follows month/year so
+  /// 31/4 or 29/2 in a non-leap year can't be saved.
+  void _setDob({int? d, int? m, int? y, bool clearD = false, bool clearM = false, bool clearY = false}) {
+    setState(() {
+      if (clearD) { _dob = null; } else if (d != null) { _dob = d; }
+      if (clearM) { _mob = null; } else if (m != null) { _mob = m; }
+      if (clearY) { _yob = null; } else if (y != null) { _yob = y; }
+      final max = daysIn(_mob, _yob);
+      if (_dob != null && _dob! > max) _dob = max;
+    });
+  }
 
   Future<void> _deleteAccount() async {
     // Step 1: explain what happens.
@@ -481,6 +491,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _itemCard(_SettingsItem it, {bool danger = false}) {
+    if (it.bare) return it.builder();
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
@@ -518,7 +529,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     // Phones: a deep-link (e.g. "Phối màu" from the profile) opens that
     // sub-page straight away, once the account state has settled.
-    if (!isDesktop && !_openedInitial && !showLoading) {
+    // Wait for auth to restore, or account groups look missing and the
+    // deep link is dropped.
+    if (!isDesktop && !_openedInitial && !auth.loading && !showLoading) {
       _openedInitial = true;
       if (initialGroup != null && groups.any((g) => g.id == initialGroup)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -527,6 +540,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
+    if (isDesktop) {
+      return Scaffold(
+        backgroundColor: AppColors.bg,
+        body: showLoading
+            ? Center(child: CircularProgressIndicator(color: AppColors.accent))
+            : _SettingsDesktopBody(
+                key: ValueKey('settings-${_uid ?? 'guest'}-$accountReady'),
+                groups: groups,
+                header: header,
+                initialGroupId: initialGroup,
+                content: _desktopPage,
+              ),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -541,18 +568,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           if (showLoading)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
-          else if (isDesktop)
-            SliverFillRemaining(
-              hasScrollBody: true,
-              child: _SettingsDesktopBody(
-                key: ValueKey('settings-${_uid ?? 'guest'}-$accountReady'),
-                groups: groups,
-                header: header,
-                initialGroupId: initialGroup,
-                content: _groupContent,
-                bottomPadding: player.currentSong != null ? 90 : 20,
-              ),
-            )
           else
             SliverPadding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, player.currentSong != null ? 90 : 20),
@@ -783,61 +798,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   /// Top-level groups — single source of truth for the phone list, the
-  /// sub-pages and the desktop 2-pane layout.
+  /// sub-pages and the desktop 2-pane layout. Phones render [items] as
+  /// cards; desktop draws each group with [_desktopPage].
   List<_SettingsGroup> _groupDefs() {
     final isDesktop = MediaQuery.sizeOf(context).width >= 900;
     return [
       _SettingsGroup(
-        id: 'appearance',
-        icon: Icons.palette_outlined,
-        title: 'Giao diện & cỡ chữ',
-        subtitle: 'Nền sáng hoặc tối, chữ to hay nhỏ',
-        items: [
-          _SettingsItem(id: 'theme', builder: () => const _ThemePicker()),
-          if (isDesktop)
-            _SettingsItem(
-              id: 'sidebar',
-              needsAccount: true,
-              icon: Icons.chat_bubble_outline,
-              title: 'Bình luận bên cạnh',
-              builder: () => _toggleRow(
-                icon: Icons.chat_bubble_outline,
-                title: 'Sidebar bình luận',
-                subtitle: 'Hiện sidebar bình luận trên desktop',
-                value: _showCommentSidebar,
-                onChanged: (_) => _toggleCommentSidebar(),
-              ),
-            ),
-        ],
-      ),
-      _SettingsGroup(
-        id: 'notify',
-        icon: Icons.notifications_active_outlined,
-        title: 'Thông báo',
-        subtitle: 'Trả lời bình luận, lượt thích, theo dõi',
-        items: [
-          if (PushService.supported)
-            _SettingsItem(id: 'push', icon: Icons.notifications_active_outlined, title: 'Thông báo điện thoại', builder: () => const PushSettings()),
-          // Web-only: the in-page "ding" for new notifications.
-          if (kIsWeb)
-            _SettingsItem(
-              id: 'sound',
-              needsAccount: true,
-              icon: Icons.volume_up_outlined,
-              title: 'Âm thanh',
-              builder: () => _toggleRow(
-                icon: Icons.notifications_outlined,
-                title: 'Âm thanh thông báo',
-                subtitle: 'Phát âm thanh khi có thông báo mới',
-                value: _notificationSound,
-                onChanged: (_) => _toggleNotificationSound(),
-              ),
-            ),
-        ],
-      ),
-      _SettingsGroup(
         id: 'profile',
         icon: Icons.person_outline,
+        deskIcon: Icons.person,
         title: 'Hồ sơ',
         subtitle: 'Ảnh đại diện, họ tên, tên đăng nhập',
         items: [
@@ -852,12 +821,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _field('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone),
               _field('Địa chỉ', _addressCtl),
               Row(children: [
-                Expanded(child: _field('Ngày', _dobCtl, keyboardType: TextInputType.number, hint: 'DD')),
+                Expanded(child: _dobPart('Ngày', _dob?.toString())),
                 const SizedBox(width: 8),
-                Expanded(child: _field('Tháng', _mobCtl, keyboardType: TextInputType.number, hint: 'MM')),
+                Expanded(child: _dobPart('Tháng', _mob?.toString())),
                 const SizedBox(width: 8),
-                Expanded(flex: 2, child: _field('Năm sinh', _yobCtl, keyboardType: TextInputType.number, hint: 'YYYY')),
+                Expanded(flex: 2, child: _dobPart('Năm sinh', _yob?.toString())),
               ]),
+              Padding(
+                padding: const EdgeInsets.only(top: 6, bottom: 14),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(text: 'Không bắt buộc', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
+                  const TextSpan(text: ' — bạn có thể để trống. Chạm để chọn, không cần gõ.'),
+                ]), style: body(TextStyle(fontSize: 13, height: 1.4, color: AppColors.textMuted))),
+              ),
               Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
                 Wrap(spacing: 8, runSpacing: 8, children: [
@@ -895,8 +871,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
       _SettingsGroup(
+        id: 'appearance',
+        icon: Icons.palette_outlined,
+        deskIcon: Icons.image,
+        title: 'Giao diện & cỡ chữ',
+        subtitle: 'Nền sáng hoặc tối, chữ to hay nhỏ',
+        items: [_SettingsItem(id: 'theme', bare: true, builder: () => const _AppearancePane(desktop: false))],
+      ),
+      _SettingsGroup(
+        id: 'notify',
+        icon: Icons.notifications_active_outlined,
+        deskIcon: Icons.notifications,
+        title: 'Thông báo',
+        subtitle: 'Trả lời bình luận, lượt thích, theo dõi',
+        items: [
+          if (PushService.supported)
+            _SettingsItem(id: 'push', icon: Icons.notifications_active_outlined, title: 'Thông báo điện thoại', builder: () => const PushSettings()),
+          // Web-only: the in-page "ding" for new notifications.
+          if (kIsWeb && !isDesktop)
+            _SettingsItem(
+              id: 'sound',
+              needsAccount: true,
+              icon: Icons.volume_up_outlined,
+              title: 'Âm thanh',
+              builder: () => _toggleRow(
+                icon: Icons.notifications_outlined,
+                title: 'Âm thanh thông báo',
+                subtitle: 'Phát âm thanh khi có thông báo mới',
+                value: _notificationSound,
+                onChanged: (_) => _toggleNotificationSound(),
+              ),
+            ),
+          // Desktop draws the whole page itself (_desktopNotify).
+          if (isDesktop) _SettingsItem(id: 'desk', builder: () => const SizedBox.shrink()),
+        ],
+      ),
+      _SettingsGroup(
         id: 'account',
         icon: Icons.lock_outline,
+        deskIcon: Icons.lock,
         title: 'Tài khoản & bảo mật',
         subtitle: 'Đổi mật khẩu, xoá tài khoản',
         items: [
@@ -910,12 +923,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _field('Mật khẩu mới', _passwordCtl,
                     obscure: !_showPassword,
                     autofillHints: const [AutofillHints.newPassword],
-                    suffix: IconButton(
-                      tooltip: _showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
-                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                      icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary),
-                      onPressed: () => setState(() => _showPassword = !_showPassword),
-                    )),
+                    suffix: _eyeButton()),
                 _field('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: !_showPassword, autofillHints: const [AutofillHints.newPassword]),
                 const SizedBox(height: 8),
                 _saveBtn('Đổi mật khẩu', _saving == 'pw', _savePassword),
@@ -952,11 +960,563 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _SettingsGroup(
           id: 'shortcuts',
           icon: Icons.keyboard_outlined,
+          deskIcon: Icons.keyboard,
           title: 'Phím tắt',
           subtitle: 'Điều khiển nhanh bằng bàn phím',
           items: [_SettingsItem(id: 'shortcuts', builder: () => const _ShortcutsList())],
         ),
     ];
+  }
+
+  Widget _eyeButton() => IconButton(
+        tooltip: _showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu',
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        icon: Icon(_showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.textSecondary),
+        onPressed: () => setState(() => _showPassword = !_showPassword),
+      );
+
+  // ── Ngày sinh ────────────────────────────────────────────────────────
+
+  /// Phone: one part of the birth date; tapping opens the wheel sheet.
+  Widget _dobPart(String label, String? value) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+      Semantics(
+        button: true,
+        label: '$label: ${value ?? 'để trống'}',
+        child: InkWell(
+          onTap: _openDobSheet,
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            height: 50,
+            padding: const EdgeInsets.only(left: 12, right: 6),
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: AppColors.textMuted.withValues(alpha: 0.45), width: 1.5),
+            ),
+            child: Row(children: [
+              Expanded(child: Text(value ?? '—', style: body(TextStyle(fontSize: 17, color: value == null ? AppColors.textMuted : AppColors.text)))),
+              Icon(Icons.arrow_drop_down_rounded, color: AppColors.textSecondary),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+
+  Future<void> _openDobSheet() async {
+    final r = await showModalBottomSheet<_Dob>(
+      context: context,
+      useRootNavigator: true,
+      builder: (_) => _DobSheet(initial: _Dob(_dob, _mob, _yob)),
+    );
+    if (r == null || !mounted) return;
+    setState(() { _dob = r.d; _mob = r.m; _yob = r.y; });
+  }
+
+  // ── Desktop pages ────────────────────────────────────────────────────
+
+  Widget _desktopPage(String id) {
+    final auth = context.read<AuthProvider>();
+    if (id == 'appearance') return const _AppearancePane(desktop: true);
+    if (id == 'shortcuts') return const _ShortcutsList();
+    if (id == 'notify') return _desktopNotify();
+    // Profile & account need the loaded profile.
+    if (!_accountReady) {
+      if (auth.isAuthenticated && _loadError) return OfflineBlock(onRetry: _fetch);
+      if (auth.isAuthenticated && _loading) return Padding(padding: const EdgeInsets.all(32), child: Center(child: CircularProgressIndicator(color: AppColors.accent)));
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: Text('Bạn cần đăng nhập để dùng mục này.', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))),
+      );
+    }
+    return id == 'profile' ? _desktopProfile() : _desktopAccount();
+  }
+
+  Widget _desktopProfile() {
+    final username = context.read<AuthProvider>().user?['username']?.toString() ?? '';
+    final name = _fullnameCtl.text.trim().isNotEmpty ? _fullnameCtl.text.trim() : username;
+    final years = [for (var y = DateTime.now().year; y >= minYear; y--) y];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 22),
+      SizedBox(
+        height: 204,
+        child: Stack(clipBehavior: Clip.none, children: [
+          Positioned(
+            left: 0, right: 0, top: 0, height: 150,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Stack(fit: StackFit.expand, children: [
+                if (_bgUrl != null)
+                  CachedNetworkImage(imageUrl: cdnImg(_bgUrl!, 1440), fit: BoxFit.cover)
+                else
+                  Container(color: AppColors.surfaceLight, child: Icon(Icons.image_outlined, size: 36, color: AppColors.textMuted)),
+                Positioned(
+                  right: 12, bottom: 12,
+                  child: _DeskPillButton(
+                    icon: Icons.photo_camera,
+                    label: 'Đổi ảnh nền',
+                    busy: _uploading == 'background',
+                    onTap: _uploading != null ? null : () => _uploadImage('background'),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+          Positioned(
+            left: 20, top: 104,
+            child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Container(
+                width: 96, height: 96,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.surfaceLight, border: Border.all(color: AppColors.bg, width: 4)),
+                child: ClipOval(
+                  child: Stack(fit: StackFit.expand, children: [
+                    if (_avatarUrl != null)
+                      CachedNetworkImage(imageUrl: cdnImg(_avatarUrl!, 200), fit: BoxFit.cover)
+                    else
+                      Icon(Icons.person, size: 40, color: AppColors.textMuted),
+                    if (_uploading == 'avatar')
+                      Container(color: Colors.black45, child: const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))),
+                  ]),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 2),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, style: display(TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  Text('@$username · JPG / PNG / WEBP', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                ]),
+              ),
+            ]),
+          ),
+          Positioned(
+            right: 0, bottom: 0,
+            child: _DeskButton('Đổi ảnh đại diện', kind: _DeskButtonKind.ghost, onTap: _uploading != null ? null : () => _uploadImage('avatar')),
+          ),
+        ]),
+      ),
+      _deskLabel('THÔNG TIN CÁ NHÂN'),
+      _deskRow([_deskField('Họ và tên', _fullnameCtl), _deskField('Số điện thoại', _phoneCtl, keyboardType: TextInputType.phone)]),
+      _deskRow([_deskField('Địa chỉ', _addressCtl)]),
+      _deskRow([
+        _DeskSelect(label: 'Ngày', value: _dob, options: [for (var d = 1; d <= daysIn(_mob, _yob); d++) d], onChanged: (v) => _setDob(d: v, clearD: v == null)),
+        _DeskSelect(label: 'Tháng', value: _mob, options: [for (var m = 1; m <= 12; m++) m], onChanged: (v) => _setDob(m: v, clearM: v == null)),
+        _DeskSelect(label: 'Năm sinh', flex: 2, value: _yob, options: years, onChanged: (v) => _setDob(y: v, clearY: v == null)),
+        Expanded(
+          flex: 3,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            _deskFieldLabel('Giới tính'),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final g in const [('male', 'Nam'), ('female', 'Nữ'), ('other', 'Khác')]) IntrinsicWidth(child: _genderChip(g.$1, g.$2)),
+            ]),
+          ]),
+        ),
+      ]),
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text.rich(TextSpan(children: [
+          TextSpan(text: 'Không bắt buộc', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
+          const TextSpan(text: ' — để trống ô nào cũng được · ngày tự khớp với tháng và năm'),
+        ]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      ),
+      const SizedBox(height: 18),
+      Align(alignment: Alignment.centerRight, child: _DeskButton('Lưu thông tin', busy: _saving == 'info', onTap: _loaded ? _saveInfo : null)),
+      _deskLabel('TÊN ĐĂNG NHẬP'),
+      const SizedBox(height: 6),
+      Text.rich(TextSpan(children: [
+        const TextSpan(text: 'Đang dùng '),
+        TextSpan(text: '@$username', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.text)),
+        const TextSpan(text: ' · yêu cầu đổi tên sẽ được BQT xét duyệt.'),
+      ]), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+      _deskRow([
+        _deskField('Tên đăng nhập mới', _newUsernameCtl, hint: 'vd. ${username.isEmpty ? 'tenmoi' : '${username}2'}'),
+        _deskField('Lý do', _usernameReasonCtl, flex: 2, hint: 'Vì sao bạn muốn đổi'),
+      ]),
+      const SizedBox(height: 14),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _usernameReqs.map(_usernameReqRow).toList())),
+        const SizedBox(width: 12),
+        _DeskButton('Gửi yêu cầu', busy: _saving == 'username', onTap: _requestUsername),
+      ]),
+      const SizedBox(height: 40),
+    ]);
+  }
+
+  Widget _desktopNotify() {
+    final authed = context.read<AuthProvider>().isAuthenticated;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SizedBox(height: 18),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
+        child: Row(children: [
+          Icon(Icons.smartphone, size: 20, color: AppColors.accentFg),
+          const SizedBox(width: 10),
+          Expanded(child: Text('Áp dụng cho thông báo gửi đến điện thoại có cài app BCĐCNT và đăng nhập tài khoản này.', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+        ]),
+      ),
+      _deskLabel('GỬI ĐẾN ĐIỆN THOẠI KHI CÓ', top: 22),
+      if (authed)
+        const PushSettings(desktop: true)
+      else
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Text('Đăng nhập để chọn những thông báo muốn nhận.', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary))),
+        ),
+      if (authed) ...[
+        _deskLabel('TRÊN MÁY TÍNH NÀY'),
+        const SizedBox(height: 6),
+        DeskToggleRow(
+          title: 'Âm báo khi có thông báo mới',
+          subtitle: 'Một tiếng “ting” nhỏ khi chuông có số mới',
+          value: _notificationSound,
+          onChanged: (_) => _toggleNotificationSound(),
+          last: !DesktopAlerts.supported,
+        ),
+        if (DesktopAlerts.supported)
+          ValueListenableBuilder<bool>(
+            valueListenable: DesktopAlerts.instance.systemOn,
+            builder: (_, on, _) => DeskToggleRow(
+              title: 'Hiện thông báo của hệ thống',
+              subtitle: 'Góc màn hình ${Platform.isMacOS ? 'macOS' : 'Windows'}, khi app đang mở mà bạn đang làm việc khác',
+              value: on,
+              onChanged: DesktopAlerts.instance.setSystemOn,
+              last: true,
+            ),
+          ),
+      ],
+      const SizedBox(height: 40),
+    ]);
+  }
+
+  Widget _desktopAccount() {
+    final user = context.read<AuthProvider>().user;
+    final username = user?['username']?.toString() ?? '';
+    final email = _email ?? user?['email']?.toString() ?? '';
+    final channel = switch (_signupChannel) { 'google' => 'Tài khoản Google', 'apple' => 'Tài khoản Apple', _ => 'Tên đăng nhập & mật khẩu' };
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _deskLabel('ĐỔI MẬT KHẨU', top: 22),
+      AutofillGroup(
+        child: _deskRow([
+          _deskField('Mật khẩu mới', _passwordCtl, obscure: !_showPassword, autofillHints: const [AutofillHints.newPassword], suffix: _eyeButton()),
+          _deskField('Nhập lại mật khẩu', _passwordConfirmCtl, obscure: !_showPassword, autofillHints: const [AutofillHints.newPassword], hint: 'Nhập lại để chắc chắn'),
+        ]),
+      ),
+      const SizedBox(height: 18),
+      Align(alignment: Alignment.centerRight, child: _DeskButton('Đổi mật khẩu', busy: _saving == 'pw', onTap: _savePassword)),
+      _deskLabel('ĐĂNG NHẬP'),
+      const SizedBox(height: 6),
+      DeskRow(
+        title: channel,
+        subtitle: [if (_socialOnly) email else '@$username', if (!_socialOnly && email.isNotEmpty) email].join(' · '),
+        trailing: _socialOnly ? Text('Đã liên kết', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.successText))) : null,
+        last: true,
+      ),
+      _deskLabel('XOÁ TÀI KHOẢN', top: 30),
+      const SizedBox(height: 10),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.errorText.withValues(alpha: 0.4), width: 1.5)),
+        child: Row(children: [
+          Expanded(child: Text('Xoá vĩnh viễn tài khoản và thông tin cá nhân của bạn khỏi BCĐCNT. Việc này không thể hoàn tác.', style: body(TextStyle(fontSize: 15, height: 1.45, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
+          const SizedBox(width: 16),
+          _DeskButton('Xoá tài khoản', kind: _DeskButtonKind.danger, onTap: _deleteAccount),
+        ]),
+      ),
+      const SizedBox(height: 40),
+    ]);
+  }
+
+  Widget _deskLabel(String t, {double top = 26}) => Padding(
+        padding: EdgeInsets.only(top: top),
+        child: Text(t, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textSecondary))),
+      );
+
+  Widget _deskRow(List<Widget> children) => Padding(
+        padding: const EdgeInsets.only(top: 14),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(width: 14),
+            children[i],
+          ],
+        ]),
+      );
+
+  Widget _deskFieldLabel(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(t, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+      );
+
+  Widget _deskField(String label, TextEditingController ctl, {int flex = 1, String? hint, TextInputType? keyboardType, bool obscure = false, Iterable<String>? autofillHints, Widget? suffix}) {
+    final border = OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: AppColors.border, width: 1.5));
+    return Expanded(
+      flex: flex,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _deskFieldLabel(label),
+        SizedBox(
+          height: 48,
+          child: TextField(
+            controller: ctl,
+            keyboardType: keyboardType,
+            obscureText: obscure,
+            autofillHints: autofillHints,
+            autocorrect: !obscure,
+            enableSuggestions: !obscure,
+            style: body(TextStyle(fontSize: 16, color: AppColors.text)),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: body(TextStyle(fontSize: 16, color: AppColors.textMuted)),
+              suffixIcon: suffix,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              filled: true,
+              fillColor: AppColors.bg,
+              border: border,
+              enabledBorder: border,
+              focusedBorder: border.copyWith(borderSide: BorderSide(color: AppColors.accentFg, width: 2)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Earliest birth year offered.
+const minYear = 1920;
+
+/// Days in a month; unknown month → 31, February of an unknown year → 29.
+int daysIn(int? month, int? year) {
+  if (month == null) return 31;
+  if (month == 2) {
+    if (year == null) return 29;
+    final leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    return leap ? 29 : 28;
+  }
+  return const [4, 6, 9, 11].contains(month) ? 30 : 31;
+}
+
+class _Dob {
+  final int? d, m, y;
+  const _Dob(this.d, this.m, this.y);
+}
+
+/// Phone: Ngày / Tháng / Năm wheels; "—" at the top of each wheel leaves
+/// that part blank, "Bỏ trống" clears all three.
+class _DobSheet extends StatefulWidget {
+  final _Dob initial;
+  const _DobSheet({required this.initial});
+  @override
+  State<_DobSheet> createState() => _DobSheetState();
+}
+
+class _DobSheetState extends State<_DobSheet> {
+  late int? _d = widget.initial.d, _m = widget.initial.m, _y = widget.initial.y;
+  late final _years = [for (var y = DateTime.now().year; y >= minYear; y--) y];
+  late final _dCtl = FixedExtentScrollController(initialItem: _d ?? 0);
+  late final _mCtl = FixedExtentScrollController(initialItem: _m ?? 0);
+  // Empty year starts the wheel around 1960 so older members scroll less.
+  late final _yCtl = FixedExtentScrollController(initialItem: _y == null ? 0 : _years.indexOf(_y!) + 1);
+
+  @override
+  void dispose() {
+    _dCtl.dispose(); _mCtl.dispose(); _yCtl.dispose();
+    super.dispose();
+  }
+
+  void _clampDay() {
+    final max = daysIn(_m, _y);
+    if (_d != null && _d! > max) {
+      _d = max;
+      _dCtl.jumpToItem(max);
+    }
+  }
+
+  Widget _wheel(FixedExtentScrollController ctl, List<String> labels, ValueChanged<int> onIndex) {
+    return CupertinoPicker(
+      scrollController: ctl,
+      itemExtent: 44,
+      selectionOverlay: Container(
+        decoration: BoxDecoration(color: AppColors.surface.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(12)),
+      ),
+      onSelectedItemChanged: onIndex,
+      children: [
+        for (final l in labels)
+          Center(child: Text(l, style: body(TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: l == '—' ? AppColors.textMuted : AppColors.text)))),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxD = daysIn(_m, _y);
+    Text head(String t) => Text(t, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: AppColors.textMuted)));
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(3)))),
+          const SizedBox(height: 14),
+          Text('Ngày sinh', textAlign: TextAlign.center, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+          const SizedBox(height: 4),
+          Text('Không bắt buộc · ngày tự khớp với tháng và năm', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 14, color: AppColors.textMuted))),
+          const SizedBox(height: 16),
+          Row(children: [Expanded(flex: 5, child: head('NGÀY')), Expanded(flex: 7, child: head('THÁNG')), Expanded(flex: 6, child: head('NĂM'))]),
+          SizedBox(
+            height: 220,
+            child: Row(children: [
+              Expanded(flex: 5, child: _wheel(_dCtl, ['—', for (var d = 1; d <= maxD; d++) '$d'], (i) => setState(() => _d = i == 0 ? null : i))),
+              Expanded(flex: 7, child: _wheel(_mCtl, ['—', for (var m = 1; m <= 12; m++) 'Tháng $m'], (i) => setState(() { _m = i == 0 ? null : i; _clampDay(); }))),
+              Expanded(flex: 6, child: _wheel(_yCtl, ['—', for (final y in _years) '$y'], (i) => setState(() { _y = i == 0 ? null : _years[i - 1]; _clampDay(); }))),
+            ]),
+          ),
+          const SizedBox(height: 18),
+          Row(children: [
+            Expanded(
+              child: SizedBox(
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context, const _Dob(null, null, null)),
+                  style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.border, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  child: Text('Bỏ trống', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context, _Dob(_d, _m, _y)),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                  child: Text('Xong', style: body(const TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+                ),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Desktop: dropdown for one part of the birth date, "— Để trống —" first.
+class _DeskSelect extends StatelessWidget {
+  final String label;
+  final int? value;
+  final List<int> options;
+  final ValueChanged<int?> onChanged;
+  final int flex;
+  const _DeskSelect({required this.label, required this.value, required this.options, required this.onChanged, this.flex = 1});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: flex,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
+        ),
+        PopupMenuButton<int>(
+          tooltip: '',
+          initialValue: value ?? 0,
+          position: PopupMenuPosition.under,
+          constraints: const BoxConstraints(maxHeight: 320, minWidth: 120),
+          color: AppColors.bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: AppColors.border)),
+          onSelected: (v) => onChanged(v == 0 ? null : v),
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 0, height: 36, child: Text('— Để trống —', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+            for (final o in options)
+              PopupMenuItem(
+                value: o,
+                height: 36,
+                child: Text('$o', style: body(TextStyle(fontSize: 15, fontWeight: o == value ? FontWeight.w800 : FontWeight.w600, color: o == value ? AppColors.accentFg : AppColors.text))),
+              ),
+          ],
+          child: Container(
+            height: 48,
+            padding: const EdgeInsets.only(left: 14, right: 8),
+            decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border, width: 1.5)),
+            child: Row(children: [
+              Expanded(child: Text(value?.toString() ?? '—', style: body(TextStyle(fontSize: 16, color: value == null ? AppColors.textMuted : AppColors.text)))),
+              Icon(Icons.arrow_drop_down_rounded, color: AppColors.textSecondary),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+enum _DeskButtonKind { solid, ghost, danger }
+
+class _DeskButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onTap;
+  final bool busy;
+  final _DeskButtonKind kind;
+  const _DeskButton(this.label, {this.onTap, this.busy = false, this.kind = _DeskButtonKind.solid});
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg, side) = switch (kind) {
+      _DeskButtonKind.solid => (AppColors.accent, Colors.white, BorderSide.none),
+      _DeskButtonKind.ghost => (AppColors.bg, AppColors.text, BorderSide(color: AppColors.border, width: 1.5)),
+      _DeskButtonKind.danger => (AppColors.bg, AppColors.errorText, BorderSide(color: AppColors.errorText, width: 1.5)),
+    };
+    return SizedBox(
+      height: 44,
+      child: TextButton(
+        onPressed: busy ? null : onTap,
+        style: TextButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: fg,
+          disabledBackgroundColor: bg.withValues(alpha: 0.6),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: side),
+        ),
+        child: busy
+            ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
+            : Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: fg))),
+      ),
+    );
+  }
+}
+
+class _DeskPillButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool busy;
+  final VoidCallback? onTap;
+  const _DeskPillButton({required this.icon, required this.label, this.busy = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xB80E0A0A),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (busy)
+              const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            else
+              Icon(icon, size: 16, color: Colors.white),
+            const SizedBox(width: 6),
+            Text(label, style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white))),
+          ]),
+        ),
+      ),
+    );
   }
 }
 
@@ -1141,17 +1701,21 @@ class _SettingsItem {
   final IconData icon;
   final String? title;
   final bool needsAccount;
+  /// Drawn as is, without the card around it.
+  final bool bare;
   final Widget Function() builder;
-  const _SettingsItem({required this.id, required this.builder, this.icon = Icons.settings_outlined, this.title, this.needsAccount = false});
+  const _SettingsItem({required this.id, required this.builder, this.icon = Icons.settings_outlined, this.title, this.needsAccount = false, this.bare = false});
 }
 
 class _SettingsGroup {
   final String id;
   final IconData icon;
+  /// Filled icon for the desktop list.
+  final IconData deskIcon;
   final String title;
   final String subtitle;
   final List<_SettingsItem> items;
-  const _SettingsGroup({required this.id, required this.icon, required this.title, required this.subtitle, required this.items});
+  const _SettingsGroup({required this.id, required this.icon, required this.deskIcon, required this.title, required this.subtitle, required this.items});
 }
 
 /// Large top-level row (≥56pt): icon, title, one-line subtitle, chevron.
@@ -1236,15 +1800,14 @@ class _SettingsSubPage extends StatelessWidget {
   }
 }
 
-/// Desktop (≥900px): 2-pane macOS-style layout, group nav on the left.
+/// Desktop (≥900px): "Cài đặt" list on the left, the open group's page on
+/// the right (max 720 wide).
 class _SettingsDesktopBody extends StatefulWidget {
   final List<_SettingsGroup> groups;
-  final double bottomPadding;
+  final Widget? header;
   final String? initialGroupId;
   final Widget Function(String id) content;
-  /// Shown above the content (e.g. the "chưa tải được" retry block).
-  final Widget? header;
-  const _SettingsDesktopBody({super.key, required this.groups, required this.bottomPadding, required this.content, this.initialGroupId, this.header});
+  const _SettingsDesktopBody({super.key, required this.groups, this.header, this.initialGroupId, required this.content});
 
   @override
   State<_SettingsDesktopBody> createState() => _SettingsDesktopBodyState();
@@ -1259,199 +1822,236 @@ class _SettingsDesktopBodyState extends State<_SettingsDesktopBody> {
     final ids = widget.groups.map((g) => g.id).toSet();
     _activeId = (widget.initialGroupId != null && ids.contains(widget.initialGroupId))
         ? widget.initialGroupId
-        : (widget.groups.isNotEmpty ? widget.groups.first.id : null);
+        : (ids.contains('appearance') ? 'appearance' : widget.groups.firstOrNull?.id);
   }
 
   @override
   Widget build(BuildContext context) {
     if (widget.groups.isEmpty) {
-      return ListView(children: [if (widget.header != null) widget.header!]);
+      return ListView(children: [?widget.header]);
     }
     final active = widget.groups.firstWhere((g) => g.id == _activeId, orElse: () => widget.groups.first);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, widget.bottomPadding),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 240,
-            child: ListView(
-              padding: const EdgeInsets.only(top: 6),
-              children: widget.groups.map((g) {
-                final selected = g.id == active.id;
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: InkWell(
-                    onTap: () => setState(() => _activeId = g.id),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      constraints: const BoxConstraints(minHeight: 44),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: selected ? AppColors.accentSoft : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(children: [
-                        Icon(g.icon, size: 18, color: selected ? AppColors.accentFg : AppColors.textSecondary),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(g.title, style: body(TextStyle(
-                          fontSize: 14,
-                          fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                          color: selected ? AppColors.text : AppColors.textSecondary,
-                        )))),
-                      ]),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
+    return Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        width: 284,
+        padding: const EdgeInsets.fromLTRB(16, 28, 16, 16),
+        decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
+        child: ListView(children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Text('Cài đặt', style: display(TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.text))),
           ),
-          const SizedBox(width: 20),
-          Expanded(
-            child: ListView(
-              key: ValueKey('settings-content-${active.id}'),
-              padding: const EdgeInsets.only(top: 6),
-              children: [
-                if (widget.header != null) widget.header!,
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(active.title, style: AppText.displayLarge),
-                ),
-                widget.content(active.id),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ThemePicker extends StatelessWidget {
-  const _ThemePicker();
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProv = context.watch<ThemeProvider>();
-    const modes = [
-      ('sang', 'Sáng', Icons.light_mode_outlined),
-      ('toi', 'Tối', Icons.dark_mode_outlined),
-      ('system', 'Theo máy', Icons.smartphone_outlined),
-    ];
-    final scales = kTextScaleLabels.entries.toList();
-    Widget label(String s, [String? sub]) => Padding(
-          padding: const EdgeInsets.only(bottom: 10, top: 4),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(s, style: AppText.title),
-            if (sub != null) Text(sub, style: AppText.meta),
-          ]),
-        );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        label('Giao diện'),
-        _Seg(labels: [for (final m in modes) m.$2], icons: [for (final m in modes) m.$3], selected: modes.indexWhere((m) => m.$1 == themeProv.mode), onSelect: (i) => themeProv.setTheme(modes[i].$1)),
-        const SizedBox(height: 20),
-        label('Cỡ chữ', 'Áp dụng cho toàn ứng dụng'),
-        _Seg(labels: [for (final s in scales) s.value], selected: scales.indexWhere((s) => s.key == themeProv.textScaleKey), onSelect: (i) => themeProv.setTextScale(scales[i].key)),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: AppColors.border, width: 1.5)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('XEM TRƯỚC', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
-            const SizedBox(height: 6),
-            Text('Nơi anh đến là biển xa, nơi anh tới ngoài đảo xa', style: body(TextStyle(fontSize: 17, height: 1.5, fontWeight: FontWeight.w600, color: AppColors.text))),
-          ]),
-        ),
-      ],
-    );
-  }
-}
-
-class _Seg extends StatelessWidget {
-  final List<String> labels;
-  /// Optional leading icon per segment (same length as [labels]).
-  final List<IconData>? icons;
-  final int selected;
-  final ValueChanged<int> onSelect;
-  const _Seg({required this.labels, this.icons, required this.selected, required this.onSelect});
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
-        child: Row(children: [
-          for (var i = 0; i < labels.length; i++)
-            Expanded(
-              child: Semantics(
-                button: true,
-                selected: i == selected,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => onSelect(i),
+          for (final g in widget.groups)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Material(
+                color: g.id == active.id ? AppColors.accentSoft : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => setState(() => _activeId = g.id),
+                  borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    height: 42,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: i == selected ? AppColors.bg : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: i == selected ? [BoxShadow(color: Colors.black.withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 4, offset: const Offset(0, 1))] : null,
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (icons != null) ...[
-                        Icon(icons![i], size: 18, color: i == selected ? AppColors.text : AppColors.textSecondary),
-                        const SizedBox(width: 6),
-                      ],
-                      Flexible(
-                        child: Text(labels[i], overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: i == selected ? AppColors.text : AppColors.textSecondary))),
-                      ),
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    child: Row(children: [
+                      Icon(g.deskIcon, size: 20, color: g.id == active.id ? AppColors.accentFg : AppColors.text),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(g.title, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: g.id == active.id ? AppColors.accentFg : AppColors.text)))),
                     ]),
                   ),
                 ),
               ),
             ),
         ]),
-      );
+      ),
+      Expanded(
+        child: ListView(
+          key: ValueKey('settings-content-${active.id}'),
+          padding: const EdgeInsets.fromLTRB(40, 28, 40, 28),
+          children: [
+            Align(
+              alignment: Alignment.topLeft,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  ?widget.header,
+                  Text(active.title, style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text))),
+                  widget.content(active.id),
+                ]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ]);
+  }
 }
 
+/// Giao diện & cỡ chữ: big "Aa" cards, colour cards for the theme, and the
+/// display switches (desktop gets the two desktop-only ones).
+class _AppearancePane extends StatelessWidget {
+  final bool desktop;
+  const _AppearancePane({required this.desktop});
+
+  Widget _label(String t, double top) => Padding(
+        padding: EdgeInsets.only(top: top, bottom: 10),
+        child: Text(t, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textSecondary))),
+      );
+
+  Widget _card({required bool selected, required VoidCallback onTap, required Widget child, Color? bg, Gradient? gradient, required String semantics}) {
+    final h = desktop ? 88.0 : 76.0;
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: semantics,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: Container(
+              height: h,
+              decoration: BoxDecoration(
+                color: bg ?? AppColors.bg,
+                gradient: gradient,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: selected ? AppColors.accentFg : AppColors.border, width: 2),
+              ),
+              alignment: Alignment.center,
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.watch<ThemeProvider>();
+    final gap = desktop ? 10.0 : 8.0;
+    final scales = kTextScaleLabels.entries.toList();
+    const aa = {'vua': 18.0, 'lon': 23.0, 'ratlon': 28.0};
+    Widget cards(List<Widget> c) => Row(children: [for (var i = 0; i < c.length; i++) ...[if (i > 0) SizedBox(width: gap), c[i]]]);
+    const night = AppColors.night;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _label('CỠ CHỮ', desktop ? 22 : 4),
+      cards([
+        for (final s in scales)
+          _card(
+            selected: t.textScaleKey == s.key,
+            onTap: () => t.setTextScale(s.key),
+            semantics: 'Cỡ chữ ${s.value}',
+            child: MediaQuery.withNoTextScaling(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Text('Aa', style: display(TextStyle(fontSize: aa[s.key], fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: 0))),
+                const SizedBox(height: 2),
+                Text(s.value, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+              ]),
+            ),
+          ),
+      ]),
+      _label('GIAO DIỆN', desktop ? 26 : 22),
+      cards([
+        _card(
+          selected: t.mode == 'sang', onTap: () => t.setTheme('sang'), semantics: 'Giao diện sáng', bg: Colors.white,
+          child: Text('Sáng', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF161112)))),
+        ),
+        _card(
+          selected: t.mode == 'toi', onTap: () => t.setTheme('toi'), semantics: 'Giao diện tối', bg: night,
+          child: Text('Tối', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFFF3ECEA)))),
+        ),
+        _card(
+          selected: t.mode == 'system', onTap: () => t.setTheme('system'), semantics: 'Giao diện theo máy',
+          gradient: const LinearGradient(colors: [Colors.white, Colors.white, night, night], stops: [0, 0.5, 0.5, 1]),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(999), boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 4, offset: Offset(0, 1))]),
+            child: Text('Theo máy', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF161112)))),
+          ),
+        ),
+      ]),
+      _label('HIỂN THỊ', desktop ? 26 : 22),
+      if (desktop)
+        DeskToggleRow(
+          title: 'Ngăn phải tự mở khi cửa sổ rộng',
+          subtitle: 'Lời · Bình luận · Hàng đợi bên cạnh bài đang phát',
+          value: t.panelAutoOpen,
+          onChanged: t.setPanelAutoOpen,
+        ),
+      DeskToggleRow(
+        title: 'Nhuộm ảnh tư liệu màu nâu đỏ',
+        subtitle: 'Ảnh đen trắng, ảnh mờ hài hoà với màu trang',
+        value: t.tintPhotos,
+        onChanged: t.setTintPhotos,
+        last: !desktop,
+      ),
+      if (desktop)
+        DeskToggleRow(
+          title: 'Hiện phím tắt trong gợi ý',
+          subtitle: 'Ví dụ “Phát/Tạm dừng (Space)”',
+          value: t.shortcutHints,
+          onChanged: t.setShortcutHints,
+          last: true,
+        ),
+      const SizedBox(height: 32),
+    ]);
+  }
+}
+
+/// Phím tắt, in two groups, keys drawn as keycaps.
 class _ShortcutsList extends StatelessWidget {
   const _ShortcutsList();
 
   @override
   Widget build(BuildContext context) {
-    final shortcuts = [
+    final mod = !kIsWeb && Platform.isMacOS ? '⌘' : 'Ctrl';
+    const listen = [
       ('Phát / Tạm dừng', ['Space']),
       ('Tua lùi 5 giây', ['←']),
       ('Tua tới 5 giây', ['→']),
       ('Bài trước', ['⇧', '←']),
       ('Bài kế tiếp', ['⇧', '→']),
-      ('Tìm kiếm nhanh', ['⌘', 'K']),
-      ('Mở trang Tìm kiếm', ['⌘', 'F']),
-      ('Mở Cài đặt', ['⌘', ',']),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: shortcuts.map((s) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
-          child: Row(children: [
-            Expanded(child: Text(s.$1, style: body(TextStyle(fontSize: 13, color: AppColors.text)))),
-            ...s.$2.map((k) => Padding(
-              padding: const EdgeInsets.only(left: 6),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceLight,
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: AppColors.border),
+    final move = [
+      ('Tìm kiếm nhanh', [mod, 'K']),
+      ('Mở trang Tìm kiếm', [mod, 'F']),
+      ('Mở Cài đặt', [mod, ',']),
+    ];
+    Widget caps(List<String> keys) => Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final k in keys)
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              constraints: const BoxConstraints(minWidth: 30),
+              height: 30,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.bg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border(
+                  top: BorderSide(color: AppColors.border, width: 1.5),
+                  left: BorderSide(color: AppColors.border, width: 1.5),
+                  right: BorderSide(color: AppColors.border, width: 1.5),
+                  bottom: BorderSide(color: AppColors.border, width: 3),
                 ),
-                child: Text(k, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text))),
               ),
-            )),
-          ]),
-        );
-      }).toList(),
-    );
+              child: Text(k, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+            ),
+        ]);
+    Widget group(String label, List<(String, List<String>)> items, double top) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Padding(
+            padding: EdgeInsets.only(top: top, bottom: 6),
+            child: Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textSecondary))),
+          ),
+          for (var i = 0; i < items.length; i++)
+            DeskRow(title: items[i].$1, trailing: caps(items[i].$2), last: i == items.length - 1),
+        ]);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      group('NGHE NHẠC', listen, 22),
+      group('ĐI LẠI TRONG APP', move, 26),
+      const SizedBox(height: 32),
+    ]);
   }
 }

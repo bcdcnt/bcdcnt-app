@@ -20,6 +20,7 @@ import 'notifications_dropdown.dart';
 import 'playlist_cover.dart';
 import '../services/friendly_error.dart';
 import '../main.dart' show TabReselect;
+import 'ui.dart' show keyTip;
 
 /// Desktop shell (canvas "Desktop — làm mới: Phòng lưu trữ đang hát"):
 ///   - Left menu 240 (76 under 1280px, icon + small label, never icon-only):
@@ -50,7 +51,13 @@ class _DesktopShellState extends State<DesktopShell> {
     // Opens by itself only where it doesn't squeeze the page.
     if (!_sized) {
       _sized = true;
-      desktopPanelOpen.value = MediaQuery.sizeOf(context).width >= 1680;
+      final wide = MediaQuery.sizeOf(context).width >= 1680;
+      final prefs = context.read<ThemeProvider>();
+      desktopPanelOpen.value = wide && prefs.panelAutoOpen;
+      // Saved preference may load a moment after the first frame.
+      prefs.ready.then((_) {
+        if (mounted && wide && !prefs.panelAutoOpen) desktopPanelOpen.value = false;
+      });
     }
   }
 
@@ -472,7 +479,7 @@ class _TopBar extends StatelessWidget {
       decoration: BoxDecoration(color: AppColors.bg, border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
       child: Row(children: [
         Tooltip(
-          message: 'Quay lại (Alt+←)',
+          message: keyTip(context, 'Quay lại', 'Alt+←'),
           child: InkWell(
             customBorder: const CircleBorder(),
             onTap: router.canPop() ? () => router.pop() : null,

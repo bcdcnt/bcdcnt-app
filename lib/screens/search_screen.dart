@@ -764,7 +764,7 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         if (hasQuery)
           IconButton(
-            tooltip: 'Xoá (Esc)',
+            tooltip: keyTip(context, 'Xoá', 'Esc'),
             icon: Icon(Icons.cancel_rounded, size: 22, color: AppColors.textMuted),
             onPressed: () {
               _ctrl.clear();

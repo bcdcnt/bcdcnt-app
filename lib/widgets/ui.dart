@@ -3,13 +3,22 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/friendly_error.dart';
+import '../services/theme_provider.dart';
 import 'shimmer.dart' show SongListSkeleton;
 
 // Shared building blocks of the 2026-11 brand redesign (white + #711313 +
 // #B48988, Montserrat). Screens compose these so headers, chips, buttons and
 // skeletons look the same everywhere.
+
+/// Tooltip text, plus its key when Cài đặt → "Hiện phím tắt trong gợi ý"
+/// is on: keyTip(context, 'Phát', 'Space') → "Phát (Space)".
+/// Read without listening, so it is safe inside builder callbacks; the
+/// tooltip picks up a change on its widget's next rebuild.
+String keyTip(BuildContext context, String label, String key) =>
+    Provider.of<ThemeProvider>(context, listen: false).shortcutHints ? '$label ($key)' : label;
 
 /// Brand "gradient map" for archive photos (guideline, Trường hợp 1): keeps
 /// the photo's light and shade but colours it in the logo's red, so faded,
@@ -37,7 +46,8 @@ class BrandTint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!enabled) return child;
+    // Cài đặt → "Nhuộm ảnh tư liệu màu nâu đỏ".
+    if (!enabled || !context.select<ThemeProvider, bool>((t) => t.tintPhotos)) return child;
     // ClipRect bounds the filter layer: on Impeller (iOS) an unclipped
     // ColorFiltered spills the tint over everything painted below it.
     return ClipRect(child: ColorFiltered(colorFilter: _filter, child: child));
@@ -1313,4 +1323,70 @@ bool typingInField() {
   final ctx = FocusManager.instance.primaryFocus?.context;
   if (ctx == null) return false;
   return ctx.widget is EditableText || ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+}
+
+
+/// Desktop settings row: bold title, grey line under it, something on the
+/// right, a hairline below (except the last one).
+class DeskRow extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final bool last;
+  final VoidCallback? onTap;
+  const DeskRow({super.key, required this.title, this.subtitle, this.trailing, this.last = false, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Container(
+      constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(border: last ? null : Border(bottom: BorderSide(color: AppColors.border))),
+      child: Row(children: [
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text))),
+            if (subtitle != null && subtitle!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(subtitle!, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+              ),
+          ]),
+        ),
+        if (trailing != null) ...[const SizedBox(width: 16), trailing!],
+      ]),
+    );
+    return onTap == null ? row : InkWell(onTap: onTap, child: row);
+  }
+}
+
+/// [DeskRow] with a switch; the whole row toggles it.
+class DeskToggleRow extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final bool last;
+  const DeskToggleRow({super.key, required this.title, this.subtitle, required this.value, required this.onChanged, this.last = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return MergeSemantics(
+      child: DeskRow(
+        title: title,
+        subtitle: subtitle,
+        last: last,
+        onTap: () => onChanged(!value),
+        trailing: Switch(
+          value: value,
+          onChanged: onChanged,
+          activeThumbColor: Colors.white,
+          activeTrackColor: AppColors.isLight ? AppColors.accent : AppColors.accentLight,
+          inactiveThumbColor: Colors.white,
+          inactiveTrackColor: AppColors.surfaceLight,
+          trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+        ),
+      ),
+    );
+  }
 }

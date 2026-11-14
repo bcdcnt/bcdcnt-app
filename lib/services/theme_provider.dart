@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/foundation.dart';
@@ -99,9 +100,16 @@ const Map<String, String> kTextScaleLabels = {'vua': 'Vừa', 'lon': 'Lớn', 'r
 class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   static const _prefsKey = 'app_theme_name';
   static const _scaleKey = 'app_text_scale';
+  static const _panelKey = 'app_panel_auto_open';
+  static const _tintKey = 'app_tint_photos';
+  static const _hintsKey = 'app_shortcut_hints';
   AppPalette _palette = kAppPalettes.first;
   String _mode = 'sang';
   String _scale = 'vua';
+  bool _panelAutoOpen = true;
+  bool _tintPhotos = true;
+  bool _shortcutHints = false;
+  final Completer<void> _restored = Completer<void>();
 
   ThemeProvider() {
     _applyToGlobalColors();
@@ -115,6 +123,15 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
   String get mode => _mode;
   String get textScaleKey => _scale;
   double get textScale => kTextScales[_scale] ?? 1.0;
+  /// Desktop: the right panel (Lời · Bình luận · Hàng đợi) opens by itself
+  /// on wide windows.
+  bool get panelAutoOpen => _panelAutoOpen;
+  /// Archive photos get the wine/paper duotone ([BrandTint]).
+  bool get tintPhotos => _tintPhotos;
+  /// Desktop tooltips name their key: "Phát (Space)".
+  bool get shortcutHints => _shortcutHints;
+  /// Completes once saved preferences have been read.
+  Future<void> get ready => _restored.future;
 
   AppPalette _resolve(String mode) {
     if (mode == 'system') {
@@ -138,7 +155,11 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     _mode = (saved == 'toi' || saved == 'system') ? saved! : 'sang';
     _scale = kTextScales.containsKey(prefs.getString(_scaleKey)) ? prefs.getString(_scaleKey)! : 'vua';
     _palette = _resolve(_mode);
+    _panelAutoOpen = prefs.getBool(_panelKey) ?? true;
+    _tintPhotos = prefs.getBool(_tintKey) ?? true;
+    _shortcutHints = prefs.getBool(_hintsKey) ?? false;
     _applyToGlobalColors();
+    if (!_restored.isCompleted) _restored.complete();
     notifyListeners();
   }
 
@@ -170,6 +191,17 @@ class ThemeProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_scaleKey, key);
+  }
+
+  Future<void> setPanelAutoOpen(bool v) => _setFlag(_panelKey, v, () => _panelAutoOpen = v);
+  Future<void> setTintPhotos(bool v) => _setFlag(_tintKey, v, () => _tintPhotos = v);
+  Future<void> setShortcutHints(bool v) => _setFlag(_hintsKey, v, () => _shortcutHints = v);
+
+  Future<void> _setFlag(String key, bool v, VoidCallback apply) async {
+    apply();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, v);
   }
 
   @override

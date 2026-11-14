@@ -21,7 +21,7 @@ import 'timed_lyrics.dart';
 import '../constants/theme.dart';
 import '../services/player.dart';
 import '../services/auth.dart';
-import 'ui.dart' show UserAvatar;
+import 'ui.dart' show UserAvatar, keyTip;
 import 'song_row.dart' show GeneratedCover, saveForOffline;
 import 'brand_logo.dart';
 import 'synced_video.dart';
@@ -835,7 +835,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                     if (_isDesktopOS) _buildVolumeControl(player),
                     if (_isDesktopOS)
                       IconButton(
-                        tooltip: _isFullScreen ? 'Thoát toàn màn hình (F)' : 'Toàn màn hình (F)',
+                        tooltip: keyTip(context, _isFullScreen ? 'Thoát toàn màn hình' : 'Toàn màn hình', 'F'),
                         onPressed: _toggleFullScreen,
                         icon: Icon(_isFullScreen ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded, color: Colors.white, size: 26),
                       ),
@@ -876,7 +876,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                             ]);
                       final controls = Row(mainAxisAlignment: center ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween, spacing: center ? 40 : 0, children: [
                               _ShuffleButton(active: player.shuffle, onTap: player.toggleShuffle),
-                              IconButton(tooltip: 'Bài trước (⇧←)', iconSize: 42, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white), onPressed: player.playPrev),
+                              IconButton(tooltip: keyTip(context, 'Bài trước', '⇧←'), iconSize: 42, icon: const Icon(Icons.skip_previous_rounded, color: Colors.white), onPressed: player.playPrev),
                               Material(
                                 color: Colors.white,
                                 shape: const CircleBorder(),
@@ -893,7 +893,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                   ),
                                 ),
                               ),
-                              IconButton(tooltip: 'Bài tiếp (⇧→)', iconSize: 42, icon: const Icon(Icons.skip_next_rounded, color: Colors.white), onPressed: player.playNext),
+                              IconButton(tooltip: keyTip(context, 'Bài tiếp', '⇧→'), iconSize: 42, icon: const Icon(Icons.skip_next_rounded, color: Colors.white), onPressed: player.playNext),
                               _RepeatButton(mode: player.repeat, onTap: player.toggleRepeat),
                             ]);
                       final pills = [

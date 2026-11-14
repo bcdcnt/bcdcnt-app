@@ -82,6 +82,7 @@ import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:audio_session/audio_session.dart';
 import 'services/analytics.dart';
 import 'services/radio_presence.dart';
+import 'services/desktop_alerts.dart';
 
 void main() async {
   // window_manager is desktop-only (used for the FullPlayer fullscreen
@@ -366,6 +367,8 @@ class _AuthPlayerBridgeState extends State<_AuthPlayerBridge> {
     realtimeService = RealtimeService(apiBase: apiBase, auth: auth);
     realtimeService!.connect();
     _notifTick = realtimeService!.notificationTick..addListener(_refreshMe);
+    // Desktop: ding + macOS/Windows banner for new notifications.
+    DesktopAlerts.instance.init(realtime: realtimeService!, auth: auth, router: _router);
     // Phone push: token registration + opening tapped notifications.
     PushService.instance.init(auth: auth, router: _router);
   }
@@ -567,7 +570,7 @@ final _router = GoRouter(
         GoRoute(path: '/ho-tro/:id', builder: (c, s) => TicketDetailScreen(id: s.pathParameters['id']!)),
         GoRoute(path: '/p/:slug', builder: (c, s) => StaticPageScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/thong-bao', builder: (c, s) => const NotificationsScreen()),
-        GoRoute(path: '/cai-dat', builder: (c, s) => SettingsScreen(initialSection: s.extra is String ? s.extra as String : null)),
+        GoRoute(path: '/cai-dat', builder: (c, s) => SettingsScreen(initialSection: s.extra is String ? s.extra as String : s.uri.queryParameters['muc'])),
         GoRoute(path: '/binh-luan-cua-toi', builder: (c, s) => const MyCommentsScreen()),
         GoRoute(path: '/thao-luan-cua-toi', builder: (c, s) => const MyTopicsScreen()),
         GoRoute(path: '/thong-ke', builder: (c, s) => const StatsScreen()),

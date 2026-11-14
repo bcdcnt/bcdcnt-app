@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
+import '../services/theme_provider.dart';
 import '../services/api.dart';
 import '../services/events.dart';
 import '../services/auth.dart';
@@ -1884,7 +1885,7 @@ class _Mosaic extends StatelessWidget {
       Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cell(0)), Expanded(child: cell(1))])),
       Expanded(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(child: cell(2)), Expanded(child: cell(3))])),
     ]);
-    if (!sepia) return grid;
+    if (!sepia || !context.select<ThemeProvider, bool>((t) => t.tintPhotos)) return grid;
     return ColorFiltered(colorFilter: const ColorFilter.matrix([0.39, 0.77, 0.19, 0, 0, 0.35, 0.69, 0.17, 0, 0, 0.27, 0.53, 0.13, 0, 0, 0, 0, 0, 1, 0]), child: grid);
   }
 }
@@ -2448,7 +2449,10 @@ class _Portrait extends StatelessWidget {
       padding: const EdgeInsets.all(5),
       child: ClipOval(
         child: Stack(fit: StackFit.expand, children: [
-          ColorFiltered(colorFilter: mourning ? _grey : _sepia, child: NetImage(url: url, width: 176, height: 176)),
+          if (mourning || context.select<ThemeProvider, bool>((t) => t.tintPhotos))
+            ColorFiltered(colorFilter: mourning ? _grey : _sepia, child: NetImage(url: url, width: 176, height: 176))
+          else
+            NetImage(url: url, width: 176, height: 176),
           const DecoratedBox(decoration: BoxDecoration(gradient: RadialGradient(colors: [Color(0x00000000), Color(0x00000000), Color(0x52462814)], stops: [0, 0.55, 1]))),
           if (mourning)
             Positioned(
