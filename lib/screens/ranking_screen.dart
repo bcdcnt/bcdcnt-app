@@ -193,6 +193,19 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
     'binh-luan-yeu-thich': ('Top bình luận yêu thích', 'custom', 'topCommentLove'),
   };
 
+  /// Rankings that share a page; tabs switch between them in place.
+  static const _groups = [
+    ('Xếp hạng nghệ sĩ', [('nghe-si', 'Nghệ sĩ'), ('nhac-si', 'Nhạc sĩ'), ('nha-tho', 'Nhà thơ'), ('soan-gia', 'Soạn giả')]),
+    ('Xếp hạng thành viên', [('cong-hien', 'Cống hiến'), ('dong-gop', 'Đóng góp bản thu'), ('binh-luan', 'Bình luận'), ('binh-luan-yeu-thich', 'Bình luận yêu thích'), ('nghe-nhieu', 'Nghe nhiều')]),
+  ];
+
+  /// Lists stop at the top 100.
+  static const _max = 100;
+  static const _perPage = 20;
+
+  late String _slug = widget.slug;
+  /// Bumped on every tab switch so a late answer for the old tab is dropped.
+  int _req = 0;
   final _scrollCtl = ScrollController();
   List<Map<String, dynamic>> _items = [];
   int _page = 1, _lastPage = 1;
@@ -203,14 +216,22 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
   @override
   void dispose() { _scrollCtl.removeListener(_onScroll); _scrollCtl.dispose(); super.dispose(); }
   void _onScroll() {
-    if (_loadingMore || _loading || _page >= _lastPage) return;
+    if (_loadingMore || _loading || _page >= _lastPage || _items.length >= _max) return;
     if (_scrollCtl.position.pixels > _scrollCtl.position.maxScrollExtent - 600) _fetch(_page + 1);
   }
 
+  void _switchTo(String slug) {
+    if (slug == _slug) return;
+    setState(() { _slug = slug; _items = []; _page = 1; _lastPage = 1; });
+    if (_scrollCtl.hasClients) _scrollCtl.jumpTo(0);
+    _fetch(1);
+  }
+
   Future<void> _fetch(int page) async {
+    final req = ++_req;
     setState(() { _failed = false; if (page == 1) { _loading = true; } else { _loadingMore = true; } });
     try {
-      final cfg = _configs[widget.slug];
+      final cfg = _configs[_slug];
       if (cfg == null) { if (mounted) setState(() => _loading = false); return; }
       final type = cfg.$2;
       List<Map<String, dynamic>> list = [];
@@ -219,7 +240,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         final pt = cfg.$3;
         final whereExtra = pt == 'artist' ? ', {column: "is_group", value: 0}' : '';
         final q = '''query(\$page: Int) {
-          ${pt}s(first: 20, page: \$page, orderBy: [{column: "total_listens", order: DESC}], where: {AND: [{column: "total_listens", value: 0, operator: GT}$whereExtra]}) {
+          ${pt}s(first: $_perPage, page: \$page, orderBy: [{column: "total_listens", order: DESC}], where: {AND: [{column: "total_listens", value: 0, operator: GT}$whereExtra]}) {
             data { id title slug total_listens avatar { url } }
             paginatorInfo { currentPage lastPage }
           }
@@ -243,7 +264,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         // Public leaderboard query (API 2026-11); `users` is admin-only
         // since the PII lockdown, which left these lists empty.
         final q = '''query(\$page: Int, \$field: String!) {
-          topMember(field: \$field, first: 20, page: \$page) {
+          topMember(field: \$field, first: $_perPage, page: \$page) {
             data { id username avatar { url } $field }
             paginatorInfo { currentPage lastPage }
           }
@@ -263,7 +284,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
       } else { // custom
         final qn = cfg.$3;
         final q = '''query(\$page: Int) {
-          $qn(first: 20, page: \$page) {
+          $qn(first: $_perPage, page: \$page) {
             data { username avatar user_id total }
             paginatorInfo { currentPage lastPage }
           }
@@ -282,15 +303,16 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
         }).toList();
         pi = raw?['paginatorInfo'] ?? {};
       }
-      if (!mounted) return;
+      if (!mounted || req != _req) return;
       setState(() {
         if (page == 1) _items = list; else _items.addAll(list);
+        if (_items.length > _max) _items = _items.sublist(0, _max);
         _page = pi['currentPage'] ?? page;
         _lastPage = pi['lastPage'] ?? 1;
         _loading = false; _loadingMore = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted || req != _req) return;
       setState(() { _loading = false; _loadingMore = false; _failed = page == 1 || _items.isEmpty; });
       if (page > 1) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chưa tải thêm được. Kiểm tra mạng rồi thử lại.')));
     }
@@ -306,8 +328,8 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final player = context.watch<PlayerProvider>();
-    final cfg = _configs[widget.slug];
-    final title = cfg?.$1 ?? 'Bảng xếp hạng';
+    final group = _groups.where((g) => g.$2.any((t) => t.$1 == _slug)).firstOrNull;
+    final title = group?.$1 ?? _configs[_slug]?.$1 ?? 'Bảng xếp hạng';
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -319,6 +341,17 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
             centerTitle: true,
             leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
           ),
+          if (group != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 12),
+                child: ChipStrip(
+                  labels: [for (final t in group.$2) t.$2],
+                  selected: group.$2.indexWhere((t) => t.$1 == _slug),
+                  onSelect: (i) => _switchTo(group.$2[i].$1),
+                ),
+              ),
+            ),
           if (_loading && _items.isEmpty)
             SliverFillRemaining(hasScrollBody: false, child: Center(child: CircularProgressIndicator(color: AppColors.accent)))
           else if (_failed && _items.isEmpty)
