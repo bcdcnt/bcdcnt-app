@@ -490,7 +490,8 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
           const SizedBox(width: 8),
           Icon(_metricIcon(valueLabel), size: 14, color: AppColors.textMuted),
           const SizedBox(width: 4),
-          Text('${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+          // Rank 4+: the icon names the unit; top 3 above spell it out.
+          Text('${_formatInt(value)}', semanticsLabel: '${_formatInt(value)} $valueLabel', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
         ]),
       ),
     );
