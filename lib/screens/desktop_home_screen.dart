@@ -986,6 +986,15 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
         : age >= 40 && age % 10 == 0
             ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
             : null;
+    Future<void> playNow() async {
+      // In memory of someone: their songs, best known first.
+      if (recent) {
+        final l = await _songsOf(a, 20);
+        if (mounted) _play(l.isEmpty ? [s] : l, 'Tưởng nhớ ${a.person['title'] ?? ''}');
+        return;
+      }
+      _play([s], 'Bài hát hôm nay');
+    }
     // Someone remembered: straight to their page; a song alone: to the song.
     final String? personRoute = a != null ? '${a.route}${a.person['slug']}' : null;
     final line = [if (composer.isNotEmpty) composer, if (poet.isNotEmpty) 'thơ $poet'].join(' · ');
@@ -1014,7 +1023,14 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${s['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+            // The title plays it too, like the Nghe button.
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                onTap: playNow,
+                child: Text('${s['title'] ?? ''}', maxLines: 2, overflow: TextOverflow.ellipsis, style: display(TextStyle(fontSize: 24, height: 1.15, letterSpacing: -0.4, fontWeight: FontWeight.w800, color: AppColors.text))),
+              ),
+            ),
             const SizedBox(height: 4),
             Text.rich(
               TextSpan(children: [
@@ -1043,15 +1059,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       ],
       const SizedBox(height: 18),
       Row(children: [
-        _playPill('Nghe', () async {
-          // In memory of someone: their songs, best known first.
-          if (recent) {
-            final l = await _songsOf(a, 20);
-            if (mounted) _play(l.isEmpty ? [s] : l, 'Tưởng nhớ ${a.person['title'] ?? ''}');
-            return;
-          }
-          _play([s], 'Bài hát hôm nay');
-        }),
+        _playPill('Nghe', playNow),
         const SizedBox(width: 10),
         personRoute != null
             ? _outlineButton(personRoute.startsWith('/nghe-si/') ? 'Đến nghệ sĩ' : 'Đến nhạc sĩ', () => context.push(personRoute))
