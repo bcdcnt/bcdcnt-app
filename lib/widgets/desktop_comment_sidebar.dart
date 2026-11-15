@@ -95,16 +95,16 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
 
   Future<void> _fetch() async {
     try {
-      final q = '''query { latestComments(first: $_pageSize, page: 1, orderBy: [{column: "created_at", order: DESC}]) { data { $_commentFields } paginatorInfo { currentPage lastPage } } }''';
+      final q = '''query { latestComments(first: $_pageSize, page: 1, orderBy: [{column: "created_at", order: DESC}]) { data { $_commentFields } } }''';
       final data = await ApiClient.query(q, null);
       final raw = (data['latestComments']?['data'] ?? []) as List;
-      final pi = data['latestComments']?['paginatorInfo'] as Map?;
       if (!mounted) return;
       setState(() {
         _items = raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _loading = false;
         _page = 1;
-        _hasMore = (pi?['lastPage'] ?? 1) > 1;
+        // No paginatorInfo (it costs a COUNT over all comments): a full page means more.
+        _hasMore = raw.length >= _pageSize;
       });
     } catch (_) {
       if (mounted) setState(() { _loading = false; });
@@ -116,15 +116,14 @@ class _DesktopCommentSidebarState extends State<DesktopCommentSidebar> {
     setState(() { _loadingMore = true; });
     try {
       final next = _page + 1;
-      final q = '''query { latestComments(first: $_pageSize, page: $next, orderBy: [{column: "created_at", order: DESC}]) { data { $_commentFields } paginatorInfo { currentPage lastPage } } }''';
+      final q = '''query { latestComments(first: $_pageSize, page: $next, orderBy: [{column: "created_at", order: DESC}]) { data { $_commentFields } } }''';
       final data = await ApiClient.query(q, null);
       final raw = (data['latestComments']?['data'] ?? []) as List;
-      final pi = data['latestComments']?['paginatorInfo'] as Map?;
       if (!mounted) return;
       setState(() {
         _items.addAll(raw.map((e) => Map<String, dynamic>.from(e as Map)));
         _page = next;
-        _hasMore = next < ((pi?['lastPage'] ?? 1) as int);
+        _hasMore = raw.length >= _pageSize;
         _loadingMore = false;
       });
     } catch (_) {

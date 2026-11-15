@@ -31,10 +31,13 @@ const _objFields = '''
           ... on Ticket { id title slug }
           ... on Role { id name slug alias }''';
 
+/// No paginatorInfo on purpose: without it Lighthouse skips the COUNT(*)
+/// over the whole comment table (about half the time of a cache miss).
+/// A full page means there may be more.
+const _latestPage = 20;
 const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
-    latestComments(first: 20, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
+    latestComments(first: $_latestPage, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
       data { id content likes created_at is_request is_featured user { id username avatar { url } } object { $_objFields } }
-      paginatorInfo { currentPage lastPage total }
     }
   }''';
 
@@ -179,15 +182,14 @@ class _CommentsFeedState extends State<CommentsFeed> {
           'page': page,
           if (filter == 2) 'where': {'AND': [{'column': 'is_request', 'value': 1}]},
         });
-        final raw = d['latestComments'];
-        list = ((raw?['data'] ?? []) as List).whereType<Map>().map((e) {
+        final raw = (d['latestComments']?['data'] ?? []) as List;
+        list = raw.whereType<Map>().map((e) {
           final m = Map<String, dynamic>.from(e);
           m['text'] = _stripHtml(m['content']?.toString());
           return m;
         }).where((m) => (m['text'] as String).isNotEmpty).toList();
-        final pi = raw?['paginatorInfo'] ?? {};
-        newPage = pi['currentPage'] ?? page;
-        newLast = pi['lastPage'] ?? 1;
+        newPage = page;
+        newLast = raw.length < _latestPage ? page : page + 1;
       }
       // A late answer for a filter the user already left must not touch
       // the paging of the one on screen.
