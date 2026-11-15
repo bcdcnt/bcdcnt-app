@@ -42,10 +42,11 @@ void playOrOpen(BuildContext context, Map<String, dynamic> song, List<Map<String
 List<Map> _people(dynamic v) => (v is List ? v : (v?['data'] ?? [])).whereType<Map>().toList();
 
 /// Names to show under a title, without the "Đang cập nhật" placeholder.
-String songByline(Map song, {bool withComposer = false}) {
+/// [orComposer]: the composer only when no performer is credited (player bar).
+String songByline(Map song, {bool withComposer = false, bool orComposer = false}) {
   bool ok(dynamic n) => n != null && n.toString().isNotEmpty && n != 'Đang cập nhật';
   final artists = _people(song['artists']).map((a) => a['title'] ?? a['username']).where(ok).join(', ');
-  if (!withComposer) return artists;
+  if (!withComposer && !(orComposer && artists.isEmpty)) return artists;
   final comps = _people(song['composers']).isNotEmpty ? _people(song['composers']) : _people(song['sheet']?['composers']);
   final c = comps.map((a) => a['title']).where(ok).join(', ');
   return [c, artists].where((x) => x.isNotEmpty).join(' · ');
@@ -380,6 +381,19 @@ class SongRow extends StatelessWidget {
                           // gives way first, and long bylines drop the count.
                           Builder(builder: (_) {
                             final st = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+                            final listens = metricKey == 'views' && subtitle == null && metric != null;
+                            if (listens) {
+                              // Listens: a headphones icon and the number at the
+                              // right edge; the performers get the rest.
+                              final n = song['weeklyListens'] ?? song['views'];
+                              return Row(children: [
+                                Expanded(child: Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                                const SizedBox(width: 8),
+                                Icon(Icons.headphones_rounded, size: 14, color: AppColors.textMuted, semanticLabel: 'lượt nghe'),
+                                const SizedBox(width: 4),
+                                Text(formatViews((n as num).toInt()), style: st, maxLines: 1, softWrap: false),
+                              ]);
+                            }
                             if (subtitle != null || metric == null || byline.isEmpty) return Text(sub, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
                             if (byline.length > 28) return Text(byline, style: st, maxLines: 1, overflow: TextOverflow.ellipsis);
                             return Row(children: [

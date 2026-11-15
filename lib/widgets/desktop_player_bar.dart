@@ -34,7 +34,8 @@ class DesktopPlayerBar extends StatelessWidget {
     // The volume slider only where there is room for it next to the buttons.
     final roomy = w >= 1600;
     final side = narrow ? 250.0 : (roomy ? 420.0 : 330.0);
-    final byline = songByline(song, withComposer: true);
+    // Performers only; the composer just when nobody is credited as performer.
+    final byline = songByline(song, orComposer: true);
     return Container(
       height: 96,
       decoration: BoxDecoration(color: AppColors.bg, border: Border(top: BorderSide(color: AppColors.border))),

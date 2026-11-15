@@ -960,9 +960,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ),
     ));
 
-    // Credits kiểu web cho desktop hero: từng dòng "Nhãn: giá trị" đặt GIỮA
-    // tiêu đề và stats. Style khớp web: nhãn 13px xám mờ (w500), giá trị 16px
-    // đậm màu chữ (w700), KHÔNG gạch chân — dùng _webCreditLine/_creditLinkRow.
+    // Dòng tác giả cho băng desktop (B2): mỗi vai trò một dòng, ngay dưới tên
+    // bài — dùng _webCreditLine/_creditLinkRow.
     final desktopCredits = <Widget>[];
     if (composers.isNotEmpty) {
       desktopCredits.add(_webCreditLine('Sáng tác', [
@@ -993,7 +992,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             else if (a['slug'] != null) context.push('/nghe-si/${a['slug']}');
           }),
           // Record year ghép inline sau ca sĩ, dạng "(1991)" giống web.
-          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
+          if (recordYear != null) TextSpan(text: ' ($recordYear)', style: body(const TextStyle(fontSize: 16, color: _creditMuted, fontWeight: FontWeight.w600))),
         ],
       ));
     }
@@ -1001,7 +1000,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       desktopCredits.add(_webCreditLine('Bài gốc', [
         WidgetSpan(alignment: PlaceholderAlignment.baseline, baseline: TextBaseline.alphabetic, child: GestureDetector(
           onTap: () => context.push('/song/${song['song']['id']}', extra: {...?song['song'], 'file_type': 'song'}),
-          child: Text(song['song']['title'] ?? '', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+          child: Text(song['song']['title'] ?? '', style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w800, color: Colors.white))),
         )),
       ]));
     }
@@ -1723,18 +1722,34 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     return widgets;
   }
 
-  // Dòng credit kiểu web: nhãn 13px xám mờ (w500) + giá trị 16px đậm màu chữ.
+  static const _creditMuted = Color(0xADFFFFFF); // white 68%
+
+  // Dòng tác giả trên băng (phương án B2): nhãn vai trò thẳng cột bên trái
+  // (chữ mờ), tên trắng đậm bên phải, mỗi vai trò một dòng.
   Widget _webCreditLine(String label, List<InlineSpan> valueSpans) {
+    // "Lời: phỏng thơ": nhãn "Lời", phần sau dấu ":" đứng đầu giá trị.
+    final i = label.indexOf(':');
+    final head = i < 0 ? label : label.substring(0, i).trim();
+    final lead = i < 0 ? '' : label.substring(i + 1).trim();
+    final scaler = MediaQuery.textScalerOf(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: RichText(
-        textScaler: MediaQuery.textScalerOf(context),
-        text: TextSpan(children: [
-          // "Lời: phỏng thơ" already has its colon: no second one.
-          TextSpan(text: label.contains(':') ? '$label ' : '$label: ', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted, fontWeight: FontWeight.w500))),
-          ...valueSpans,
-        ]),
-      ),
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+        SizedBox(
+          width: 96,
+          child: Text(head, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w600, color: _creditMuted))),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: RichText(
+            textScaler: scaler,
+            text: TextSpan(style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w800, color: Colors.white)), children: [
+              if (lead.isNotEmpty) TextSpan(text: '$lead '),
+              ...valueSpans,
+            ]),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -1743,7 +1758,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   List<InlineSpan> _creditLinkRow(List items, String key, void Function(Map) onTap) {
     final result = <InlineSpan>[];
     for (int i = 0; i < items.length; i++) {
-      if (i > 0) result.add(TextSpan(text: ', ', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))));
+      if (i > 0) result.add(TextSpan(text: ', ', style: body(const TextStyle(fontSize: 16, color: _creditMuted))));
       final item = items[i];
       result.add(WidgetSpan(
         alignment: PlaceholderAlignment.baseline,
@@ -1753,7 +1768,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => onTap(Map<String, dynamic>.from(item)),
-            child: Text(item[key] ?? '', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
+            child: Text(item[key] ?? '', style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w800, color: Colors.white))),
           ),
         ),
       ));
@@ -2037,7 +2052,7 @@ class _DesktopHero extends StatelessWidget {
   final void Function(Map artist) onArtistTap;
   final VoidCallback? onArtworkTap;
   final Widget? metaContent;
-  // Credits kiểu web (Sáng tác/Thơ/Trình bày…) đặt giữa tiêu đề & stats.
+  // Dòng tác giả (Sáng tác/Thơ/Trình bày…), hiện trong băng ngay dưới tên bài.
   final Widget? credits;
   // Ngày đăng — hiện trong dòng stats (khớp web).
   final String? uploadDate;
@@ -2084,8 +2099,8 @@ class _DesktopHero extends StatelessWidget {
     var note = (subtitle ?? '').trim();
     if (note.startsWith('(') && note.endsWith(')')) note = note.substring(1, note.length - 1).trim();
     // "Hồ sơ hiện vật": a dark band made from the song's own picture
-    // (blurred, tinted) with the cover, title and the main actions on it;
-    // credits, figures and tags follow on the page below.
+    // (blurred, tinted) with the cover, title, credits (one role per line)
+    // and the main actions on it; tags follow on the page below.
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2107,7 +2122,7 @@ class _DesktopHero extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.all(28),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 if (videoPlayer != null)
                   SizedBox(width: 400, child: ClipRRect(borderRadius: BorderRadius.circular(16), child: videoPlayer!))
                 else
@@ -2138,6 +2153,10 @@ class _DesktopHero extends StatelessWidget {
                       maxLines: 2, overflow: TextOverflow.ellipsis,
                       style: display(const TextStyle(fontSize: 44, fontWeight: FontWeight.w800, color: Colors.white, height: 1.08, letterSpacing: -0.9)),
                     ),
+                    if (credits != null) ...[
+                      const SizedBox(height: 10),
+                      credits!,
+                    ],
                     const SizedBox(height: 18),
                     // Action cluster
                     Wrap(spacing: 10, runSpacing: 10, children: [
@@ -2193,7 +2212,6 @@ class _DesktopHero extends StatelessWidget {
           ]),
         ),
         const SizedBox(height: 18),
-        if (credits != null) credits!,
         if (metaContent != null) ...[
           const SizedBox(height: 8),
           metaContent!,

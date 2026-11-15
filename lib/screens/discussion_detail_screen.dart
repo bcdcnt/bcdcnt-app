@@ -367,7 +367,9 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Expanded(child: Text((t['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.4, color: AppColors.text)))),
                     const SizedBox(width: 10),
-                    Text('${formatInt((t['comment_count'] as num?)?.toInt() ?? 0)} bl', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+                    Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.chat_bubble_outline_rounded, size: 14, color: AppColors.textMuted, semanticLabel: 'bình luận')),
+                    const SizedBox(width: 4),
+                    Text(formatInt((t['comment_count'] as num?)?.toInt() ?? 0), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
                   ]),
                 ),
               ),
