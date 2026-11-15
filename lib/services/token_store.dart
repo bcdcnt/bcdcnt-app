@@ -4,30 +4,27 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Where the access/refresh tokens live: the platform's secure store
-/// (Keychain on iOS/macOS, Keystore-backed on Android, DPAPI on Windows,
-/// libsecret on Linux) instead of SharedPreferences (a plain plist/XML file).
+/// (Keychain on iOS/macOS, Keystore-backed on Android, DPAPI on Windows)
+/// instead of SharedPreferences (a plain plist/XML file).
 ///
-/// Falls back to SharedPreferences where the secure store is unavailable:
-/// web (no real secure storage there), or a Linux snap whose
-/// password-manager-service plug is not connected. Tokens saved by older
-/// versions in SharedPreferences move to the secure store on first read.
+/// Rule: the secure store must never put a dialog in front of the user.
+/// None of the stores used here ever does; where one is missing or refuses
+/// (web, Linux, ad-hoc signed Mac builds) the tokens stay in
+/// SharedPreferences. Tokens saved by older versions in SharedPreferences
+/// move to the secure store on first read.
 class TokenStore {
   static const _access = 'access_token';
   static const _refresh = 'refresh_token';
 
-  static const _secure = FlutterSecureStorage(
-    // The legacy file keychain works in the sandbox without the
-    // keychain-access-groups entitlement (which needs team signing).
-    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
-  );
+  // macOS: the data protection keychain (the plugin's default), which never
+  // asks for a password. Team-signed builds (App Store / TestFlight) can use
+  // it; ad-hoc signed ones (GitHub .zip, debug) get an error instead of a
+  // prompt and fall back below. The old file-based keychain is avoided on
+  // purpose: it asks for the login password whenever the signature changes.
+  static const _secure = FlutterSecureStorage();
 
-  /// macOS ties keychain access to the app's signature. Ad-hoc signed builds
-  /// (debug, and the GitHub .zip release) are a "different app" after every
-  /// update, so macOS would ask for the login password each time. Only
-  /// team-signed Mac builds (App Store / TestFlight) pass
-  /// --dart-define=MACOS_KEYCHAIN=true; the rest keep SharedPreferences.
-  static const _macKeychain = bool.fromEnvironment('MACOS_KEYCHAIN');
-  static bool get _plain => kIsWeb || (Platform.isMacOS && !_macKeychain);
+  /// Linux keyrings (libsecret) can pop up an "unlock keyring" dialog.
+  static bool get _plain => kIsWeb || Platform.isLinux;
 
   static Future<({String? access, String? refresh})> read() async {
     final prefs = await SharedPreferences.getInstance();
