@@ -39,7 +39,13 @@ class CommentSection extends StatefulWidget {
   final bool compact;
   /// Reports the comment count (the side panel's tab shows it).
   final ValueChanged<int>? onTotal;
-  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false, this.subjectTitle, this.compact = false, this.onTotal});
+  /// Desktop reading column: [lead] (the post itself) and the comments
+  /// scroll together, the composer stays docked at the bottom.
+  final bool docked;
+  final Widget? lead;
+  /// "Mới nhất / Cũ nhất / Nhiều thích" beside the heading.
+  final bool sortable;
+  const CommentSection({super.key, required this.type, required this.id, this.highlightCommentId, this.onPageChanged, this.readOnly = false, this.subjectTitle, this.compact = false, this.onTotal, this.docked = false, this.lead, this.sortable = false});
 
   @override
   State<CommentSection> createState() => _CommentSectionState();
@@ -48,6 +54,14 @@ class CommentSection extends StatefulWidget {
 class _CommentSectionState extends State<CommentSection> {
   // Side panel: long comments fold to ~6 lines until "Xem thêm".
   final Set<String> _unfolded = {};
+  // [sortable]: new / old / likes (Comment.likes is kept by love/unlove).
+  String _sort = 'new';
+  static const _sorts = {'new': 'Mới nhất', 'old': 'Cũ nhất', 'likes': 'Nhiều thích'};
+  String get _orderBy => switch (_sort) {
+        'old' => '{column: "id", order: ASC}',
+        'likes' => '{column: "likes", order: DESC}, {column: "id", order: DESC}',
+        _ => '{column: "id", order: DESC}',
+      };
   static int _plainLength(String html) => html.replaceAll(RegExp(r'<[^>]*>'), '').length;
   static String _exactDate(dynamic at) {
     final d = DateTime.tryParse('${at ?? ''}')?.toLocal();
@@ -284,7 +298,7 @@ class _CommentSectionState extends State<CommentSection> {
       final myLove = meId == null ? '' : 'myLove: loves(first: 1, where: {column: "user_id", value: $meId}) { paginatorInfo { total } }';
       final query = '''query(\$val: ID!, \$page: Int) {
         $field(id: \$val) {
-          comments(first: 10, page: \$page, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
+          comments(first: 10, page: \$page, orderBy: [$_orderBy], where: {AND: [{column: "status", value: 1}]}) {
             data {
               id content created_at nickname is_request is_featured featured_excerpt request_status processRequestUser { id username }
               user { id username avatar { url } roles { name alias display_in_comment group_type userRolePivot { custom_title } } }
@@ -842,6 +856,25 @@ class _CommentSectionState extends State<CommentSection> {
     if (mounted) setState(() => _savingEdit = false);
   }
 
+  Widget _sortChip(String key, String label) {
+    final on = _sort == key;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Material(
+        color: on ? AppColors.text : AppColors.surface,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: on ? null : () { setState(() => _sort = key); _fetchComments(1); },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            child: Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text))),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -851,7 +884,7 @@ class _CommentSectionState extends State<CommentSection> {
     // pinned). [compact]: the tighter look, shared by the panel and the
     // desktop song page so both comment boxes read the same.
     final panel = widget.compact;
-    final compact = panel || MediaQuery.sizeOf(context).width >= 900;
+    final compact = panel || widget.docked || MediaQuery.sizeOf(context).width >= 900;
     final composer = <Widget>[];
     final list = <Widget>[];
     final heading = <Widget>[
@@ -864,6 +897,10 @@ class _CommentSectionState extends State<CommentSection> {
             if (_total > 0) ...[
               const SizedBox(width: 8),
               Text('$_total', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+            ],
+            if (widget.sortable && _total > 1) ...[
+              const Spacer(),
+              for (final e in _sorts.entries) _sortChip(e.key, e.value),
             ],
           ],
         ),
@@ -1247,6 +1284,22 @@ class _CommentSectionState extends State<CommentSection> {
             ),
         ],
     ]);
+    if (widget.docked) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(top: 24, bottom: 24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (widget.lead != null) widget.lead!,
+              const SizedBox(height: 28),
+              ...heading,
+              ...list,
+            ]),
+          ),
+        ),
+        Padding(padding: const EdgeInsets.only(top: 10, bottom: 16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: composer)),
+      ]);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: panel

@@ -1,6 +1,6 @@
 import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock;
+import '../widgets/ui.dart' show goBack, OfflineBlock, EmptyBlock, UserAvatar;
 import '../services/friendly_error.dart';
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -29,6 +29,9 @@ class DiscussionDetailScreen extends StatefulWidget {
 class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
   Map<String, dynamic>? _d;
   bool _loading = true, _failed = false;
+  /// Desktop side column: who took part, latest activity, other topics in
+  /// the same forum. Loaded after the topic so the page shows at once.
+  Map<String, dynamic>? _side;
 
   @override
   void initState() { super.initState(); _fetch(); }
@@ -38,8 +41,8 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         discussion(id: $id) {
-          id title slug content created_at status is_closed views
-          author { id username avatar { url } }
+          id title slug content created_at status is_closed views comment_count last_comment_at
+          author { id username avatar { url } roles { alias display_in_comment } }
           thumbnail { url }
           forum { id title slug parent { id title slug } }
           file { audio_url video_url duration type }
@@ -53,8 +56,21 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
       });
       if (_d?['id'] != null) {
         logActivity(context.read<AuthProvider>(), 'view', 'discussion', _d!['id']);
+        if (MediaQuery.sizeOf(context).width >= 900) _fetchSide();
       }
     } catch (_) { if (mounted) setState(() { _loading = false; _failed = true; }); }
+  }
+
+  Future<void> _fetchSide() async {
+    try {
+      final data = await ApiClient.query(r'''query($id: ID!) {
+        discussion(id: $id) {
+          comments(first: 80, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) { data { created_at user { id username avatar { url } } } }
+          forum { discussions(first: 6, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) { data { id title comment_count } } }
+        }
+      }''', {'id': widget.id});
+      if (mounted && data['discussion'] is Map) setState(() => _side = Map<String, dynamic>.from(data['discussion'] as Map));
+    } catch (_) {}
   }
 
   @override
@@ -75,6 +91,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
     final d = _d!;
     final author = d['author'];
     final forum = d['forum'];
+    if (MediaQuery.sizeOf(context).width >= 900) return _desktop(d);
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Stack(children: [
@@ -167,6 +184,198 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
         if (player.currentSong != null) const Positioned(left: 0, right: 0, bottom: 8, child: MiniPlayer()),
       ]),
     );
+  }
+
+  /// Desktop: a 760 reading column (post card + comments, composer docked
+  /// at the bottom) and, when there is room, a 320 side column.
+  Widget _desktop(Map<String, dynamic> d) {
+    return Material(
+      color: AppColors.bg,
+      child: LayoutBuilder(builder: (context, c) {
+        final side = c.maxWidth >= 1180;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: [
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 760),
+                child: CommentSection(type: 'discussion', id: widget.id, readOnly: _isClosed(d), docked: true, sortable: true, lead: _desktopLead(d)),
+              ),
+            ),
+            if (side) ...[
+              const SizedBox(width: 40),
+              SizedBox(width: 320, child: SingleChildScrollView(padding: const EdgeInsets.only(top: 24, bottom: 24), child: _desktopSide(d))),
+            ],
+          ]),
+        );
+      }),
+    );
+  }
+
+  Widget _desktopLead(Map<String, dynamic> d) {
+    final author = d['author'];
+    final forum = d['forum'];
+    final role = ((author?['roles'] ?? const []) as List).whereType<Map>().where((r) => r['display_in_comment'] == true).map((r) => (r['alias'] ?? '').toString()).firstWhere((a) => a.isNotEmpty, orElse: () => '');
+    final views = (d['views'] as num?)?.toInt() ?? 0;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (forum != null)
+        Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+          if (forum['parent']?['title'] != null) ...[
+            _crumb(forum['parent']['title'].toString(), forum['parent']['id'], muted: true),
+            Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+          ],
+          _crumb((forum['title'] ?? '').toString(), forum['id']),
+        ]),
+      Text(d['title'] ?? '', style: display(TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.6, height: 1.2))),
+      const SizedBox(height: 18),
+      if (_isClosed(d))
+        Container(
+          margin: const EdgeInsets.only(bottom: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
+          child: Row(children: [
+            Icon(Icons.lock_outline_rounded, size: 20, color: AppColors.textSecondary),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Chủ đề đã khoá — không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)))),
+          ]),
+        ),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppColors.borderSubtle)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            InkWell(
+              onTap: author?['id'] == null ? null : () => context.push('/user/${author['id']}'),
+              customBorder: const CircleBorder(),
+              child: UserAvatar(url: author?['avatar']?['url']?.toString(), name: (author?['username'] ?? '').toString(), size: 44),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Flexible(child: Text((author?['username'] ?? '').toString(), overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                if (role.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(6)),
+                    child: Text(role, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white))),
+                  ),
+                ],
+              ]),
+              const SizedBox(height: 2),
+              Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            ])),
+            if (views > 0) ...[
+              Icon(Icons.visibility_outlined, size: 18, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              Text(formatInt(views), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+            ],
+          ]),
+          const SizedBox(height: 16),
+          if (d['file'] != null) ..._buildFileBlock(Map<String, dynamic>.from(d['file'] as Map)),
+          if ((d['content'] ?? '').toString().isNotEmpty)
+            CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString(), inlineImages: true),
+          for (final p in ((d['polls']?['data'] ?? const []) as List).whereType<Map>())
+            _DiscussionPoll(key: ValueKey('poll-${p['id']}'), poll: Map<String, dynamic>.from(p)),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _desktopSide(Map<String, dynamic> d) {
+    final comments = ((_side?['comments']?['data'] ?? const []) as List).whereType<Map>().toList();
+    final people = <String, Map>{};
+    for (final c in comments) {
+      final u = c['user'];
+      if (u is Map && u['id'] != null) people.putIfAbsent('${u['id']}', () => u);
+    }
+    final shown = people.values.take(8).toList();
+    final others = ((_side?['forum']?['discussions']?['data'] ?? const []) as List).whereType<Map>().where((t) => '${t['id']}' != widget.id).take(5).toList();
+    final created = DateTime.tryParse('${d['created_at'] ?? ''}');
+    final lastAt = comments.isNotEmpty ? comments.first['created_at'] : d['last_comment_at'];
+    final count = (d['comment_count'] as num?)?.toInt() ?? 0;
+    final label = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted));
+    final value = body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text));
+    Widget stat(String k, String v) => Container(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderSubtle))),
+          child: Row(children: [Text(k, style: label), const SizedBox(width: 12), Expanded(child: Text(v, textAlign: TextAlign.right, overflow: TextOverflow.ellipsis, style: value))]),
+        );
+    final box = BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: AppColors.borderSubtle));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: box,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text('THÔNG TIN CHỦ ĐỀ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.8, color: AppColors.accentLight))),
+          const SizedBox(height: 10),
+          if (d['forum']?['title'] != null) stat('Chuyên mục', d['forum']['title'].toString()),
+          if ((d['views'] ?? 0) > 0) stat('Lượt xem', formatInt((d['views'] as num).toInt())),
+          stat('Bình luận', formatInt(count)),
+          if (created != null) stat('Ngày đăng', '${created.day.toString().padLeft(2, '0')}/${created.month.toString().padLeft(2, '0')}/${created.year}'),
+          if (lastAt != null) stat('Hoạt động gần nhất', timeago('$lastAt')),
+          if (shown.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Text('Người tham gia', style: value),
+            const SizedBox(height: 8),
+            Row(children: [
+              for (var i = 0; i < shown.length; i++)
+                Align(
+                  widthFactor: i == shown.length - 1 ? 1 : 0.75,
+                  child: Tooltip(
+                    message: (shown[i]['username'] ?? '').toString(),
+                    child: InkWell(
+                      onTap: () => context.push('/user/${shown[i]['id']}'),
+                      customBorder: const CircleBorder(),
+                      child: Container(
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: AppColors.surface, width: 2)),
+                        child: UserAvatar(url: shown[i]['avatar']?['url']?.toString(), name: (shown[i]['username'] ?? '').toString(), size: 32),
+                      ),
+                    ),
+                  ),
+                ),
+              if (people.length > shown.length) ...[
+                const SizedBox(width: 8),
+                Text('+${people.length - shown.length}', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+              ],
+            ]),
+          ],
+        ]),
+      ),
+      if (others.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), border: Border.all(color: AppColors.borderSubtle)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Row(children: [
+              Expanded(child: Text('Cùng chuyên mục', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+              if (d['forum']?['id'] != null)
+                InkWell(
+                  onTap: () => context.push('/dien-dan/${d['forum']['id']}'),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(padding: const EdgeInsets.all(4), child: Text('Tất cả ›', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.accentLight)))),
+                ),
+            ]),
+            const SizedBox(height: 6),
+            for (final t in others)
+              InkWell(
+                onTap: () => context.push('/thao-luan/${t['id']}'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.borderSubtle))),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Expanded(child: Text((t['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, height: 1.4, color: AppColors.text)))),
+                    const SizedBox(width: 10),
+                    Text('${formatInt((t['comment_count'] as num?)?.toInt() ?? 0)} bl', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
+                  ]),
+                ),
+              ),
+          ]),
+        ),
+      ],
+    ]);
   }
 
   static bool _isClosed(Map d) => d['is_closed'] == true || d['is_closed'] == 1 || d['is_closed'] == '1';
