@@ -2202,10 +2202,19 @@ class _DesktopHero extends StatelessWidget {
                               for (int i = 0; i < loves.length.clamp(0, 4); i++)
                                 Positioned(
                                   left: i * 20.0,
-                                  child: Container(
-                                    width: 28, height: 28,
-                                    decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xE6FFFFFF), width: 2), color: AppColors.surfaceLight),
-                                    child: ClipOval(child: _LoverAvatar(love: loves[i])),
+                                  // Hover → that person's name (as drawn on the canvas).
+                                  child: Tooltip(
+                                    message: _LoverAvatar.nameOf(loves[i]),
+                                    preferBelow: false,
+                                    verticalOffset: 20,
+                                    waitDuration: const Duration(milliseconds: 150),
+                                    decoration: BoxDecoration(color: const Color(0xFF161112), borderRadius: BorderRadius.circular(8)),
+                                    textStyle: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+                                    child: Container(
+                                      width: 28, height: 28,
+                                      decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: const Color(0xE6FFFFFF), width: 2), color: AppColors.surfaceLight),
+                                      child: ClipOval(child: _LoverAvatar(love: loves[i])),
+                                    ),
                                   ),
                                 ),
                             ]),
@@ -2258,6 +2267,11 @@ TextSpan _loversLine(List loves, int total) {
 class _LoverAvatar extends StatelessWidget {
   final dynamic love;
   const _LoverAvatar({required this.love});
+  static String nameOf(dynamic love) {
+    final user = love is Map ? love['user'] as Map? : null;
+    return user?['username']?.toString() ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = love is Map ? love['user'] as Map? : null;
