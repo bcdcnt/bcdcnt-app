@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,11 +21,17 @@ class TokenStore {
     mOptions: MacOsOptions(usesDataProtectionKeychain: false),
   );
 
+  /// Debug macOS builds are signed ad hoc, so every rebuild is a "different
+  /// app" to the keychain and macOS asks for the login password before
+  /// handing the tokens over. Those builds keep them in SharedPreferences;
+  /// team-signed builds (TestFlight / App Store) keep one identity.
+  static bool get _plain => kIsWeb || (kDebugMode && Platform.isMacOS);
+
   static Future<({String? access, String? refresh})> read() async {
     final prefs = await SharedPreferences.getInstance();
     final legacyAccess = prefs.getString(_access);
     final legacyRefresh = prefs.getString(_refresh);
-    if (kIsWeb) return (access: legacyAccess, refresh: legacyRefresh);
+    if (_plain) return (access: legacyAccess, refresh: legacyRefresh);
     try {
       final access = await _secure.read(key: _access);
       final refresh = await _secure.read(key: _refresh);
@@ -41,7 +48,7 @@ class TokenStore {
   /// Saves both tokens; a null [refresh] removes the stored one.
   static Future<void> write(String? access, String? refresh) async {
     final prefs = await SharedPreferences.getInstance();
-    if (!kIsWeb) {
+    if (!_plain) {
       try {
         await _put(access, refresh);
         await prefs.remove(_access);
@@ -59,7 +66,7 @@ class TokenStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_access);
     await prefs.remove(_refresh);
-    if (kIsWeb) return;
+    if (_plain) return;
     try {
       await _secure.delete(key: _access);
       await _secure.delete(key: _refresh);

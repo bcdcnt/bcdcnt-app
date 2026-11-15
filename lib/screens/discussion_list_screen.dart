@@ -67,7 +67,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
     try {
       final d = await ApiClient.query('''query(\$w: WhereConditions, \$n: Int) {
         discussions(first: \$n, orderBy: [{column: "$order", order: DESC}], where: \$w) {
-          data { id title comment_count views is_sticky created_at last_comment_at forum { id title } author { id username avatar { url } } lastCommentBy { id username avatar { url } } }
+          data { id title comment_count views is_sticky created_at last_comment_at forum { id title } author_name author { id username avatar { url } } lastCommentBy { id username avatar { url } } }
         }
       }''', {'w': {'AND': where}, 'n': limit});
       final list = ((d['discussions']?['data'] ?? []) as List)
@@ -107,7 +107,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
               data {
                 id title slug content
                 discussions(first: 5, orderBy: [{column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
-                  data { id title slug created_at comment_count views author { id username avatar { url } } }
+                  data { id title slug created_at comment_count views author_name author { id username avatar { url } } }
                   paginatorInfo { total }
                 }
               }
@@ -254,6 +254,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
   /// counts and who replied last.
   Widget _topicRow(Map<String, dynamic> d, {bool showPin = true}) {
     final last = d['lastCommentBy'] ?? d['author'];
+    final lastName = d['lastCommentBy']?['username']?.toString() ?? topicAuthorName(d);
     final pinned = showPin && '${d['is_sticky'] ?? 0}' == '1';
     final when = timeago((d['last_comment_at'] ?? d['created_at'])?.toString());
     final muted = body(TextStyle(fontSize: 13, color: AppColors.textMuted));
@@ -263,7 +264,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.border))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(padding: const EdgeInsets.only(top: 2), child: UserAvatar(url: last?['avatar']?['url']?.toString(), name: '${last?['username'] ?? ''}', size: 36)),
+          Padding(padding: const EdgeInsets.only(top: 2), child: UserAvatar(url: last?['avatar']?['url']?.toString(), name: lastName, size: 36)),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text.rich(
@@ -413,7 +414,7 @@ class _DiscussionListScreenState extends State<DiscussionListScreen> {
             Text(d['title'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text, height: 1.4))),
             const SizedBox(height: 4),
             Wrap(spacing: 8, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
+              Text(topicAuthorName(d), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
               Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
             ]),
           ])),

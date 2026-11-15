@@ -165,6 +165,15 @@ class ApiClient {
   }
 }
 
+/// Người đăng chủ đề: tài khoản liên kết, hoặc tên lưu trong `author_name`
+/// (88% chủ đề từ diễn đàn cũ không gắn user_id), cuối cùng "Thành viên cũ".
+String topicAuthorName(Map d) {
+  final u = d['author']?['username']?.toString();
+  if (u != null && u.isNotEmpty) return u;
+  final n = d['author_name']?.toString().trim();
+  return (n != null && n.isNotEmpty) ? n : 'Thành viên cũ';
+}
+
 String formatViews(int? n) {
   // Việt hoá khớp web: Tr = triệu, N = nghìn (nghìn làm tròn số nguyên).
   if (n == null || n == 0) return '0';

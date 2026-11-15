@@ -46,7 +46,7 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
           discussions(first: 20, page: 1, orderBy: [{column: "is_sticky", order: DESC}, {column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
             data {
               id title slug created_at comment_count views is_sticky
-              author { id username avatar { url } }
+              author_name author { id username avatar { url } }
               thumbnail { url }
             }
             paginatorInfo { currentPage lastPage total }
@@ -80,7 +80,7 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
           discussions(first: 20, page: $page, orderBy: [{column: "is_sticky", order: DESC}, {column: "id", order: DESC}], where: {AND: [{column: "status", value: 1}]}) {
             data {
               id title slug created_at comment_count views is_sticky
-              author { id username avatar { url } }
+              author_name author { id username avatar { url } }
               thumbnail { url }
             }
             paginatorInfo { currentPage lastPage total }
@@ -275,7 +275,7 @@ class _ForumDetailScreenState extends State<ForumDetailScreen> {
             ]),
             const SizedBox(height: 6),
             Wrap(spacing: 10, children: [
-              if (author?['username'] != null) Text(author['username'], style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+              Text(topicAuthorName(d), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
               Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
               if ((d['comment_count'] ?? 0) > 0)
                 Row(mainAxisSize: MainAxisSize.min, children: [

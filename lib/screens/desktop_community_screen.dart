@@ -103,7 +103,7 @@ String _since() {
   return '${y.year}-${y.month.toString().padLeft(2, '0')}-${y.day.toString().padLeft(2, '0')}';
 }
 
-const _topicFields = 'id title comment_count views is_sticky created_at last_comment_at forum { id title } author { id username avatar { url } } lastCommentBy { id username avatar { url } }';
+const _topicFields = 'id title comment_count views is_sticky created_at last_comment_at forum { id title } author_name author { id username avatar { url } } lastCommentBy { id username avatar { url } }';
 
 /// Diễn đàn list: categories, Mới hoạt động | Sôi nổi, pinned topics in a
 /// short block on top, then the topics. Opens the first one by itself.
@@ -129,7 +129,7 @@ class _ForumListState extends State<_ForumList> {
     super.initState();
     ApiClient.query(r'''query {
       forums(first: 100, where: {AND: [{column: "parent_id", value: null}]}, orderBy: [{column: "position", order: ASC}]) {
-        data { children(first: 100, orderBy: [{column: "position", order: ASC}]) { data { id title } } }
+        data { children(first: 100, orderBy: [{column: "position", order: ASC}]) { data { id title discussions(first: 1, where: {column: "status", value: 1}) { paginatorInfo { total } } } } }
       }
     }''').then((d) {
       final cats = [
@@ -174,28 +174,53 @@ class _ForumListState extends State<_ForumList> {
     }
   }
 
-  Widget _chip(String label, bool on, VoidCallback onTap) => Padding(
-        padding: const EdgeInsets.only(right: 6, bottom: 6),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Container(
-            height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(color: on ? AppColors.text : AppColors.surface, borderRadius: BorderRadius.circular(16)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: on ? AppColors.bg : AppColors.text))),
-            ]),
-          ),
-        ),
+  /// One row: the category menu (busy ones first, each with its topic
+  /// count) on the left, Mới hoạt động | Sôi nổi on the right.
+  Widget _catMenu(List<Map<String, dynamic>> main, List<Map<String, dynamic>> rest) {
+    final current = _cats.where((c) => '${c['id']}' == _cat).firstOrNull;
+    PopupMenuItem<String> item(String id, String title, int? n) {
+      final on = (_cat ?? '') == id;
+      return PopupMenuItem(
+        value: id,
+        height: 40,
+        child: Row(children: [
+          SizedBox(width: 26, child: on ? Icon(Icons.check_rounded, size: 18, color: AppColors.accentFg) : null),
+          Expanded(child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+          if (n != null) Padding(padding: const EdgeInsets.only(left: 12), child: Text(formatInt(n), style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
+        ]),
       );
+    }
+    int? count(Map<String, dynamic> c) => (c['discussions']?['paginatorInfo']?['total'] as num?)?.toInt();
+    return PopupMenuButton<String>(
+      tooltip: 'Chọn chuyên mục',
+      position: PopupMenuPosition.under,
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 340),
+      onSelected: (id) { setState(() => _cat = id.isEmpty ? null : id); reload(); },
+      itemBuilder: (_) => [
+        item('', 'Tất cả chuyên mục', null),
+        for (final c in main) item('${c['id']}', '${c['title']}', count(c)),
+        if (rest.isNotEmpty) const PopupMenuDivider(),
+        for (final c in rest) item('${c['id']}', '${c['title']}', count(c)),
+      ],
+      child: Container(
+        height: 38,
+        padding: const EdgeInsets.only(left: 14, right: 8),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.text, width: 1.5)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Flexible(child: Text(current != null ? '${current['title']}' : 'Tất cả chuyên mục', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+          const SizedBox(width: 4),
+          Icon(Icons.expand_more_rounded, size: 20, color: AppColors.text),
+        ]),
+      ),
+    );
+  }
 
   Widget _label(String t) => Padding(
         padding: const EdgeInsets.fromLTRB(0, 16, 0, 6),
         child: Text(t, style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
       );
 
-  /// The forum has ~27 categories; the busy ones are chips, the rest a menu.
+  /// The forum has ~27 categories; the busy ones head the menu.
   static const _mainCats = ['Thảo luận', 'Yêu cầu nhạc', 'Chia sẻ nhạc', 'Giọng ca vàng', 'Gửi tác phẩm'];
 
   @override
@@ -203,52 +228,31 @@ class _ForumListState extends State<_ForumList> {
     final muted = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted));
     final main = [for (final n in _mainCats) ..._cats.where((c) => c['title'] == n).take(1)];
     final rest = _cats.where((c) => !main.contains(c)).toList();
-    final inRest = rest.where((c) => '${c['id']}' == _cat).firstOrNull;
     return ListView(
       padding: const EdgeInsets.only(right: 18, bottom: 40),
       children: [
-        Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-          _chip('Tất cả', _cat == null, () { setState(() => _cat = null); reload(); }),
-          for (final c in main) _chip('${c['title']}', _cat == '${c['id']}', () { setState(() => _cat = '${c['id']}'); reload(); }),
-          if (rest.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: PopupMenuButton<String>(
-                tooltip: 'Chuyên mục khác',
-                position: PopupMenuPosition.under,
-                onSelected: (id) { setState(() => _cat = id); reload(); },
-                itemBuilder: (_) => [for (final c in rest) PopupMenuItem(value: '${c['id']}', child: Text('${c['title']}', style: body(TextStyle(fontSize: 15, fontWeight: _cat == '${c['id']}' ? FontWeight.w800 : FontWeight.w600, color: AppColors.text))))],
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.only(left: 12, right: 6),
-                  decoration: BoxDecoration(color: inRest != null ? AppColors.text : AppColors.surface, borderRadius: BorderRadius.circular(16)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(inRest != null ? '${inRest['title']}' : 'Thêm', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: inRest != null ? AppColors.bg : AppColors.text))),
-                    Icon(Icons.expand_more_rounded, size: 20, color: inRest != null ? AppColors.bg : AppColors.text),
-                  ]),
+        Row(children: [
+          Flexible(child: Align(alignment: Alignment.centerLeft, child: _catMenu(main, rest))),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              for (final (i, t) in const [(0, 'Mới hoạt động'), (1, 'Sôi nổi')])
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () { if (_sort != i) { setState(() => _sort = i); reload(); } },
+                  child: Container(
+                    height: 32,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: _sort == i ? AppColors.bg : Colors.transparent, borderRadius: BorderRadius.circular(10)),
+                    child: Text(t, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _sort == i ? AppColors.text : AppColors.textSecondary))),
+                  ),
                 ),
-              ),
-            ),
+            ]),
+          ),
         ]),
-        const SizedBox(height: 6),
-        Align(alignment: Alignment.centerLeft, child: Container(
-          padding: const EdgeInsets.all(3),
-          decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            for (final (i, t) in const [(0, 'Mới hoạt động'), (1, 'Sôi nổi')])
-              InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () { if (_sort != i) { setState(() => _sort = i); reload(); } },
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(color: _sort == i ? AppColors.bg : Colors.transparent, borderRadius: BorderRadius.circular(10)),
-                  child: Text(t, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _sort == i ? AppColors.text : AppColors.textSecondary))),
-                ),
-              ),
-          ]),
-        )),
         if (_pinned.isNotEmpty) ...[
           _label('ĐƯỢC GHIM'),
           for (final p in _pinned)
@@ -291,6 +295,7 @@ class _ForumListState extends State<_ForumList> {
 
   Widget _topicRow(Map<String, dynamic> d, TextStyle muted) {
     final who = d['lastCommentBy'] ?? d['author'];
+    final whoName = d['lastCommentBy']?['username']?.toString() ?? topicAuthorName(d);
     final on = widget.selected == '${d['id']}';
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -303,7 +308,7 @@ class _ForumListState extends State<_ForumList> {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              UserAvatar(url: who?['avatar']?['url']?.toString(), name: '${who?['username'] ?? ''}', size: 36),
+              UserAvatar(url: who?['avatar']?['url']?.toString(), name: whoName, size: 36),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

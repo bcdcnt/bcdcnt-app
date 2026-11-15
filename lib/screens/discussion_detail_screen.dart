@@ -42,7 +42,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
       final data = await ApiClient.query(r'''query($id: ID!) {
         discussion(id: $id) {
           id title slug content created_at status is_closed views comment_count last_comment_at
-          author { id username avatar { url } roles { alias display_in_comment } }
+          author_name author { id username avatar { url } roles { alias display_in_comment } }
           thumbnail { url }
           forum { id title slug parent { id title slug } }
           file { audio_url video_url duration type }
@@ -144,11 +144,10 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  if (author?['username'] != null)
-                    InkWell(
-                      onTap: () => context.push('/user/${author['id']}'),
-                      child: Text(author['username'], style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
-                    ),
+                  InkWell(
+                    onTap: author?['id'] == null ? null : () => context.push('/user/${author['id']}'),
+                    child: Text(topicAuthorName(d), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  ),
                   Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                 ])),
                 if ((d['views'] ?? 0) > 0) Row(children: [
@@ -167,7 +166,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
               // a waveform player and images use CachedNetworkImage (parity
               // with how the same author's posts render in song comments).
               if ((d['content'] ?? '').toString().isNotEmpty)
-                CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString(), inlineImages: true),
+                CommentMedia(html: d['content'] ?? '', authorName: topicAuthorName(d), inlineImages: true),
 
               // Polls / "đánh giá": vote with one tap, see the results.
               for (final p in ((d['polls']?['data'] ?? const []) as List).whereType<Map>())
@@ -248,12 +247,12 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
             InkWell(
               onTap: author?['id'] == null ? null : () => context.push('/user/${author['id']}'),
               customBorder: const CircleBorder(),
-              child: UserAvatar(url: author?['avatar']?['url']?.toString(), name: (author?['username'] ?? '').toString(), size: 44),
+              child: UserAvatar(url: author?['avatar']?['url']?.toString(), name: topicAuthorName(d), size: 44),
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                Flexible(child: Text((author?['username'] ?? '').toString(), overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                Flexible(child: Text(topicAuthorName(d), overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)))),
                 if (role.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   Container(
@@ -275,7 +274,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
           const SizedBox(height: 16),
           if (d['file'] != null) ..._buildFileBlock(Map<String, dynamic>.from(d['file'] as Map)),
           if ((d['content'] ?? '').toString().isNotEmpty)
-            CommentMedia(html: d['content'] ?? '', authorName: author?['username']?.toString(), inlineImages: true),
+            CommentMedia(html: d['content'] ?? '', authorName: topicAuthorName(d), inlineImages: true),
           for (final p in ((d['polls']?['data'] ?? const []) as List).whereType<Map>())
             _DiscussionPoll(key: ValueKey('poll-${p['id']}'), poll: Map<String, dynamic>.from(p)),
         ]),
