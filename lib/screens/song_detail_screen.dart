@@ -1005,21 +1005,30 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ]));
     }
     final uploadDate = song['created_at'] != null ? _formatDate(song['created_at']) : null;
-    final tagsWidget = tags.isEmpty ? null : Padding(
-      padding: EdgeInsets.zero,
-      child: Wrap(spacing: 18, runSpacing: 0, children: tags.map<Widget>((t) => InkWell(
-        onTap: () => context.push('/tag/${t['slug']}'),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 36),
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: '#', style: TextStyle(color: AppColors.accentFg.withValues(alpha: 0.5))),
-            TextSpan(text: '${t['name'] ?? ''}'),
-          ]), style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
-        ),
-      )).toList()),
-    );
+    // Tag = dòng "Chủ đề" cuối khối tác giả trong băng: "#tên" từng tag,
+    // dấu # mờ, cách nhau khoảng trống, bấm sang trang tag.
+    if (tags.isNotEmpty) {
+      desktopCredits.add(_webCreditLine('Chủ đề', [
+        for (int i = 0; i < tags.length; i++) ...[
+          if (i > 0) const WidgetSpan(child: SizedBox(width: 14)),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => context.push('/tag/${tags[i]['slug']}'),
+                child: Text.rich(TextSpan(children: [
+                  const TextSpan(text: '#', style: TextStyle(color: Color(0x80FFFFFF))),
+                  TextSpan(text: '${tags[i]['name'] ?? ''}'),
+                ]), style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w800, color: Colors.white))),
+              ),
+            ),
+          ),
+        ],
+      ]));
+    }
 
     final mainScroll = CustomScrollView(
             controller: _scrollCtl,
@@ -1115,7 +1124,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         videoPlayer: heroVideo,
                         credits: desktopCredits.isEmpty ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: desktopCredits),
                         uploadDate: uploadDate,
-                        metaContent: tagsWidget,
                       )
                     else ...[
                       _MobileHeader(
@@ -1607,7 +1615,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final out = <Widget>[];
     for (int i = 0; i < songs.length; i++) {
       final sg = Map<String, dynamic>.from(songs[i]);
-      out.add(SongRow(song: sg, queue: asSongList(songs)));
+      // Lists on the song page skip the listen count: lighter, and the
+      // performers get the whole line.
+      out.add(SongRow(song: sg, queue: asSongList(songs), metricKey: 'none'));
       if (i < songs.length - 1) out.add(Divider(height: 1, color: AppColors.borderSubtle, indent: 60));
     }
     return out;
