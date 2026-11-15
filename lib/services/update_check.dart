@@ -46,7 +46,9 @@ class UpdateCheck {
     if (kIsWeb) return false;
     // Snap Store installs update themselves; $SNAP is set inside a snap.
     if (Platform.isLinux) return Platform.environment['SNAP'] == null;
-    return Platform.isWindows || Platform.isMacOS || Platform.isAndroid;
+    // Microsoft Store (MSIX) installs live under WindowsApps and update themselves.
+    if (Platform.isWindows) return !Platform.resolvedExecutable.contains(r'\WindowsApps\');
+    return Platform.isMacOS || Platform.isAndroid;
   }
 
   /// Map platform to the artifact filename that CI uploads as a release

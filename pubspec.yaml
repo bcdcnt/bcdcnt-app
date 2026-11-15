@@ -63,6 +63,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  msix: ^3.18.0
 
 flutter:
   uses-material-design: true
@@ -85,3 +86,19 @@ flutter:
           weight: 700
         - asset: assets/fonts/Montserrat-ExtraBold.ttf
           weight: 800
+
+# Microsoft Store package (`dart run msix:create`, run by CI after
+# `flutter build windows`). Identity values come from Partner Center →
+# BCĐCNT → Product identity and must match it exactly; the Store signs
+# the package itself. The MSIX version is pubspec's major.minor.patch + ".0".
+msix_config:
+  display_name: BCĐCNT
+  publisher_display_name: BCĐCNT
+  identity_name: BCCNT.BCCNT
+  publisher: CN=8E39FCBC-32B3-41E4-BF19-306E6C843AD9
+  logo_path: assets/app_icon.png
+  languages: vi-vn
+  capabilities: internetClient
+  store: true
+  build_windows: false
+  output_name: bcdcnt-store
