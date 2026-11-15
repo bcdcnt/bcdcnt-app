@@ -36,6 +36,7 @@ apps:
       - network-bind   # loopback redirect for desktop Google sign-in
       - audio-playback
       - home           # saving downloaded songs
+      - password-manager-service  # login tokens in the keyring (not auto-connected; falls back to app storage)
     environment:
       LD_LIBRARY_PATH: $LD_LIBRARY_PATH:$SNAP/lib:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/blas:$SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/lapack
 
@@ -45,6 +46,7 @@ parts:
     source: build/linux/x64/release/bundle
     stage-packages:
       - libmpv2
+      - libsecret-1-0    # flutter_secure_storage (login tokens)
     override-build: |
       craftctl default
       craftctl set version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' "$CRAFT_PROJECT_DIR/pubspec.yaml")"

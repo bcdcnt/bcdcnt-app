@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api.dart';
+import 'token_store.dart';
 import 'friendly_error.dart';
 
 const meQuery = '''query { me {
@@ -52,6 +53,11 @@ const changePasswordMutation = '''mutation(\$password: String!) {
 
 const refreshTokenMutation = '''mutation(\$refresh_token: String!) {
   refreshToken(refresh_token: \$refresh_token) { access_token refresh_token message code }
+}''';
+
+/// Revokes the session this refresh token belongs to on the server.
+const logoutMutation = '''mutation(\$refresh_token: String) {
+  logout(refresh_token: \$refresh_token)
 }''';
 
 /// Decode a JWT and check if the `exp` claim is past (with a 60s buffer).
@@ -128,8 +134,9 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _restore() async {
     final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('access_token');
-    _refreshToken = prefs.getString('refresh_token');
+    final tokens = await TokenStore.read();
+    _token = tokens.access;
+    _refreshToken = tokens.refresh;
     final u = prefs.getString('user');
     if (u != null) _user = jsonDecode(u);
     // If token expired, refresh before fetching me; otherwise refresh in background.
@@ -151,9 +158,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _clearStorage() async {
+    await TokenStore.clear();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
     await prefs.remove('user');
   }
 
@@ -176,10 +182,8 @@ class AuthProvider extends ChangeNotifier {
         if (newAccess is String && newAccess.isNotEmpty) {
           _token = newAccess;
           if (newRefresh is String && newRefresh.isNotEmpty) _refreshToken = newRefresh;
-          final prefs = await SharedPreferences.getInstance();
           if (epoch != _epoch) { completer.complete(null); return; }
-          await prefs.setString('access_token', newAccess);
-          if (_refreshToken != null) await prefs.setString('refresh_token', _refreshToken!);
+          await TokenStore.write(newAccess, _refreshToken);
           notifyListeners();
           completer.complete(newAccess);
         } else {
@@ -246,13 +250,7 @@ class AuthProvider extends ChangeNotifier {
     _token = access;
     _refreshToken = refresh;
     _resetToken = null;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('access_token', access);
-    if (refresh != null) {
-      await prefs.setString('refresh_token', refresh);
-    } else {
-      await prefs.remove('refresh_token');
-    }
+    await TokenStore.write(access, refresh);
   }
 
   Future<String?> login(String identity, String password) async {
@@ -402,6 +400,12 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Revoke the session server-side too; fire-and-forget so logging out
+    // never waits on (or fails because of) the network.
+    final refresh = _refreshToken;
+    if (refresh != null) {
+      ApiClient.mutate(logoutMutation, {'refresh_token': refresh}).catchError((_) => <String, dynamic>{});
+    }
     _epoch++;
     _refreshInFlight = null;
     _resetToken = null;
