@@ -21,7 +21,14 @@ class TokenStore {
   // it; ad-hoc signed ones (GitHub .zip, debug) get an error instead of a
   // prompt and fall back below. The old file-based keychain is avoided on
   // purpose: it asks for the login password whenever the signature changes.
-  static const _secure = FlutterSecureStorage();
+  // accountName = the keychain "service" shown in Keychain Access; the
+  // plugin's default ("flutter_secure_storage_service") is shared by every
+  // Flutter app, so name ours.
+  static const _service = 'net.bcdcnt.auth';
+  static const _secure = FlutterSecureStorage(
+    iOptions: IOSOptions(accountName: _service),
+    mOptions: MacOsOptions(accountName: _service),
+  );
 
   /// Linux keyrings (libsecret) can pop up an "unlock keyring" dialog.
   static bool get _plain => kIsWeb || Platform.isLinux;

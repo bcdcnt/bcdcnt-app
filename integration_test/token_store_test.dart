@@ -20,7 +20,8 @@ void main() {
     expect(t.refresh, 'old-refresh');
     expect(prefs.getString('access_token'), isNull);
     expect(prefs.getString('refresh_token'), isNull);
-    expect(await const FlutterSecureStorage().read(key: 'refresh_token'), 'old-refresh');
+    expect(await const FlutterSecureStorage(iOptions: IOSOptions(accountName: 'net.bcdcnt.auth')).read(key: 'refresh_token'), 'old-refresh');
+    expect(await const FlutterSecureStorage().read(key: 'refresh_token'), isNull, reason: 'not under the generic service name');
   });
 
   testWidgets('write, rotate, clear', (_) async {
