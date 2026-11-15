@@ -623,13 +623,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   void _showLoversSheet(List loves) {
     if (loves.isEmpty) return;
     final total = _loveTotal > loves.length ? _loveTotal : loves.length;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      barrierColor: Colors.black54,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) {
+    // Desktop: a dialog in the middle (a sheet from the bottom edge of a wide
+    // window is easy to miss); phone: the bottom sheet.
+    final desktop = MediaQuery.sizeOf(context).width >= 900;
+    Widget panel(BuildContext ctx) {
         final maxH = MediaQuery.of(ctx).size.height * 0.7;
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxH),
@@ -644,8 +641,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               ]),
             ),
             Divider(height: 1, color: AppColors.border),
-            Expanded(
+            Flexible(
               child: ListView.separated(
+                shrinkWrap: true,
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: loves.length,
                 separatorBuilder: (_, _) => Divider(height: 1, color: AppColors.borderSubtle, indent: 64),
@@ -672,7 +670,27 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
           ]),
         );
-      },
+    }
+    if (desktop) {
+      showDialog<void>(
+        context: context,
+        barrierColor: Colors.black54,
+        builder: (ctx) => Dialog(
+          backgroundColor: AppColors.surface,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          clipBehavior: Clip.antiAlias,
+          child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 420), child: panel(ctx)),
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      barrierColor: Colors.black54,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: panel,
     );
   }
 
@@ -2257,7 +2275,14 @@ TextSpan _loversLine(List loves, int total) {
     if (i > 0) parts.add(TextSpan(text: rest == 0 && i == shown.length - 1 ? ' và ' : ', '));
     parts.add(TextSpan(text: shown[i], style: bold));
   }
-  if (rest > 0) parts.add(TextSpan(text: ' và ${formatInt(rest)} người khác'));
+  if (rest > 0) {
+    parts.add(const TextSpan(text: ' và '));
+    // Looks like what it is: the way into the full list (the row opens it).
+    parts.add(TextSpan(
+      text: '${formatInt(rest)} người khác',
+      style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white, decoration: TextDecoration.underline, decorationColor: Color(0x99FFFFFF)),
+    ));
+  }
   parts.add(const TextSpan(text: ' đã thích'));
   return TextSpan(children: parts);
 }
