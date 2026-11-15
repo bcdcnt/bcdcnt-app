@@ -21,11 +21,13 @@ class TokenStore {
     mOptions: MacOsOptions(usesDataProtectionKeychain: false),
   );
 
-  /// Debug macOS builds are signed ad hoc, so every rebuild is a "different
-  /// app" to the keychain and macOS asks for the login password before
-  /// handing the tokens over. Those builds keep them in SharedPreferences;
-  /// team-signed builds (TestFlight / App Store) keep one identity.
-  static bool get _plain => kIsWeb || (kDebugMode && Platform.isMacOS);
+  /// macOS ties keychain access to the app's signature. Ad-hoc signed builds
+  /// (debug, and the GitHub .zip release) are a "different app" after every
+  /// update, so macOS would ask for the login password each time. Only
+  /// team-signed Mac builds (App Store / TestFlight) pass
+  /// --dart-define=MACOS_KEYCHAIN=true; the rest keep SharedPreferences.
+  static const _macKeychain = bool.fromEnvironment('MACOS_KEYCHAIN');
+  static bool get _plain => kIsWeb || (Platform.isMacOS && !_macKeychain);
 
   static Future<({String? access, String? refresh})> read() async {
     final prefs = await SharedPreferences.getInstance();
