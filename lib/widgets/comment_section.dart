@@ -225,14 +225,9 @@ class _CommentSectionState extends State<CommentSection> {
     }
     if (mounted) setState(() => _mentionLoading = true);
     try {
-      // Inline LIKE pattern (mirrors person_list_screen) — passing the
-      // value through a GraphQL variable wasn't matching anything in
-      // testing. Escape `"` to keep the query safe for usernames that
-      // contain quotes (rare but possible).
-      final safe = prefix.replaceAll('"', '\\"');
-      final q = 'query { users(first: 5, where: {column: "username", operator: LIKE, value: "$safe%"}, orderBy: [{column: "views", order: DESC}]) { data { id username avatar { url } views } } }';
-      final data = await ApiClient.query(q, {});
-      final list = ((data['users']?['data'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      // Public members search: `users` is BQT-only (BCDCNT-2026-008).
+      final data = await ApiClient.query(r'query($q: String!) { searchMembers(q: $q, first: 5) { id username avatar { url } views } }', {'q': prefix});
+      final list = ((data['searchMembers'] ?? []) as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
       if (!mounted) return;
       setState(() { _mentionResults = list; _mentionLoading = false; });
     } catch (_) {

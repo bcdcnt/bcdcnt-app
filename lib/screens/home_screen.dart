@@ -845,9 +845,10 @@ class _HomeScreenState extends State<HomeScreen> {
       List<Map<String, dynamic>> items = [];
       if (kind == 'listeners' || kind == 'contributors') {
         final field = kind == 'listeners' ? 'listen' : 'point';
-        q = 'query { users(first: 10, orderBy: [{column: "$field", order: DESC}], where: {AND: [{column: "$field", value: 0, operator: GT}, {column: "id", value: 1, operator: NEQ}]}) { data { id username avatar { url } $field } } }';
+        // Public leaderboard: `users` is BQT-only (BCDCNT-2026-008).
+        q = 'query { topMember(field: "$field", first: 10) { data { id username avatar { url } $field } } }';
         final data = await ApiClient.query(q);
-        items = ((data['users']?['data'] ?? []) as List).map((u) => {
+        items = ((data['topMember']?['data'] ?? []) as List).map((u) => {
           'id': u['id'], 'username': u['username'], 'avatar': u['avatar']?['url'], 'value': u[field],
         }).toList();
       } else {
