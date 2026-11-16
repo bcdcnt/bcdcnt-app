@@ -1,0 +1,59 @@
+name: Export signing key for Play App Signing (one-off)
+
+# Play Console → Test and release → App integrity → App signing →
+# "Use a different key" → "Export and upload a key from Java keystore".
+# Download encryption_public_key.pem there, base64 it (`base64 -i
+# encryption_public_key.pem | pbcopy`) and paste into the input below.
+# The output zip is encrypted with Google's public key, so only Google can
+# read it; upload it back in the same dialog. This keeps the existing
+# release key, so users who sideloaded bcdcnt-android.apk can update from
+# Play without uninstalling.
+on:
+  workflow_dispatch:
+    inputs:
+      encryption_key_b64:
+        description: "base64 of encryption_public_key.pem from Play Console"
+        required: true
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Export encrypted key with PEPK
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ENC_KEY_B64: ${{ inputs.encryption_key_b64 }}
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          echo "$KEYSTORE_B64" | base64 --decode > release.jks
+          echo "$ENC_KEY_B64" | base64 --decode > encryption_public_key.pem
+          head -1 encryption_public_key.pem
+          curl -sSfL -o pepk.jar https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar
+          java -jar pepk.jar \
+            --keystore=release.jks \
+            --alias="$ANDROID_KEY_ALIAS" \
+            --keystore-pass="$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass="$ANDROID_KEY_PASSWORD" \
+            --output=bcdcnt-play-signing-key.zip \
+            --include-cert \
+            --rsa-aes-encryption \
+            --encryption-key-path=encryption_public_key.pem
+          rm -f release.jks
+          mkdir -p "$GITHUB_WORKSPACE/out" && mv bcdcnt-play-signing-key.zip "$GITHUB_WORKSPACE/out/"
+          ls -l "$GITHUB_WORKSPACE/out"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: bcdcnt-play-signing-key
+          path: out/bcdcnt-play-signing-key.zip
+          retention-days: 3
+          if-no-files-found: error
