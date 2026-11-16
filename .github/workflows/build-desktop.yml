@@ -227,6 +227,23 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
 
+      # Tag push → closed testing track "alpha" on Google Play (sent for
+      # review automatically). Release notes: store/whatsnew-vi.txt.
+      # Promote to production later with `store/play.py promote alpha production`.
+      - name: Publish to Google Play (alpha)
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.target == 'android'
+        env:
+          PLAY_SA_JSON_CONTENT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -e
+          printf '%s' "$PLAY_SA_JSON_CONTENT" > "$RUNNER_TEMP/play-sa.json"
+          export PLAY_SA_JSON="$RUNNER_TEMP/play-sa.json"
+          python3 -m pip install --quiet google-auth requests
+          NOTES="Phiên bản ${GITHUB_REF_NAME#v}"
+          [ -s store/whatsnew-vi.txt ] && NOTES="$(cat store/whatsnew-vi.txt)"
+          python3 store/play.py upload build/app/outputs/bundle/release/app-release.aab --track alpha --notes "$NOTES"
+          rm -f "$PLAY_SA_JSON"
+
       # When this workflow runs from a tag push, also package each
       # platform's bundle into a single .zip and attach it to a
       # GitHub Release. The Flutter app's in-app update checker hits
