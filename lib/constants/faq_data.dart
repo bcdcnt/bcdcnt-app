@@ -29,7 +29,7 @@ const kFaq = [
     FaqItem('Nghe và tải nhạc có mất phí không?',
         'Hoàn toàn miễn phí. Bạn nghe và tải nhạc thoải mái, không mất phí, không quảng cáo phiền nhiễu.'),
     FaqItem('"Thành viên hát" là gì?',
-        'Là các bản thu do chính thành viên tự hát/thể hiện (cover), khác với bản thu chuyên nghiệp. Bạn cũng có thể gửi bản hát của mình qua mục Gửi bài trên website bcdcnt.net.'),
+        'Là các bản thu do chính thành viên tự hát/thể hiện (cover), khác với bản thu chuyên nghiệp. Bạn cũng có thể gửi bản hát của mình ở Cá nhân → Bài gửi → Gửi bài (chọn loại Thành viên hát).'),
     FaqItem('"Tiếng thơ" là gì?',
         'Là các tác phẩm ngâm thơ, đọc thơ, thơ phổ nhạc — một thể loại đặc trưng được lưu giữ trên BCĐCNT.'),
     FaqItem('Nhạc trên BCĐCNT có bản quyền thế nào?',
@@ -67,7 +67,7 @@ const kFaq = [
   ]),
   FaqGroup('Đóng góp', [
     FaqItem('Làm sao để gửi / đăng một bài hát?',
-        'Đăng nhập trên website bcdcnt.net rồi vào mục Gửi bài. Nếu chưa đủ quyền đăng trực tiếp, bạn có thể gửi qua diễn đàn để ban quản trị xem xét. Bài đã gửi xem lại ở Cá nhân → Bài gửi.'),
+        'Đăng nhập, vào Cá nhân → Bài gửi → Gửi bài (hoặc mục Gửi bài trên website bcdcnt.net), chọn loại bài, tải tệp lên và điền thông tin. Ban quản trị duyệt rồi bài mới lên kho; bạn nhận thông báo khi có kết quả. Bài đã gửi xem lại ở Cá nhân → Bài gửi.'),
     FaqItem('Tôi tự thu âm / hát cover, gửi lên được không?',
         'Được. Gửi bản hát của bạn — sau khi duyệt sẽ nằm ở mục Thành viên hát.'),
     FaqItem('Bài gửi được duyệt như thế nào, bao lâu?',
