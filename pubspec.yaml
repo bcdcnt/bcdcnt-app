@@ -98,6 +98,7 @@ msix_config:
   publisher: CN=8E39FCBC-32B3-41E4-BF19-306E6C843AD9
   # Windows / Microsoft Store: nền đỏ rượu (2026-11-17); các nền tảng khác vẫn assets/app_icon.png
   logo_path: store/windows/app_icon.png
+  trim_logo: false
   languages: vi-vn
   capabilities: internetClient
   store: true
