@@ -36,12 +36,13 @@ class WorkspaceScreen extends StatefulWidget {
 /// the decided uploads at hand.
 const _todo = [
   ('pending', 'Bài gửi chờ duyệt', 'Bài gửi'),
-  ('no_score', 'Thiếu bản nhạc', 'Bản nhạc'),
   ('doc_request', 'Xử lý yêu cầu', 'Yêu cầu'),
-  ('no_tag', 'Bài thiếu tag', 'Bản nhạc'),
+  ('no_year', 'Thiếu năm sáng tác', 'Bản nhạc'),
+  ('no_score', 'Thiếu bản nhạc', 'Bản nhạc'),
+  ('no_tag', 'Thiếu tag', 'Bản nhạc'),
+  ('no_image', 'Thiếu ảnh minh hoạ', 'Bài hát'),
+  ('no_lyric', 'Thiếu lời', 'Bài hát'),
   ('lost_file', 'Mất dữ liệu', 'Bài hát'),
-  ('no_image', 'Bài mới thiếu ảnh', 'Bài hát'),
-  ('no_lyric', 'Bài mới thiếu lời', 'Bài hát'),
 ];
 const _done = [
   ('not_sure', 'Chưa chắc chắn', 'Bài gửi'),
@@ -51,6 +52,8 @@ const _done = [
 const _uploadQueues = {'pending', 'not_sure', 'rejected', 'approved'};
 
 /// Server filter / list query per queue (not uploads).
+/// The song's year of composition lives on its sheet.
+const _noYearWhere = '{OR: [{column: "year", operator: IS_NULL}, {column: "year", value: 0}]}';
 const _noScoreWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _requestWhere = '{AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}';
 const _commentPendingWhere = '{column: "status", value: 0}';
@@ -71,7 +74,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool _busy = false;
   int? _dupes;
   /// Newest first; the sheet queues also offer "Xem nhiều nhất".
-  late String _sort = widget.sort ?? ((widget.queue == 'no_score' || widget.queue == 'no_tag') ? 'views' : 'new');
+  late String _sort = widget.sort ?? ((widget.queue == 'no_score' || widget.queue == 'no_tag' || widget.queue == 'no_year') ? 'views' : 'new');
   /// Upload detail: name → found in the archive (null while asking).
   final Map<String, bool> _inKho = {};
   final _focus = FocusNode();
@@ -82,7 +85,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   static const _lyricsFold = 8;
 
   bool get _isUpload => _uploadQueues.contains(_queue);
-  bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag';
+  bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag' || _queue == 'no_year';
   bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
@@ -120,6 +123,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     // Two asks: an API without one of the newer filters must not cost the
     // upload counts.
     final others = {
+      'no_year': 'sheets(first: 1, where: $_noYearWhere)',
       'no_score': 'sheets(first: 1, where: $_noScoreWhere)',
       'no_tag': 'sheets(first: 1, untagged: true)',
       'doc_request': 'comments(first: 1, where: $_requestWhere)',
@@ -146,6 +150,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final order = _sort == 'views' ? '{column: "views", order: DESC}' : '{column: "id", order: ${_sort == 'old' ? 'ASC' : 'DESC'}}';
     const people = '{ data { title } }';
     final (root, q) = switch (queue) {
+      'no_year' => ('sheets', 'sheets(first: 40, where: $_noYearWhere, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'no_score' => ('sheets', 'sheets(first: 40, where: $_noScoreWhere, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'no_tag' => ('sheets', 'sheets(first: 40, untagged: true, orderBy: [$order]) { data { id title views year composers(first: 3) $people songs(first: 1) { paginatorInfo { total } } } }'),
       'lost_file' => ('songs', 'songs(first: 40, where: {column: "empty_file", value: 1}, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
@@ -169,7 +174,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   void _openQueue(String k) {
-    setState(() { _queue = k; _sort = (k == 'no_score' || k == 'no_tag') ? 'views' : 'new'; });
+    setState(() { _queue = k; _sort = (k == 'no_score' || k == 'no_tag' || k == 'no_year') ? 'views' : 'new'; });
     _load();
     _focus.requestFocus();
   }
@@ -410,7 +415,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           );
 
   static const _railIcons = {
-    'pending': Icons.inbox_rounded, 'no_score': Icons.library_music_outlined, 'doc_request': Icons.description_outlined,
+    'pending': Icons.inbox_rounded, 'no_year': Icons.event_busy_outlined, 'no_score': Icons.library_music_outlined, 'doc_request': Icons.description_outlined,
     'no_tag': Icons.sell_outlined, 'comment_pending': Icons.chat_bubble_outline_rounded, 'lost_file': Icons.music_off_outlined, 'no_image': Icons.hide_image_outlined, 'no_lyric': Icons.subtitles_off_outlined,
     'not_sure': Icons.help_outline_rounded, 'rejected': Icons.close_rounded, 'approved': Icons.check_rounded,
   };
@@ -623,6 +628,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ]),
           );
     final (eyebrow, title, hint) = switch (_queue) {
+      'no_year' => ('BẢN NHẠC · CHƯA CÓ NĂM SÁNG TÁC', '${u['title'] ?? ''}', 'Điền năm sáng tác ở trang bản nhạc (Sửa thông tin).'),
       'no_score' => ('BẢN NHẠC · CHƯA CÓ BẢN NHẠC', '${u['title'] ?? ''}', 'Thêm ảnh hoặc tệp bản nhạc ở trang bản nhạc.'),
       'no_tag' => ('BẢN NHẠC · CHƯA GẮN TAG', '${u['title'] ?? ''}', 'Gắn chủ đề (tag) ở trang bản nhạc để bài hiện trong các trang chủ đề.'),
       'lost_file' => ('BÀI HÁT · MẤT FILE', '${u['title'] ?? ''}', 'Đường dẫn file không còn mở được. Tải lại file ở trang bài hát.'),
