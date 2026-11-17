@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'action_menu.dart' show lastPointerDown;
 import '../services/imgcdn.dart';
 import 'dart:async';
@@ -524,10 +525,42 @@ class _TopBar extends StatelessWidget {
           ),
         ),
         const Spacer(),
+        if (auth.hasPermission('upload')) ...[const _UploadButton(), const SizedBox(width: 8)],
         const _TextSizeButton(),
         const SizedBox(width: 8),
         if (auth.isAuthenticated) _NotifBell(unread: (auth.user?['unread'] ?? 0) as int),
       ]),
+    );
+  }
+}
+
+/// "Gửi bài" (canvas "Desktop · Nút Gửi bài", chốt 17/11): on the top bar of
+/// every page for accounts that may upload; Ctrl N / ⌘N does the same.
+class _UploadButton extends StatelessWidget {
+  const _UploadButton();
+
+  @override
+  Widget build(BuildContext context) {
+    final mac = defaultTargetPlatform == TargetPlatform.macOS;
+    return Tooltip(
+      message: keyTip(context, 'Gửi bài', mac ? '⌘N' : 'Ctrl N'),
+      child: Material(
+        color: AppColors.wine,
+        borderRadius: BorderRadius.circular(22),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(22),
+          onTap: () => context.push('/gui-bai'),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.only(left: 14, right: 18),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.add_rounded, size: 20, color: Colors.white),
+              const SizedBox(width: 8),
+              Text('Gửi bài', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white))),
+            ]),
+          ),
+        ),
+      ),
     );
   }
 }

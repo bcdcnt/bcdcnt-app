@@ -2003,6 +2003,7 @@ class _ShortcutsList extends StatelessWidget {
       ('Tìm kiếm nhanh', [mod, 'K']),
       ('Mở trang Tìm kiếm', [mod, 'F']),
       ('Mở Cài đặt', [mod, ',']),
+      ('Gửi bài', [mod, 'N']),
     ];
     Widget caps(List<String> keys) => Row(mainAxisSize: MainAxisSize.min, children: [
           for (final k in keys)

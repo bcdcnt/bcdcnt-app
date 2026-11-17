@@ -182,7 +182,14 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     child: GestureDetector(onTap: () => context.push('/user/${user['id']}'), child: UserAvatar(url: user['avatar']?.toString(), name: name, size: 44)),
                   )
                 : null,
-            actions: [RoundIcon(icon: Icons.settings_outlined, tooltip: 'Cài đặt', onTap: () => context.push('/cai-dat'))],
+            actions: [
+              // Canvas "Cá nhân · nút Gửi bài" (chốt 17/11).
+              if (auth.hasPermission('upload')) ...[
+                PillButton(label: 'Gửi bài', icon: Icons.add_rounded, height: 44, onTap: () => context.push('/gui-bai')),
+                const SizedBox(width: 8),
+              ],
+              RoundIcon(icon: Icons.settings_outlined, tooltip: 'Cài đặt', onTap: () => context.push('/cai-dat')),
+            ],
           ),
           const SizedBox(height: 16),
           if (user != null) ...[

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import '../services/auth.dart';
 import '../services/player.dart';
 import '../main.dart' show rootNavigatorKey;
 import 'command_palette.dart';
@@ -112,6 +113,11 @@ class _KeyboardShortcutsState extends State<KeyboardShortcuts> {
       }
       if (key == LogicalKeyboardKey.keyF) {
         if (navCtx != null) navCtx.go('/search');
+        return true;
+      }
+      if (key == LogicalKeyboardKey.keyN) {
+        // Gửi bài — only for accounts that may upload.
+        if (navCtx != null && context.read<AuthProvider>().hasPermission('upload')) navCtx.push('/gui-bai');
         return true;
       }
       if (key == LogicalKeyboardKey.comma) {
