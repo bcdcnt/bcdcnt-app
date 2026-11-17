@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../widgets/ui.dart' show goBack, OfflineBlock, NetImage, Pager, PillButton, SkeletonSongRow;
-import 'package:url_launcher/url_launcher.dart';
 import '../services/upload_types.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -189,6 +188,9 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                 title: const Text('Bài gửi'),
                 centerTitle: true,
                 leading: IconButton(tooltip: 'Quay lại', icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text), onPressed: () => goBack(context)),
+                actions: [
+                  Padding(padding: const EdgeInsets.only(right: 12), child: PillButton(label: 'Gửi bài', icon: Icons.add_rounded, height: 40, onTap: () => context.push('/gui-bai'))),
+                ],
               ),
               SliverPadding(
                 padding: desk ? EdgeInsets.fromLTRB(deskPad.left, deskPad.top, deskPad.right, 0) : const EdgeInsets.fromLTRB(20, 8, 20, 16),
@@ -196,8 +198,7 @@ class _MyUploadsScreenState extends State<MyUploadsScreen> {
                   child: desk
                       ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           DeskHead(title: 'Bài gửi của tôi', subtitle: count, actions: [
-                            // The app has no upload form yet: the web one.
-                            PillButton(label: 'Gửi bài', icon: Icons.open_in_new_rounded, height: 44, onTap: () => launchUrl(Uri.parse('$siteUrl/gui-bai'), mode: LaunchMode.externalApplication)),
+                            PillButton(label: 'Gửi bài', icon: Icons.add_rounded, height: 44, onTap: () => context.push('/gui-bai')),
                           ]),
                           Wrap(spacing: 8, runSpacing: 8, children: [
                             for (final (k, label) in _statusTabs)

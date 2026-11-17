@@ -63,6 +63,7 @@ import 'screens/melody_detail_screen.dart';
 import 'screens/folk_index_screen.dart';
 import 'screens/folk_category_screen.dart';
 import 'screens/upload_detail_screen.dart';
+import 'screens/upload_form_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/full_player.dart';
 import 'widgets/auth_dialogs.dart';
@@ -559,6 +560,7 @@ final _router = GoRouter(
         GoRoute(path: '/tag', builder: (c, s) => const TagListScreen()),
         GoRoute(path: '/tag/:slug', builder: (c, s) => TagDetailScreen(slug: s.pathParameters['slug']!)),
         GoRoute(path: '/bai-gui-cua-toi', builder: (c, s) => const MyUploadsScreen()),
+        GoRoute(path: '/gui-bai', builder: (c, s) => UploadFormScreen(initialType: s.uri.queryParameters['type'], initialLink: s.uri.queryParameters['url'])),
         GoRoute(path: '/bai-hat/video', builder: (c, s) => const DecadeSongsScreen(video: true)),
         GoRoute(
           path: '/bai-hat/thap-nien/:decade',
