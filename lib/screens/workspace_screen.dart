@@ -14,7 +14,6 @@ import '../widgets/ui.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/same_recordings.dart';
 import '../widgets/same_sheets.dart';
-import '../widgets/sheet_lightbox.dart';
 import '../widgets/upload_thread.dart';
 
 /// "Bàn làm việc" (desktop, members with manage_upload): what BQT has to do,
@@ -786,21 +785,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         const SizedBox(height: 16),
         Text('ẢNH GỬI KÈM · ${images.length}', style: AppText.eyebrow),
         const SizedBox(height: 8),
-        for (var i = 0; i < images.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: images, initialIndex: i))),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  color: Colors.white,
-                  child: Image.network(images[i], fit: BoxFit.fitWidth, width: double.infinity,
-                      errorBuilder: (_, _, _) => Padding(padding: const EdgeInsets.all(16), child: Text('Không tải được ảnh', style: body(TextStyle(color: AppColors.textMuted))))),
-                ),
-              ),
-            ),
-          ),
+        ImageStrip(urls: images),
       ],
       if (lyrics.isNotEmpty) ...[
         const SizedBox(height: 16),

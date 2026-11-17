@@ -69,34 +69,7 @@ class _SameSheetsState extends State<SameSheets> {
         child: Text(t.toUpperCase(), style: body(TextStyle(fontSize: size, fontWeight: FontWeight.w800, letterSpacing: 0.5, color: c))),
       );
 
-  Widget _strip(List<String> urls, {required Color paper}) {
-    if (urls.isEmpty) return Text('(không có ảnh)', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)));
-    return SizedBox(
-      height: 140,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: urls.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 6),
-        itemBuilder: (context, i) => MouseRegion(
-          cursor: SystemMouseCursors.zoomIn,
-          child: GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: urls, initialIndex: i))),
-            child: Container(
-              decoration: BoxDecoration(color: paper, borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.border)),
-              clipBehavior: Clip.antiAlias,
-              child: CachedNetworkImage(
-                imageUrl: cdnImg(urls[i], 400),
-                height: 140,
-                fit: BoxFit.fitHeight,
-                placeholder: (_, _) => const SizedBox(width: 104, height: 140),
-                errorWidget: (_, _, _) => SizedBox(width: 104, height: 140, child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted)),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _strip(List<String> urls, {required Color paper}) => ImageStrip(urls: urls, paper: paper);
 
   Widget _versionTile(BuildContext context, String label, List<String> urls) {
     final cap = TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white);
@@ -193,5 +166,43 @@ class _SameSheetsState extends State<SameSheets> {
           }),
         ],
     ]);
+  }
+}
+
+/// A row of small scans (140 tall), scrolling sideways; a tap opens the whole
+/// row in the lightbox at that image.
+class ImageStrip extends StatelessWidget {
+  final List<String> urls;
+  final Color paper;
+  const ImageStrip({super.key, required this.urls, this.paper = Colors.white});
+
+  @override
+  Widget build(BuildContext context) {
+    if (urls.isEmpty) return Text('(không có ảnh)', style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)));
+    return SizedBox(
+      height: 140,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, i) => MouseRegion(
+          cursor: SystemMouseCursors.zoomIn,
+          child: GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: urls, initialIndex: i))),
+            child: Container(
+              decoration: BoxDecoration(color: paper, borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.border)),
+              clipBehavior: Clip.antiAlias,
+              child: CachedNetworkImage(
+                imageUrl: cdnImg(urls[i], 400),
+                height: 140,
+                fit: BoxFit.fitHeight,
+                placeholder: (_, _) => const SizedBox(width: 104, height: 140),
+                errorWidget: (_, _, _) => SizedBox(width: 104, height: 140, child: Icon(Icons.broken_image_outlined, color: AppColors.textMuted)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
