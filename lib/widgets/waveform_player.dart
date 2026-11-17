@@ -62,6 +62,8 @@ class WaveformPlayer extends StatefulWidget {
   final double? durationHint;
   /// Extra text after the time, e.g. "192 kbps".
   final String? trailing;
+  /// Playback volume 0–1 (Nghe cân bằng lowers the louder of two recordings).
+  final double volume;
   const WaveformPlayer({
     super.key,
     required this.audioUrl,
@@ -73,6 +75,7 @@ class WaveformPlayer extends StatefulWidget {
     this.buttonSize = 52,
     this.durationHint,
     this.trailing,
+    this.volume = 1.0,
   });
 
   @override
@@ -89,10 +92,17 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
   bool _loading = false;
 
   @override
+  void didUpdateWidget(WaveformPlayer old) {
+    super.didUpdateWidget(old);
+    if (old.volume != widget.volume) _player.setVolume(widget.volume);
+  }
+
+  @override
   void initState() {
     super.initState();
     _bars = parseBars(widget.waveform, widget.seed);
     _player = AudioPlayer();
+    if (widget.volume != 1.0) _player.setVolume(widget.volume);
     _player.playingStream.listen((p) { if (mounted) setState(() => _playing = p); });
     _player.positionStream.listen((p) { if (mounted) setState(() => _position = p); });
     _player.durationStream.listen((d) { if (mounted) setState(() => _duration = d ?? Duration.zero); });

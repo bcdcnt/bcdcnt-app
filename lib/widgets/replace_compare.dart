@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -22,6 +23,8 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
   bool _newDone = false, _curDone = false;
   /// Measuring failed (or never answered): that column offers "Thử lại".
   bool _newFailed = false, _curFailed = false;
+  /// Nghe cân bằng: null = automatic (on when the two differ by ≥ 2 LU).
+  bool? _balance;
 
   Map get _newFile => widget.upload['file'] is Map ? widget.upload['file'] as Map : const {};
   /// The recording being replaced: the upload's object, else the archive link
@@ -125,6 +128,31 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
   static String _cut(num? v) => v == null ? '—' : v == 0 ? '< 11 kHz' : v >= 21000 ? '≥ 21 kHz' : '≈${v ~/ 1000} kHz';
   static String _mb(num? b) => b == null ? '—' : '${_dec(b / 1048576)} MB';
 
+  /// Loudness band: quá to (> −11 LUFS) / vừa (−20 … −11) / nhỏ (< −20).
+  static (String, Color, Color) _loudBand(num lufs) {
+    final light = AppColors.isLight;
+    if (lufs > -11) return ('quá to', light ? const Color(0xFFFFF4DE) : const Color(0xFF3A2E14), AppColors.warningText);
+    if (lufs < -20) return ('nhỏ', AppColors.surfaceLight, AppColors.textSecondary);
+    return ('vừa', light ? const Color(0xFFE5F3EA) : const Color(0xFF15301F), AppColors.successText);
+  }
+
+  Widget _loudCell(Map stats, bool waiting) {
+    final v = stats['loudness'] as num?;
+    if (waiting || v == null) return Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9), child: Text(waiting ? 'Đang phân tích…' : '—', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: waiting ? AppColors.textMuted : AppColors.text))));
+    final (label, bg, fg) = _loudBand(v);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, spacing: 8, runSpacing: 4, children: [
+        Text('${_dec(v)} LUFS', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+          child: Text(label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: fg))),
+        ),
+      ]),
+    );
+  }
+
   /// "Đo không được · Thử lại" in the column whose measuring failed.
   Widget _retry(bool isNew) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -137,7 +165,7 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
         ),
       );
 
-  Widget _player({required String tag, required Color tagBg, required Widget sub, required Map file, required int seed}) {
+  Widget _player({required String tag, required Color tagBg, required Widget sub, required Map file, required int seed, double volume = 1.0}) {
     final url = file['audio_url'];
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 20, 14),
@@ -161,6 +189,7 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
             audioUrl: '$url',
             seed: seed,
             durationHint: (file['duration'] as num?)?.toDouble(),
+            volume: volume,
           ),
       ]),
     );
@@ -181,7 +210,7 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
       ('Kênh', null, n['channels'] == null ? '—' : (n['channels'] == 1 ? 'Mono' : 'Stereo'), c['channels'] == null ? '—' : (c['channels'] == 1 ? 'Mono' : 'Stereo'), cmp(n['channels'], c['channels'])),
       ('Dung lượng', null, _mb(n['size']), _mb(c['size']), 0),
       ('Chất lượng cao (HQ)', null, _newFile['is_hq'] == 1 ? 'Đã đánh dấu' : '—', _curFile['is_hq'] == 1 ? 'Đã đánh dấu' : 'Chưa đánh dấu', 0),
-      ('Độ to', 'âm lượng cảm nhận, EBU R128', n['loudness'] == null ? '—' : '${_dec(n['loudness'])} LUFS', c['loudness'] == null ? '—' : '${_dec(c['loudness'])} LUFS', 0),
+      ('Độ to', 'âm lượng cảm nhận · vừa: −20 … −11', n['loudness'] == null ? '—' : '${_dec(n['loudness'])} LUFS', c['loudness'] == null ? '—' : '${_dec(c['loudness'])} LUFS', 0),
       ('Đỉnh · cắt đỉnh', 'méo do vượt 0 dB', n['peak'] == null ? '—' : '${_dec(n['peak'])} dBFS · ${n['clipped'] ?? 0} chỗ', c['peak'] == null ? '—' : '${_dec(c['peak'])} dBFS · ${c['clipped'] ?? 0} chỗ', cmp(n['clipped'], c['clipped'], higher: false)),
       ('Tần số cắt', 'thấp = nâng bitrate giả / bản gốc kém', _cut(n['cutoff']), _cut(c['cutoff']), cmp(n['cutoff'], c['cutoff'])),
       ('Lặng đầu · cuối', '0 s ở đầu có thể bị cụt', n['lead_silence'] == null ? '—' : '${_dec(n['lead_silence'])} s · ${_dec(n['trail_silence'] ?? 0)} s', c['lead_silence'] == null ? '—' : '${_dec(c['lead_silence'])} s · ${_dec(c['trail_silence'] ?? 0)} s', 0),
@@ -200,9 +229,50 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
         );
     final head = body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted));
 
+    // Nghe cân bằng: lower the louder one by the LUFS gap.
+    final ln = n['loudness'] as num?, lc = c['loudness'] as num?;
+    final gap = ln != null && lc != null ? (ln - lc).toDouble() : null;
+    final balanceOn = gap != null && (_balance ?? gap.abs() >= 2);
+    double gain(double db) => math.pow(10, -db.abs() / 20).toDouble();
+    final newVol = balanceOn && gap > 0 ? gain(gap) : 1.0;
+    final curVol = balanceOn && gap < 0 ? gain(gap) : 1.0;
+
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (gap != null) ...[
+        Row(children: [
+          Material(
+            color: balanceOn ? AppColors.accent : AppColors.bg,
+            shape: StadiumBorder(side: balanceOn ? BorderSide.none : BorderSide(color: AppColors.border, width: 1.5)),
+            child: InkWell(
+              customBorder: const StadiumBorder(),
+              onTap: () => setState(() => _balance = !balanceOn),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.balance_rounded, size: 18, color: balanceOn ? Colors.white : AppColors.text),
+                  const SizedBox(width: 6),
+                  Text('Nghe cân bằng', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: balanceOn ? Colors.white : AppColors.text))),
+                ]),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              gap.abs() < 0.05
+                  ? 'Hai bản to ngang nhau'
+                  : balanceOn
+                      ? 'Đang giảm ${gap > 0 ? 'bản gửi mới' : 'bản hiện tại'} ${_dec(gap.abs())} dB để nghe ngang ${gap > 0 ? 'bản hiện tại' : 'bản gửi mới'}'
+                      : '${gap > 0 ? 'Bản gửi mới' : 'Bản hiện tại'} to hơn ${_dec(gap.abs())} dB',
+              style: muted,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+      ],
       _player(
         tag: 'BẢN GỬI MỚI',
+        volume: newVol,
         tagBg: AppColors.accent,
         sub: Text('${widget.upload['user']?['username'] ?? ''} gửi', style: muted),
         file: _newFile,
@@ -211,6 +281,7 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
       const SizedBox(height: 10),
       _player(
         tag: 'BẢN HIỆN TẠI',
+        volume: curVol,
         tagBg: const Color(0xFF3B3335),
         sub: song == null
             ? Text('Không tìm thấy bài đang thay', style: muted)
@@ -248,8 +319,12 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
                   ]),
                 ),
                 // Rows past the first two come from the analysis.
-                if (i == 2 && _newFailed) _retry(true) else cell(r.$3, better: r.$5 == 1, waiting: i >= 2 && i != 5 && !_newDone && _newFile['id'] != null),
-                if (i == 2 && _curFailed) _retry(false) else cell(r.$4, better: r.$5 == -1, waiting: i >= 2 && i != 5 && !_curDone && _curFile['id'] != null),
+                if (i == 2 && _newFailed) _retry(true)
+                else if (i == 6) _loudCell(n, !_newDone && _newFile['id'] != null)
+                else cell(r.$3, better: r.$5 == 1, waiting: i >= 2 && i != 5 && !_newDone && _newFile['id'] != null),
+                if (i == 2 && _curFailed) _retry(false)
+                else if (i == 6) _loudCell(c, !_curDone && _curFile['id'] != null)
+                else cell(r.$4, better: r.$5 == -1, waiting: i >= 2 && i != 5 && !_curDone && _curFile['id'] != null),
               ]),
           ],
         ),
