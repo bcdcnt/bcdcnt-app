@@ -13,6 +13,7 @@ import '../services/upload_types.dart';
 import '../widgets/ui.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/same_recordings.dart';
+import '../widgets/sheet_lightbox.dart';
 import '../widgets/upload_thread.dart';
 
 /// "Bàn làm việc" (desktop, members with manage_upload): what BQT has to do,
@@ -84,7 +85,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
-  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
+  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
 
 
   @override
@@ -716,6 +717,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final dur = (file['duration'] as num?)?.toDouble();
     final lyrics = '${u['content'] ?? ''}'.replaceAll(RegExp(r'<br\s*/?>'), '\n').replaceAll(RegExp(r'<[^>]+>'), '').trim();
     final decided = _queue == 'approved';
+    // Sheet scans (and other attached images) live as <img> in the content
+    // HTML, plus the optional thumbnail — show them, not just the text.
+    final images = <String>[
+      if ('${u['thumbnail']?['url'] ?? ''}'.isNotEmpty) '${u['thumbnail']['url']}',
+      ...RegExp(r'<img[^>]+src="([^"]+)"', caseSensitive: false).allMatches('${u['content'] ?? ''}').map((m) => m.group(1)!),
+    ];
     return ListView(padding: const EdgeInsets.fromLTRB(36, 24, 36, 40), children: [
       Row(children: [
         Expanded(child: Text('BÀI GỬI · ${'${u['user']?['username'] ?? ''}'.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', style: AppText.eyebrow)),
@@ -770,6 +777,26 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       field('Ghi chú', u['note']?.toString()),
       field('Lý do', u['reason']?.toString()),
       SameRecordings(key: ValueKey('same-${u['id']}'), upload: u),
+      if (images.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text(u['type'] == 'sheet' ? 'ẢNH BẢN NHẠC · ${images.length}' : 'ẢNH GỬI KÈM · ${images.length}', style: AppText.eyebrow),
+        const SizedBox(height: 8),
+        for (var i = 0; i < images.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: images, initialIndex: i))),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  color: Colors.white,
+                  child: Image.network(images[i], fit: BoxFit.fitWidth, width: double.infinity,
+                      errorBuilder: (_, _, _) => Padding(padding: const EdgeInsets.all(16), child: Text('Không tải được ảnh', style: body(TextStyle(color: AppColors.textMuted))))),
+                ),
+              ),
+            ),
+          ),
+      ],
       if (lyrics.isNotEmpty) ...[
         const SizedBox(height: 16),
         Text('LỜI GỬI KÈM', style: AppText.eyebrow),
