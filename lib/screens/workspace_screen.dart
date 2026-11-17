@@ -86,7 +86,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
-  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate is_hq } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title slug artists(first: 3) { data { title } } file { id audio_url duration bitrate is_hq } sheet { composers(first: 3) { data { title } } } } }';
+  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate is_hq } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title slug artists(first: 3) { data { title } } file { id audio_url duration bitrate is_hq user { username } } sheet { composers(first: 3) { data { title } } } } }';
 
 
   @override

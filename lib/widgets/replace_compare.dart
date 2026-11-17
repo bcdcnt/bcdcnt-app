@@ -20,6 +20,8 @@ class ReplaceCompare extends StatefulWidget {
 class _ReplaceCompareState extends State<ReplaceCompare> {
   Map<String, dynamic>? _newStats, _curStats;
   bool _newDone = false, _curDone = false;
+  /// Measuring failed (or never answered): that column offers "Thử lại".
+  bool _newFailed = false, _curFailed = false;
 
   Map get _newFile => widget.upload['file'] is Map ? widget.upload['file'] as Map : const {};
   /// The recording being replaced: the upload's object, else the archive link
@@ -47,7 +49,7 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
     final withArtists = const {'song', 'folk', 'instrumental'}.contains(type);
     try {
       final d = await context.read<AuthProvider>().authedQuery(
-        'query(\$id: ID!) { t: $type(id: \$id) { id title ${withArtists ? 'artists(first: 3) { data { title } }' : ''} file { id audio_url duration bitrate is_hq } } }',
+        'query(\$id: ID!) { t: $type(id: \$id) { id title ${withArtists ? 'artists(first: 3) { data { title } }' : ''} file { id audio_url duration bitrate is_hq user { username } } } }',
         {'id': m.group(2)},
       );
       if (d['t'] is Map) {
@@ -76,32 +78,45 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
     await _resolveTarget();
     if (!mounted || widget.upload['id'] != uid) return;
     setState(() {});
-    // Measured in the API queue: {pending: true} until done, so ask again
-    // every 3 s (up to ~2 minutes).
-    Future<void> one(dynamic fileId, void Function(Map<String, dynamic>?) put) async {
-      Map<String, dynamic>? s;
-      if (fileId != null) {
-        for (var i = 0; i < 40; i++) {
-          try {
-            final d = await context.read<AuthProvider>().authedQuery(
-              r'query($id: ID!) { fileAudioStats(id: $id) { pending failed sample_rate channels bitrate size duration loudness true_peak peak clipped cutoff lead_silence trail_silence } }',
-              {'id': '$fileId'},
-            );
-            final r = d['fileAudioStats'];
-            if (r is Map && r['pending'] != true) {
-              if (r['failed'] != true) s = Map<String, dynamic>.from(r);
-              break;
+    _measure(isNew: true);
+    _measure(isNew: false);
+  }
+
+  /// Measured in the API queue: {pending: true} until done, so ask again
+  /// every 3 s (up to ~2 minutes). [refresh] asks for a new measurement.
+  Future<void> _measure({required bool isNew, bool refresh = false}) async {
+    final uid = widget.upload['id'];
+    final fileId = (isNew ? _newFile : _curFile)['id'];
+    setState(() {
+      if (isNew) { _newDone = false; _newFailed = false; } else { _curDone = false; _curFailed = false; }
+    });
+    Map<String, dynamic>? s;
+    var failed = fileId != null;
+    if (fileId != null) {
+      for (var i = 0; i < 40; i++) {
+        try {
+          final d = await context.read<AuthProvider>().authedQuery(
+            r'query($id: ID!, $refresh: Boolean) { fileAudioStats(id: $id, refresh: $refresh) { pending failed sample_rate channels bitrate size duration loudness true_peak peak clipped cutoff lead_silence trail_silence } }',
+            {'id': '$fileId', 'refresh': refresh && i == 0},
+          );
+          final r = d['fileAudioStats'];
+          if (r is Map && r['pending'] != true) {
+            if (r['failed'] != true) {
+              s = Map<String, dynamic>.from(r);
+              failed = false;
             }
-            if (r == null) break;
-          } catch (_) {}
-          await Future.delayed(const Duration(seconds: 3));
-          if (!mounted || widget.upload['id'] != uid) return;
-        }
+            break;
+          }
+          if (r == null) break;
+        } catch (_) {}
+        await Future.delayed(const Duration(seconds: 3));
+        if (!mounted || widget.upload['id'] != uid) return;
       }
-      if (mounted && widget.upload['id'] == uid) setState(() => put(s));
     }
-    one(_newFile['id'], (s) { _newStats = s; _newDone = true; });
-    one(_curFile['id'], (s) { _curStats = s; _curDone = true; });
+    if (!mounted || widget.upload['id'] != uid) return;
+    setState(() {
+      if (isNew) { _newStats = s; _newDone = true; _newFailed = failed; } else { _curStats = s; _curDone = true; _curFailed = failed; }
+    });
   }
 
   static String _dec(num v, [int d = 1]) => v.toStringAsFixed(d).replaceAll('.', ',').replaceAll('-', '−');
@@ -109,6 +124,18 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
   static String _hz(num? v) => v == null ? '—' : (v % 1000 == 0 ? '${v ~/ 1000} kHz' : '${_dec(v / 1000)} kHz');
   static String _cut(num? v) => v == null ? '—' : v == 0 ? '< 11 kHz' : v >= 21000 ? '≥ 21 kHz' : '≈${v ~/ 1000} kHz';
   static String _mb(num? b) => b == null ? '—' : '${_dec(b / 1048576)} MB';
+
+  /// "Đo không được · Thử lại" in the column whose measuring failed.
+  Widget _retry(bool isNew) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        child: InkWell(
+          onTap: () => _measure(isNew: isNew, refresh: true),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: 'Đo không được · ', style: TextStyle(color: AppColors.errorText)),
+            TextSpan(text: 'Thử lại', style: TextStyle(color: AppColors.accentFg, decoration: TextDecoration.underline)),
+          ]), style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+        ),
+      );
 
   Widget _player({required String tag, required Color tagBg, required Widget sub, required Map file, required int seed}) {
     final url = file['audio_url'];
@@ -142,7 +169,6 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
   @override
   Widget build(BuildContext context) {
     final song = _song;
-    final artists = (((song?['artists'] is Map ? song!['artists']['data'] : null) as List?) ?? const []).whereType<Map>().map((a) => '${a['title'] ?? ''}').where((t) => t.isNotEmpty).join(', ');
     final muted = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary));
     final n = _newStats ?? const {}, c = _curStats ?? const {};
 
@@ -191,7 +217,8 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
             : InkWell(
                 onTap: () => context.push('/song/${song['id']}', extra: {...Map<String, dynamic>.from(song), 'file_type': _targetType}),
                 child: Text.rich(TextSpan(children: [
-                  TextSpan(text: '${song['title'] ?? ''}${artists.isNotEmpty ? ' — $artists' : ''} · '),
+                  // Who uploaded the file on the site now, like "X gửi" above.
+                  TextSpan(text: '${'${_curFile['user']?['username'] ?? ''}'.trim().isEmpty ? 'Không rõ người tải' : '${_curFile['user']['username']} gửi'} · '),
                   TextSpan(text: 'Mở bài ›', style: TextStyle(color: AppColors.accentFg)),
                 ]), style: muted, maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
@@ -221,8 +248,8 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
                   ]),
                 ),
                 // Rows past the first two come from the analysis.
-                cell(r.$3, better: r.$5 == 1, waiting: i >= 2 && i != 5 && !_newDone && _newFile['id'] != null),
-                cell(r.$4, better: r.$5 == -1, waiting: i >= 2 && i != 5 && !_curDone && _curFile['id'] != null),
+                if (i == 2 && _newFailed) _retry(true) else cell(r.$3, better: r.$5 == 1, waiting: i >= 2 && i != 5 && !_newDone && _newFile['id'] != null),
+                if (i == 2 && _curFailed) _retry(false) else cell(r.$4, better: r.$5 == -1, waiting: i >= 2 && i != 5 && !_curDone && _curFile['id'] != null),
               ]),
           ],
         ),
