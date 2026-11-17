@@ -76,16 +76,27 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
     await _resolveTarget();
     if (!mounted || widget.upload['id'] != uid) return;
     setState(() {});
+    // Measured in the API queue: {pending: true} until done, so ask again
+    // every 3 s (up to ~2 minutes).
     Future<void> one(dynamic fileId, void Function(Map<String, dynamic>?) put) async {
       Map<String, dynamic>? s;
       if (fileId != null) {
-        try {
-          final d = await context.read<AuthProvider>().authedQuery(
-            r'query($id: ID!) { fileAudioStats(id: $id) { sample_rate channels bitrate size duration loudness true_peak peak clipped cutoff lead_silence trail_silence } }',
-            {'id': '$fileId'},
-          );
-          if (d['fileAudioStats'] is Map) s = Map<String, dynamic>.from(d['fileAudioStats']);
-        } catch (_) {}
+        for (var i = 0; i < 40; i++) {
+          try {
+            final d = await context.read<AuthProvider>().authedQuery(
+              r'query($id: ID!) { fileAudioStats(id: $id) { pending failed sample_rate channels bitrate size duration loudness true_peak peak clipped cutoff lead_silence trail_silence } }',
+              {'id': '$fileId'},
+            );
+            final r = d['fileAudioStats'];
+            if (r is Map && r['pending'] != true) {
+              if (r['failed'] != true) s = Map<String, dynamic>.from(r);
+              break;
+            }
+            if (r == null) break;
+          } catch (_) {}
+          await Future.delayed(const Duration(seconds: 3));
+          if (!mounted || widget.upload['id'] != uid) return;
+        }
       }
       if (mounted && widget.upload['id'] == uid) setState(() => put(s));
     }
