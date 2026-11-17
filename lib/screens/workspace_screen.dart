@@ -36,10 +36,9 @@ class WorkspaceScreen extends StatefulWidget {
 const _todo = [
   ('pending', 'Bài gửi chờ duyệt', 'Bài gửi'),
   ('no_score', 'Thiếu bản nhạc', 'Bản nhạc'),
-  ('doc_request', 'Yêu cầu tư liệu', 'Yêu cầu'),
+  ('doc_request', 'Xử lý yêu cầu', 'Yêu cầu'),
   ('no_tag', 'Bài thiếu tag', 'Bản nhạc'),
-  ('comment_pending', 'Bình luận chờ duyệt', 'Bình luận'),
-  ('lost_file', 'Bài mất file', 'Bài hát'),
+  ('lost_file', 'Mất dữ liệu', 'Bài hát'),
   ('no_image', 'Bài mới thiếu ảnh', 'Bài hát'),
   ('no_lyric', 'Bài mới thiếu lời', 'Bài hát'),
 ];
@@ -62,7 +61,8 @@ const _commentObj = '__typename ... on Song { id title } ... on Folk { id title 
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
-  late String _queue = widget.queue ?? 'pending';
+  // An old link to a queue no longer listed (Bình luận chờ duyệt) lands on the uploads.
+  late String _queue = [..._todo, ..._done].any((q) => q.$1 == widget.queue) ? widget.queue! : 'pending';
   final Map<String, int> _counts = {};
   List<Map<String, dynamic>> _items = [];
   int _sel = 0;
@@ -122,7 +122,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_score': 'sheets(first: 1, where: $_noScoreWhere)',
       'no_tag': 'sheets(first: 1, untagged: true)',
       'doc_request': 'comments(first: 1, where: $_requestWhere)',
-      'comment_pending': 'comments(first: 1, where: $_commentPendingWhere)',
       'lost_file': 'songs(first: 1, where: {column: "empty_file", value: 1})',
       'no_image': 'songs(first: 1, where: $_noImageWhere)',
       'no_lyric': 'songs(first: 1, where: $_noLyricWhere)',
@@ -131,6 +130,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       try {
         final d = await _auth.authedQuery('query { $q }');
         if (mounted) setState(() { for (final k in keys) { _counts[k] = n(d[k]); } });
+        if (keys.contains('pending')) pendingUploads.value = _counts['pending'];
       } catch (_) {}
     }
     await Future.wait([
@@ -440,8 +440,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       constraints: const BoxConstraints(minWidth: 18),
                       height: 18,
                       alignment: Alignment.center,
-                      decoration: BoxDecoration(color: on ? AppColors.wine : AppColors.surfaceLight, borderRadius: BorderRadius.circular(9)),
-                      child: Text(short(_counts[k]), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.textSecondary))),
+                      decoration: BoxDecoration(color: on ? AppColors.wine : (_doneColors(k)?.$1 ?? AppColors.surfaceLight), borderRadius: BorderRadius.circular(9)),
+                      child: Text(short(_counts[k]), style: body(TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: on ? Colors.white : (_doneColors(k)?.$2 ?? AppColors.textSecondary)))),
                     ),
                   ),
               ]),
@@ -520,6 +520,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
+  /// Decided queues keep their own colour, so they read apart at a glance.
+  static (Color, Color)? _doneColors(String k) => switch (k) {
+        'not_sure' => (AppColors.isLight ? const Color(0xFFFFF4DE) : const Color(0xFF3A2E14), AppColors.warningText),
+        'rejected' => (AppColors.isLight ? const Color(0xFFFDE8E8) : const Color(0xFF3A1818), AppColors.errorText),
+        'approved' => (AppColors.isLight ? const Color(0xFFE5F3EA) : const Color(0xFF15301F), AppColors.successText),
+        _ => null,
+      };
+
   Widget _queueRow(String k, String label) => Padding(
         padding: const EdgeInsets.only(bottom: 2),
         child: Material(
@@ -540,8 +548,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     height: 24,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: k == _queue ? AppColors.wine : AppColors.surface, borderRadius: BorderRadius.circular(12)),
-                    child: Text(formatInt(_counts[k]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: k == _queue ? Colors.white : AppColors.textSecondary))),
+                    decoration: BoxDecoration(color: k == _queue ? AppColors.wine : (_doneColors(k)?.$1 ?? AppColors.surface), borderRadius: BorderRadius.circular(12)),
+                    child: Text(formatInt(_counts[k]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: k == _queue ? Colors.white : (_doneColors(k)?.$2 ?? AppColors.textSecondary)))),
                   ),
                 const SizedBox(width: 10),
               ]),

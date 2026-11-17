@@ -26,6 +26,10 @@ class ApiException implements Exception {
 /// Bumped after a song is loved/unloved, so counts elsewhere (menu trái) refresh.
 final ValueNotifier<int> lovesChanged = ValueNotifier(0);
 
+/// Uploads waiting for a decision, as Bàn làm việc last counted them, so the
+/// menu trái badge follows at once instead of on its 5-minute poll.
+final ValueNotifier<int?> pendingUploads = ValueNotifier(null);
+
 class ApiClient {
   /// Every HTTP call gives up after this long; the resulting TimeoutException
   /// is turned into "Mạng chậm quá…" by friendlyError().

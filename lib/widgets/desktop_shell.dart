@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'hover_effects.dart';
 import '../constants/theme.dart';
-import '../services/api.dart' show formatInt, lovesChanged;
+import '../services/api.dart' show formatInt, lovesChanged, pendingUploads;
 import '../services/auth.dart';
 import '../services/player.dart';
 import '../services/theme_provider.dart';
@@ -168,6 +168,12 @@ class _SideNavState extends State<_SideNav> {
   void initState() {
     super.initState();
     lovesChanged.addListener(_onLoves);
+    pendingUploads.addListener(_onPending);
+  }
+
+  void _onPending() {
+    final n = pendingUploads.value;
+    if (n != null && mounted && n != _pending) setState(() => _pending = n);
   }
 
   void _onLoves() {
@@ -190,6 +196,7 @@ class _SideNavState extends State<_SideNav> {
   @override
   void dispose() {
     lovesChanged.removeListener(_onLoves);
+    pendingUploads.removeListener(_onPending);
     _pendingTimer?.cancel();
     super.dispose();
   }
