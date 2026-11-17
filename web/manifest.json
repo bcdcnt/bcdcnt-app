@@ -1,11 +1,11 @@
 {
-    "name": "bcdcnt_flutter",
-    "short_name": "bcdcnt_flutter",
+    "name": "BCĐCNT",
+    "short_name": "BCĐCNT",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FAF5EB",
+    "theme_color": "#711313",
+    "description": "Bài ca đi cùng năm tháng — kho nhạc Việt Nam xưa",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

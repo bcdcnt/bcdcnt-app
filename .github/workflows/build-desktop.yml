@@ -94,7 +94,7 @@ jobs:
       # flutter create drops a Flutter-branded default app_icon.ico into
       # windows/runner/resources/ which is then compiled into the .exe
       # title-bar icon. Replace it with a multi-resolution ICO generated
-      # from store/windows/app_icon.png (nền đỏ rượu) so the Windows window shows
+      # from store/windows/app_icon.png (nền kem) so the Windows window shows
       # the BCĐCNT logo instead of the Flutter chevron. ImageMagick
       # ships pre-installed on GitHub's Windows runners.
       - name: Replace Windows app icon
