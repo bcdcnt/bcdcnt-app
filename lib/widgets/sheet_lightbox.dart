@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/theme.dart';
 
@@ -66,8 +67,32 @@ class _SheetLightboxState extends State<SheetLightbox> {
     _setScale(_currentIndex, cur > 1.5 ? 1.0 : 2.0);
   }
 
+  /// ←/→ previous/next image, Esc closes (desktop).
+  KeyEventResult _onKey(FocusNode _, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    int? to;
+    if (k == LogicalKeyboardKey.arrowRight) to = _currentIndex + 1;
+    if (k == LogicalKeyboardKey.arrowLeft) to = _currentIndex - 1;
+    if (to != null) {
+      if (to >= 0 && to < widget.images.length) {
+        _controller.animateToPage(to, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+      }
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      Navigator.maybePop(context);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
+    return Focus(autofocus: true, onKeyEvent: _onKey, child: _body(context));
+  }
+
+  Widget _body(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
