@@ -74,6 +74,8 @@ import 'screens/workspace_screen.dart';
 import 'screens/desktop_community_screen.dart';
 import 'widgets/keyboard_shortcuts.dart';
 import 'widgets/update_banner.dart';
+import 'widgets/splash_intro.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 // Conditional import — just_audio_media_kit pulls in libmpv via
 // media_kit_libs_audio, which we only want on Windows/Linux. The actual
 // gate lives in main() below so this import is harmless on all
@@ -131,7 +133,8 @@ void main() async {
   // to playback so songs keep going on the lock screen / home screen
   // (paired with UIBackgroundModes=audio in Info.plist).
   if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-    WidgetsFlutterBinding.ensureInitialized();
+    // Keep the OS splash up until SplashIntro has drawn the same frame.
+    FlutterNativeSplash.preserve(widgetsBinding: WidgetsFlutterBinding.ensureInitialized());
     final session = await AudioSession.instance;
     await session.configure(const AudioSessionConfiguration.music());
   }
@@ -239,9 +242,16 @@ class BcdcntApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider.value(value: OfflineStore.instance),
       ],
-      child: const _AuthPlayerBridge(
+      child: _AuthPlayerBridge(
         child: KeyboardShortcuts(
-          child: _AppRoot(),
+          // Mobile: the splash intro sits above the whole app (outside
+          // MaterialApp, so a theme remount can't replay it).
+          child: !kIsWeb && (Platform.isIOS || Platform.isAndroid)
+              ? const Directionality(
+                  textDirection: TextDirection.ltr,
+                  child: Stack(fit: StackFit.expand, children: [_AppRoot(), SplashIntro()]),
+                )
+              : const _AppRoot(),
         ),
       ),
     );

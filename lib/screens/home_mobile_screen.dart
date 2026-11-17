@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../widgets/splash_intro.dart' show homeReady;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -182,6 +183,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
       safe(ApiClient.query(_peopleQuery)),
       safe(ApiClient.query(_liveQuery)),
     ]);
+    homeReady.value = true;
     if (!mounted) return;
     if (r.every((x) => x == null)) {
       // Offline: a pull-to-refresh must not wipe a page that was fine a
