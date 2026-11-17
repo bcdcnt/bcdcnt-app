@@ -13,6 +13,7 @@ import '../services/upload_types.dart';
 import '../widgets/ui.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/same_recordings.dart';
+import '../widgets/same_sheets.dart';
 import '../widgets/sheet_lightbox.dart';
 import '../widgets/upload_thread.dart';
 
@@ -715,7 +716,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     final file = u['file'] is Map ? u['file'] as Map : const {};
     final dur = (file['duration'] as num?)?.toDouble();
-    final lyrics = '${u['content'] ?? ''}'.replaceAll(RegExp(r'<br\s*/?>'), '\n').replaceAll(RegExp(r'<[^>]+>'), '').trim();
+    final lyrics = u['type'] == 'sheet' ? '' : '${u['content'] ?? ''}'.replaceAll(RegExp(r'<br\s*/?>'), '\n').replaceAll(RegExp(r'<[^>]+>'), '').trim();
     final decided = _queue == 'approved';
     // Sheet scans (and other attached images) live as <img> in the content
     // HTML, plus the optional thumbnail — show them, not just the text.
@@ -777,9 +778,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       field('Ghi chú', u['note']?.toString()),
       field('Lý do', u['reason']?.toString()),
       SameRecordings(key: ValueKey('same-${u['id']}'), upload: u),
-      if (images.isNotEmpty) ...[
+      // Bản nhạc: the scans sent vs the composer's sheet in the archive
+      // (bản gốc + phiên bản), as on web /admin/gui-bai.
+      if (u['type'] == 'sheet')
+        SameSheets(key: ValueKey('sheets-${u['id']}'), upload: u)
+      else if (images.isNotEmpty) ...[
         const SizedBox(height: 16),
-        Text(u['type'] == 'sheet' ? 'ẢNH BẢN NHẠC · ${images.length}' : 'ẢNH GỬI KÈM · ${images.length}', style: AppText.eyebrow),
+        Text('ẢNH GỬI KÈM · ${images.length}', style: AppText.eyebrow),
         const SizedBox(height: 8),
         for (var i = 0; i < images.length; i++)
           Padding(
