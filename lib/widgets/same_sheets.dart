@@ -7,9 +7,9 @@ import 'sheet_lightbox.dart';
 
 /// Bàn làm việc, bài gửi loại bản nhạc — the same view as web /admin/gui-bai
 /// "Kiểm tra trùng": the scans being sent (blue box), then the archived
-/// sheet of the same title by the same composer: its "Bản gốc" and every
-/// "phiên bản" (revision), each as a strip of thumbnails; a tap opens the
-/// strip in the lightbox.
+/// sheet of the same title by the same composer: bản gốc and every phiên bản
+/// in ONE strip, a tile each (first scan + "Bản gốc"/who sent it, +N when
+/// more scans); a tap opens that version in the lightbox.
 class SameSheets extends StatefulWidget {
   final Map<String, dynamic> upload;
   const SameSheets({super.key, required this.upload});
@@ -23,10 +23,6 @@ List<String> sheetImages(dynamic html) =>
 
 String _norm(String x) => x.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 String _names(dynamic v) => (((v is Map ? v['data'] : v) as List?) ?? const []).whereType<Map>().map((e) => '${e['title'] ?? ''}').where((t) => t.isNotEmpty).join(', ');
-String _dmy(dynamic d) {
-  final t = DateTime.tryParse('${d ?? ''}');
-  return t == null ? '' : '${t.day.toString().padLeft(2, '0')}/${t.month.toString().padLeft(2, '0')}/${t.year}';
-}
 
 class _SameSheetsState extends State<SameSheets> {
   List<Map<String, dynamic>>? _same;
@@ -102,6 +98,53 @@ class _SameSheetsState extends State<SameSheets> {
     );
   }
 
+  Widget _versionTile(BuildContext context, String label, List<String> urls) {
+    final cap = TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white);
+    return MouseRegion(
+      cursor: urls.isEmpty ? SystemMouseCursors.basic : SystemMouseCursors.zoomIn,
+      child: GestureDetector(
+        onTap: urls.isEmpty ? null : () => Navigator.push(context, MaterialPageRoute(builder: (_) => SheetLightbox(images: urls))),
+        child: Container(
+          width: 104,
+          height: 140,
+          decoration: BoxDecoration(color: const Color(0xFFFFFDF7), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppColors.border)),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(fit: StackFit.expand, children: [
+            if (urls.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: cdnImg(urls.first, 400),
+                fit: BoxFit.cover,
+                alignment: Alignment.topCenter,
+                errorWidget: (_, _, _) => Icon(Icons.broken_image_outlined, color: AppColors.textMuted),
+              )
+            else
+              Center(child: Text('(không có ảnh)', style: body(TextStyle(fontSize: 11, color: AppColors.textMuted)))),
+            if (urls.length > 1)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(color: const Color(0xB8161112), borderRadius: BorderRadius.circular(6)),
+                  child: Text('+${urls.length - 1}', style: body(cap.copyWith(fontSize: 10))),
+                ),
+              ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                color: const Color(0xB8161112),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Text(label, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(cap)),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mine = sheetImages(widget.upload['content']);
@@ -119,42 +162,36 @@ class _SameSheetsState extends State<SameSheets> {
           _strip(mine, paper: Colors.white),
         ]),
       ),
-      if (same != null && same.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        Text('Đã có trong kho', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+      if (same != null && same.isNotEmpty)
         for (final s in same) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
-            child: Builder(builder: (context) {
-              final revs = ((s['revisions']?['data'] ?? []) as List).whereType<Map>().toList();
-              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _label('Bản gốc', AppColors.textMuted, size: 10),
-                _strip(sheetImages(s['content']), paper: const Color(0xFFFFFDF7)),
-                if (revs.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Divider(height: 1, color: AppColors.border),
-                  const SizedBox(height: 8),
-                  _label('${revs.length} phiên bản', AppColors.textMuted, size: 10),
-                  for (final r in revs) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 3),
-                      child: Text(
-                        '· ${'${r['title'] ?? ''}'.trim().isEmpty ? '(không tên)' : r['title']}'
-                        '${'${r['uploader']?['username'] ?? ''}'.isNotEmpty ? ' — ${r['uploader']['username']}' : ''}'
-                        '${_dmy(r['created_at']).isNotEmpty ? ' · ${_dmy(r['created_at'])}' : ''}',
-                        style: body(TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                      ),
-                    ),
-                    _strip(sheetImages(r['content']), paper: const Color(0xFFFFFDF7)),
-                  ],
-                ],
-              ]);
-            }),
-          ),
+          const SizedBox(height: 16),
+          Builder(builder: (context) {
+            // Gốc and phiên bản side by side in one strip, no ranking: one
+            // tile each (first scan + who sent it); the original says so.
+            final versions = <(String, List<String>)>[
+              ('Bản gốc', sheetImages(s['content'])),
+              for (final r in ((s['revisions']?['data'] ?? []) as List).whereType<Map>())
+                ('${r['uploader']?['username'] ?? ''}'.trim().isEmpty ? 'Phiên bản' : '${r['uploader']['username']}', sheetImages(r['content'])),
+            ];
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Đã có trong kho · ${versions.length} bản', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
+                child: SizedBox(
+                  height: 140,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: versions.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 6),
+                    itemBuilder: (context, i) => _versionTile(context, versions[i].$1, versions[i].$2),
+                  ),
+                ),
+              ),
+            ]);
+          }),
         ],
-      ],
     ]);
   }
 }
