@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:desktop_drop/desktop_drop.dart';
+import 'package:file_picker/file_picker.dart' show PlatformFile;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -198,6 +201,10 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
   Future<void> _pickMedia() async {
     final f = await pickMedia();
     if (f == null || !mounted) return;
+    _startMedia(f);
+  }
+
+  Future<void> _startMedia(PlatformFile f) async {
     setState(() {
       _file = null;
       _fileName = f.name;
@@ -230,9 +237,13 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
   Future<void> _pickImage() async {
     final files = await pickImages();
     if (files.isEmpty || !mounted) return;
+    _startImage(files.first);
+  }
+
+  Future<void> _startImage(PlatformFile f) async {
     setState(() => _imageBusy = true);
     try {
-      final img = await uploadImage(_auth, files.first);
+      final img = await uploadImage(_auth, f);
       if (mounted) setState(() => _image = img);
     } catch (e) {
       if (mounted) _snack(friendlyError(e, fallback: 'Chưa tải được ảnh lên.'), error: true);
@@ -243,6 +254,10 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
   Future<void> _pickSheet() async {
     final files = await pickImages(multiple: true);
     if (files.isEmpty || !mounted) return;
+    _addSheet(files);
+  }
+
+  Future<void> _addSheet(List<PlatformFile> files) async {
     setState(() => _sheetBusy = true);
     for (final f in files) {
       try {
@@ -253,6 +268,51 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
       }
     }
     if (mounted) setState(() => _sheetBusy = false);
+  }
+
+  Future<void> _pickFromLibrary() async {
+    final img = await _ImageLibrary.open(context);
+    if (img != null && mounted) setState(() => _image = img);
+  }
+
+  // ---- Kéo thả (desktop) ----
+  static const _audioExts = {'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'wma'};
+  static const _videoExts = {'mp4', 'mov', 'avi', 'flv', 'mpg', 'mpeg', 'wmv', '3gp'};
+  static const _imageExts = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'};
+  bool _dragging = false;
+
+  static bool get _canDrop =>
+      !kIsWeb && const {TargetPlatform.macOS, TargetPlatform.windows, TargetPlatform.linux}.contains(defaultTargetPlatform);
+
+  /// A recording dropped anywhere on the window fills "Tệp âm thanh"; images
+  /// go to the sheet pages, or to the illustration / document image.
+  Future<void> _onDrop(DropDoneDetails d) async {
+    setState(() => _dragging = false);
+    String ext(String n) => n.contains('.') ? n.split('.').last.toLowerCase() : '';
+    final media = d.files.where((f) => _audioExts.contains(ext(f.name)) || _videoExts.contains(ext(f.name))).toList();
+    final images = d.files.where((f) => _imageExts.contains(ext(f.name))).toList();
+    Future<PlatformFile> read(f) async {
+      final bytes = await f.readAsBytes();
+      return PlatformFile(name: f.name, size: bytes.length, bytes: bytes);
+    }
+
+    var used = false;
+    if (media.isNotEmpty && (_needsAudio || _needsVideo) && _fileProgress == null) {
+      used = true;
+      _startMedia(await read(media.first));
+    }
+    if (images.isNotEmpty && mounted) {
+      if (_isSheet && !_sheetBusy) {
+        used = true;
+        _addSheet([for (final f in images) await read(f)]);
+      } else if ((_needsMainImage || _optionalImage) && !_imageBusy) {
+        used = true;
+        _startImage(await read(images.first));
+      }
+    }
+    if (!used && mounted) {
+      _snack(media.isEmpty && images.isEmpty ? 'Chỉ nhận tệp nhạc, video hoặc ảnh.' : 'Loại bài này không nhận tệp đó. Chọn đúng loại trước, rồi kéo tệp vào.', error: true);
+    }
   }
 
   bool get _busy => _fileProgress != null || _imageBusy || _sheetBusy;
@@ -644,31 +704,79 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       DefaultTextStyle.merge(style: _labelStyle, child: _label(title, req: true, hint: hint)),
       _file == null && _fileProgress == null ? inner : _box(child: inner),
+      if (!isDesk(context)) ...[
+        const SizedBox(height: 10),
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 1), child: Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textMuted)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Chọn từ Tệp (Files) hoặc ghi âm sẵn trong máy. Tệp tải lên ngay, bạn vẫn điền tiếp được.',
+                style: body(TextStyle(fontSize: 13, height: 19 / 13, fontWeight: FontWeight.w500, color: AppColors.textMuted))),
+          ),
+        ]),
+      ],
     ]);
   }
 
-  Widget _imageBlock({required bool required, String label = 'Ảnh minh hoạ'}) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        DefaultTextStyle.merge(style: _labelStyle, child: _label(label, req: required, hint: required ? null : 'không bắt buộc')),
-        Wrap(spacing: 10, runSpacing: 10, children: [
-          if (_image?.url != null)
-            Stack(children: [
-              ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(_image!.url!, width: 104, height: 104, fit: BoxFit.cover)),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Material(
-                  color: Colors.black54,
-                  shape: const CircleBorder(),
-                  child: InkWell(customBorder: const CircleBorder(), onTap: () => setState(() => _image = null), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close_rounded, size: 16, color: Colors.white))),
-                ),
+  Widget _imageBlock({required bool required, String label = 'Ảnh minh hoạ'}) {
+    final desk = isDesk(context);
+    final preview = _image?.url == null
+        ? null
+        : Stack(children: [
+            ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(_image!.url!, width: 104, height: 104, fit: BoxFit.cover)),
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Material(
+                color: Colors.black54,
+                shape: const CircleBorder(),
+                child: InkWell(customBorder: const CircleBorder(), onTap: () => setState(() => _image = null), child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.close_rounded, size: 16, color: Colors.white))),
               ),
-            ]),
-          SizedBox(
-            width: 104,
-            child: _DashedButton(icon: Icons.add_photo_alternate_outlined, label: _image == null ? 'Chọn ảnh' : 'Đổi ảnh', height: 104, busy: _imageBusy, onTap: _pickImage),
+            ),
+          ]);
+    final head = DefaultTextStyle.merge(style: _labelStyle, child: _label(label, req: required, hint: required ? null : 'không bắt buộc'));
+    if (desk) {
+      // Canvas "Desktop · Gửi bài": a drop area + "Chọn từ thư viện ảnh".
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        head,
+        if (preview != null) ...[Align(alignment: Alignment.centerLeft, child: preview), const SizedBox(height: 12)],
+        _DashedButton(
+          icon: Icons.add_photo_alternate_outlined,
+          label: _canDrop ? (_image == null ? 'Kéo ảnh vào đây hoặc bấm để chọn' : 'Đổi ảnh: kéo vào đây hoặc bấm để chọn') : (_image == null ? 'Chọn ảnh' : 'Đổi ảnh'),
+          height: preview == null ? 150 : 96,
+          busy: _imageBusy,
+          onTap: _pickImage,
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 40,
+          child: OutlinedButton(
+            onPressed: _pickFromLibrary,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: AppColors.bg,
+              side: BorderSide(color: AppColors.border),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('Chọn từ thư viện ảnh', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
           ),
-        ]),
+        ),
       ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      head,
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        ?preview,
+        SizedBox(
+          width: 104,
+          child: _DashedButton(icon: Icons.add_photo_alternate_outlined, label: _image == null ? 'Chọn ảnh' : 'Đổi ảnh', height: 104, busy: _imageBusy, onTap: _pickImage),
+        ),
+        SizedBox(
+          width: 104,
+          child: _DashedButton(icon: Icons.photo_library_outlined, label: 'Thư viện ảnh BCĐCNT', height: 104, solid: true, onTap: _pickFromLibrary),
+        ),
+      ]),
+    ]);
+  }
 
   Widget _sheetBlock() => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         DefaultTextStyle.merge(style: _labelStyle, child: _label('Ảnh bản nhạc', req: true, hint: 'chọn nhiều ảnh, theo thứ tự trang')),
@@ -698,6 +806,10 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
   List<Widget> _mediaSection() => [
         if (_needsAudio || _needsVideo) _mediaBlock(),
         if (_needsAudio || _needsVideo) _field(_source, 'Nguồn bản thu', note: 'để tri ân người sưu tầm', hint: 'Đĩa than, băng cối, đài phát thanh… sưu tầm của ai', lines: 2),
+      ];
+
+  /// Pictures for the current type: document image, sheet pages, illustration.
+  List<Widget> _imageSection() => [
         if (_needsMainImage) _imageBlock(required: true, label: 'Ảnh tư liệu'),
         if (_isSheet) _sheetBlock(),
         if (_optionalImage) _imageBlock(required: false),
@@ -750,7 +862,8 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
       1 => _gap([
           ?_subType(),
           ..._mediaSection(),
-          if (_mediaSection().isEmpty) Text('Loại này không cần tệp. Bấm Tiếp tục để điền thông tin.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted))),
+          ..._imageSection(),
+          if (_mediaSection().isEmpty && _imageSection().isEmpty) Text('Loại này không cần tệp. Bấm Tiếp tục để điền thông tin.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted))),
         ], 20),
       _ => _gap([..._infoSection(), if (_needAgreement) _agreement()], 20),
     };
@@ -825,11 +938,17 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
     final allowed = _allowed(auth);
     final sub = _subType();
     final media = _mediaSection();
-    return SingleChildScrollView(
+    final images = _imageSection();
+    Widget card(List<Widget> ws) => Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+          child: _gap(ws, 18),
+        );
+    final page = SingleChildScrollView(
       padding: deskPad,
       child: DeskFrame(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const DeskHead(title: 'Gửi bài', subtitle: 'Chọn loại, điền thông tin và tải tệp lên'),
+          DeskHead(title: 'Gửi bài', subtitle: _canDrop ? 'Kéo thả tệp nhạc vào cửa sổ để bắt đầu nhanh' : 'Chọn loại, điền thông tin và tải tệp lên'),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final t in _types)
               if (allowed.contains(t.$1))
@@ -843,12 +962,8 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
             SizedBox(
               width: 380,
               child: _gap([
-                if (media.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
-                    child: _gap(media, 18),
-                  ),
+                if (media.isNotEmpty) card(media),
+                if (images.isNotEmpty) card(images),
                 if (_needAgreement) _agreement(),
                 PillButton(label: 'Gửi bài', icon: Icons.upload_rounded, height: 52, loading: _submitting, onTap: _submitting ? null : _submit),
               ], 20),
@@ -856,6 +971,37 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
           ]),
         ]),
       ),
+    );
+    if (!_canDrop) return page;
+    return DropTarget(
+      onDragEntered: (_) => setState(() => _dragging = true),
+      onDragExited: (_) => setState(() => _dragging = false),
+      onDragDone: _onDrop,
+      child: Stack(children: [
+        page,
+        if (_dragging)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.bg.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.accentFg, width: 2),
+                ),
+                child: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.file_download_outlined, size: 48, color: AppColors.accentFg),
+                    const SizedBox(height: 12),
+                    Text('Thả tệp để tải lên', style: display(TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.text))),
+                    const SizedBox(height: 6),
+                    Text('Tệp nhạc vào Tệp âm thanh, ảnh vào Ảnh minh hoạ', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted))),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+      ]),
     );
   }
 
@@ -997,8 +1143,10 @@ class _DashedButton extends StatelessWidget {
   final String label;
   final double height;
   final bool busy;
+  /// Plain bordered tile instead of the accent "drop here" outline.
+  final bool solid;
   final VoidCallback onTap;
-  const _DashedButton({required this.icon, required this.label, required this.height, required this.onTap, this.busy = false});
+  const _DashedButton({required this.icon, required this.label, required this.height, required this.onTap, this.busy = false, this.solid = false});
 
   @override
   Widget build(BuildContext context) => Material(
@@ -1009,14 +1157,15 @@ class _DashedButton extends StatelessWidget {
           onTap: busy ? null : onTap,
           child: Container(
             height: height,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.accentFg.withValues(alpha: 0.4), width: 1.2)),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: solid ? AppColors.border : AppColors.accentFg.withValues(alpha: 0.4), width: solid ? 1 : 1.2)),
             child: Center(
               child: busy
                   ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.accentFg))
                   : Column(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(icon, size: 26, color: AppColors.accentFg),
+                      Icon(icon, size: 26, color: solid ? AppColors.textSecondary : AppColors.accentFg),
                       const SizedBox(height: 6),
-                      Text(label, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
+                      Text(label, textAlign: TextAlign.center, style: body(TextStyle(fontSize: 13.5, height: 17 / 13.5, fontWeight: FontWeight.w700, color: solid ? AppColors.textSecondary : AppColors.accentFg))),
                     ]),
             ),
           ),
@@ -1024,8 +1173,8 @@ class _DashedButton extends StatelessWidget {
       );
 }
 
-/// "Chọn nhạc sĩ / nghệ sĩ…": search the archive, tick several, or add a
-/// name that isn't there yet (BQT creates it when approving). A bottom
+/// "Chọn nhạc sĩ / nghệ sĩ…": search the archive and tick several. A name
+/// that isn't there goes in "Ghi chú cho BQT" (canvas "Chọn nhạc sĩ"). A bottom
 /// sheet on phones, a dialog on desktop. Returns the new list, or null.
 class _PersonSearch extends StatefulWidget {
   final String title;
@@ -1090,14 +1239,14 @@ class _PersonSearchState extends State<_PersonSearch> {
       setState(() => _loading = true);
       final order = _hasYob ? '{column: "views", order: DESC}' : '{column: "title", order: ASC}';
       final where = q.trim().isEmpty ? '' : ', where: {column: "title", operator: LIKE, value: \$q}';
-      final fields = _hasYob ? 'id title yob' : 'id title';
+      final fields = _hasYob ? 'id title yob yod' : 'id title';
       try {
         final d = await ApiClient.query('query(\$q: Mixed) { ${widget.query}(first: 20$where, orderBy: [$order]) { data { $fields } } }', {'q': '%${q.trim()}%'});
         if (!mounted || _q.text != q) return;
         setState(() {
           _hits = [
             for (final m in ((d[widget.query]?['data'] ?? []) as List).whereType<Map>())
-              _Person('${m['id']}', '${m['title']}', (m['yob'] == null || '${m['yob']}' == '0') ? null : '${m['yob']}'),
+              _Person('${m['id']}', '${m['title']}', _life(m['yob'], m['yod'])),
           ];
           _loading = false;
         });
@@ -1105,6 +1254,15 @@ class _PersonSearchState extends State<_PersonSearch> {
         if (mounted) setState(() => _loading = false);
       }
     });
+  }
+
+  /// "1931 – 2013", "Sinh 1940", or nothing.
+  static String? _life(Object? yob, Object? yod) {
+    String? y(Object? v) => (v == null || '$v'.trim().isEmpty || '$v' == '0') ? null : '$v'.trim();
+    final b = y(yob), d = y(yod);
+    if (b != null && d != null) return '$b – $d';
+    if (b != null) return 'Sinh $b';
+    return d == null ? null : 'Mất $d';
   }
 
   bool _isPicked(_Person p) => _picked.any((x) => p.id != null ? x.id == p.id : x.title.toLowerCase() == p.title.toLowerCase());
@@ -1120,7 +1278,6 @@ class _PersonSearchState extends State<_PersonSearch> {
   @override
   Widget build(BuildContext context) {
     final typed = _q.text.trim();
-    final exact = _hits.any((h) => h.title.toLowerCase() == typed.toLowerCase());
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1142,7 +1299,7 @@ class _PersonSearchState extends State<_PersonSearch> {
           },
           style: body(TextStyle(fontSize: 17, color: AppColors.text)),
           decoration: InputDecoration(
-            hintText: 'Tìm tên…',
+            hintText: 'Tìm ${widget.title.toLowerCase()}',
             prefixIcon: Icon(Icons.search_rounded, color: AppColors.textSecondary),
             filled: true,
             fillColor: AppColors.surfaceLight,
@@ -1172,26 +1329,156 @@ class _PersonSearchState extends State<_PersonSearch> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 onTap: () => _toggle(h),
-                leading: CircleAvatar(radius: 22, backgroundColor: AppColors.accentSoft, child: Icon(Icons.person_outline_rounded, color: AppColors.accentFg)),
+                leading: CircleAvatar(radius: 22, backgroundColor: AppColors.accentSoft, child: Text(_initials(h.title), style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.accentFg)))),
                 title: Text(h.title, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
-                subtitle: h.yob == null ? null : Text('Sinh ${h.yob}', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
+                subtitle: h.yob == null ? null : Text(h.yob!, style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                 trailing: Icon(_isPicked(h) ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, color: _isPicked(h) ? AppColors.accentFg : AppColors.textMuted),
               ),
-            if (typed.length >= 2 && !exact)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                onTap: () {
-                  _toggle(_Person(null, typed));
-                  _q.clear();
-                  _search('');
-                },
-                leading: CircleAvatar(radius: 22, backgroundColor: AppColors.surface, child: Icon(Icons.add_rounded, color: AppColors.textSecondary)),
-                title: Text('Thêm “$typed”', style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
-                subtitle: Text('Chưa có trong kho, BQT sẽ tạo khi duyệt', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-              ),
+            if (!_loading && _hits.isEmpty && typed.length >= 2)
+              Padding(padding: const EdgeInsets.all(24), child: Text('Không tìm thấy “$typed” trong kho', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))),
             if (!_loading && _hits.isEmpty && typed.length < 2)
               Padding(padding: const EdgeInsets.all(24), child: Text('Gõ tên để tìm', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))),
           ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Text.rich(
+            const TextSpan(children: [
+              TextSpan(text: 'Không thấy tên? Ghi vào '),
+              TextSpan(text: 'Ghi chú cho BQT', style: TextStyle(fontWeight: FontWeight.w700)),
+              TextSpan(text: ', BQT sẽ thêm người mới khi duyệt.'),
+            ]),
+            style: body(TextStyle(fontSize: 13, height: 19 / 13, color: AppColors.textMuted)),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+String _initials(String name) {
+  final w = name.split(RegExp(r'[\s–-]+')).where((x) => x.isNotEmpty).map((x) => x[0]).toList();
+  if (w.isEmpty) return '?';
+  return (w.length == 1 ? w.first : '${w.first}${w.length > 2 ? w[1] : w.last}').toUpperCase();
+}
+
+/// "Thư viện ảnh BCĐCNT": the images this account already uploaded
+/// (me.images, newest first, same list as the web's MediaLibrary). Returns
+/// the picked image, or null.
+class _ImageLibrary extends StatefulWidget {
+  const _ImageLibrary();
+
+  static Future<UploadedImage?> open(BuildContext context) {
+    const w = _ImageLibrary();
+    if (isDesk(context)) {
+      return showDialog<UploadedImage>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: AppColors.bg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 640, maxHeight: 640), child: w),
+        ),
+      );
+    }
+    return showModalBottomSheet<UploadedImage>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.bg,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => SizedBox(height: MediaQuery.sizeOf(ctx).height * 0.82, child: w),
+    );
+  }
+
+  @override
+  State<_ImageLibrary> createState() => _ImageLibraryState();
+}
+
+class _ImageLibraryState extends State<_ImageLibrary> {
+  final _items = <UploadedImage>[];
+  int _page = 0, _last = 1;
+  bool _loading = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _more();
+  }
+
+  Future<void> _more() async {
+    if (_loading || _page >= _last) return;
+    setState(() => _loading = true);
+    try {
+      final d = await context.read<AuthProvider>().authedQuery(
+          r'query($page: Int) { me { images(first: 48, page: $page, orderBy: [{column: "id", order: DESC}]) { data { id url } paginatorInfo { currentPage lastPage } } } }',
+          {'page': _page + 1});
+      final imgs = d['me']?['images'];
+      if (!mounted) return;
+      setState(() {
+        for (final m in ((imgs?['data'] ?? []) as List).whereType<Map>()) {
+          if (m['url'] != null) _items.add((id: '${m['id']}', url: '${m['url']}'));
+        }
+        _page = (imgs?['paginatorInfo']?['currentPage'] as num?)?.toInt() ?? _page + 1;
+        _last = (imgs?['paginatorInfo']?['lastPage'] as num?)?.toInt() ?? _page;
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = friendlyError(e, fallback: 'Chưa tải được thư viện ảnh.');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final desk = isDesk(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (!desk) Center(child: Container(width: 40, height: 5, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(3)))),
+        SizedBox(
+          height: 56,
+          child: Row(children: [
+            Expanded(child: Text('Thư viện ảnh của bạn', style: display(TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.text)))),
+            IconButton(tooltip: 'Đóng', onPressed: () => Navigator.pop(context), icon: Icon(Icons.close_rounded, color: AppColors.textSecondary)),
+          ]),
+        ),
+        Text('Ảnh bạn đã tải lên BCĐCNT. Bấm một ảnh để dùng.', style: body(TextStyle(fontSize: 13.5, color: AppColors.textMuted))),
+        const SizedBox(height: 12),
+        Expanded(
+          child: _items.isEmpty
+              ? Center(
+                  child: _loading
+                      ? CircularProgressIndicator(color: AppColors.accentFg)
+                      : Text(_error ?? 'Bạn chưa tải ảnh nào lên.', textAlign: TextAlign.center, style: body(TextStyle(fontSize: 15, color: AppColors.textMuted))),
+                )
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n.metrics.extentAfter < 300) _more();
+                    return false;
+                  },
+                  child: GridView.builder(
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: desk ? 140 : 120, mainAxisSpacing: 8, crossAxisSpacing: 8),
+                    itemCount: _items.length + (_page < _last ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i >= _items.length) return Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.accentFg)));
+                      final it = _items[i];
+                      return Material(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        clipBehavior: Clip.antiAlias,
+                        child: InkWell(
+                          onTap: () => Navigator.pop(context, it),
+                          child: Image.network(it.url!, fit: BoxFit.cover, cacheWidth: 280, errorBuilder: (_, _, _) => Icon(Icons.broken_image_outlined, color: AppColors.textMuted)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
         ),
       ]),
     );
