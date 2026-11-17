@@ -38,7 +38,8 @@ class _SameRecordingsState extends State<SameRecordings> {
   Future<void> _load() async {
     final u = widget.upload;
     final type = '${u['type'] ?? ''}';
-    if (type != 'song' && type != 'replace') {
+    // A replacement has its own side-by-side (ReplaceCompare).
+    if (type != 'song') {
       if (_same.isNotEmpty) setState(() => _same = const []);
       return;
     }

@@ -413,7 +413,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
 
   static const _uploadTypeLabels = {
     'song': 'Tân nhạc', 'folk': 'Dân ca', 'instrumental': 'Khí nhạc', 'karaoke': 'Bản thu',
-    'poem': 'Tiếng thơ', 'beat': 'Nhạc nền', 'replace': 'Bổ sung bản ghi', 'sheet': 'Bản nhạc',
+    'poem': 'Tiếng thơ', 'beat': 'Nhạc nền', 'replace': 'Thay thế bản thu chất lượng', 'sheet': 'Bản nhạc',
     'document_audio': 'Tư liệu âm thanh', 'document_image': 'Tư liệu hình ảnh',
     'document_video': 'Tư liệu video', 'document_news': 'Bài viết',
   };

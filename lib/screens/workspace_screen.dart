@@ -13,6 +13,7 @@ import '../services/upload_types.dart';
 import '../widgets/ui.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/same_recordings.dart';
+import '../widgets/replace_compare.dart';
 import '../widgets/same_sheets.dart';
 import '../widgets/upload_thread.dart';
 
@@ -85,7 +86,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
 
-  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title sheet { composers(first: 3) { data { title } } } } }';
+  static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate is_hq } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title slug artists(first: 3) { data { title } } file { id audio_url duration bitrate is_hq } sheet { composers(first: 3) { data { title } } } } }';
 
 
   @override
@@ -739,7 +740,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       const SizedBox(height: 6),
       Text('${u['title'] ?? '(chưa có tên)'}', style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
       const SizedBox(height: 16),
-      if (file['audio_url'] != null) ...[
+      // Thay thế bản thu chất lượng: the recording sent beside the one on the
+      // site now, with both technical sheets.
+      if (u['type'] == 'replace')
+        ReplaceCompare(key: ValueKey('rc-${u['id']}'), upload: u)
+      else if (file['audio_url'] != null) ...[
         // The recording right here, as on the upload page; keyed so a new
         // upload starts from its own waveform.
         Container(

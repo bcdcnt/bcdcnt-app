@@ -1,0 +1,221 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../constants/theme.dart';
+import '../services/auth.dart';
+import 'waveform_player.dart';
+
+/// Bàn làm việc, "Thay thế bản thu chất lượng": the recording sent and the
+/// one on the site now, each with its own player, then their technical
+/// sheets side by side (API fileAudioStats, measured once with ffmpeg);
+/// the better value of a measurable row is green with ▲.
+class ReplaceCompare extends StatefulWidget {
+  final Map<String, dynamic> upload;
+  const ReplaceCompare({super.key, required this.upload});
+
+  @override
+  State<ReplaceCompare> createState() => _ReplaceCompareState();
+}
+
+class _ReplaceCompareState extends State<ReplaceCompare> {
+  Map<String, dynamic>? _newStats, _curStats;
+  bool _newDone = false, _curDone = false;
+
+  Map get _newFile => widget.upload['file'] is Map ? widget.upload['file'] as Map : const {};
+  /// The recording being replaced: the upload's object, else the archive link
+  /// it carries (".../bai-hat/slug-21.html"), as web /admin/gui-bai does.
+  Map? _target;
+  String _targetType = 'song';
+  Map? get _song => _target;
+
+  static const _routeType = {'bai-hat': 'song', 'dan-ca': 'folk', 'khi-nhac': 'instrumental', 'tieng-tho': 'poem', 'thanh-vien-hat': 'karaoke'};
+
+  Future<void> _resolveTarget() async {
+    final u = widget.upload;
+    if (u['object'] is Map && (u['object'] as Map)['id'] != null) {
+      _target = u['object'] as Map;
+      _targetType = 'song';
+      return;
+    }
+    RegExpMatch? m;
+    for (final x in [u['link'], u['title']]) {
+      m = RegExp(r'/(bai-hat|dan-ca|khi-nhac|tieng-tho|thanh-vien-hat)/[^/]+-(\d+)\.html').firstMatch('${x ?? ''}');
+      if (m != null) break;
+    }
+    if (m == null) return;
+    final type = _routeType[m.group(1)]!;
+    final withArtists = const {'song', 'folk', 'instrumental'}.contains(type);
+    try {
+      final d = await context.read<AuthProvider>().authedQuery(
+        'query(\$id: ID!) { t: $type(id: \$id) { id title ${withArtists ? 'artists(first: 3) { data { title } }' : ''} file { id audio_url duration bitrate is_hq } } }',
+        {'id': m.group(2)},
+      );
+      if (d['t'] is Map) {
+        _target = Map<String, dynamic>.from(d['t']);
+        _targetType = type;
+      }
+    } catch (_) {}
+  }
+  Map get _curFile => _song?['file'] is Map ? _song!['file'] as Map : const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(ReplaceCompare old) {
+    super.didUpdateWidget(old);
+    if (old.upload['id'] != widget.upload['id']) _load();
+  }
+
+  Future<void> _load() async {
+    final uid = widget.upload['id'];
+    setState(() { _newStats = _curStats = null; _newDone = _curDone = false; _target = null; });
+    await _resolveTarget();
+    if (!mounted || widget.upload['id'] != uid) return;
+    setState(() {});
+    Future<void> one(dynamic fileId, void Function(Map<String, dynamic>?) put) async {
+      Map<String, dynamic>? s;
+      if (fileId != null) {
+        try {
+          final d = await context.read<AuthProvider>().authedQuery(
+            r'query($id: ID!) { fileAudioStats(id: $id) { sample_rate channels bitrate size duration loudness true_peak peak clipped cutoff lead_silence trail_silence } }',
+            {'id': '$fileId'},
+          );
+          if (d['fileAudioStats'] is Map) s = Map<String, dynamic>.from(d['fileAudioStats']);
+        } catch (_) {}
+      }
+      if (mounted && widget.upload['id'] == uid) setState(() => put(s));
+    }
+    one(_newFile['id'], (s) { _newStats = s; _newDone = true; });
+    one(_curFile['id'], (s) { _curStats = s; _curDone = true; });
+  }
+
+  static String _dec(num v, [int d = 1]) => v.toStringAsFixed(d).replaceAll('.', ',').replaceAll('-', '−');
+  static String _dur(num? s) => s == null ? '—' : '${s ~/ 60}:${(s.round() % 60).toString().padLeft(2, '0')}';
+  static String _hz(num? v) => v == null ? '—' : (v % 1000 == 0 ? '${v ~/ 1000} kHz' : '${_dec(v / 1000)} kHz');
+  static String _cut(num? v) => v == null ? '—' : v == 0 ? '< 11 kHz' : v >= 21000 ? '≥ 21 kHz' : '≈${v ~/ 1000} kHz';
+  static String _mb(num? b) => b == null ? '—' : '${_dec(b / 1048576)} MB';
+
+  Widget _player({required String tag, required Color tagBg, required Widget sub, required Map file, required int seed}) {
+    final url = file['audio_url'];
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 20, 14),
+      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(color: tagBg, borderRadius: BorderRadius.circular(6)),
+            child: Text(tag, style: body(const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: Colors.white))),
+          ),
+          const SizedBox(width: 8),
+          Flexible(child: sub),
+        ]),
+        const SizedBox(height: 8),
+        if (url == null)
+          Text('Không có file', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)))
+        else
+          WaveformPlayer(
+            key: ValueKey('rc-$seed-$url'),
+            audioUrl: '$url',
+            seed: seed,
+            durationHint: (file['duration'] as num?)?.toDouble(),
+          ),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final song = _song;
+    final artists = (((song?['artists'] is Map ? song!['artists']['data'] : null) as List?) ?? const []).whereType<Map>().map((a) => '${a['title'] ?? ''}').where((t) => t.isNotEmpty).join(', ');
+    final muted = body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary));
+    final n = _newStats ?? const {}, c = _curStats ?? const {};
+
+    // (label, hint, new, current, which is better: 1 new, -1 current, 0 none)
+    int cmp(num? a, num? b, {bool higher = true}) => a == null || b == null || a == b ? 0 : ((a > b) == higher ? 1 : -1);
+    final rows = <(String, String?, String, String, int)>[
+      ('Thời lượng', null, _dur(n['duration'] ?? _newFile['duration']), _dur(c['duration'] ?? _curFile['duration']), 0),
+      ('Bitrate', null, '${n['bitrate'] ?? _newFile['bitrate'] ?? '—'} kbps', '${c['bitrate'] ?? _curFile['bitrate'] ?? '—'} kbps', cmp(n['bitrate'] ?? _newFile['bitrate'], c['bitrate'] ?? _curFile['bitrate'])),
+      ('Tần số lấy mẫu', null, _hz(n['sample_rate']), _hz(c['sample_rate']), cmp(n['sample_rate'], c['sample_rate'])),
+      ('Kênh', null, n['channels'] == null ? '—' : (n['channels'] == 1 ? 'Mono' : 'Stereo'), c['channels'] == null ? '—' : (c['channels'] == 1 ? 'Mono' : 'Stereo'), cmp(n['channels'], c['channels'])),
+      ('Dung lượng', null, _mb(n['size']), _mb(c['size']), 0),
+      ('Chất lượng cao (HQ)', null, _newFile['is_hq'] == 1 ? 'Đã đánh dấu' : '—', _curFile['is_hq'] == 1 ? 'Đã đánh dấu' : 'Chưa đánh dấu', 0),
+      ('Độ to', 'âm lượng cảm nhận, EBU R128', n['loudness'] == null ? '—' : '${_dec(n['loudness'])} LUFS', c['loudness'] == null ? '—' : '${_dec(c['loudness'])} LUFS', 0),
+      ('Đỉnh · cắt đỉnh', 'méo do vượt 0 dB', n['peak'] == null ? '—' : '${_dec(n['peak'])} dBFS · ${n['clipped'] ?? 0} chỗ', c['peak'] == null ? '—' : '${_dec(c['peak'])} dBFS · ${c['clipped'] ?? 0} chỗ', cmp(n['clipped'], c['clipped'], higher: false)),
+      ('Tần số cắt', 'thấp = nâng bitrate giả / bản gốc kém', _cut(n['cutoff']), _cut(c['cutoff']), cmp(n['cutoff'], c['cutoff'])),
+      ('Lặng đầu · cuối', '0 s ở đầu có thể bị cụt', n['lead_silence'] == null ? '—' : '${_dec(n['lead_silence'])} s · ${_dec(n['trail_silence'] ?? 0)} s', c['lead_silence'] == null ? '—' : '${_dec(c['lead_silence'])} s · ${_dec(c['trail_silence'] ?? 0)} s', 0),
+    ];
+
+    Widget cell(String text, {bool better = false, bool waiting = false}) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Text(
+            waiting ? 'Đang phân tích…' : (better ? '$text ▲' : text),
+            style: body(TextStyle(
+              fontSize: 14,
+              fontWeight: better ? FontWeight.w800 : FontWeight.w700,
+              color: waiting ? AppColors.textMuted : (better ? AppColors.successText : AppColors.text),
+            )),
+          ),
+        );
+    final head = body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 0.6, color: AppColors.textMuted));
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _player(
+        tag: 'BẢN GỬI MỚI',
+        tagBg: AppColors.accent,
+        sub: Text('${widget.upload['user']?['username'] ?? ''} gửi', style: muted),
+        file: _newFile,
+        seed: int.tryParse('${widget.upload['id']}') ?? 0,
+      ),
+      const SizedBox(height: 10),
+      _player(
+        tag: 'BẢN HIỆN TẠI',
+        tagBg: const Color(0xFF3B3335),
+        sub: song == null
+            ? Text('Không tìm thấy bài đang thay', style: muted)
+            : InkWell(
+                onTap: () => context.push('/song/${song['id']}', extra: {...Map<String, dynamic>.from(song), 'file_type': _targetType}),
+                child: Text.rich(TextSpan(children: [
+                  TextSpan(text: '${song['title'] ?? ''}${artists.isNotEmpty ? ' — $artists' : ''} · '),
+                  TextSpan(text: 'Mở bài ›', style: TextStyle(color: AppColors.accentFg)),
+                ]), style: muted, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+        file: _curFile,
+        seed: int.tryParse('${song?['id']}') ?? 1,
+      ),
+      const SizedBox(height: 14),
+      Container(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.border)),
+        clipBehavior: Clip.antiAlias,
+        child: Table(
+          columnWidths: const {0: FixedColumnWidth(200), 1: FlexColumnWidth(), 2: FlexColumnWidth()},
+          border: TableBorder(horizontalInside: BorderSide(color: AppColors.borderSubtle)),
+          children: [
+            TableRow(decoration: BoxDecoration(color: AppColors.surface), children: [
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), child: Text('THÔNG SỐ', style: head)),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), child: Text('BẢN GỬI MỚI', style: head.copyWith(color: AppColors.accentFg))),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), child: Text('BẢN HIỆN TẠI', style: head)),
+            ]),
+            for (final (i, r) in rows.indexed)
+              TableRow(children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(r.$1, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted))),
+                    if (r.$2 != null) Text(r.$2!, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                  ]),
+                ),
+                // Rows past the first two come from the analysis.
+                cell(r.$3, better: r.$5 == 1, waiting: i >= 2 && i != 5 && !_newDone && _newFile['id'] != null),
+                cell(r.$4, better: r.$5 == -1, waiting: i >= 2 && i != 5 && !_curDone && _curFile['id'] != null),
+              ]),
+          ],
+        ),
+      ),
+    ]);
+  }
+}

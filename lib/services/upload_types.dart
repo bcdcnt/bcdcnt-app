@@ -5,7 +5,7 @@ const kUploadTypeLabels = {
   'instrumental': 'Khí nhạc',
   'karaoke': 'Bản thu',
   'poem': 'Tiếng thơ',
-  'replace': 'Bổ sung bản ghi',
+  'replace': 'Thay thế bản thu chất lượng',
   'document_audio': 'Tư liệu âm thanh',
   'document_image': 'Tư liệu hình ảnh',
   'document_video': 'Tư liệu video',

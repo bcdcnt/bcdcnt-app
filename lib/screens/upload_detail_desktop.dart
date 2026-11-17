@@ -498,7 +498,7 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
   Widget _header() {
     final u = _u!;
     final own = '${u['title'] ?? ''}'.trim();
-    final title = _type == 'replace' && (own.isEmpty || own.startsWith('http')) ? 'Bổ sung bản ghi' : (own.isEmpty ? '(Không tên)' : own);
+    final title = _type == 'replace' && (own.isEmpty || own.startsWith('http')) ? 'Thay thế bản thu chất lượng' : (own.isEmpty ? '(Không tên)' : own);
     final eyebrow = AppText.eyebrow;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
