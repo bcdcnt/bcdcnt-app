@@ -61,7 +61,12 @@ const _commentPendingWhere = '{column: "status", value: 0}';
 /// "Nhờ bạn giúp sức" strip shows the same totals).
 const _noImageWhere = '{column: "image_id", operator: IS_NULL}';
 const _noLyricWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
-const _commentObj = '__typename ... on Song { id title } ... on Folk { id title } ... on Instrumental { id title } ... on Poem { id title } ... on Karaoke { id title } ... on Sheet { id title }';
+const _commentObj = '__typename ... on Song { id title } ... on Folk { id title } ... on Instrumental { id title } ... on Poem { id title } ... on Karaoke { id title } ... on Sheet { id title }'
+    ' ... on Composer { id title slug } ... on Artist { id title slug } ... on Poet { id title slug } ... on Recomposer { id title slug }'
+    ' ... on Document { id title } ... on Discussion { id title } ... on Playlist { id title }';
+/// Pages other than recordings/sheets that carry comments → their app route.
+const _personPaths = {'Composer': 'nhac-si', 'Artist': 'nghe-si', 'Poet': 'nha-tho', 'Recomposer': 'soan-gia'};
+const _idPaths = {'Document': 'tu-lieu/chi-tiet', 'Discussion': 'thao-luan', 'Playlist': 'playlist'};
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
@@ -133,7 +138,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     };
     Future<void> ask(Iterable<String> keys, String q) async {
       try {
-        final d = await _auth.authedQuery('query { $q }');
+        final d = await _auth.authedQuery('query { $q }', null, true);
         if (mounted) setState(() { for (final k in keys) { _counts[k] = n(d[k]); } });
         if (keys.contains('pending')) pendingUploads.value = _counts['pending'];
       } catch (_) {}
@@ -161,7 +166,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       _ => ('uploads', 'uploads(first: 40, page: 1, where: {column: "status", value: "$queue"}, orderBy: [$order]) { data { $_fields } }'),
     };
     try {
-      final d = await _auth.authedQuery('query { $q }');
+      final d = await _auth.authedQuery('query { $q }', null, true);
       if (!mounted || queue != _queue) return;
       setState(() {
         _items = ((d[root]?['data'] ?? []) as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
@@ -649,6 +654,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         context.push('/song/${obj!['id']}?binh-luan=1', extra: {...Map<String, dynamic>.from(obj), 'file_type': _fileTypes[tn], 'highlightCommentId': '${u['id']}'});
       } else if (tn == 'Sheet') {
         context.push('/sheet/${obj!['id']}');
+      } else if (_personPaths.containsKey(tn) && '${obj!['slug'] ?? ''}'.isNotEmpty) {
+        context.push('/${_personPaths[tn]}/${obj['slug']}');
+      } else if (_idPaths.containsKey(tn)) {
+        context.push('/${_idPaths[tn]}/${obj!['id']}');
+      } else {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('App chưa mở được trang của bình luận này. Xử lý trên web.')));
       }
     }
     final songs = (u['songs']?['paginatorInfo']?['total'] as num?)?.toInt();
