@@ -6,6 +6,7 @@ import '../constants/theme.dart';
 import 'package:provider/provider.dart';
 import '../services/api.dart';
 import '../services/auth.dart';
+import '../widgets/comment_actions.dart' show requestBadge, RequestHandIcon;
 import '../widgets/song_row.dart' show playOrOpen;
 import '../widgets/top_members_rail.dart';
 import '../widgets/ui.dart';
@@ -37,7 +38,7 @@ const _objFields = '''
 const _latestPage = 20;
 const _latestQuery = '''query(\$page: Int, \$where: WhereConditions) {
     latestComments(first: $_latestPage, orderBy: [{column: "created_at", order: DESC}], page: \$page, where: \$where) {
-      data { id content likes created_at is_request is_featured user { id username avatar { url } } object { $_objFields } }
+      data { id content likes created_at is_request request_status processRequestUser { username } is_featured user { id username avatar { url } } object { $_objFields } }
     }
   }''';
 
@@ -382,13 +383,27 @@ class CommentTile extends StatelessWidget {
                     onTap: userId != null ? openUser : null,
                     child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
                   )),
-                  if ('${comment['is_request'] ?? 0}' == '1') ...[
+                  if (requestBadge(comment) case final b?) ...[
                     const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8)),
-                      child: Text('Yêu cầu', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
-                    ),
+                    // Status of the request (canvas Desktop_CongDong_BinhLuan, 18/11):
+                    // grey "Yêu cầu" until handled, then the outcome in its colour.
+                    Builder(builder: (ctx) {
+                      final pending = comment['request_status'] == null;
+                      final who = comment['processRequestUser']?['username'];
+                      final fg = pending ? AppColors.textSecondary : Color.lerp(b.color, AppColors.text, 0.35)!; // deeper, for small text
+                      return Tooltip(
+                        message: !pending && who != null ? '${b.label} bởi $who' : b.label,
+                        triggerMode: MediaQuery.sizeOf(ctx).width < 900 ? TooltipTriggerMode.tap : null,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                          decoration: BoxDecoration(color: pending ? AppColors.surface : b.color.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(8)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            if (!pending) ...[RequestHandIcon(size: 11, color: fg), const SizedBox(width: 4)],
+                            Text(b.label, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg))),
+                          ]),
+                        ),
+                      );
+                    }),
                   ],
                   const SizedBox(width: 8),
                   Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
