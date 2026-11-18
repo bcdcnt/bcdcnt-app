@@ -980,7 +980,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
     // Dòng tác giả cho băng desktop (B2): mỗi vai trò một dòng, ngay dưới tên
     // bài — dùng _webCreditLine/_creditLinkRow.
-    final desktopCredits = <Widget>[];
+    final desktopCredits = <_CreditLine>[];
     if (composers.isNotEmpty) {
       desktopCredits.add(_webCreditLine('Sáng tác', [
         ..._creditLinkRow(composers, 'title', (c) => context.push('/nhac-si/${c['slug']}')),
@@ -1145,7 +1145,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         },
                         onArtworkTap: heroVideo != null ? null : _openArtworkLightbox,
                         videoPlayer: heroVideo,
-                        credits: desktopCredits.isEmpty ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: desktopCredits),
+                        credits: desktopCredits.isEmpty ? null : _CreditLine.table(context, desktopCredits),
                         uploadDate: uploadDate,
                       )
                     else ...[
@@ -1759,32 +1759,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
   // Dòng tác giả trên băng (phương án B2): nhãn vai trò thẳng cột bên trái
   // (chữ mờ), tên trắng đậm bên phải, mỗi vai trò một dòng.
-  Widget _webCreditLine(String label, List<InlineSpan> valueSpans) {
-    // "Lời: phỏng thơ": nhãn "Lời", phần sau dấu ":" đứng đầu giá trị.
-    final i = label.indexOf(':');
-    final head = i < 0 ? label : label.substring(0, i).trim();
-    final lead = i < 0 ? '' : label.substring(i + 1).trim();
-    final scaler = MediaQuery.textScalerOf(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
-        SizedBox(
-          width: 96,
-          child: Text(head, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w600, color: _creditMuted))),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: RichText(
-            textScaler: scaler,
-            text: TextSpan(style: body(const TextStyle(fontSize: 16, height: 1.5, fontWeight: FontWeight.w800, color: Colors.white)), children: [
-              if (lead.isNotEmpty) TextSpan(text: '$lead '),
-              ...valueSpans,
-            ]),
-          ),
-        ),
-      ]),
-    );
-  }
+  _CreditLine _webCreditLine(String label, List<InlineSpan> valueSpans) => _CreditLine(label, valueSpans);
+
 
   // Link tên (nhạc sĩ/ca sĩ…) kiểu web: 16px đậm màu chữ, KHÔNG gạch chân,
   // con trỏ tay khi rê. Khác _linkRow (đỏ + gạch chân dùng cho chỗ khác).
@@ -2516,4 +2492,45 @@ class _GroovesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_GroovesPainter old) => false;
+}
+
+/// One "Nhãn  Giá trị" line of the desktop hero. Lines are laid out together
+/// by [table] so the label column fits the longest label ("Đệm đàn đáy"),
+/// never narrower than the old 96 px.
+class _CreditLine extends StatelessWidget {
+  final String label;
+  final List<InlineSpan> valueSpans;
+  const _CreditLine(this.label, this.valueSpans);
+
+  static const _style = TextStyle(fontSize: 16, height: 1.5);
+
+  // "Lời: phỏng thơ": nhãn "Lời", phần sau dấu ":" đứng đầu giá trị.
+  String get _head { final i = label.indexOf(':'); return i < 0 ? label : label.substring(0, i).trim(); }
+  String get _lead { final i = label.indexOf(':'); return i < 0 ? '' : label.substring(i + 1).trim(); }
+
+  Widget _label() => Padding(
+        padding: const EdgeInsets.only(right: 12, bottom: 2),
+        child: Text(_head, maxLines: 1, softWrap: false, style: body(_style.copyWith(fontWeight: FontWeight.w600, color: _SongDetailScreenState._creditMuted))),
+      );
+
+  Widget _value(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: RichText(
+          textScaler: MediaQuery.textScalerOf(context),
+          text: TextSpan(style: body(_style.copyWith(fontWeight: FontWeight.w800, color: Colors.white)), children: [
+            if (_lead.isNotEmpty) TextSpan(text: '$_lead '),
+            ...valueSpans,
+          ]),
+        ),
+      );
+
+  static Widget table(BuildContext context, Iterable<_CreditLine> lines) => Table(
+        columnWidths: const {0: MaxColumnWidth(FixedColumnWidth(96), IntrinsicColumnWidth()), 1: FlexColumnWidth()},
+        defaultVerticalAlignment: TableCellVerticalAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [for (final l in lines) TableRow(children: [l._label(), l._value(context)])],
+      );
+
+  @override
+  Widget build(BuildContext context) => table(context, [this]);
 }
