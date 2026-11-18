@@ -570,7 +570,12 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final visibleSections = _cfg.sections.where((c) => (_sections[c.key]?.allTotal ?? 0) > 0).toList();
     final visibleMedia = _mediaSecs.where((m) => (_media[m.key]?.total ?? 0) > 0).toList();
 
+    // Tiểu sử is the first tab (canvas, chốt 18/11) but the page still opens
+    // on the songs when there are any; the key re-creates the controller
+    // once they arrive so that initialIndex applies.
     return DefaultTabController(
+      key: ValueKey(visibleSections.isNotEmpty),
+      initialIndex: visibleSections.isEmpty ? 0 : 1,
       length: visibleSections.length + visibleMedia.length + 1, // +1 for Tiểu sử
       child: Scaffold(
         backgroundColor: AppColors.bg,
@@ -595,8 +600,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                   pinned: true,
                   delegate: _TabBarDelegate(
                     tabs: [
-                      ...visibleSections.map((c) => Tab(text: '${c.label} · ${_formatInt(_sections[c.key]!.allTotal)}')),
                       const Tab(text: 'Tiểu sử'),
+                      ...visibleSections.map((c) => Tab(text: '${c.label} · ${_formatInt(_sections[c.key]!.allTotal)}')),
                       ...visibleMedia.map((m) => Tab(text: '${m.label} · ${_formatInt(_media[m.key]!.total)}')),
                     ],
                   ),
@@ -604,8 +609,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               ],
               body: TabBarView(
                 children: [
-                  ...visibleSections.map((c) => _buildSectionTab(c)),
                   _buildBioTab(p, player.currentSong != null),
+                  ...visibleSections.map((c) => _buildSectionTab(c)),
                   ...visibleMedia.map((m) => _buildMediaTab(m)),
                 ],
               ),
@@ -1018,9 +1023,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
           Builder(builder: (ctx) => TextButton(
                 style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
                 onPressed: () {
-                  final tabs = DefaultTabController.maybeOf(ctx);
-                  final i = _cfg.sections.where((c) => (_sections[c.key]?.allTotal ?? 0) > 0).length;
-                  tabs?.animateTo(i);
+                  DefaultTabController.maybeOf(ctx)?.animateTo(0); // Tiểu sử
                 },
                 child: Text('Đọc tiếp', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
               )),
