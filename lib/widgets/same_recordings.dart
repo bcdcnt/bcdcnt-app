@@ -100,17 +100,22 @@ class _SameRecordingsState extends State<SameRecordings> {
       decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
-          Flexible(child: Text(artists.isEmpty ? 'Chưa rõ người trình bày' : artists, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
-          if (dup) ...[
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(color: AppColors.warningText.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-              child: Text('trùng ca sĩ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.warningText))),
-            ),
-          ],
-          const SizedBox(width: 8),
-          Expanded(child: Text('· $meta', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+          // Name + meta share the left; "Mở ›" always sits at the right edge.
+          Expanded(
+            child: Row(children: [
+              Flexible(child: Text(artists.isEmpty ? 'Chưa rõ người trình bày' : artists, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+              if (dup) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(color: AppColors.warningText.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                  child: Text('trùng ca sĩ', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.warningText))),
+                ),
+              ],
+              const SizedBox(width: 8),
+              Flexible(child: Text('· $meta', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+            ]),
+          ),
           TextButton(onPressed: () => context.push('/song/${m['id']}', extra: {...m, 'file_type': 'song'}), child: const Text('Mở ›')),
         ]),
         const SizedBox(height: 4),
