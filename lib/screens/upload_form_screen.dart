@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart' show PlatformFile;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
+import 'package:flutter/gestures.dart' show GestureBinding, PointerDeviceKind, PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -949,11 +950,12 @@ class _UploadFormScreenState extends State<UploadFormScreen> {
       child: DeskFrame(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           DeskHead(title: 'Gửi bài', subtitle: _canDrop ? 'Kéo thả tệp nhạc vào cửa sổ để bắt đầu nhanh' : 'Chọn loại, điền thông tin và tải tệp lên'),
-          Wrap(spacing: 8, runSpacing: 8, children: [
+          // One row (canvas Desktop_GuiBai, chốt 18/11): scrolls sideways
+          // in a narrow window instead of wrapping.
+          _PillRow(selected: _type, children: {
             for (final t in _types)
-              if (allowed.contains(t.$1))
-                _TypePill(type: t, selected: _type == t.$1, onTap: () => _setType(t.$1)),
-          ]),
+              if (allowed.contains(t.$1)) t.$1: _TypePill(type: t, selected: _type == t.$1, onTap: () => _setType(t.$1)),
+          }),
           if (sub != null) ...[const SizedBox(height: 18), sub],
           const SizedBox(height: 24),
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1485,5 +1487,116 @@ class _ImageLibraryState extends State<_ImageLibrary> {
         ),
       ]),
     );
+  }
+}
+
+/// Pills on one line. When they don't fit: scroll with the wheel, a drag or
+/// the ‹ › buttons; the hidden side fades out; the chosen pill is kept in view.
+class _PillRow extends StatefulWidget {
+  final Map<String, Widget> children;
+  final String selected;
+  const _PillRow({required this.children, required this.selected});
+
+  @override
+  State<_PillRow> createState() => _PillRowState();
+}
+
+class _PillRowState extends State<_PillRow> {
+  final _ctl = ScrollController();
+  final _keys = <String, GlobalKey>{};
+  bool _left = false, _right = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctl.addListener(_sync);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal(animate: false));
+  }
+
+  @override
+  void didUpdateWidget(_PillRow old) {
+    super.didUpdateWidget(old);
+    if (old.selected != widget.selected) WidgetsBinding.instance.addPostFrameCallback((_) => _reveal());
+  }
+
+  @override
+  void dispose() {
+    _ctl.dispose();
+    super.dispose();
+  }
+
+  void _sync() {
+    if (!mounted || !_ctl.hasClients) return;
+    final p = _ctl.position;
+    final l = p.pixels > 1, r = p.pixels < p.maxScrollExtent - 1;
+    if (l != _left || r != _right) setState(() { _left = l; _right = r; });
+  }
+
+  void _reveal({bool animate = true}) {
+    _sync();
+    final ctx = _keys[widget.selected]?.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(ctx, alignment: 0.5, duration: animate ? const Duration(milliseconds: 250) : Duration.zero, curve: Curves.easeOut);
+  }
+
+  void _by(double dx) {
+    if (!_ctl.hasClients) return;
+    final p = _ctl.position;
+    _ctl.animateTo((p.pixels + dx).clamp(0.0, p.maxScrollExtent), duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+  }
+
+  Widget _arrow(IconData icon, VoidCallback onTap) => Material(
+        color: AppColors.bg,
+        shape: CircleBorder(side: BorderSide(color: AppColors.border)),
+        elevation: 2,
+        shadowColor: Colors.black26,
+        child: InkWell(customBorder: const CircleBorder(), onTap: onTap, child: SizedBox(width: 36, height: 36, child: Icon(icon, size: 22, color: AppColors.text))),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final row = ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false, dragDevices: PointerDeviceKind.values.toSet()),
+      child: NotificationListener<ScrollMetricsNotification>(
+        onNotification: (_) { WidgetsBinding.instance.addPostFrameCallback((_) => _sync()); return false; },
+        child: SingleChildScrollView(
+          controller: _ctl,
+          scrollDirection: Axis.horizontal,
+          child: Row(children: [
+            for (final (i, e) in widget.children.entries.indexed) ...[
+              if (i > 0) const SizedBox(width: 8),
+              KeyedSubtree(key: _keys.putIfAbsent(e.key, GlobalKey.new), child: e.value),
+            ],
+          ]),
+        ),
+      ),
+    );
+    // Wheel (vertical) turns the row while it can still move, so a mouse
+    // without sideways scroll reaches every pill.
+    final wheel = Listener(
+      onPointerSignal: (ev) {
+        if (ev is! PointerScrollEvent || !_ctl.hasClients || !(_left || _right)) return;
+        final d = ev.scrollDelta.dx.abs() > ev.scrollDelta.dy.abs() ? ev.scrollDelta.dx : ev.scrollDelta.dy;
+        GestureBinding.instance.pointerSignalResolver.register(ev, (_) {
+          final p = _ctl.position;
+          _ctl.jumpTo((p.pixels + d).clamp(0.0, p.maxScrollExtent));
+        });
+      },
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (r) => LinearGradient(colors: [
+          _left ? Colors.transparent : Colors.black,
+          Colors.black,
+          Colors.black,
+          _right ? Colors.transparent : Colors.black,
+        ], stops: const [0, 0.08, 0.88, 1]).createShader(r),
+        child: row,
+      ),
+    );
+    return Stack(alignment: Alignment.center, children: [
+      wheel,
+      if (_left) Positioned(left: 0, child: _arrow(Icons.chevron_left_rounded, () => _by(-320))),
+      if (_right) Positioned(right: 0, child: _arrow(Icons.chevron_right_rounded, () => _by(320))),
+    ]);
   }
 }
