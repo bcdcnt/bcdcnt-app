@@ -68,10 +68,14 @@ List<_Action> _actions(AuthProvider auth, Map<String, dynamic> song, String type
     // A song with no sheet yet (no composer page): picking the composers
     // files it under an existing sheet of that title, or a new one.
     if (type == 'song' && sheetId == null && can('manage_sheet') && can('manage_song')) const _Action('composersNoSheet', 'Sửa sáng tác', Icons.music_note_outlined),
+    // Folk / poem have no sheet: composers, recomposers and poets hang
+    // straight off the recording (updateFolk / updatePoem), as on the web.
     if (type == 'folk' && can('manage_folk')) ...const [
+      _Action('folkComposers', 'Sửa sáng tác', Icons.music_note_outlined),
       _Action('recomposers', 'Sửa soạn giả', Icons.music_note_outlined),
       _Action('melodyFcat', 'Sửa làn điệu – thể loại', Icons.queue_music_rounded),
     ],
+    if (type == 'poem' && can('manage_poem')) const _Action('poemPoets', 'Sửa nhà thơ', Icons.menu_book_outlined),
     if (can(_typePerms[type])) const _Action('accompanists', 'Sửa đệm nhạc', Icons.piano_outlined),
     if (can('update_thumbnail') && thumb?['id'] != null) const _Action('caption', 'Chú thích ảnh', Icons.short_text_rounded),
     if (sheetId != null && can('manage_sheet')) ...const [
@@ -208,6 +212,26 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
           save: (list) async {
             final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'recomposer', search: 'recomposers');
             await auth.authedMutate(r'mutation($id: ID!, $v: CRUDFolkRecomposers) { updateFolk(input: { id: $id, recomposers: $v }) { id } }', {'id': id, 'v': _sync(resolved)});
+          });
+    case 'folkComposers':
+      await _editPeople(ctl,
+          title: 'Sửa nhạc sĩ',
+          search: 'composers',
+          allowCreate: canCreatePeople,
+          load: () async => _people((await auth.authedQuery(r'query($id: ID!) { folk(id: $id) { composers(first: 50) { data { id title avatar { url } } } } }', {'id': id}))['folk']?['composers']),
+          save: (list) async {
+            final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'composer', search: 'composers');
+            await auth.authedMutate(r'mutation($id: ID!, $v: CRUDFolkComposers) { updateFolk(input: { id: $id, composers: $v }) { id } }', {'id': id, 'v': _sync(resolved)});
+          });
+    case 'poemPoets':
+      await _editPeople(ctl,
+          title: 'Sửa nhà thơ',
+          search: 'poets',
+          allowCreate: canCreatePeople,
+          load: () async => _people((await auth.authedQuery(r'query($id: ID!) { poem(id: $id) { poets(first: 50) { data { id title avatar { url } } } } }', {'id': id}))['poem']?['poets']),
+          save: (list) async {
+            final resolved = await _createNew(auth, list, songId: id, songType: type, peopleType: 'poet', search: 'poets');
+            await auth.authedMutate(r'mutation($id: ID!, $v: CRUDPoemPoets) { updatePoem(input: { id: $id, poets: $v }) { id } }', {'id': id, 'v': _sync(resolved)});
           });
     case 'poets':
       String lyricType = '';

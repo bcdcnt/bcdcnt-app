@@ -1239,9 +1239,12 @@ class _CommentSectionState extends State<CommentSection> {
                                   label: who,
                                   child: Container(
                                     margin: const EdgeInsets.only(left: 6, top: 4, bottom: 4),
-                                    padding: EdgeInsets.all(phone ? 7 : 5),
-                                    decoration: BoxDecoration(color: b.color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
-                                    child: Icon(Icons.back_hand_outlined, size: phone ? 16 : 14, color: b.color),
+                                    // Web: a 22px round chip, the hand at 15% of its colour.
+                                    width: phone ? 30 : 22,
+                                    height: phone ? 30 : 22,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(color: b.color.withValues(alpha: 0.15), shape: BoxShape.circle),
+                                    child: RequestHandIcon(size: phone ? 16 : 12, color: b.color),
                                   ),
                                 ),
                               );

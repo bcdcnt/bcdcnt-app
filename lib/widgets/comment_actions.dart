@@ -1,6 +1,7 @@
 import 'desktop_page.dart' show isDesk;
 import 'action_menu.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
@@ -39,7 +40,7 @@ class CommentPageChanged extends CommentChange {}
     'rejected' => (label: 'Không thể xử lý', color: AppColors.error),
     'need_more_info' => (label: 'Cần thêm thông tin', color: _reqBlue),
     'processing' => (label: 'Đang xử lý', color: _aiPurple),
-    _ => (label: 'Yêu cầu', color: const Color(0xFFE6A23C)),
+    _ => (label: 'Yêu cầu', color: AppColors.text),
   };
 }
 
@@ -461,4 +462,17 @@ Future<void> _tagDocument(BuildContext context, AuthProvider auth, Map comment, 
     ),
   );
   if (ok == true && context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã đặt làm tư liệu')));
+}
+
+/// The web's request hand (Lucide "hand"), stroked in [color].
+class RequestHandIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+  const RequestHandIcon({super.key, required this.size, required this.color});
+
+  static const _svg = '<svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v1M14 10V4a2 2 0 0 0-4 0v6M10 10V6a2 2 0 0 0-4 0v8l-1.3-1.3a2 2 0 0 0-2.83 2.83L6.1 19.8A6 6 0 0 0 10.29 22H14a6 6 0 0 0 6-6v-5a2 2 0 0 0-4 0v1"/></svg>';
+
+  @override
+  Widget build(BuildContext context) =>
+      SvgPicture.string(_svg, width: size, height: size, colorFilter: ColorFilter.mode(color, BlendMode.srcIn));
 }
