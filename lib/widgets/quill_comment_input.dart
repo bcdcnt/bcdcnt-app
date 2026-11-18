@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as q;
-import 'package:flutter_quill/quill_delta.dart' show Delta;
+import 'package:flutter_quill/quill_delta.dart' show Delta, Operation;
 import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart' show QuillDeltaToHtmlConverter;
 import '../constants/theme.dart';
@@ -178,7 +178,8 @@ class QuillCommentController {
 
   Delta _htmlToDelta(String html) {
     try {
-      return HtmlToDelta().convert(html);
+      // Bare <p>…</p><p>… loses its paragraph breaks unless wrapped.
+      return htmlToQuillDelta(html);
     } catch (_) {
       return Delta()
         ..insert(html.replaceAll(RegExp(r'<[^>]+>'), ''))
@@ -214,4 +215,19 @@ class _InlineImageEmbedBuilder extends q.EmbedBuilder {
       ),
     );
   }
+}
+
+/// HTML → Quill delta that keeps paragraph breaks. The bare `<p>…</p><p>…`
+/// form loses them in HtmlToDelta unless wrapped; the wrapper then leaves
+/// one extra trailing newline, dropped here.
+Delta htmlToQuillDelta(String html) {
+  final ops = HtmlToDelta().convert('<div>$html</div>').toList();
+  if (ops.isNotEmpty) {
+    final last = ops.last;
+    final t = last.data;
+    if (t is String && t.endsWith('\n\n')) {
+      ops[ops.length - 1] = Operation.insert(t.substring(0, t.length - 1), last.attributes);
+    }
+  }
+  return Delta.fromOperations(ops);
 }

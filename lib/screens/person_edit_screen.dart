@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb, Tar
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as q;
 import 'package:flutter_quill/quill_delta.dart' show Delta;
-import 'package:flutter_quill_delta_from_html/flutter_quill_delta_from_html.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:vsc_quill_delta_to_html/vsc_quill_delta_to_html.dart' show QuillDeltaToHtmlConverter;
@@ -18,6 +17,7 @@ import '../services/imgcdn.dart';
 import '../widgets/desktop_page.dart';
 import '../widgets/ui.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/quill_comment_input.dart' show htmlToQuillDelta;
 import 'upload_form_screen.dart' show openImageLibrary;
 
 /// Sửa nhạc sĩ / nghệ sĩ / nhà thơ / soạn giả (BQT, quyền manage_people) —
@@ -84,7 +84,7 @@ class _PersonEditScreenState extends State<PersonEditScreen> {
       _initialBio = '${p['content'] ?? ''}';
       Delta delta;
       try {
-        delta = _initialBio.trim().isEmpty ? (Delta()..insert('\n')) : HtmlToDelta().convert('<div>$_initialBio</div>') /* the bare <p>…</p><p>… form loses its line breaks */;
+        delta = _initialBio.trim().isEmpty ? (Delta()..insert('\n')) : htmlToQuillDelta(_initialBio);
       } catch (_) {
         delta = Delta()..insert('${_initialBio.replaceAll(RegExp(r'<[^>]+>'), '')}\n');
       }
