@@ -59,11 +59,13 @@ class ApiClient {
     return appVersion.isEmpty ? 'bcdcnt-flutter/$platform' : 'bcdcnt-flutter/$platform/$appVersion';
   }
 
-  static Map<String, String> _baseHeaders({String? token, bool jsonContent = false}) {
+  static Map<String, String> _baseHeaders({String? token, bool jsonContent = false, bool allSongs = false}) {
     return {
       if (jsonContent) 'Content-Type': 'application/json',
       'Origin': siteUrl,
       'X-Client-App': _clientHeader,
+      // Bàn làm việc: BQT (manage_upload) also sees songs hidden from the app.
+      if (allSongs) 'X-Client-Scope': 'all',
       if (token != null) 'Authorization': 'Bearer $token',
     };
   }
@@ -152,13 +154,13 @@ class ApiClient {
     return json['data'] ?? {};
   }
 
-  static Future<Map<String, dynamic>> authedQuery(String q, Map<String, dynamic>? variables, String token) async {
+  static Future<Map<String, dynamic>> authedQuery(String q, Map<String, dynamic>? variables, String token, {bool allSongs = false}) async {
     // Use POST with body for authed queries to avoid CORS preflight issues with
     // long URLs and to keep parity with mutate() — many backends preflight-fail
     // on GET with Authorization header.
     final res = await http.post(
       Uri.parse(apiBase),
-      headers: _baseHeaders(token: token, jsonContent: true),
+      headers: _baseHeaders(token: token, jsonContent: true, allSongs: allSongs),
       body: jsonEncode({'query': q, if (variables != null) 'variables': variables}),
     ).timeout(_timeout);
     final json = jsonDecode(res.body);

@@ -418,12 +418,14 @@ class AuthProvider extends ChangeNotifier {
 
   /// Authenticated query that auto-refreshes the token on expiry or
   /// `Unauthenticated` errors (one retry).
-  Future<Map<String, dynamic>> authedQuery(String q, [Map<String, dynamic>? variables]) async {
+  /// [allSongs]: Bàn làm việc only — for manage_upload the API then skips
+  /// the show_in_app filter (the song a replacement upload targets).
+  Future<Map<String, dynamic>> authedQuery(String q, [Map<String, dynamic>? variables, bool allSongs = false]) async {
     final epoch = _epoch;
     var tok = await _ensureToken();
     if (tok == null) throw Exception('Phiên đăng nhập đã hết hạn');
     try {
-      return await ApiClient.authedQuery(q, variables, tok);
+      return await ApiClient.authedQuery(q, variables, tok, allSongs: allSongs);
     } catch (e) {
       if (_isUnauthenticated(e)) {
         final fresh = await _doRefresh();
@@ -432,7 +434,7 @@ class AuthProvider extends ChangeNotifier {
           if (epoch == _epoch) await logout();
           throw Exception('Phiên đăng nhập đã hết hạn');
         }
-        return await ApiClient.authedQuery(q, variables, fresh);
+        return await ApiClient.authedQuery(q, variables, fresh, allSongs: allSongs);
       }
       rethrow;
     }

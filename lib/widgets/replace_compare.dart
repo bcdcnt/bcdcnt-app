@@ -6,6 +6,101 @@ import '../constants/theme.dart';
 import '../services/auth.dart';
 import 'waveform_player.dart';
 
+const _routeType = {'bai-hat': 'song', 'dan-ca': 'folk', 'khi-nhac': 'instrumental', 'tieng-tho': 'poem', 'thanh-vien-hat': 'karaoke'};
+final _targets = <String, Future<({Map<String, dynamic> song, String type})?>>{};
+
+/// The recording a "thay thế" upload replaces: its object, else the archive
+/// link it carries (".../bai-hat/slug-21.html"), as web /admin/gui-bai does.
+/// Asked with allSongs so a song hidden from the app (show_in_app = 0) is
+/// still found. Cached per upload: the list row and the detail share it.
+Future<({Map<String, dynamic> song, String type})?> resolveReplaceTarget(AuthProvider auth, Map upload) {
+  final o = upload['object'];
+  if (o is Map && o['id'] != null && o['file'] != null) {
+    return Future.value((song: Map<String, dynamic>.from(o), type: 'song'));
+  }
+  RegExpMatch? m;
+  for (final x in [upload['link'], upload['title']]) {
+    m = RegExp(r'/(bai-hat|dan-ca|khi-nhac|tieng-tho|thanh-vien-hat)/[^/]+-(\d+)\.html').firstMatch('${x ?? ''}');
+    if (m != null) break;
+  }
+  final type = m != null ? _routeType[m.group(1)]! : 'song';
+  final id = m?.group(2) ?? (o is Map ? '${o['id'] ?? ''}' : '');
+  if (id.isEmpty) return Future.value(null);
+  final key = '$type:$id';
+  final hit = _targets[key];
+  if (hit != null) return hit;
+  final withArtists = const {'song', 'folk', 'instrumental'}.contains(type);
+  final f = () async {
+    try {
+      final d = await auth.authedQuery(
+        'query(\$id: ID!) { t: $type(id: \$id) { id title ${withArtists ? 'artists(first: 3) { data { title } }' : ''} file { id audio_url duration bitrate is_hq user { username } } } }',
+        {'id': id},
+        true,
+      );
+      if (d['t'] is Map) return (song: Map<String, dynamic>.from(d['t']), type: type);
+    } catch (_) {}
+    _targets.remove(key); // let a later look try again
+    return null;
+  }();
+  _targets[key] = f;
+  return f;
+}
+
+/// Title of a "thay thế" upload: "[Thay thế] " + the original song's name
+/// (canvas Desktop_BanLamViec_ThayThe, chốt 18/11); the upload's own title
+/// until that is known or when it cannot be found.
+class ReplaceTitle extends StatefulWidget {
+  final Map<String, dynamic> upload;
+  final TextStyle style;
+  final int? maxLines;
+  const ReplaceTitle({super.key, required this.upload, required this.style, this.maxLines});
+
+  @override
+  State<ReplaceTitle> createState() => _ReplaceTitleState();
+}
+
+class _ReplaceTitleState extends State<ReplaceTitle> {
+  String? _name;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(ReplaceTitle old) {
+    super.didUpdateWidget(old);
+    if (old.upload['id'] != widget.upload['id']) {
+      _name = null;
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    final uid = widget.upload['id'];
+    final t = await resolveReplaceTarget(context.read<AuthProvider>(), widget.upload);
+    if (!mounted || widget.upload['id'] != uid) return;
+    final n = '${t?.song['title'] ?? ''}'.trim();
+    if (n.isNotEmpty) setState(() => _name = n);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final own = '${widget.upload['title'] ?? ''}'.trim();
+    final name = _name ?? (own.contains('://') ? null : own);
+    return Text.rich(
+      TextSpan(children: [
+        TextSpan(text: '[Thay thế] ', style: TextStyle(color: AppColors.accentLight)),
+        TextSpan(text: name ?? own),
+      ]),
+      maxLines: widget.maxLines,
+      overflow: widget.maxLines == null ? null : TextOverflow.ellipsis,
+      style: widget.style,
+    );
+  }
+}
+
 /// Bàn làm việc, "Thay thế bản thu chất lượng": the recording sent and the
 /// one on the site now, each with its own player, then their technical
 /// sheets side by side (API fileAudioStats, measured once with ffmpeg);
@@ -33,33 +128,12 @@ class _ReplaceCompareState extends State<ReplaceCompare> {
   String _targetType = 'song';
   Map? get _song => _target;
 
-  static const _routeType = {'bai-hat': 'song', 'dan-ca': 'folk', 'khi-nhac': 'instrumental', 'tieng-tho': 'poem', 'thanh-vien-hat': 'karaoke'};
-
   Future<void> _resolveTarget() async {
-    final u = widget.upload;
-    if (u['object'] is Map && (u['object'] as Map)['id'] != null) {
-      _target = u['object'] as Map;
-      _targetType = 'song';
-      return;
+    final t = await resolveReplaceTarget(context.read<AuthProvider>(), widget.upload);
+    if (t != null) {
+      _target = t.song;
+      _targetType = t.type;
     }
-    RegExpMatch? m;
-    for (final x in [u['link'], u['title']]) {
-      m = RegExp(r'/(bai-hat|dan-ca|khi-nhac|tieng-tho|thanh-vien-hat)/[^/]+-(\d+)\.html').firstMatch('${x ?? ''}');
-      if (m != null) break;
-    }
-    if (m == null) return;
-    final type = _routeType[m.group(1)]!;
-    final withArtists = const {'song', 'folk', 'instrumental'}.contains(type);
-    try {
-      final d = await context.read<AuthProvider>().authedQuery(
-        'query(\$id: ID!) { t: $type(id: \$id) { id title ${withArtists ? 'artists(first: 3) { data { title } }' : ''} file { id audio_url duration bitrate is_hq user { username } } } }',
-        {'id': m.group(2)},
-      );
-      if (d['t'] is Map) {
-        _target = Map<String, dynamic>.from(d['t']);
-        _targetType = type;
-      }
-    } catch (_) {}
   }
   Map get _curFile => _song?['file'] is Map ? _song!['file'] as Map : const {};
 

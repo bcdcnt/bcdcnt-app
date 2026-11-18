@@ -364,7 +364,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                                 padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
                                 decoration: BoxDecoration(border: Border(left: BorderSide(color: on ? AppColors.wine : Colors.transparent, width: 3))),
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text(_itemTitle(u), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
+                                  if (!_isComment && u['type'] == 'replace')
+                                    ReplaceTitle(upload: u, maxLines: 2, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)))
+                                  else
+                                    Text(_itemTitle(u), maxLines: 2, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text))),
                                   const SizedBox(height: 2),
                                   Text(_itemMeta(u), maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
                                 ]),
@@ -744,7 +747,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _threadChip(u),
       ]),
       const SizedBox(height: 6),
-      Text('${u['title'] ?? '(chưa có tên)'}', style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
+      if (u['type'] == 'replace')
+        ReplaceTitle(upload: u, style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text)))
+      else
+        Text('${u['title'] ?? '(chưa có tên)'}', style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
       const SizedBox(height: 16),
       // Thay thế bản thu chất lượng: the recording sent beside the one on the
       // site now, with both technical sheets.
