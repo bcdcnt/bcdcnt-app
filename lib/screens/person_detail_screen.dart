@@ -570,12 +570,8 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     final visibleSections = _cfg.sections.where((c) => (_sections[c.key]?.allTotal ?? 0) > 0).toList();
     final visibleMedia = _mediaSecs.where((m) => (_media[m.key]?.total ?? 0) > 0).toList();
 
-    // Tiểu sử is the first tab (canvas, chốt 18/11) but the page still opens
-    // on the songs when there are any; the key re-creates the controller
-    // once they arrive so that initialIndex applies.
+    // Tiểu sử is the first tab and the page always opens on it (18/11).
     return DefaultTabController(
-      key: ValueKey(visibleSections.isNotEmpty),
-      initialIndex: visibleSections.isEmpty ? 0 : 1,
       length: visibleSections.length + visibleMedia.length + 1, // +1 for Tiểu sử
       child: Scaffold(
         backgroundColor: AppColors.bg,
