@@ -262,7 +262,9 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
       await _editPeople(ctl,
           title: 'Sửa người đệm nhạc',
           search: 'artists',
-          allowCreate: false,
+          // New names become plain artists (createArtist, manage_people):
+          // addPeopleToSong would also list them as performers.
+          allowCreate: can('manage_people'),
           load: () async {
             final d = (await auth.authedQuery('query(\$id: ID!) { $type(id: \$id) { accompaniment_instrument accompanists(first: 50) { data { id title avatar { url } } } } }', {'id': id}))[type];
             instrument.text = (d?['accompaniment_instrument'] ?? '').toString();
@@ -271,7 +273,7 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
           header: (_) => _Field(label: 'Nhạc cụ đệm', controller: instrument, hint: 'VD: piano, guitar, đàn bầu…'),
           save: (list) async {
             await auth.authedMutate('mutation(\$id: ID!, \$v: CRUD${_crudType[type]}Accompanists, \$i: String) { ${_updateMutation[type]}(input: { id: \$id, accompaniment_instrument: \$i, accompanists: \$v }) { id } }',
-                {'id': id, 'i': instrument.text.trim().isEmpty ? null : instrument.text.trim(), 'v': _sync(list)});
+                {'id': id, 'i': instrument.text.trim().isEmpty ? null : instrument.text.trim(), 'v': _sync(await _createArtists(auth, list))});
           });
     case 'tag':
       await _editTags(ctl, sheetId!);
@@ -363,6 +365,28 @@ Map<String, dynamic> _sync(List<Map<String, dynamic>> list) => {
 
 /// New names (typed, not picked) are created through addPeopleToSong, then
 /// looked up to get their id — the same two steps as the web.
+/// Typed names ('new-…' ids) → artists: an exact-title match if the archive
+/// has one, else a new artist page. Nothing is attached to the song here.
+Future<List<Map<String, dynamic>>> _createArtists(AuthProvider auth, List<Map<String, dynamic>> list) async {
+  final out = <Map<String, dynamic>>[];
+  for (final p in list) {
+    if (!'${p['id']}'.startsWith('new-')) {
+      out.add(p);
+      continue;
+    }
+    final title = '${p['title']}'.trim();
+    final d = await auth.authedQuery(r'query($q: Mixed) { artists(first: 1, where: {AND: [{column: "title", value: $q}]}) { data { id title } } }', {'q': title});
+    final found = _people(d['artists']).firstOrNull;
+    if (found != null) {
+      out.add(found);
+    } else {
+      final c = await auth.authedMutate(r'mutation($t: String!) { createArtist(input: { title: $t }) { id title } }', {'t': title});
+      out.add({'id': '${c['createArtist']['id']}', 'title': c['createArtist']['title']});
+    }
+  }
+  return out;
+}
+
 Future<List<Map<String, dynamic>>> _createNew(AuthProvider auth, List<Map<String, dynamic>> list,
     {required String songId, required String songType, required String peopleType, required String search}) async {
   final out = <Map<String, dynamic>>[];
