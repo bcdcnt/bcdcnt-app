@@ -53,7 +53,9 @@ class ReplaceTitle extends StatefulWidget {
   final Map<String, dynamic> upload;
   final TextStyle style;
   final int? maxLines;
-  const ReplaceTitle({super.key, required this.upload, required this.style, this.maxLines});
+  /// false: the name alone (the "Tên bài" row).
+  final bool prefix;
+  const ReplaceTitle({super.key, required this.upload, required this.style, this.maxLines, this.prefix = true});
 
   @override
   State<ReplaceTitle> createState() => _ReplaceTitleState();
@@ -91,7 +93,7 @@ class _ReplaceTitleState extends State<ReplaceTitle> {
     final name = _name ?? (own.contains('://') ? null : own);
     return Text.rich(
       TextSpan(children: [
-        TextSpan(text: '[Thay thế] ', style: TextStyle(color: AppColors.accentLight)),
+        if (widget.prefix) TextSpan(text: '[Thay thế] ', style: TextStyle(color: AppColors.accentLight)),
         TextSpan(text: name ?? own),
       ]),
       maxLines: widget.maxLines,

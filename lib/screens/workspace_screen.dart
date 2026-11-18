@@ -706,7 +706,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   Widget _detail(Map<String, dynamic> u) {
     /// [kho]: the upload column whose names are checked against the archive
     /// ("composers", "artists"…); the row then says whether each is known.
-    Widget field(String k, String? v, {String? kho, Widget? status}) {
+    Widget field(String k, String? v, {String? kho, Widget? status, Widget? value}) {
       final t = (v ?? '').trim();
       if (t.isEmpty) return const SizedBox.shrink();
       Widget? right = status;
@@ -725,7 +725,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(width: 130, child: Text(k, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textMuted)))),
-          Expanded(child: SelectableText(t, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          Expanded(child: value ?? SelectableText(t, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
           if (right != null) ...[const SizedBox(width: 12), right],
         ]),
       );
@@ -778,17 +778,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       const SizedBox(height: 10),
       // Same-title songs (any composer): the count and the way to compare,
       // for every upload type.
-      field('Tên bài', u['title']?.toString(), status: _dupes == null
-          ? null
-          : (_dupes! > 0
-              ? InkWell(
-                  onTap: () => context.push('/search', extra: '${u['title']}'),
-                  child: Text.rich(TextSpan(children: [
-                    TextSpan(text: '${formatInt(_dupes)} bài cùng tên · ', style: TextStyle(color: AppColors.warningText)),
-                    TextSpan(text: 'So sánh ›', style: TextStyle(color: AppColors.accentLight)),
-                  ]), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
-                )
-              : _khoTag('bài mới', AppColors.textMuted))),
+      // Thay thế: the original song's name, no same-title check (it is
+      // that song).
+      if (u['type'] == 'replace')
+        field('Tên bài', '${u['title'] ?? ''}', value: ReplaceTitle(upload: u, prefix: false, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))))
+      else
+        field('Tên bài', u['title']?.toString(), status: _dupes == null
+            ? null
+            : (_dupes! > 0
+                ? InkWell(
+                    onTap: () => context.push('/search', extra: '${u['title']}'),
+                    child: Text.rich(TextSpan(children: [
+                      TextSpan(text: '${formatInt(_dupes)} bài cùng tên · ', style: TextStyle(color: AppColors.warningText)),
+                      TextSpan(text: 'So sánh ›', style: TextStyle(color: AppColors.accentLight)),
+                    ]), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800))),
+                  )
+                : _khoTag('bài mới', AppColors.textMuted))),
       field('Loại', uploadTypeLabel(u['type'])),
       field('Sáng tác', u['composers']?.toString(), kho: 'composers'),
       field('Lời thơ', u['poets']?.toString(), kho: 'poets'),
