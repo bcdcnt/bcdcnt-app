@@ -1014,6 +1014,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         ],
       ));
     }
+    // Đệm nhạc (người đệm + nhạc cụ), như dòng "Đệm …" trên điện thoại và web.
+    if (accompanists.isNotEmpty) {
+      desktopCredits.add(_webCreditLine('Đệm ${instrument.isEmpty ? 'nhạc' : instrument}',
+          _creditLinkRow(accompanists, 'title', (a) { if (a['slug'] != null) context.push('/nghe-si/${a['slug']}'); })));
+    }
     if (_resolvedType == 'karaoke' && song['song'] != null && song['song']['id'] != null) {
       desktopCredits.add(_webCreditLine('Bài gốc', [
         WidgetSpan(alignment: PlaceholderAlignment.baseline, baseline: TextBaseline.alphabetic, child: GestureDetector(
