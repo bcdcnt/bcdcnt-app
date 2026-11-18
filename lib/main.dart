@@ -26,6 +26,8 @@ import 'screens/library_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/song_detail_screen.dart';
 import 'screens/person_detail_screen.dart';
+import 'screens/person_edit_screen.dart';
+import 'package:flutter_quill/flutter_quill.dart' show FlutterQuillLocalizations;
 import 'screens/era_screen.dart';
 import 'screens/category_detail_screen.dart';
 import 'screens/user_song_list_screen.dart';
@@ -284,6 +286,7 @@ class _AppRoot extends StatelessWidget {
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
+        FlutterQuillLocalizations.delegate,
       ],
       // Stack the collapsed-mini-player pill above every route. The
       // pill is mounted once at the root so its drag offset survives
@@ -511,6 +514,10 @@ final _router = GoRouter(
               scrollToComments: s.uri.queryParameters['binh-luan'] == '1',
             );
           },
+        ),
+        GoRoute(
+          path: '/sua-nguoi/:kind/:id',
+          builder: (c, s) => PersonEditScreen(kind: s.pathParameters['kind']!, id: s.pathParameters['id']!),
         ),
         GoRoute(
           path: '/nghe-si/:slug',

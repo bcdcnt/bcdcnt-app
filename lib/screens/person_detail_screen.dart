@@ -515,6 +515,17 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
     }).catchError((_) {});
   }
 
+  bool get _canEdit => context.read<AuthProvider>().hasPermission('manage_people') && _person?['id'] != null;
+
+  /// BQT: Sửa thông tin (canvas Desktop_NgheSi_BQT, chốt 18/11).
+  Future<void> _edit() async {
+    final saved = await context.push<bool>('/sua-nguoi/${_cfg.queryName}/${_person!['id']}');
+    if (saved == true && mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('Đã lưu thông tin')));
+      _fetch(fresh: true);
+    }
+  }
+
   Future<void> _share() async {
     final p = _person;
     if (p == null) return;
@@ -914,6 +925,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                       ghost('Trộn bài', Icons.shuffle_rounded, canPlay ? () => _playSection(first, shuffle: true) : null),
                       ghost(_followers > 0 ? '$_followers yêu thích' : 'Yêu thích', _following ? Icons.favorite_rounded : Icons.favorite_border_rounded, _toggleFollow, on: _following),
                       ghost('Chia sẻ', Icons.ios_share_rounded, _share),
+                      if (_canEdit) ghost('Sửa thông tin', Icons.edit_outlined, _edit),
                     ]),
                   ]),
                 ),
@@ -1163,6 +1175,22 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 semantics: 'Chia sẻ, $_shares lượt chia sẻ',
                 onTap: _share,
               ),
+              if (_canEdit) ...[
+                const SizedBox(width: 10),
+                Semantics(
+                  button: true,
+                  label: 'Sửa thông tin',
+                  child: Material(
+                    color: AppColors.surface,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _edit,
+                      child: SizedBox(width: 50, height: 50, child: Icon(Icons.edit_outlined, size: 22, color: AppColors.text)),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

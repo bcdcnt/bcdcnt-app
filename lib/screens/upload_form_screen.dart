@@ -1365,6 +1365,9 @@ String _initials(String name) {
 /// "Thư viện ảnh BCĐCNT": the images this account already uploaded
 /// (me.images, newest first, same list as the web's MediaLibrary). Returns
 /// the picked image, or null.
+/// Public entry for other screens (Sửa nhạc sĩ…).
+Future<UploadedImage?> openImageLibrary(BuildContext context) => _ImageLibrary.open(context);
+
 class _ImageLibrary extends StatefulWidget {
   const _ImageLibrary();
 
