@@ -82,7 +82,13 @@ class WaveformPlayer extends StatefulWidget {
   State<WaveformPlayer> createState() => _WaveformPlayerState();
 }
 
-class _WaveformPlayerState extends State<WaveformPlayer> {
+class _WaveformPlayerState extends State<WaveformPlayer> with AutomaticKeepAliveClientMixin {
+  /// Inside a scrolling list (Bàn làm việc, comments…) the row would be
+  /// disposed once it scrolls off screen, and its player with it: the sound
+  /// stopped as soon as you scrolled down. Keep it alive while it plays.
+  @override
+  bool get wantKeepAlive => _playing;
+
   late final AudioPlayer _player;
   late List<double> _bars;
   bool _playing = false;
@@ -103,7 +109,11 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
     _bars = parseBars(widget.waveform, widget.seed);
     _player = AudioPlayer();
     if (widget.volume != 1.0) _player.setVolume(widget.volume);
-    _player.playingStream.listen((p) { if (mounted) setState(() => _playing = p); });
+    _player.playingStream.listen((p) {
+      if (!mounted) return;
+      setState(() => _playing = p);
+      updateKeepAlive();
+    });
     _player.positionStream.listen((p) { if (mounted) setState(() => _position = p); });
     _player.durationStream.listen((d) { if (mounted) setState(() => _duration = d ?? Duration.zero); });
     _player.playerStateStream.listen((s) {
@@ -181,6 +191,7 @@ class _WaveformPlayerState extends State<WaveformPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     final b = widget.buttonSize;
     final time = widget.showTimestamp ? _timeText : '';
