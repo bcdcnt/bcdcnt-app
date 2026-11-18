@@ -65,6 +65,8 @@ List<_Action> _actions(AuthProvider auth, Map<String, dynamic> song, String type
       _Action('composers', 'Sửa sáng tác', Icons.music_note_outlined),
       _Action('poets', 'Sửa nhà thơ', Icons.menu_book_outlined),
     ],
+    // Năm thu thanh lives on the recording itself (every kind), shown after the performers.
+    if (can(_typePerms[type])) const _Action('recordYear', 'Sửa năm thu thanh', Icons.mic_external_on_outlined),
     // A song with no sheet yet (no composer page): picking the composers
     // files it under an existing sheet of that title, or a new one.
     if (type == 'song' && sheetId == null && can('manage_sheet') && can('manage_song')) const _Action('composersNoSheet', 'Sửa sáng tác', Icons.music_note_outlined),
@@ -286,6 +288,10 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
       await _editText(ctl, title: 'Chú thích bản thu', label: 'Hiện cạnh tên bài, để phân biệt các bản thu cùng tên', initial: '${song['subtitle'] ?? ''}', presets: _subtitlePresets,
           save: (v) => auth.authedMutate(
               'mutation(\$input: Update${_crudType[type]}Input!) { ${_updateMutation[type]}(input: \$input) { id subtitle } }', {'input': {'id': id, 'subtitle': v.isEmpty ? null : v}}));
+    case 'recordYear':
+      await _editText(ctl, title: 'Sửa năm thu thanh', label: 'Năm hoặc tháng/năm, vd 1960, 4/1960', initial: '${song['record_year'] ?? ''}',
+          save: (v) => auth.authedMutate(
+              'mutation(\$input: Update${_crudType[type]}Input!) { ${_updateMutation[type]}(input: \$input) { id record_year } }', {'input': {'id': id, 'record_year': v}}));
     case 'source':
       await _editText(ctl, title: 'Nguồn bản thu', label: 'Nguồn / người sưu tầm (tri ân)', initial: '${song['file']?['source'] ?? ''}', lines: 3,
           save: (v) => auth.authedMutate(r'mutation($file_id: ID!, $source: String) { updateFileSource(file_id: $file_id, source: $source) { id } }', {'file_id': fileId, 'source': v.isEmpty ? null : v}));
