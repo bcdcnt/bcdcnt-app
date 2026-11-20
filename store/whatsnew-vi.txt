@@ -1,0 +1,6 @@
+- 14 bộ màu giao diện (Sáng, Kem, Nâu sepia, Đen, Xám, Đỏ đô, Xanh dương...) trong Cài đặt › Giao diện, có thể tự theo giao diện máy.
+- Gửi bài ngay trong ứng dụng: chọn ảnh, kéo thả trên máy tính, chọn nghệ sĩ, nhạc sĩ.
+- Trang nghệ sĩ, nhạc sĩ mở thẳng vào Tiểu sử.
+- Bình luận mới hiện nhãn trạng thái yêu cầu.
+- Màn khởi động và biểu tượng mới nền kem.
+- Sửa lỗi sửa bình luận nhiều đoạn và một số lỗi hiển thị.
