@@ -2,10 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Ứng dụng cần dùng micro để bạn tìm bài hát bằng giọng nói.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Ứng dụng nhận dạng giọng nói để bạn tìm bài hát, nhạc sĩ, ca sĩ bằng cách nói.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -28,13 +24,23 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần dùng camera để bạn chụp ảnh đại diện hoặc ảnh đính kèm khi đăng bài, bình luận.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ứng dụng cần dùng micro để bạn tìm bài hát bằng giọng nói.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Ứng dụng cần truy cập thư viện ảnh để bạn chọn ảnh đại diện hoặc ảnh đính kèm khi đăng bài, bình luận.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Ứng dụng nhận dạng giọng nói để bạn tìm bài hát, nhạc sĩ, ca sĩ bằng cách nói.</string>
 </dict>
 </plist>
