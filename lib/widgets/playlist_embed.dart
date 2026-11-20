@@ -164,7 +164,7 @@ class _PlaylistEmbedState extends State<PlaylistEmbed> {
                     await _loadAll();
                     if (mounted) setState(() => _expanded = true);
                   },
-            child: Text(_busy ? 'Đang tải…' : 'Xem tất cả $_total bài', style: body(TextStyle(fontWeight: FontWeight.w700, color: AppColors.accent))),
+            child: Text(_busy ? 'Đang tải…' : 'Xem tất cả $_total bài', style: body(TextStyle(fontWeight: FontWeight.w700, color: AppColors.accentFg))),
           ),
       ]),
     );

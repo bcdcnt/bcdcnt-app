@@ -1919,7 +1919,6 @@ class _AppearancePane extends StatelessWidget {
     final scales = kTextScaleLabels.entries.toList();
     const aa = {'vua': 18.0, 'lon': 23.0, 'ratlon': 28.0};
     Widget cards(List<Widget> c) => Row(children: [for (var i = 0; i < c.length; i++) ...[if (i > 0) SizedBox(width: gap), c[i]]]);
-    const night = AppColors.night;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _label('CỠ CHỮ', desktop ? 22 : 4),
       cards([
@@ -1938,25 +1937,21 @@ class _AppearancePane extends StatelessWidget {
           ),
       ]),
       _label('GIAO DIỆN', desktop ? 26 : 22),
-      cards([
-        _card(
-          selected: t.mode == 'sang', onTap: () => t.setTheme('sang'), semantics: 'Giao diện sáng', bg: Colors.white,
-          child: Text('Sáng', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF161112)))),
-        ),
-        _card(
-          selected: t.mode == 'toi', onTap: () => t.setTheme('toi'), semantics: 'Giao diện tối', bg: night,
-          child: Text('Tối', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFFF3ECEA)))),
-        ),
-        _card(
-          selected: t.mode == 'system', onTap: () => t.setTheme('system'), semantics: 'Giao diện theo máy',
-          gradient: const LinearGradient(colors: [Colors.white, Colors.white, night, night], stops: [0, 0.5, 0.5, 1]),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(999), boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 4, offset: Offset(0, 1))]),
-            child: Text('Theo máy', style: body(const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF161112)))),
-          ),
-        ),
-      ]),
+      LayoutBuilder(builder: (context, c) {
+        final cols = c.maxWidth >= 520 ? 5 : 3;
+        final w = (c.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(spacing: gap, runSpacing: gap, children: [
+          for (final p in kAppPalettes) SizedBox(width: w, child: _ThemeTile(p: p, selected: t.pick == p.name, height: desktop ? 118 : 104, onTap: () => t.setTheme(p.name))),
+        ]);
+      }),
+      const SizedBox(height: 8),
+      DeskToggleRow(
+        title: 'Theo giao diện máy',
+        subtitle: 'Máy chuyển sáng/tối thì app đổi theo: ban ngày dùng ${_labelOf(t.lightPick)}, ban đêm dùng ${_labelOf(t.darkPick)}',
+        value: t.followSystem,
+        onChanged: t.setFollowSystem,
+        last: true,
+      ),
       _label('HIỂN THỊ', desktop ? 26 : 22),
       if (desktop)
         DeskToggleRow(
@@ -1966,7 +1961,7 @@ class _AppearancePane extends StatelessWidget {
           onChanged: t.setPanelAutoOpen,
         ),
       DeskToggleRow(
-        title: 'Nhuộm ảnh tư liệu màu nâu đỏ',
+        title: 'Nhuộm ảnh tư liệu màu nâu cũ',
         subtitle: 'Ảnh đen trắng, ảnh mờ hài hoà với màu trang',
         value: t.tintPhotos,
         onChanged: t.setTintPhotos,
@@ -2039,5 +2034,81 @@ class _ShortcutsList extends StatelessWidget {
       group('ĐI LẠI TRONG APP', move, 26),
       const SizedBox(height: 32),
     ]);
+  }
+}
+
+String _labelOf(String name) => kAppPalettes.firstWhere((p) => p.name == name, orElse: () => kAppPalettes.first).label;
+
+/// One colour set in the picker: a small page preview in its own colours
+/// (search bar with an accent dot, a title line, an accent line) over its name.
+class _ThemeTile extends StatelessWidget {
+  final AppPalette p;
+  final bool selected;
+  final double height;
+  final VoidCallback onTap;
+  const _ThemeTile({required this.p, required this.selected, required this.height, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = p.light ? p.accent : p.accentLight;
+    Widget bar(double w, Color c, [double h = 6]) => FractionallySizedBox(
+          widthFactor: w,
+          alignment: Alignment.centerLeft,
+          child: Container(height: h, decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(3))),
+        );
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: 'Giao diện ${p.label}',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Container(
+            height: height,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AppColors.bg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: selected ? AppColors.accentFg : AppColors.border, width: selected ? 3 : 2),
+            ),
+            child: Column(children: [
+              Expanded(
+                child: Container(
+                  color: p.bg,
+                  padding: const EdgeInsets.all(9),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      height: 20,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(color: p.surface, borderRadius: BorderRadius.circular(6), border: Border.all(color: p.border)),
+                      child: Row(children: [
+                        Container(width: 9, height: 9, decoration: BoxDecoration(color: p.wine, shape: BoxShape.circle)),
+                        const SizedBox(width: 5),
+                        Expanded(child: bar(1, p.textSecondary.withValues(alpha: 0.6), 4)),
+                      ]),
+                    ),
+                    const SizedBox(height: 7),
+                    bar(0.7, p.text.withValues(alpha: 0.85)),
+                    const SizedBox(height: 5),
+                    bar(0.45, fg, 5),
+                  ]),
+                ),
+              ),
+              Container(
+                height: 34,
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: AppColors.border))),
+                alignment: Alignment.center,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (selected) ...[Icon(Icons.check_circle_rounded, size: 16, color: AppColors.accentFg), const SizedBox(width: 5)],
+                  Flexible(child: Text(p.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -12,9 +12,12 @@ class AppColors {
   static Color accent = const Color(0xFF711313);
   static Color accentLight = const Color(0xFF8E1F1F);
   static Color accentSoft = const Color(0xFFF8EDED);
-  /// A heart that is on (đã thích), the same red on every screen and on
-  /// both light pages and the dark player.
-  static const love = Color(0xFFD23B3B);
+  /// A heart that is on (đã thích) on the page / player. Red, brighter on
+  /// the dark sets and pale pink on Đỏ đô so it stays ≥3:1 on every surface.
+  /// Set by ThemeProvider.
+  static Color love = const Color(0xFFD23B3B);
+  /// The heart on a white chip/pill (any colour set).
+  static const loveOnWhite = Color(0xFFD23B3B);
   static Color text = const Color(0xFF161112);
   static Color textSecondary = const Color(0xFF4F4547);
   // #665C5E: 5.3:1 on surfaceLight (the old #73686A was 4.45:1).
@@ -33,6 +36,23 @@ class AppColors {
   /// the light accent there (10:1). Fills behind white text keep `accent`.
   static Color get accentFg => isLight ? accent : accentLight;
 
+  /// Five tones of the set's hue for generated covers / tonal tiles
+  /// (for the wine sets ≈ #711313, #8C3B3A, #5A1D1D, #9C5E5C, #3B0F0F).
+  static List<Color> get tones => [
+        wine,
+        Color.lerp(wine, rose, 0.35)!,
+        Color.lerp(wine, Colors.black, 0.3)!,
+        Color.lerp(wine, rose, 0.6)!,
+        Color.lerp(wine, Colors.black, 0.5)!,
+      ];
+
+  /// Dark band behind photo heroes (bài hát, nhạc sĩ, playlist) and the full
+  /// player, in the set's hue (wine sets ≈ #2E080A).
+  static Color get band => Color.lerp(deep, night, 0.45)!;
+
+  /// Cover/hero gradient (dark → mid), in the set's hue.
+  static List<Color> get heroGradient => [deep, wineMid];
+
   /// Status text colours, ≥4.5:1 on surface/surfaceLight in both themes.
   static Color get errorText => isLight ? const Color(0xFFA32020) : const Color(0xFFFF8A80);
   static Color get warningText => isLight ? const Color(0xFF8A5A00) : const Color(0xFFFFC870);
@@ -49,11 +69,19 @@ class AppColors {
   }) =>
       [BoxShadow(color: color.withValues(alpha: alpha * shadowMul), blurRadius: blur, offset: offset, spreadRadius: spread)];
 
-  // Brand constants from the BCĐCNT logo guideline (do not change per theme).
-  static const wine = Color(0xFF711313);
-  static const rose = Color(0xFFB48988);
-  /// Near-black used behind the player and in the dark theme.
-  static const night = Color(0xFF0E0A0A);
+  // Brand tones. They follow the chosen colour set (Sáng, Kem, Xanh dương…):
+  // for the wine-red sets they are the logo guideline colours (#711313,
+  // #B48988), for the others the matching hue. Set by ThemeProvider.
+  /// Fill behind white text/icons: buttons, play dots, active chips.
+  static Color wine = const Color(0xFF711313);
+  /// A step lighter than [wine]: the bright end of hero/cover gradients.
+  static Color wineMid = const Color(0xFF8E1F1F);
+  /// A step darker than [wine]: the dark end of hero/cover gradients.
+  static Color deep = const Color(0xFF4A0C0C);
+  /// Soft mid tone for inactive dots/bars beside [wine].
+  static Color rose = const Color(0xFFB48988);
+  /// Near-black behind the full player (tinted to the set's hue).
+  static Color night = const Color(0xFF0E0A0A);
   static const gold = Color(0xFFC9A96E);
   static const error = Color(0xFFD23B3B);
   static const success = Color(0xFF1F7A45);

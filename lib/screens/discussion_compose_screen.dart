@@ -47,7 +47,9 @@ class DiscussionComposeScreen extends StatefulWidget {
   /// Fixed forum (posting from a forum page). Null → the user picks one.
   final String? forumId;
   final String? forumTitle;
-  const DiscussionComposeScreen({super.key, this.forumId, this.forumTitle});
+  /// The topic being edited (id, title, content HTML, forum). Null → a new topic.
+  final Map<String, dynamic>? editing;
+  const DiscussionComposeScreen({super.key, this.forumId, this.forumTitle, this.editing});
 
   @override
   State<DiscussionComposeScreen> createState() => _DiscussionComposeScreenState();
@@ -62,16 +64,34 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
   bool _sending = false;
 
   /// Parent forums with their child forums (only children take topics).
-  List<({String title, List<({String id, String title})> children})> _groups = [];
+  List<ForumGroup> _groups = [];
   bool _forumsLoading = false, _forumsFailed = false;
 
   bool get _fixedForum => widget.forumId != null;
+  bool get _editing => widget.editing != null;
+  /// What the edited topic held, to tell real changes from untouched text.
+  String _origTitle = '', _origContent = '';
+  /// The edited topic has formatting/images the plain editor can't keep.
+  bool _rich = false;
 
   @override
   void initState() {
     super.initState();
     _forumId = widget.forumId;
     _forumTitle = widget.forumTitle;
+    final e = widget.editing;
+    if (e != null) {
+      final html = (e['content'] ?? '').toString();
+      _origTitle = (e['title'] ?? '').toString();
+      _origContent = htmlToPlainText(html);
+      _rich = isRichHtml(html);
+      _title.text = _origTitle;
+      _content.text = _origContent;
+      if (e['forum'] is Map) {
+        _forumId = '${e['forum']['id']}';
+        _forumTitle = (e['forum']['title'] ?? '').toString();
+      }
+    }
     if (!_fixedForum) _loadForums();
   }
 
@@ -85,19 +105,7 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
   Future<void> _loadForums() async {
     setState(() { _forumsLoading = true; _forumsFailed = false; });
     try {
-      final data = await ApiClient.query(r'''query {
-        forums(first: 100, where: {AND: [{column: "parent_id", value: null}]}, orderBy: [{column: "position", order: ASC}]) {
-          data { id title children(first: 100, orderBy: [{column: "position", order: ASC}]) { data { id title } } }
-        }
-      }''');
-      final groups = <({String title, List<({String id, String title})> children})>[];
-      for (final p in (data['forums']?['data'] ?? []) as List) {
-        final kids = <({String id, String title})>[
-          for (final c in (p['children']?['data'] ?? []) as List)
-            if ('${c['id']}' != submissionForumId) (id: '${c['id']}', title: '${c['title'] ?? ''}'),
-        ];
-        if (kids.isNotEmpty) groups.add((title: '${p['title'] ?? ''}', children: kids));
-      }
+      final groups = await loadForumGroups();
       if (!mounted) return;
       setState(() {
         _groups = groups;
@@ -142,6 +150,7 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
     if (!auth.isAuthenticated) { await askLogin(context); return; }
     FocusScope.of(context).unfocus();
     setState(() { _sending = true; _error = null; });
+    if (_editing) return _saveEdit(auth, title, content);
     try {
       final d = await auth.authedMutate(
         r'mutation($title: String!, $content: String, $forum_id: ID!) { createDiscussion(input: { title: $title, content: $content, forum_id: $forum_id }) { id slug status } }',
@@ -167,50 +176,33 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
     }
   }
 
+  /// Edit: send only what changed, so an untouched body keeps its
+  /// formatting and images.
+  Future<void> _saveEdit(AuthProvider auth, String title, String content) async {
+    final e = widget.editing!;
+    final input = <String, dynamic>{
+      'id': '${e['id']}',
+      if (title != _origTitle) 'title': title,
+      if (content != _origContent.trim()) 'content': _toHtml(content),
+      if (_forumId != null && _forumId != '${e['forum']?['id']}') 'forum_id': _forumId,
+    };
+    if (input.length == 1) { Navigator.of(context).pop(<String, dynamic>{'id': e['id']}); return; }
+    try {
+      final d = await auth.authedMutate(r'mutation($input: UpdateDiscussionInput!) { updateDiscussion(input: $input) { id } }', {'input': input});
+      if (!mounted) return;
+      Navigator.of(context).pop(Map<String, dynamic>.from((d['updateDiscussion'] as Map?) ?? {'id': e['id']}));
+    } catch (err) {
+      if (!mounted) return;
+      setState(() { _sending = false; _error = friendlyError(err, fallback: 'Chưa lưu được, vui lòng thử lại.'); });
+    }
+  }
+
   Future<void> _pickForum() async {
     if (_groups.isEmpty) {
       if (!_forumsLoading) _loadForums();
       return;
     }
-    final picked = await showModalBottomSheet<({String id, String title})>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
-        child: SafeArea(
-          child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 16, 16, 16), children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 8),
-              child: Text('Chọn chuyên mục', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
-            ),
-            for (final g in _groups) ...[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
-                child: Text(g.title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
-              ),
-              for (final c in g.children)
-                InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => Navigator.of(ctx).pop(c),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 56),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      child: Row(children: [
-                        Icon(c.id == _forumId ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 24, color: c.id == _forumId ? AppColors.accentLight : AppColors.textMuted),
-                        const SizedBox(width: 12),
-                        Expanded(child: Text(c.title, style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.text)))),
-                      ]),
-                    ),
-                  ),
-                ),
-            ],
-          ]),
-        ),
-      ),
-    );
+    final picked = await showForumPicker(context, _groups, currentId: _forumId);
     if (picked != null && mounted) setState(() { _forumId = picked.id; _forumTitle = picked.title; _error = null; });
   }
 
@@ -221,7 +213,7 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
         fillColor: AppColors.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: AppColors.wine, width: 2)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: AppColors.wine, width: 2)),
       );
 
   Widget _label(String text) => Padding(
@@ -229,7 +221,9 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
         child: Text(text, style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
       );
 
-  bool get _hasDraft => _title.text.trim().isNotEmpty || _content.text.trim().isNotEmpty;
+  bool get _hasDraft => _editing
+      ? _title.text.trim() != _origTitle.trim() || _content.text.trim() != _origContent.trim()
+      : _title.text.trim().isNotEmpty || _content.text.trim().isNotEmpty;
 
   /// Leaving with text typed: ask first so a slip of the finger doesn't
   /// throw away a long post.
@@ -239,11 +233,11 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: Text('Bỏ bài đang viết?', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
-        content: Text('Nội dung bạn vừa viết sẽ không được lưu.', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))),
+        title: Text(_editing ? 'Bỏ thay đổi?' : 'Bỏ bài đang viết?', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+        content: Text(_editing ? 'Những gì bạn vừa sửa sẽ không được lưu.' : 'Nội dung bạn vừa viết sẽ không được lưu.', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))),
         actions: [
           TextButton(style: TextButton.styleFrom(minimumSize: const Size(64, 48)), onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Viết tiếp', style: TextStyle(fontSize: 16))),
-          TextButton(style: TextButton.styleFrom(minimumSize: const Size(64, 48)), onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Bỏ bài', style: TextStyle(fontSize: 16))),
+          TextButton(style: TextButton.styleFrom(minimumSize: const Size(64, 48)), onPressed: () => Navigator.of(ctx).pop(true), child: Text(_editing ? 'Bỏ thay đổi' : 'Bỏ bài', style: const TextStyle(fontSize: 16))),
         ],
       ),
     );
@@ -263,7 +257,7 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.bg,
           centerTitle: true,
-          title: const Text('Đăng thảo luận'),
+          title: Text(_editing ? 'Sửa thảo luận' : 'Đăng thảo luận'),
           leading: IconButton(
             tooltip: 'Quay lại',
             icon: Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.text),
@@ -324,6 +318,14 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
                 decoration: _input('Ví dụ: Tìm bài hát về mẹ thập niên 80'),
               ),
               _label('Nội dung'),
+              if (_rich)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Text(
+                    'Bài này có ảnh hoặc chữ định dạng. Nếu chỉ sửa tiêu đề/chuyên mục thì nội dung giữ nguyên; sửa nội dung ở đây sẽ thành chữ thường.',
+                    style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.warningText)),
+                  ),
+                ),
               TextField(
                 controller: _content,
                 minLines: 7,
@@ -342,13 +344,15 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
                 ),
               ],
               const SizedBox(height: 20),
-              PillButton(label: 'Đăng', icon: Icons.send_rounded, height: 52, loading: _sending, onTap: _sending ? null : _submit),
+              PillButton(label: _editing ? 'Lưu' : 'Đăng', icon: _editing ? Icons.check_rounded : Icons.send_rounded, height: 52, loading: _sending, onTap: _sending ? null : _submit),
+              if (!_editing) ...[
               const SizedBox(height: 12),
               Text(
                 'Bài có từ ngữ không phù hợp sẽ chờ BQT duyệt trước khi hiện.',
                 textAlign: TextAlign.center,
                 style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)),
               ),
+              ],
             ],
           ),
         ),
@@ -356,3 +360,88 @@ class _DiscussionComposeScreenState extends State<DiscussionComposeScreen> {
     );
   }
 }
+
+/// A parent forum with the child forums that take topics.
+typedef ForumGroup = ({String title, List<({String id, String title})> children});
+
+/// Forums a topic can live in (children only, minus the Bài gửi forum).
+Future<List<ForumGroup>> loadForumGroups() async {
+  final data = await ApiClient.query(r'''query {
+    forums(first: 100, where: {AND: [{column: "parent_id", value: null}]}, orderBy: [{column: "position", order: ASC}]) {
+      data { id title children(first: 100, orderBy: [{column: "position", order: ASC}]) { data { id title } } }
+    }
+  }''');
+  final groups = <ForumGroup>[];
+  for (final p in (data['forums']?['data'] ?? []) as List) {
+    final kids = <({String id, String title})>[
+      for (final c in (p['children']?['data'] ?? []) as List)
+        if ('${c['id']}' != submissionForumId) (id: '${c['id']}', title: '${c['title'] ?? ''}'),
+    ];
+    if (kids.isNotEmpty) groups.add((title: '${p['title'] ?? ''}', children: kids));
+  }
+  return groups;
+}
+
+/// "Chọn chuyên mục" sheet; [currentId] shows as the checked one.
+Future<({String id, String title})?> showForumPicker(BuildContext context, List<ForumGroup> groups, {String? currentId, String heading = 'Chọn chuyên mục'}) {
+  return showModalBottomSheet<({String id, String title})>(
+    context: context,
+    backgroundColor: AppColors.surface,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (ctx) => ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+      child: SafeArea(
+        child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 16, 16, 16), children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(heading, style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+          ),
+          for (final g in groups) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 14, 4, 6),
+              child: Text(g.title.toUpperCase(), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 1.1, color: AppColors.textMuted))),
+            ),
+            for (final c in g.children)
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => Navigator.of(ctx).pop(c),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    child: Row(children: [
+                      Icon(c.id == currentId ? Icons.radio_button_checked_rounded : Icons.radio_button_off_rounded, size: 24, color: c.id == currentId ? AppColors.accentLight : AppColors.textMuted),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(c.title, style: body(TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.text)))),
+                    ]),
+                  ),
+                ),
+              ),
+          ],
+        ]),
+      ),
+    ),
+  );
+}
+
+/// Stored topic HTML → the plain text the editor shows.
+String htmlToPlainText(String html) {
+  var s = html
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'</p>\s*', caseSensitive: false), '\n\n')
+      .replaceAll(RegExp(r'</(div|li|h[1-6])>\s*', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]+>'), '');
+  s = s
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&amp;', '&');
+  return s.replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
+}
+
+/// Anything beyond plain paragraphs and line breaks (images, bold, lists…).
+bool isRichHtml(String html) =>
+    RegExp(r'<(?!/?(p|br)\b)[a-z]', caseSensitive: false).hasMatch(html);

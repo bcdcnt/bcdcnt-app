@@ -190,7 +190,7 @@ class _ScalePicker extends StatelessWidget {
                           textScaler: TextScaler.linear((WidgetsBinding.instance.platformDispatcher.textScaleFactor * (kTextScales[e.key] ?? 1)).clamp(0.9, 2.0)),
                           style: body(TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
                     ),
-                    if (theme.textScaleKey == e.key) Icon(Icons.check_circle_rounded, color: AppColors.accent),
+                    if (theme.textScaleKey == e.key) Icon(Icons.check_circle_rounded, color: AppColors.accentFg),
                   ]),
                 ),
               ),

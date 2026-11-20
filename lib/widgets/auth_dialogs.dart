@@ -840,7 +840,7 @@ class _AuthShell extends StatelessWidget {
                         width: 40, height: 40,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
+                          gradient: LinearGradient(colors: AppColors.heroGradient),
                           boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.3 * AppColors.shadowMul), blurRadius: 12, spreadRadius: -2)],
                         ),
                         child: Icon(icon, color: Colors.white, size: 22),

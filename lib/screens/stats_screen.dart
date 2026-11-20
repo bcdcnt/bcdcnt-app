@@ -246,7 +246,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: AppColors.heroGradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Row(children: [
@@ -436,7 +436,7 @@ class _StatsScreenState extends State<StatsScreen> {
                   width: 80, height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
+                    gradient: LinearGradient(colors: AppColors.heroGradient),
                   ),
                   child: ClipOval(
                     child: r.image != null

@@ -22,11 +22,12 @@ class _Cfg {
   const _Cfg({required this.label, required this.docType, required this.icon, required this.tint});
 }
 
-const _cfg = <ArchiveType, _Cfg>{
-  ArchiveType.image: _Cfg(label: 'Thư viện ảnh', docType: 'image', icon: Icons.image_outlined, tint: Color(0xFF711313)),
-  ArchiveType.audio: _Cfg(label: 'Tư liệu âm thanh', docType: 'audio', icon: Icons.audiotrack, tint: Color(0xFF8C3B3A)),
-  ArchiveType.video: _Cfg(label: 'Tư liệu video', docType: 'video', icon: Icons.video_library_outlined, tint: Color(0xFF5A1D1D)),
-  ArchiveType.news: _Cfg(label: 'Tư liệu bài viết', docType: 'news', icon: Icons.article_outlined, tint: Color(0xFF9C5E5C)),
+// Tints follow the colour set's hue.
+Map<ArchiveType, _Cfg> get _cfg => {
+  ArchiveType.image: _Cfg(label: 'Thư viện ảnh', docType: 'image', icon: Icons.image_outlined, tint: AppColors.tones[0]),
+  ArchiveType.audio: _Cfg(label: 'Tư liệu âm thanh', docType: 'audio', icon: Icons.audiotrack, tint: AppColors.tones[1]),
+  ArchiveType.video: _Cfg(label: 'Tư liệu video', docType: 'video', icon: Icons.video_library_outlined, tint: AppColors.tones[2]),
+  ArchiveType.news: _Cfg(label: 'Tư liệu bài viết', docType: 'news', icon: Icons.article_outlined, tint: AppColors.tones[3]),
 };
 
 const _slugMap = <String, ArchiveType>{

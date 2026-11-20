@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -11,8 +13,10 @@ import 'song_row.dart';
 import 'ui.dart' show keyTip;
 
 /// Which side-panel tab is showing ('lyric' | 'comment' | 'queue'). The
-/// player bar's labelled buttons and the panel share it.
-final ValueNotifier<String> desktopPanelTab = ValueNotifier<String>('comment');
+/// player bar's labelled buttons and the panel share it. Screenshot hook:
+/// BCDCNT_PANEL_TAB=lyric|comment|queue picks the opening tab (desktop).
+final ValueNotifier<String> desktopPanelTab = ValueNotifier<String>(
+    !kIsWeb && const ['lyric', 'comment', 'queue'].contains(Platform.environment['BCDCNT_PANEL_TAB']) ? Platform.environment['BCDCNT_PANEL_TAB']! : 'comment');
 
 /// Desktop player bar (canvas "Desktop — làm mới"): 96px, full width, the
 /// outermost layer so changing page never stops the music. Left: the song;

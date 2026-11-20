@@ -580,6 +580,7 @@ class _TextSizeButton extends StatelessWidget {
       onSelected: (v) {
         if (v.startsWith('s:')) theme.setTextScale(v.substring(2));
         if (v.startsWith('t:')) theme.setTheme(v.substring(2));
+        if (v == 'follow') theme.setFollowSystem(!theme.followSystem);
       },
       itemBuilder: (_) => [
         PopupMenuItem(enabled: false, height: 32, child: Text('CỠ CHỮ', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
@@ -588,7 +589,9 @@ class _TextSizeButton extends StatelessWidget {
         const PopupMenuDivider(),
         PopupMenuItem(enabled: false, height: 32, child: Text('GIAO DIỆN', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted)))),
         for (final p in kAppPalettes)
-          CheckedPopupMenuItem(value: 't:${p.name}', checked: theme.name == p.name, child: Text(p.label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          CheckedPopupMenuItem(value: 't:${p.name}', checked: theme.name == p.name, child: Row(children: [themeSwatch(p, size: 20), const SizedBox(width: 10), Text(p.label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))])),
+        const PopupMenuDivider(),
+        CheckedPopupMenuItem(value: 'follow', checked: theme.followSystem, child: Text('Theo giao diện máy', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
       ],
       child: Container(
         width: 44, height: 44,

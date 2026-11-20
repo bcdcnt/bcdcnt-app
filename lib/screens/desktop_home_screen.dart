@@ -77,8 +77,9 @@ String _canChi(int y) {
   return '${stems[(y + 6) % 10]} ${branches[(y + 8) % 12]}';
 }
 
-Color get _paper => AppColors.isLight ? const Color(0xFFFBF6F1) : const Color(0xFF1E1819);
-Color get _paperEdge => AppColors.isLight ? const Color(0xFFEDE1D8) : const Color(0xFF2E2425);
+// Warm "paper" cards, tinted to the colour set (wine sets ≈ #FBF6F1 / #EDE1D8).
+Color get _paper => AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.07)! : Color.lerp(AppColors.surface, AppColors.bg, 0.3)!;
+Color get _paperEdge => AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.2)! : Color.lerp(AppColors.surfaceLight, AppColors.surfaceHover, 0.5)!;
 
 /// Đài channels. "Tự động" picks one by the hour: morning songs about the
 /// homeland, folk songs at noon, love songs at night, lullabies late.
@@ -982,7 +983,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
     final (IconData, Color, String)? why = recent
         ? (Icons.local_florist_rounded, AppColors.textSecondary, '${a.role} ${a.person['title'] ?? ''} vừa qua đời ngày ${a.date.day}/${a.date.month}${yob != null && yob > 1800 ? ', hưởng thọ ${a.date.year - yob} tuổi' : ''}')
         : a != null && a.years > 0
-        ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.wine : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''}')
+        ? (a.birth ? Icons.cake_rounded : Icons.local_florist_rounded, a.birth ? AppColors.accentFg : AppColors.textSecondary, '${a.years} năm ngày ${a.birth ? 'sinh' : 'mất'} ${a.role.toLowerCase()} ${a.person['title'] ?? ''}')
         : age >= 40 && age % 10 == 0
             ? (Icons.music_note_rounded, AppColors.isLight ? const Color(0xFF9C6B2F) : const Color(0xFFC9965A), 'Tròn $age năm ra đời bài hát ($year)')
             : null;
@@ -1184,7 +1185,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Widget _radioCard({bool big = false}) {
     double z(double phone, double desk) => big ? desk : phone;
     final list = _radio[_ch];
-    const soft = Color(0xFFE3CFCB), muted = Color(0xFFD9B6B0);
+    // Cream type on the radio card, tinted to the colour set (wine ≈ #E3CFCB / #D9B6B0).
+    final soft = Color.lerp(AppColors.rose, Colors.white, 0.6)!, muted = Color.lerp(AppColors.rose, Colors.white, 0.45)!;
     final player = context.watch<PlayerProvider>();
     final song = player.currentSong;
     final radio = song != null && RadioPresence.isRadio(player);
@@ -1214,7 +1216,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       padding: EdgeInsets.symmetric(horizontal: z(16, 24), vertical: z(16, 22)),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
-        gradient: const RadialGradient(center: Alignment(0.8, -1.0), radius: 1.4, colors: [Color(0xFF842A27), Color(0xFF4E1718), Color(0xFF331011)], stops: [0, 0.55, 1]),
+        gradient: RadialGradient(center: const Alignment(0.8, -1.0), radius: 1.4, colors: [Color.lerp(AppColors.wineMid, AppColors.deep, 0.1)!, Color.lerp(AppColors.deep, AppColors.wine, 0.15)!, Color.lerp(AppColors.deep, AppColors.night, 0.35)!], stops: const [0, 0.55, 1]),
       ),
       child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
@@ -1222,7 +1224,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
           child: Row(children: [
             Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFFF6B5E), shape: BoxShape.circle, boxShadow: [BoxShadow(color: const Color(0xFFFF6B5E).withValues(alpha: 0.25), spreadRadius: 4)])),
             const SizedBox(width: 8),
-            Expanded(child: Text(radio ? 'ĐÀI BCĐCNT · ĐANG PHÁT' : 'ĐÀI BCĐCNT · PHÁT 24/7', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: z(11, 12), letterSpacing: z(1.1, 1.2), fontWeight: FontWeight.w800, color: const Color(0xFFEBC2BC))))),
+            Expanded(child: Text(radio ? 'ĐÀI BCĐCNT · ĐANG PHÁT' : 'ĐÀI BCĐCNT · PHÁT 24/7', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: z(11, 12), letterSpacing: z(1.1, 1.2), fontWeight: FontWeight.w800, color: Color.lerp(AppColors.rose, Colors.white, 0.55)!)))),
             ValueListenableBuilder<(int, List<Map<String, dynamic>>)>(
               valueListenable: RadioPresence.instance.listeners,
               // Counting yourself, one is just you: show it from two.
@@ -1413,8 +1415,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   Widget _decadeChart() {
     final max = _decades.map((d) => d.$2).reduce((a, b) => a > b ? a : b);
-    final lo = AppColors.isLight ? const Color(0xFFEEE0DD) : const Color(0xFF3A2A2B);
-    final hi = AppColors.isLight ? const Color(0xFFC07A74) : const Color(0xFF9C4A45);
+    final lo = AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.22)! : Color.lerp(AppColors.surfaceLight, AppColors.rose, 0.12)!;
+    final hi = AppColors.isLight ? Color.lerp(AppColors.rose, AppColors.wine, 0.35)! : Color.lerp(AppColors.wine, AppColors.rose, 0.3)!;
     // The decade of the song playing gets a pulsing dot.
     return Selector<PlayerProvider, int?>(
       selector: (_, p) {
@@ -1429,7 +1431,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   Widget _decadeBox(int max, Color lo, Color hi, int? playingDec) {
     return Container(
       padding: const EdgeInsets.fromLTRB(26, 22, 26, 18),
-      decoration: BoxDecoration(color: AppColors.isLight ? const Color(0xFFFAF7F6) : AppColors.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.borderSubtle)),
+      decoration: BoxDecoration(color: AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.surface, 0.5) : AppColors.surface, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.borderSubtle)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
           for (final (i, (y, n, songs)) in _decades.indexed) ...[
@@ -1562,7 +1564,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
   // ---------- Người nghe kể ----------
   void _openObject(Map<String, dynamic> obj, {String? commentId}) {
     final kind = _tn['${obj['__typename']}'] ?? 'song';
-    context.push(commentId != null ? '/$kind/${obj['id']}?binh-luan=1' : '/$kind/${obj['id']}', extra: {...obj, 'file_type': kind, 'highlightCommentId': ?commentId});
+    // Mọi loại bản thu đi chung route /song/:id; loại nằm trong extra.file_type.
+    context.push(commentId != null ? '/song/${obj['id']}?binh-luan=1' : '/song/${obj['id']}', extra: {...obj, 'file_type': kind, 'highlightCommentId': ?commentId});
   }
 
   Widget _likes(Map c, {double size = 18}) {
@@ -1696,8 +1699,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
       final t = _ctv[total] ?? 0;
       return t <= 0 ? 0 : (100 * (t - (_ctv[done] ?? 0)) / t).round().clamp(0, 100);
     }
-    final pink = AppColors.isLight ? const Color(0xFFFBF3F3) : const Color(0xFF241819);
-    final pinkEdge = AppColors.isLight ? const Color(0xFFF1DEDE) : const Color(0xFF3A2A2B);
+    final pink = AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.07)! : Color.lerp(AppColors.surface, AppColors.rose, 0.05)!;
+    final pinkEdge = AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.22)! : Color.lerp(AppColors.surfaceLight, AppColors.rose, 0.12)!;
     final items = [
       (Icons.image_rounded, _ctv['no_image'] ?? 0, 'bài chờ ảnh minh hoạ', pct('no_image', 'songs'), 'Thêm ảnh', 'no_image'),
       (Icons.description_rounded, _ctv['no_lyric'] ?? 0, 'bài chờ chép lời', pct('no_lyric', 'songs'), 'Chép lời', 'no_lyric'),
@@ -1797,7 +1800,7 @@ class _CalendarSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final sheet = AppColors.isLight ? Colors.white : const Color(0xFF2A2021);
+    final sheet = AppColors.isLight ? Colors.white : AppColors.surfaceLight;
     return SizedBox(
       width: 148,
       child: Stack(clipBehavior: Clip.none, children: [
@@ -1960,7 +1963,7 @@ class _DecadeBarState extends State<_DecadeBar> {
           decoration: BoxDecoration(
             color: AppColors.isLight ? Colors.white : AppColors.surface,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.isLight ? const Color(0xFFE4D6D4) : AppColors.border),
+            border: Border.all(color: AppColors.isLight ? Color.lerp(AppColors.bg, AppColors.rose, 0.25)! : AppColors.border),
             boxShadow: [
               BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: AppColors.isLight ? 0.22 : 0.5), blurRadius: 36, offset: const Offset(0, 16)),
               BoxShadow(color: const Color(0xFF280A0A).withValues(alpha: AppColors.isLight ? 0.08 : 0.3), blurRadius: 6, offset: const Offset(0, 2)),

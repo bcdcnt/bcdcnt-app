@@ -12,6 +12,7 @@ import '../constants/theme.dart';
 import '../services/api.dart';
 import '../services/events.dart';
 import 'list_search.dart' show foldVi;
+import 'song_row.dart' show songByline;
 import '../services/player.dart';
 import '../services/theme_provider.dart';
 
@@ -60,11 +61,14 @@ class _PaletteAction {
   final String title;
   final String? subtitle;
   final String? hotkey;
+  /// Section the row sits under: Đi tới / Đang phát · tên bài / Cửa sổ & giao diện.
+  final String group;
   final VoidCallback run;
   const _PaletteAction({
     required this.icon,
     required this.title,
     required this.run,
+    required this.group,
     this.subtitle,
     this.hotkey,
   });
@@ -158,48 +162,59 @@ class _CommandPaletteState extends State<CommandPalette> {
   List<_PaletteAction> _buildActions(BuildContext context, PlayerProvider player, ThemeProvider theme) {
     void close() => Navigator.of(context, rootNavigator: true).pop();
     void go(String path) { close(); context.push(path); }
+    const nav = 'Đi tới', ui = 'Cửa sổ & giao diện';
+    final song = player.currentSong;
+    final playing = 'Đang phát${song?['title'] != null ? ' · ${song!['title']}' : ''}';
     return [
       // Navigation
-      _PaletteAction(icon: Icons.home_outlined, title: 'Trang chủ', subtitle: 'Đi tới /', run: () => go('/')),
-      _PaletteAction(icon: Icons.search, title: 'Tìm kiếm', subtitle: 'Đi tới /search', run: () => go('/search')),
-      _PaletteAction(icon: Icons.event_outlined, title: 'Mở lịch Sự kiện', subtitle: _nextEventLabel ?? 'Các ngày kỷ niệm trong năm', run: () => go('/su-kien')),
-      _PaletteAction(icon: Icons.chat_bubble_outline, title: 'Bình luận', subtitle: 'Đi tới /binh-luan', run: () => go('/binh-luan')),
-      _PaletteAction(icon: Icons.leaderboard_outlined, title: 'Bảng xếp hạng', subtitle: 'Đi tới /bang-xep-hang', run: () => go('/bang-xep-hang')),
-      _PaletteAction(icon: Icons.person_outline_rounded, title: 'Cá nhân', subtitle: 'Đi tới /library', run: () => go('/library')),
-      _PaletteAction(icon: Icons.notifications_outlined, title: 'Thông báo', subtitle: 'Đi tới /thong-bao', run: () => go('/thong-bao')),
-      _PaletteAction(icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Đi tới /cai-dat', run: () => go('/cai-dat')),
-      _PaletteAction(icon: Icons.mic_outlined, title: 'Nghệ sĩ', subtitle: 'Đi tới /nghe-si', run: () => go('/nghe-si')),
-      _PaletteAction(icon: Icons.piano_outlined, title: 'Nhạc sĩ', subtitle: 'Đi tới /nhac-si', run: () => go('/nhac-si')),
-      _PaletteAction(icon: Icons.tag, title: 'Tag', subtitle: 'Đi tới /tag', run: () => go('/tag')),
+      // Dòng phụ nói trang có gì (không phải đường dẫn).
+      _PaletteAction(group: nav, icon: Icons.home_outlined, title: 'Trang chủ', subtitle: 'Bài hát hôm nay, Đài BCĐCNT, gợi ý cho bạn', run: () => go('/')),
+      _PaletteAction(group: nav, icon: Icons.search, title: 'Tìm kiếm', subtitle: 'Tìm bài hát, nhạc sĩ, nghệ sĩ, lời bài hát', run: () => go('/search')),
+      _PaletteAction(group: nav, icon: Icons.event_outlined, title: 'Mở lịch Sự kiện', subtitle: _nextEventLabel ?? 'Các ngày kỷ niệm trong năm', run: () => go('/su-kien')),
+      _PaletteAction(group: nav, icon: Icons.chat_bubble_outline, title: 'Bình luận', subtitle: 'Cảm nhận mới nhất của người nghe', run: () => go('/binh-luan')),
+      _PaletteAction(group: nav, icon: Icons.leaderboard_outlined, title: 'Bảng xếp hạng', subtitle: 'Bài nghe nhiều, thành viên tích cực', run: () => go('/bang-xep-hang')),
+      _PaletteAction(group: nav, icon: Icons.person_outline_rounded, title: 'Cá nhân', subtitle: 'Yêu thích, playlist, nghe gần đây', run: () => go('/library')),
+      _PaletteAction(group: nav, icon: Icons.notifications_outlined, title: 'Thông báo', subtitle: 'Trả lời, lượt thích, bài gửi được duyệt', run: () => go('/thong-bao')),
+      _PaletteAction(group: nav, icon: Icons.mic_outlined, title: 'Nghệ sĩ', subtitle: 'Ca sĩ, nghệ sĩ biểu diễn, dàn nhạc', run: () => go('/nghe-si')),
+      _PaletteAction(group: nav, icon: Icons.piano_outlined, title: 'Nhạc sĩ', subtitle: 'Các nhạc sĩ sáng tác', run: () => go('/nhac-si')),
+      _PaletteAction(group: nav, icon: Icons.sell_outlined, title: 'Chủ đề', subtitle: 'Bài hát theo chủ đề: mùa xuân, quê hương…', run: () => go('/tag')),
+      _PaletteAction(group: nav, icon: Icons.settings_outlined, title: 'Cài đặt', subtitle: 'Giao diện, cỡ chữ, thông báo, tài khoản', run: () => go('/cai-dat')),
       // Player controls — only meaningful when something is loaded.
-      if (player.currentSong != null) ...[
+      if (song != null) ...[
         _PaletteAction(
+          group: playing,
           icon: player.isPlaying ? Icons.pause : Icons.play_arrow,
           title: player.isPlaying ? 'Tạm dừng' : 'Phát',
+          subtitle: songByline(song, orComposer: true).isNotEmpty ? songByline(song, orComposer: true) : null,
           hotkey: 'Space',
           run: () { close(); player.togglePlay(); },
         ),
-        _PaletteAction(icon: Icons.skip_next, title: 'Bài tiếp', hotkey: '⇧ →', run: () { close(); player.playNext(); }),
-        _PaletteAction(icon: Icons.skip_previous, title: 'Bài trước', hotkey: '⇧ ←', run: () { close(); player.playPrev(); }),
+        _PaletteAction(group: playing, icon: Icons.skip_next, title: 'Bài tiếp', subtitle: 'Bài kế trong hàng đợi', hotkey: '⇧ →', run: () { close(); player.playNext(); }),
+        _PaletteAction(group: playing, icon: Icons.skip_previous, title: 'Bài trước', subtitle: 'Quay lại bài vừa nghe', hotkey: '⇧ ←', run: () { close(); player.playPrev(); }),
         _PaletteAction(
+          group: playing,
           icon: player.shuffle ? Icons.shuffle_on_outlined : Icons.shuffle,
           title: player.shuffle ? 'Tắt phát ngẫu nhiên' : 'Bật phát ngẫu nhiên',
+          subtitle: player.shuffle ? 'Phát lại theo thứ tự hàng đợi' : 'Trộn thứ tự hàng đợi',
           run: () { close(); player.toggleShuffle(); },
         ),
       ],
       // Window — desktop only.
       if (_isDesktopOS)
         _PaletteAction(
+          group: ui,
           icon: Icons.fullscreen,
           title: 'Toàn màn hình',
+          subtitle: 'Phóng to cửa sổ, ẩn thanh hệ thống',
           hotkey: 'F',
           run: () async { close(); final v = await windowManager.isFullScreen(); await windowManager.setFullScreen(!v); },
         ),
       // Theme cycler — picks the next palette in kAppPalettes after current.
       _PaletteAction(
+        group: ui,
         icon: Icons.palette_outlined,
         title: 'Đổi phối màu',
-        subtitle: 'Hiện tại: ${theme.palette.label}',
+        subtitle: 'Hiện tại: ${theme.palette.label} · bấm để đổi sang bảng màu kế tiếp',
         run: () {
           close();
           final i = kAppPalettes.indexWhere((p) => p.name == theme.name);
@@ -228,7 +243,9 @@ class _CommandPaletteState extends State<CommandPalette> {
     if (q.isEmpty) return true;
     // With or without accents: "lich su kien" finds "Mở lịch Sự kiện".
     final ql = foldVi(q);
-    return foldVi(a.title).contains(ql) || foldVi(a.subtitle ?? '').contains(ql);
+    // Title only: the descriptive subtitles ("bài hát", "nghệ sĩ"…) would
+    // otherwise push commands above real search hits.
+    return foldVi(a.title).contains(ql);
   }
 
   void _open(Map<String, dynamic> hit) {
@@ -382,8 +399,12 @@ class _CommandPaletteState extends State<CommandPalette> {
                 }
                 final children = <Widget>[];
                 if (actions.isNotEmpty) {
-                  children.add(_sectionHeader(hasInput ? 'Lệnh' : 'Hành động nhanh'));
+                  String? group;
                   for (var i = 0; i < actions.length; i++) {
+                    if (actions[i].group != group) {
+                      group = actions[i].group;
+                      children.add(_sectionHeader(group));
+                    }
                     children.add(_ActionRow(
                       action: actions[i],
                       selected: i == _selected,
@@ -408,6 +429,25 @@ class _CommandPaletteState extends State<CommandPalette> {
                   children: children,
                 );
               })),
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight.withValues(alpha: 0.5),
+                  border: Border(top: BorderSide(color: AppColors.border)),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+                ),
+                child: Row(children: [
+                  for (final (k, t) in const [('↑↓', 'chọn'), ('Enter', 'mở'), ('Esc', 'đóng')]) ...[
+                    _Kbd(k),
+                    const SizedBox(width: 5),
+                    Text(t, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary))),
+                    const SizedBox(width: 14),
+                  ],
+                  const Spacer(),
+                  Flexible(child: Text('Gõ tên bài, người hoặc lệnh, không dấu cũng được', maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, color: AppColors.textMuted)))),
+                ]),
+              ),
             ],
           ),
         ),
@@ -415,6 +455,18 @@ class _CommandPaletteState extends State<CommandPalette> {
       ),
     );
   }
+}
+
+/// Keycap chip: hotkey hints on rows and the footer legend.
+class _Kbd extends StatelessWidget {
+  final String label;
+  const _Kbd(this.label);
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(4), border: Border.all(color: AppColors.border)),
+        child: Text(label, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w700))),
+      );
 }
 
 class _ActionRow extends StatelessWidget {
@@ -459,11 +511,7 @@ class _ActionRow extends StatelessWidget {
             ),
             if (action.hotkey != null) ...[
               const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(color: AppColors.surfaceLight, borderRadius: BorderRadius.circular(4), border: Border.all(color: AppColors.border)),
-                child: Text(action.hotkey!, style: body(TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w600))),
-              ),
+              _Kbd(action.hotkey!),
             ],
           ]),
         ),
@@ -493,7 +541,7 @@ class _PaletteRow extends StatelessWidget {
       case 'sheet': return 'Bản nhạc';
       case 'document': return 'Tư liệu';
       case 'discussion': return 'Thảo luận';
-      case 'tag': return 'Tag';
+      case 'tag': return 'Chủ đề';
       default: return t ?? '';
     }
   }

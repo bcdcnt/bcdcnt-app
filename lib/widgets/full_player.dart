@@ -28,25 +28,26 @@ import 'synced_video.dart';
 import 'lyrics_text.dart';
 import '../services/api.dart';
 
-/// Fixed "now playing" palette: the logo's wine red with cream type, used
-/// whatever app theme is active (so the player reads as its own room, like
+/// "Now playing" palette: the colour set's deep hue (wine red for the red
+/// sets) with cream type, dark whatever the page colours are (so the player reads as its own room, like
 /// the mockup). Everything in this file colours through _PC, never AppColors
 /// surfaces directly. Sheets opened from here need solid fills, hence the
 /// opaque surface tones.
 class _PC {
-  static const bg = Color(0xFF2A0C0C);
-  static const surface = Color(0xFF341111);
-  static const surfaceLight = Color(0xFF401616);
-  static const surfaceHover = Color(0xFF4C1C1C);
+  // For the wine sets ≈ #2A0C0C, #341111, #401616, #4C1C1C, #E0AEAC.
+  static Color get bg => Color.lerp(AppColors.deep, AppColors.night, 0.45)!;
+  static Color get surface => Color.lerp(AppColors.deep, AppColors.night, 0.28)!;
+  static Color get surfaceLight => Color.lerp(AppColors.deep, AppColors.night, 0.12)!;
+  static Color get surfaceHover => Color.lerp(AppColors.deep, AppColors.wine, 0.2)!;
   static const accent = Color(0xFFFFFFFF);
-  static const accentLight = Color(0xFFE0AEAC);
+  static Color get accentLight => Color.lerp(AppColors.rose, Colors.white, 0.4)!;
   static const accentSoft = Color(0x1FFFFFFF);
   static const text = Color(0xFFFFFFFF);
   static const textSecondary = Color(0xC7FFFFFF);
   static const textMuted = Color(0x8CFFFFFF);
   static const border = Color(0x40FFFFFF);
   static const borderSubtle = Color(0x1FFFFFFF);
-  static const wine = Color(0xFF711313);
+  static Color get wine => AppColors.wine;
 }
 
 class FullPlayer extends StatefulWidget {
@@ -807,12 +808,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
             if (e.logicalKey == LogicalKeyboardKey.escape && !_isFullScreen) Navigator.pop(context);
           },
           child: DecoratedBox(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 stops: [0, 0.55, 1],
-                colors: [Color(0xFF5A1414), Color(0xFF2A0C0C), AppColors.night],
+                colors: [Color.lerp(AppColors.deep, AppColors.wine, 0.35)!, Color.lerp(AppColors.deep, AppColors.night, 0.5)!, AppColors.night],
               ),
             ),
             child: SafeArea(
@@ -888,7 +889,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                   child: SizedBox(
                                     width: 84, height: 84,
                                     child: player.isLoading
-                                        ? const Center(child: SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
+                                        ? Center(child: SizedBox(width: 32, height: 32, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
                                         : Icon(player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 44, color: AppColors.wine),
                                   ),
                                 ),
@@ -961,7 +962,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                     UserAvatar(url: _topComment!['user']?['avatar']?['url']?.toString(), name: (_topComment!['user']?['username'] ?? '').toString(), size: 26),
                                     const SizedBox(width: 8),
                                     Expanded(child: Text((_topComment!['user']?['username'] ?? '').toString(), style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF))))),
-                                    Text('Xem tất cả', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
+                                    Text('Xem tất cả', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _PC.accentLight))),
                                   ]),
                                 ]),
                               ),
@@ -1014,12 +1015,12 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
         backgroundColor: AppColors.night,
         body: DecoratedBox(
           // Brand room: wine at the top fading to near-black.
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               stops: [0, 0.44, 0.76],
-              colors: [Color(0xFF5A1414), Color(0xFF2A0C0C), AppColors.night],
+              colors: [Color.lerp(AppColors.deep, AppColors.wine, 0.35)!, Color.lerp(AppColors.deep, AppColors.night, 0.5)!, AppColors.night],
             ),
           ),
           child: SafeArea(
@@ -1124,7 +1125,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                         child: SizedBox(
                                           width: 76, height: 76,
                                           child: player.isLoading
-                                              ? const Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
+                                              ? Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.wine)))
                                               : Icon(player.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 40, color: AppColors.wine),
                                         ),
                                       ),
@@ -1187,7 +1188,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                   UserAvatar(url: _topComment!['user']?['avatar']?['url']?.toString(), name: (_topComment!['user']?['username'] ?? '').toString(), size: 26),
                                   const SizedBox(width: 8),
                                   Expanded(child: Text((_topComment!['user']?['username'] ?? '').toString(), style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xB3FFFFFF))))),
-                                  Text('Xem tất cả', style: body(const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFE0AEAC)))),
+                                  Text('Xem tất cả', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _PC.accentLight))),
                                 ]),
                               ],
                             ),

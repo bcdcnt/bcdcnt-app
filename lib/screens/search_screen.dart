@@ -1503,7 +1503,7 @@ class _TopResultCard extends StatelessWidget {
                 Container(
                   width: 52,
                   height: 52,
-                  decoration: const BoxDecoration(color: AppColors.wine, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: AppColors.wine, shape: BoxShape.circle),
                   child: Icon(isSongLike(t) ? Icons.play_arrow_rounded : Icons.arrow_forward_rounded, color: Colors.white, size: 28),
                 ),
               ]),
@@ -1669,14 +1669,18 @@ class _BrowseBlocks extends StatefulWidget {
 }
 
 class _BrowseBlocksState extends State<_BrowseBlocks> {
-  static const _kinds = [
-    ('Tân nhạc', '/the-loai/tan-nhac', Color(0xFF711313)),
-    ('Dân ca', '/the-loai/dan-ca', Color(0xFF8C3B3A)),
-    ('Khí nhạc', '/the-loai/khi-nhac', Color(0xFF3B0F0F)),
-    ('Tiếng thơ', '/the-loai/tieng-tho', Color(0xFF9C5E5C)),
-    ('Thành viên hát', '/the-loai/thanh-vien-hat', Color(0xFF5A1D1D)),
-    ('Bản nhạc', '/sheet', Color(0xFFB48988)),
-  ];
+  // Tonal tiles in the colour set's hue.
+  static List<(String, String, Color)> get _kinds {
+    final t = AppColors.tones;
+    return [
+      ('Tân nhạc', '/the-loai/tan-nhac', t[0]),
+      ('Dân ca', '/the-loai/dan-ca', t[1]),
+      ('Khí nhạc', '/the-loai/khi-nhac', t[4]),
+      ('Tiếng thơ', '/the-loai/tieng-tho', t[3]),
+      ('Thành viên hát', '/the-loai/thanh-vien-hat', t[2]),
+      ('Bản nhạc', '/sheet', AppColors.rose),
+    ];
+  }
   static const _decades = [1940, 1950, 1960, 1970, 1980, 1990];
 
   List<Map<String, dynamic>> _tags = [];

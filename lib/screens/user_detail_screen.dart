@@ -496,7 +496,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
           final label = ct.isNotEmpty ? ct : (r['name']?.toString() ?? '');
           final alias = (r['alias'] ?? '').toString();
           final group = (r['group_type'] ?? '').toString();
-          Color color = const Color(0xFF8E1F1F);
+          Color color = AppColors.wineMid;
           if (alias == 'admin' || alias == 'ban') {
             color = const Color(0xFFB03A2E);
           } else if (alias == 'mod') {
@@ -662,7 +662,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> with TickerProvider
                       if (u['background']?['url'] != null)
                         CachedNetworkImage(imageUrl: cdnImg((u['background']['url']).toString(), 960), fit: BoxFit.cover, errorWidget: (_, _, _) => Container(color: AppColors.surface))
                       else
-                        Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight))),
+                        Container(decoration: BoxDecoration(gradient: LinearGradient(colors: AppColors.heroGradient, begin: Alignment.topLeft, end: Alignment.bottomRight))),
                       Container(decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.black.withValues(alpha: 0.85)], begin: Alignment.topCenter, end: Alignment.bottomCenter))),
                       Positioned(left: desk ? 40 : 16, right: desk ? 40 : 16, bottom: desk ? 20 : 12, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                         Row(crossAxisAlignment: CrossAxisAlignment.center, children: [

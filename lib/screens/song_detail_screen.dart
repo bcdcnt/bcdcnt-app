@@ -2116,7 +2116,7 @@ class _DesktopHero extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(24),
           child: Stack(children: [
-            Positioned.fill(child: Container(color: const Color(0xFF2E080A))),
+            Positioned.fill(child: Container(color: AppColors.band)),
             if (thumb != null)
               Positioned.fill(
                 child: ImageFiltered(
@@ -2124,9 +2124,9 @@ class _DesktopHero extends StatelessWidget {
                   child: NetImage(url: thumb.toString(), tint: true),
                 ),
               ),
-            const Positioned.fill(
+            Positioned.fill(
               child: DecoratedBox(
-                decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x592E080A), Color(0xE62E080A)])),
+                decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [AppColors.band.withValues(alpha: 0.35), AppColors.band.withValues(alpha: 0.90)])),
               ),
             ),
             Padding(
@@ -2316,8 +2316,9 @@ class _PrimaryActionPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // On the dark band: solid wine for play, white pills for the rest.
-    final fg = primary ? Colors.white : (activeAccent ? const Color(0xFF8E1F1F) : const Color(0xFF161112));
-    final bgColor = primary ? const Color(0xFF711313) : Colors.white;
+    // The pills stay white in every colour set, so their text stays dark.
+    final fg = primary ? Colors.white : (activeAccent ? AppColors.wine : const Color(0xFF161112));
+    final bgColor = primary ? AppColors.wine : Colors.white;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2328,7 +2329,7 @@ class _PrimaryActionPill extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(22)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 20, color: activeAccent ? AppColors.love : fg),
+            Icon(icon, size: 20, color: activeAccent ? AppColors.loveOnWhite : fg),
             const SizedBox(width: 8),
             Text(label, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: fg))),
           ]),

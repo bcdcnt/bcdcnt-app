@@ -217,7 +217,7 @@ class _AskSheet extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
-              child: Icon(Icons.notifications_active_rounded, size: 32, color: AppColors.accent),
+              child: Icon(Icons.notifications_active_rounded, size: 32, color: AppColors.accentFg),
             ),
             const SizedBox(height: 16),
             Text('Bật thông báo?', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),

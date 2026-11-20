@@ -568,7 +568,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.94), shape: BoxShape.circle),
-                        child: const Icon(Icons.favorite_rounded, size: 16, color: AppColors.love),
+                        child: const Icon(Icons.favorite_rounded, size: 16, color: AppColors.loveOnWhite),
                       ),
                     ),
                   ]),
@@ -947,7 +947,7 @@ class _PickCarouselState extends State<_PickCarousel> {
                                 width: 52,
                                 height: 52,
                                 decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                                child: const Icon(Icons.play_arrow_rounded, color: AppColors.wine, size: 30),
+                                child: Icon(Icons.play_arrow_rounded, color: AppColors.wine, size: 30),
                               ),
                             ],
                           ),
@@ -987,7 +987,7 @@ class _PickCarouselState extends State<_PickCarousel> {
 class _DecadeGrid extends StatelessWidget {
   final List<String?> images;
   const _DecadeGrid({required this.images});
-  static const _tones = [Color(0xFF711313), Color(0xFF8C3B3A), Color(0xFF5A1D1D), Color(0xFF9C5E5C)];
+  static List<Color> get _tones => AppColors.tones.sublist(0, 4);
 
   @override
   Widget build(BuildContext context) => Padding(

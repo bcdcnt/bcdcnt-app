@@ -541,7 +541,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
     final band = ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: Stack(children: [
-        Positioned.fill(child: Container(color: const Color(0xFF2E080A))),
+        Positioned.fill(child: Container(color: AppColors.band)),
         if (thumb != null)
           Positioned.fill(
             child: ImageFiltered(
@@ -549,9 +549,9 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
               child: NetImage(url: thumb.toString(), tint: true),
             ),
           ),
-        const Positioned.fill(
+        Positioned.fill(
           child: DecoratedBox(
-            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Color(0x592E080A), Color(0xE62E080A)])),
+            decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [AppColors.band.withValues(alpha: 0.35), AppColors.band.withValues(alpha: 0.90)])),
           ),
         ),
         Padding(

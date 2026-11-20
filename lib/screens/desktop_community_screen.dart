@@ -41,7 +41,11 @@ class _DesktopCommunityScreenState extends State<DesktopCommunityScreen> {
             Expanded(
               child: _topic == null
                   ? Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2.4))
-                  : DiscussionDetailScreen(key: ValueKey(_topic), id: _topic!, embedded: true),
+                  : DiscussionDetailScreen(
+                      key: ValueKey(_topic), id: _topic!, embedded: true,
+                      onChanged: () => _forumKey.currentState?.reload(),
+                      onDeleted: () { setState(() => _topic = null); _forumKey.currentState?.reload(); },
+                    ),
             ),
           ]),
         1 => _withSide(const CommentsFeed(showTitle: false, desktop: true)),

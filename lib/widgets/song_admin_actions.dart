@@ -908,8 +908,8 @@ class PeopleFieldState extends State<PeopleField> {
         ListTile(
           dense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-          leading: Icon(Icons.add_circle_outline_rounded, color: AppColors.accent),
-          title: Text('Thêm mới "$q"', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accent))),
+          leading: Icon(Icons.add_circle_outline_rounded, color: AppColors.accentFg),
+          title: Text('Thêm mới "$q"', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
           onTap: _create,
         ),
     ]);

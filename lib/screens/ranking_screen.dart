@@ -440,7 +440,7 @@ class _RankingDetailScreenState extends State<RankingDetailScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: medal, width: 2),
-                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
+                  gradient: LinearGradient(colors: AppColors.heroGradient),
                 ),
                 padding: const EdgeInsets.all(2),
                 child: UserAvatar(url: item['avatar']?.toString(), name: item['name']?.toString() ?? '', size: 48),

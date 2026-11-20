@@ -384,7 +384,7 @@ class _PersonListScreenState extends State<PersonListScreen> with PagedLoader {
                                 width: 80, height: 80,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
+                                  gradient: LinearGradient(colors: AppColors.heroGradient),
                                 ),
                                 child: ClipOval(
                                   child: avatar != null

@@ -874,13 +874,13 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         child: SizedBox(
           height: 300,
           child: Stack(fit: StackFit.expand, children: [
-            Container(color: const Color(0xFF2E080A)),
+            Container(color: AppColors.band),
             if (avatar != null)
               Positioned(
                 right: 0, top: 0, bottom: 0, width: 620,
                 child: Opacity(opacity: 0.55, child: BrandTint(child: CachedNetworkImage(imageUrl: cdnImg(avatar, 1000), fit: BoxFit.cover, alignment: const Alignment(0, -0.4)))),
               ),
-            const DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF2E080A), Color(0xB32E080A), Color(0x332E080A)], stops: [0.3, 0.6, 1]))),
+            DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(colors: [AppColors.band, AppColors.band.withValues(alpha: 0.70), AppColors.band.withValues(alpha: 0.20)], stops: [0.3, 0.6, 1]))),
             Padding(
               padding: const EdgeInsets.fromLTRB(36, 28, 36, 28),
               child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -1069,7 +1069,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               onTap: avatar != null ? () => _showAvatarZoom(p) : null,
               child: avatar != null
                   ? BrandTint(child: CachedNetworkImage(imageUrl: cdnImg((avatar).toString(), 1000), fit: BoxFit.cover, alignment: const Alignment(0, -0.4), memCacheWidth: 1000))
-                  : Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]))),
+                  : Container(decoration: BoxDecoration(gradient: LinearGradient(colors: AppColors.heroGradient))),
             ),
             const IgnorePointer(
               child: DecoratedBox(

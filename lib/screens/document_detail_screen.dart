@@ -261,7 +261,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                   decoration: BoxDecoration(color: AppColors.accentSoft, borderRadius: BorderRadius.circular(10)),
-                  child: Text(typeLabel, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accent))),
+                  child: Text(typeLabel, style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.accentFg))),
                 ),
                 Text(timeago(d['created_at']), style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
                 if (d['uploader']?['username'] != null)

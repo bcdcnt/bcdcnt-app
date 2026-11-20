@@ -20,19 +20,20 @@ import 'shimmer.dart' show SongListSkeleton;
 String keyTip(BuildContext context, String label, String key) =>
     Provider.of<ThemeProvider>(context, listen: false).shortcutHints ? '$label ($key)' : label;
 
-/// Brand "gradient map" for archive photos (guideline, Trường hợp 1): keeps
-/// the photo's light and shade but colours it in the logo's red, so faded,
-/// black-and-white and modern pictures read as one set.
+/// "Gradient map" for archive photos: keeps the photo's light and shade but
+/// prints it in neutral sepia, so faded, black-and-white and modern pictures
+/// read as one set of old prints whatever colour set (Xanh dương, Tím…) the
+/// app is in. Was wine red until the colour sets (2026-11).
 class BrandTint extends StatelessWidget {
   final Widget child;
   final bool enabled;
   const BrandTint({super.key, required this.child, this.enabled = true});
 
-  // Duotone: shadows go deep wine, highlights warm paper, so photos read
+  // Duotone: shadows go brown-black, highlights warm paper, so photos read
   // as old prints. A flat BlendMode.color with the logo red turned every
   // picture salmon-pink.
-  static const _dark = [46.0, 8.0, 10.0];
-  static const _light = [246.0, 232.0, 222.0];
+  static const _dark = [40.0, 30.0, 22.0];
+  static const _light = [245.0, 236.0, 220.0];
   static final _filter = ColorFilter.matrix(<double>[
     for (var c = 0; c < 3; c++) ...[
       (_light[c] - _dark[c]) / 255 * 0.2126,
@@ -46,7 +47,7 @@ class BrandTint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cài đặt → "Nhuộm ảnh tư liệu màu nâu đỏ".
+    // Cài đặt → "Nhuộm ảnh tư liệu màu nâu cũ".
     if (!enabled || !context.select<ThemeProvider, bool>((t) => t.tintPhotos)) return child;
     // ClipRect bounds the filter layer: on Impeller (iOS) an unclipped
     // ColorFiltered spills the tint over everything painted below it.
@@ -763,7 +764,7 @@ class UserAvatar extends StatelessWidget {
         // stand out on the white page.
         decoration: guest
             ? BoxDecoration(color: AppColors.surface, shape: BoxShape.circle, border: Border.all(color: AppColors.border))
-            : const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+            : BoxDecoration(gradient: LinearGradient(colors: AppColors.heroGradient, begin: Alignment.topLeft, end: Alignment.bottomRight)),
         alignment: Alignment.center,
         child: Text(initial, style: body(TextStyle(fontSize: size * 0.4, fontWeight: FontWeight.w800, color: guest ? AppColors.textMuted : Colors.white))),
       ),

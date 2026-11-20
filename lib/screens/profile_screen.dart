@@ -119,7 +119,7 @@ class ProfileScreen extends StatelessWidget {
             margin: const EdgeInsets.symmetric(horizontal: 0),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),
-              gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              gradient: LinearGradient(colors: AppColors.heroGradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
               image: user['background'] != null
                   ? DecorationImage(image: CachedNetworkImageProvider(cdnImg((user['background']).toString(), 960)), fit: BoxFit.cover)
                   : null,
@@ -140,7 +140,7 @@ class ProfileScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(color: AppColors.bg, width: 4),
-                  gradient: LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)]),
+                  gradient: LinearGradient(colors: AppColors.heroGradient),
                 ),
                 child: ClipOval(
                   child: user['avatar'] != null
@@ -174,7 +174,7 @@ class ProfileScreen extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(colors: [Color(0xFF4A0D0D), Color(0xFF711313)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+        gradient: LinearGradient(colors: [AppColors.deep, AppColors.wine], begin: Alignment.topLeft, end: Alignment.bottomRight),
       ),
       child: Column(children: [
         Container(

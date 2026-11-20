@@ -15,12 +15,17 @@ import '../widgets/mini_player.dart';
 import '../widgets/comment_media.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/comment_section.dart';
+import 'discussion_compose_screen.dart' show DiscussionComposeScreen, ForumGroup, loadForumGroups, showForumPicker;
 
 class DiscussionDetailScreen extends StatefulWidget {
   final String id;
   /// Inside the desktop Cộng đồng page: no app bar (the page has its tabs).
   final bool embedded;
-  const DiscussionDetailScreen({super.key, required this.id, this.embedded = false});
+  /// Called after the topic is pinned, moved, edited… (refresh lists).
+  final VoidCallback? onChanged;
+  /// Called after the topic is deleted; null → go back.
+  final VoidCallback? onDeleted;
+  const DiscussionDetailScreen({super.key, required this.id, this.embedded = false, this.onChanged, this.onDeleted});
 
   @override
   State<DiscussionDetailScreen> createState() => _DiscussionDetailScreenState();
@@ -36,19 +41,19 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
   @override
   void initState() { super.initState(); _fetch(); }
 
-  Future<void> _fetch() async {
+  Future<void> _fetch({bool fresh = false}) async {
     if (_failed) setState(() { _failed = false; _loading = true; });
     try {
       final data = await ApiClient.query(r'''query($id: ID!) {
         discussion(id: $id) {
-          id title slug content created_at status is_closed views comment_count last_comment_at
+          id title slug content created_at status is_closed is_sticky sticky_comment views comment_count last_comment_at
           author_name author { id username avatar { url } roles { alias display_in_comment } }
           thumbnail { url }
           forum { id title slug parent { id title slug } }
           file { audio_url video_url duration type }
           polls(first: 5) { data { ''' + _pollFields + r''' } }
         }
-      }''', {'id': widget.id});
+      }''', {'id': widget.id}, fresh);
       if (!mounted) return;
       setState(() {
         _d = data['discussion'] != null ? Map<String, dynamic>.from(data['discussion'] as Map) : null;
@@ -107,17 +112,10 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             sliver: SliverList(delegate: SliverChildListDelegate([
-              if (forum != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    if (forum['parent']?['title'] != null) ...[
-                      _crumb(forum['parent']['title'].toString(), forum['parent']['id'], muted: true),
-                      Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted)),
-                    ],
-                    _crumb((forum['title'] ?? '').toString(), forum['id']),
-                  ]),
-                ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _headRow(d, forum),
+              ),
               Text(d['title'] ?? '', style: display(TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.3))),
               const SizedBox(height: 12),
               if (_isClosed(d))
@@ -217,14 +215,7 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
     final role = ((author?['roles'] ?? const []) as List).whereType<Map>().where((r) => r['display_in_comment'] == true).map((r) => (r['alias'] ?? '').toString()).firstWhere((a) => a.isNotEmpty, orElse: () => '');
     final views = (d['views'] as num?)?.toInt() ?? 0;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      if (forum != null)
-        Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-          if (forum['parent']?['title'] != null) ...[
-            _crumb(forum['parent']['title'].toString(), forum['parent']['id'], muted: true),
-            Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
-          ],
-          _crumb((forum['title'] ?? '').toString(), forum['id']),
-        ]),
+      _headRow(d, forum),
       Text(d['title'] ?? '', style: display(TextStyle(fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.text, letterSpacing: -0.6, height: 1.2))),
       const SizedBox(height: 18),
       if (_isClosed(d))
@@ -377,6 +368,195 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
         ),
       ],
     ]);
+  }
+
+  static bool _flag(Map d, String k) => d[k] == true || d[k] == 1 || d[k] == '1';
+
+  /// Breadcrumb, the "Đã ghim" tag and — for the author or BQT — the ⋯
+  /// menu (canvas "Desktop · Thảo luận · Chi tiết — menu ⋯").
+  Widget _headRow(Map<String, dynamic> d, dynamic forum) {
+    final menu = _topicMenu(d);
+    final pinned = _flag(d, 'is_sticky');
+    if (forum == null && menu == null && !pinned && !widget.embedded) return const SizedBox.shrink();
+    return Row(children: [
+      Expanded(
+        child: forum == null
+            ? const SizedBox.shrink()
+            : Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
+                if (forum['parent']?['title'] != null) ...[
+                  _crumb(forum['parent']['title'].toString(), forum['parent']['id'], muted: true),
+                  Icon(Icons.chevron_right, size: 16, color: AppColors.textMuted),
+                ],
+                _crumb((forum['title'] ?? '').toString(), forum['id']),
+              ]),
+      ),
+      if (pinned)
+        Container(
+          margin: const EdgeInsets.only(left: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: AppColors.warningText.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.push_pin_rounded, size: 14, color: AppColors.warningText),
+            const SizedBox(width: 5),
+            Text('Đã ghim', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.warningText))),
+          ]),
+        ),
+      // Inside the Diễn đàn pane: open the topic as its own full page.
+      if (widget.embedded)
+        Padding(
+          padding: const EdgeInsets.only(left: 8),
+          child: Material(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(22),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () => context.push('/thao-luan/${widget.id}'),
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.fromLTRB(12, 0, 16, 0),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.open_in_new_rounded, size: 20, color: AppColors.text),
+                  const SizedBox(width: 8),
+                  Text('Mở trang riêng', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text))),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      if (menu != null) ...[const SizedBox(width: 8), menu],
+    ]);
+  }
+
+  Widget? _topicMenu(Map<String, dynamic> d) {
+    final auth = context.watch<AuthProvider>();
+    if (!auth.isAuthenticated) return null;
+    final manage = auth.hasPermission('manage_discussion');
+    final owner = d['author']?['id'] != null && '${d['author']['id']}' == '${auth.user?['id']}';
+    if (!manage && !owner) return null;
+    final pinned = _flag(d, 'is_sticky'), stickyComment = _flag(d, 'sticky_comment'), closed = _isClosed(d);
+    PopupMenuEntry<String> head(String t) => PopupMenuItem<String>(
+          enabled: false,
+          height: 30,
+          child: Text(t, style: body(TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.8, color: AppColors.textMuted))),
+        );
+    PopupMenuEntry<String> item(String v, IconData icon, String label, {String? sub, Color? color}) => PopupMenuItem<String>(
+          value: v,
+          height: 48,
+          child: Row(children: [
+            Icon(icon, size: 20, color: color ?? AppColors.textSecondary),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(label, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color ?? AppColors.text))),
+              if (sub != null) Text(sub, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+            ])),
+          ]),
+        );
+    return PopupMenuButton<String>(
+      tooltip: 'Tuỳ chọn chủ đề',
+      color: AppColors.surface,
+      position: PopupMenuPosition.under,
+      constraints: const BoxConstraints(minWidth: 280, maxWidth: 320),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: AppColors.border)),
+      onSelected: (v) => _onMenu(v, d),
+      itemBuilder: (_) => [
+        if (manage) ...[
+          head('QUẢN LÝ (BQT)'),
+          item('sticky', pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined, pinned ? 'Bỏ ghim chủ đề' : 'Ghim chủ đề', sub: 'Hiện đầu chuyên mục & trang Diễn đàn'),
+          item('stickyComment', Icons.mark_chat_read_outlined, stickyComment ? 'Bỏ ghim khỏi Bình luận mới' : 'Ghim vào Bình luận mới', sub: 'Luôn nổi ở tab Bình luận mới'),
+          item('close', closed ? Icons.lock_open_rounded : Icons.lock_outline_rounded, closed ? 'Mở lại bình luận' : 'Khoá bình luận', sub: closed ? 'Mọi người trả lời được trở lại' : 'Không ai trả lời thêm được'),
+          item('move', Icons.drive_file_move_outline, 'Chuyển chuyên mục…'),
+          const PopupMenuDivider(),
+          head('CHỦ ĐỀ'),
+        ],
+        item('edit', Icons.edit_outlined, 'Sửa chủ đề'),
+        item('delete', Icons.delete_outline_rounded, 'Xoá chủ đề', color: AppColors.errorText),
+      ],
+      child: Container(
+        width: 44, height: 44,
+        decoration: BoxDecoration(color: AppColors.accentSoft, shape: BoxShape.circle),
+        child: Icon(Icons.more_horiz_rounded, size: 24, color: AppColors.accentLight),
+      ),
+    );
+  }
+
+  void _snack(String msg) => ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
+
+  /// One updateDiscussion call; [local] is merged into the shown topic.
+  Future<bool> _update(Map<String, dynamic> input, String ok) async {
+    try {
+      await context.read<AuthProvider>().authedMutate(
+        r'mutation($input: UpdateDiscussionInput!) { updateDiscussion(input: $input) { id } }',
+        {'input': {'id': widget.id, ...input}},
+      );
+      if (!mounted) return false;
+      setState(() => _d = {...?_d, ...input});
+      _snack(ok);
+      widget.onChanged?.call();
+      return true;
+    } catch (e) {
+      if (mounted) _snack(friendlyError(e, fallback: 'Chưa lưu được, vui lòng thử lại.'));
+      return false;
+    }
+  }
+
+  Future<void> _onMenu(String v, Map<String, dynamic> d) async {
+    switch (v) {
+      case 'sticky':
+        final on = !_flag(d, 'is_sticky');
+        await _update({'is_sticky': on ? 1 : 0}, on ? 'Đã ghim chủ đề.' : 'Đã bỏ ghim chủ đề.');
+      case 'stickyComment':
+        final on = !_flag(d, 'sticky_comment');
+        await _update({'sticky_comment': on ? 1 : 0}, on ? 'Đã ghim vào Bình luận mới.' : 'Đã bỏ ghim khỏi Bình luận mới.');
+      case 'close':
+        final on = !_isClosed(d);
+        await _update({'is_closed': on ? 1 : 0}, on ? 'Đã khoá bình luận.' : 'Đã mở lại bình luận.');
+      case 'move':
+        List<ForumGroup> groups;
+        try {
+          groups = await loadForumGroups();
+        } catch (e) {
+          if (mounted) _snack(friendlyError(e, fallback: 'Chưa tải được chuyên mục, vui lòng thử lại.'));
+          return;
+        }
+        if (!mounted) return;
+        final picked = await showForumPicker(context, groups, currentId: '${d['forum']?['id']}', heading: 'Chuyển sang chuyên mục');
+        if (picked == null || picked.id == '${d['forum']?['id']}' || !mounted) return;
+        if (await _update({'forum_id': picked.id}, 'Đã chuyển sang "${picked.title}".')) _fetch(fresh: true);
+      case 'edit':
+        final saved = await Navigator.of(context).push<Map<String, dynamic>>(
+          MaterialPageRoute(builder: (_) => DiscussionComposeScreen(editing: d)),
+        );
+        if (saved == null || !mounted) return;
+        _snack('Đã lưu chủ đề.');
+        widget.onChanged?.call();
+        _fetch(fresh: true);
+      case 'delete':
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: Text('Xoá chủ đề này?', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text))),
+            content: Text('"${d['title'] ?? ''}" và các bình luận trong đó sẽ không còn hiện trên diễn đàn.', style: body(TextStyle(fontSize: 16, color: AppColors.textSecondary))),
+            actions: [
+              TextButton(style: TextButton.styleFrom(minimumSize: const Size(64, 48)), onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Thôi', style: TextStyle(fontSize: 16))),
+              TextButton(style: TextButton.styleFrom(minimumSize: const Size(64, 48), foregroundColor: AppColors.errorText), onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Xoá', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800))),
+            ],
+          ),
+        );
+        if (ok != true || !mounted) return;
+        try {
+          await context.read<AuthProvider>().authedMutate(r'mutation($id: ID!) { deleteDiscussion(id: $id) { id } }', {'id': widget.id});
+          if (!mounted) return;
+          _snack('Đã xoá chủ đề.');
+          if (widget.onDeleted != null) {
+            widget.onDeleted!();
+          } else {
+            goBack(context);
+          }
+        } catch (e) {
+          if (mounted) _snack(friendlyError(e, fallback: 'Chưa xoá được, vui lòng thử lại.'));
+        }
+    }
   }
 
   static bool _isClosed(Map d) => d['is_closed'] == true || d['is_closed'] == 1 || d['is_closed'] == '1';

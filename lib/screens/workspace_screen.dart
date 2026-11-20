@@ -512,22 +512,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final on = _threadOn;
     return Material(
       color: on ? AppColors.wine : Colors.transparent,
-      shape: StadiumBorder(side: BorderSide(color: AppColors.wine, width: 1.5)),
+      shape: StadiumBorder(side: BorderSide(color: AppColors.accentFg, width: 1.5)),
       child: InkWell(
         customBorder: const StadiumBorder(),
         onTap: _toggleThread,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(Icons.chat_bubble_outline_rounded, size: 16, color: on ? Colors.white : AppColors.wine),
+            Icon(Icons.chat_bubble_outline_rounded, size: 16, color: on ? Colors.white : AppColors.accentFg),
             const SizedBox(width: 6),
-            Text(n > 0 ? 'Trao đổi $n' : 'Trao đổi', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.wine))),
+            Text(n > 0 ? 'Trao đổi $n' : 'Trao đổi', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: on ? Colors.white : AppColors.accentFg))),
             if (senderLast) ...[
               const SizedBox(width: 6),
               Container(width: 7, height: 7, decoration: const BoxDecoration(color: Color(0xFFC62828), shape: BoxShape.circle)),
             ],
             const SizedBox(width: 4),
-            Icon(on ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 18, color: on ? Colors.white : AppColors.wine),
+            Icon(on ? Icons.chevron_left_rounded : Icons.chevron_right_rounded, size: 18, color: on ? Colors.white : AppColors.accentFg),
           ]),
         ),
       ),

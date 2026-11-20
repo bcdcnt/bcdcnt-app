@@ -61,7 +61,7 @@ class GeneratedCover extends StatelessWidget {
   final double radius;
   const GeneratedCover({super.key, required this.title, required this.size, this.radius = 12});
 
-  static const _tones = [Color(0xFF711313), Color(0xFF8C3B3A), Color(0xFF5A1D1D), Color(0xFF9C5E5C), Color(0xFF3B0F0F)];
+  static List<Color> get _tones => AppColors.tones;
 
   @override
   Widget build(BuildContext context) {

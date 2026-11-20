@@ -70,7 +70,7 @@ class _ListeningProfileCardState extends State<ListeningProfileCard> {
       padding: EdgeInsets.symmetric(horizontal: widget.inset),
       child: Container(
         padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: const LinearGradient(colors: [Color(0xFF4A0C0C), Color(0xFF8E1F1F)])),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(22), gradient: LinearGradient(colors: AppColors.heroGradient)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
