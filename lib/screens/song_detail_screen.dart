@@ -1286,7 +1286,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         // Lyrics first (what people come for); the story
                         // and the invite to share one follow the sheet music.
                         ..._buildLyricsSection(lyrics, isCurrent),
-                        ..._buildLyricEditorsRow(),
+                        ..._buildLyricEditorsRow(song),
                         ..._buildSheetSection(isDesktop),
                         ..._buildDescriptionSection(description),
                         ..._buildStorySection(story),
@@ -1578,8 +1578,31 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     ];
   }
 
-  List<Widget> _buildLyricEditorsRow() {
-    if (_lyricEditors.isEmpty) return const [];
+  List<Widget> _buildLyricEditorsRow(Map song) {
+    // "Sửa lời" for members holding update_lyric (same editor as the CTV menu).
+    final canEdit = lyricTypes.contains(_resolvedType) && context.watch<AuthProvider>().hasPermission('update_lyric');
+    if (_lyricEditors.isEmpty && !canEdit) return const [];
+    final editBtn = Semantics(
+      button: true,
+      label: 'Sửa lời',
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: () => showSongAdminSheet(context, song: Map<String, dynamic>.from(song), type: _resolvedType, onRefresh: () => _fetch(fresh: true), pick: 'lyric'),
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.edit_outlined, size: 18, color: AppColors.accent),
+              const SizedBox(width: 6),
+              Text('Sửa lời', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.accent))),
+            ]),
+          ),
+        ),
+      ),
+    );
+    if (_lyricEditors.isEmpty) return [const SizedBox(height: 10), Row(children: [editBtn])];
     return [
       const SizedBox(height: 10),
       Row(
@@ -1626,6 +1649,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               ),
             ),
           ),
+          if (canEdit) ...[
+            const SizedBox(width: 8),
+            Text('·', style: TextStyle(color: AppColors.border)),
+            const SizedBox(width: 8),
+            editBtn,
+          ],
         ],
       ),
     ];

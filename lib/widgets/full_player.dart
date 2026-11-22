@@ -1065,7 +1065,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
                                     final room = math.max(area.maxHeight - 24, 80.0);
                                     return Center(
                                       child: isVideoSong(song)
-                                          ? _mobileVideo(player, song, math.min(box.maxWidth - 32, room * 16 / 9))
+                                          ? _mobileVideo(player, song, box.maxWidth, bleed: true, maxHeight: room)
                                           : _mobileArtwork(thumb, math.min(art, room), player.isPlaying, song),
                                     );
                                   },
@@ -1296,19 +1296,49 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
   /// playing. Swipe left/right on it for next/previous.
   /// Video songs: the picture (muted, synced to the music player's sound)
   /// replaces the cover. Tap for full screen.
-  Widget _mobileVideo(PlayerProvider player, Map<String, dynamic> song, double width) => GestureDetector(
+  /// Real width/height ratio of the current song's video, learnt from the
+  /// player once it loads (null until then → 16:9).
+  double? _videoAr;
+  String? _videoArFor;
+
+  double _arFor(Map song) {
+    final id = '${song['id']}';
+    return (_videoArFor == id && _videoAr != null) ? _videoAr! : 16 / 9;
+  }
+
+  void _setAr(Map song, double ar) {
+    final id = '${song['id']}';
+    if (!mounted || (_videoArFor == id && _videoAr == ar)) return;
+    setState(() { _videoArFor = id; _videoAr = ar; });
+  }
+
+  /// [bleed] (phone portrait, canvas TrinhPhat 22/11): edge to edge, no
+  /// rounded corners, frame height follows the video's own ratio so there
+  /// are no black side bars; portrait/square videos cap at a square (and at
+  /// [maxHeight]) and are cropped evenly top/bottom.
+  Widget _mobileVideo(PlayerProvider player, Map<String, dynamic> song, double width, {bool bleed = false, double? maxHeight}) {
+    final ar = _arFor(song);
+    var height = bleed ? math.min(width / ar, width) : width * 9 / 16;
+    if (maxHeight != null) height = math.min(height, maxHeight);
+    final radius = BorderRadius.circular(bleed ? 0 : 18);
+    return GestureDetector(
         onTap: () => openFullScreenVideo(context, player, song),
         child: Container(
           width: width,
-          height: width * 9 / 16,
+          height: height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: const [BoxShadow(color: Color(0xB3000000), blurRadius: 50, spreadRadius: -20, offset: Offset(0, 24))],
+            borderRadius: radius,
+            boxShadow: bleed ? null : const [BoxShadow(color: Color(0xB3000000), blurRadius: 50, spreadRadius: -20, offset: Offset(0, 24))],
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: radius,
             child: Stack(fit: StackFit.expand, children: [
-              SyncedVideo(player: player, song: song),
+              SyncedVideo(
+                player: player,
+                song: song,
+                fit: bleed ? BoxFit.cover : BoxFit.contain,
+                onAspectRatio: (r) => _setAr(song, r),
+              ),
               Positioned(
                 right: 10,
                 bottom: 10,
@@ -1323,6 +1353,7 @@ class _FullPlayerState extends State<FullPlayer> with SingleTickerProviderStateM
           ),
         ),
       );
+  }
 
   Widget _mobileArtwork(String? thumb, double size, bool playing, Map<String, dynamic> song) => GestureDetector(
         onHorizontalDragEnd: (d) {

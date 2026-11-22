@@ -25,17 +25,26 @@ bool get _googleDesktop =>
 // client is configured (GoogleOAuth.iosClientId + Info.plist URL scheme).
 bool get _googleIos => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS && GoogleOAuth.iosClientId.isNotEmpty;
 
-bool get _googleAvailable => _googleDesktop || _googleIos;
+// Android: google_sign_in via Credential Manager. Needs only the web client
+// as serverClientId; Google matches the app by package + signing SHA-1
+// against the "BCĐCNT Android" OAuth client (project bcdcnt-419615, 22/11,
+// SHA-1 of the Play app-signing key = the old APK release key).
+bool get _googleAndroid => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+bool get _googleMobile => _googleIos || _googleAndroid;
+
+bool get _googleAvailable => _googleDesktop || _googleMobile;
 
 bool _gsiReady = false;
 
-/// iOS flow: Google's own sign-in sheet → ID token → loginByGoogle.
+/// iOS/Android flow: Google's own sign-in sheet → ID token → loginByGoogle.
 /// Returns null on success, '' if cancelled, or a message.
 Future<String?> _runGoogleSignInIos(BuildContext context) async {
   try {
     final g = gsi.GoogleSignIn.instance;
     if (!_gsiReady) {
-      await g.initialize(clientId: GoogleOAuth.iosClientId, serverClientId: GoogleOAuth.webClientId);
+      await g.initialize(
+          clientId: _googleIos ? GoogleOAuth.iosClientId : null, serverClientId: GoogleOAuth.webClientId);
       _gsiReady = true;
     }
     final account = await g.authenticate(scopeHint: const ['email']);
@@ -196,7 +205,7 @@ class _LoginDialogState extends State<LoginDialog> {
 /// Shared desktop Google sign-in: runs the OAuth flow then exchanges the ID
 /// token for our session. Returns null on success or a message to display.
 Future<String?> _runGoogleSignIn(BuildContext context) async {
-  if (_googleIos) return _runGoogleSignInIos(context);
+  if (_googleMobile) return _runGoogleSignInIos(context);
   try {
     final idToken = await GoogleSignInDesktop.signIn();
     if (!context.mounted) return 'Đã huỷ';

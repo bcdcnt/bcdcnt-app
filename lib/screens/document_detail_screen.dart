@@ -17,6 +17,7 @@ import '../services/player.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/waveform_player.dart';
+import '../widgets/keep_awake.dart';
 
 class DocumentDetailScreen extends StatefulWidget {
   final String id;
@@ -247,7 +248,7 @@ class _DocumentDetailScreenState extends State<DocumentDetailScreen> {
                     borderRadius: BorderRadius.circular(14),
                     child: AspectRatio(
                       aspectRatio: _videoCtl!.value.aspectRatio,
-                      child: Chewie(controller: _chewieCtl!),
+                      child: KeepAwakeWhilePlaying(controller: _videoCtl!, child: Chewie(controller: _chewieCtl!)),
                     ),
                   ),
                 ),

@@ -21,6 +21,8 @@ const _updateMutation = {'song': 'updateSong', 'folk': 'updateFolk', 'instrument
 const _crudType = {'song': 'Song', 'folk': 'Folk', 'instrumental': 'Instrumental', 'poem': 'Poem', 'karaoke': 'Karaoke'};
 const _adminPath = {'song': 'bai-hat', 'folk': 'dan-ca', 'instrumental': 'khi-nhac', 'poem': 'tieng-tho', 'karaoke': 'thanh-vien-hat'};
 const _lyricTypes = ['', 'Thơ', 'Lời', 'Lời: phỏng thơ', 'Lời Việt'];
+/// Kinds whose lyrics a CTV can edit (updateLyric), as on the web.
+const lyricTypes = ['song', 'folk', 'poem'];
 const _subtitlePresets = ['(bản 1)', '(bản 2)', '(bản 3)', '(bản 4)'];
 
 /// Any CTV permission that unlocks at least one item.
@@ -57,6 +59,8 @@ List<_Action> _actions(AuthProvider auth, Map<String, dynamic> song, String type
   final isHq = song['file']?['is_hq'] == 1 || song['file']?['is_hq'] == true;
   return [
     // API updateThumbnail needs update_thumbnail; replacing an existing picture is for manage_thumbnail.
+    // updateLyric needs update_lyric; instrumentals and karaoke have no lyrics of their own.
+    if (lyricTypes.contains(type) && can('update_lyric')) const _Action('lyric', 'Sửa lời', Icons.edit_outlined),
     if (can('update_thumbnail') && (can('manage_thumbnail') || thumb?['url'] == null)) const _Action('thumb', 'Ảnh minh hoạ', Icons.image_outlined),
     if (type != 'karaoke' && can(_artistPerms[type])) const _Action('artists', 'Sửa trình bày', Icons.mic_none_rounded),
     if (sheetId != null && can('manage_sheet')) ...const [
@@ -157,6 +161,8 @@ Future<void> showSongAdminSheet(BuildContext context, {required Map<String, dyna
   // New names go through addPeopleToSong (approve_topic); new tags through createTags (manage_tag).
   final canCreatePeople = can('approve_topic');
   switch (picked.key) {
+    case 'lyric':
+      await _editLyric(ctl, id, type);
     case 'thumb':
       await ctl.run(() async {
         final files = await pickImages();
@@ -480,6 +486,87 @@ Future<void> _editText(_Ctl ctl,
       ]));
   if (ok == true) {
     ctl.toast('Đã lưu');
+    await ctl.refresh();
+  }
+}
+
+/// Lyrics are stored as HTML (<p>, <br>) by the web editor. The app edits
+/// them as plain text: one line per line, a blank line between verses.
+/// Timed [mm:ss] marks are kept as typed.
+String _lyricToText(String html) => (RegExp(r'<(br|p|div)\b', caseSensitive: false).hasMatch(html)
+        // HTML source: its own line breaks are just formatting.
+        ? html.replaceAll(RegExp(r'\s*[\r\n]+\s*'), ' ')
+        : html.replaceAll(RegExp(r'\r\n?'), '\n'))
+    .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+    .replaceAll(RegExp(r'</(p|div|h\d)>\s*', caseSensitive: false), '\n\n')
+    .replaceAll(RegExp(r'<[^>]+>'), '')
+    .replaceAll('&nbsp;', ' ')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&amp;', '&')
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n')
+    .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+    .trim();
+
+String _textToLyric(String text) {
+  String esc(String s) => s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return text
+      .replaceAll(RegExp(r'\r\n?'), '\n')
+      .trim()
+      .split(RegExp(r'\n\s*\n'))
+      .where((v) => v.trim().isNotEmpty)
+      .map((v) => '<p>${v.trim().split('\n').map((l) => esc(l.trimRight())).join('<br>')}</p>')
+      .join();
+}
+
+/// Inline formatting the plain-text editor would drop (italics, bold, links, pictures).
+final _richLyric = RegExp(r'<(em|i|strong|b|u|a|img|span|table|ul|ol|sup|sub)\b', caseSensitive: false);
+
+/// "Sửa lời" — same mutation as the web's lyric editor.
+Future<void> _editLyric(_Ctl ctl, String id, String type) async {
+  String raw;
+  try {
+    final d = await ctl.auth.authedQuery('query(\$id: ID!) { $type(id: \$id) { id content } }', {'id': id});
+    raw = '${d[type]?['content'] ?? ''}';
+  } catch (e) {
+    ctl.toast('Lỗi: ${e.toString().replaceFirst('Exception: ', '')}', error: true);
+    return;
+  }
+  if (!ctl.context.mounted) return;
+  final initial = _lyricToText(raw);
+  final rich = _richLyric.hasMatch(raw);
+  final c = TextEditingController(text: initial);
+  var busy = false;
+  final ok = await _sheet<bool>(ctl.context, 'Sửa lời', (ctx, setState) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (rich)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text('Lời đang có định dạng (in nghiêng, đậm, liên kết hoặc ảnh). Lưu ở đây sẽ thành chữ thường; muốn giữ định dạng hãy sửa trên web.',
+                style: body(TextStyle(fontSize: 13, height: 1.4, color: AppColors.error))),
+          ),
+        _Field(label: 'Mỗi câu một dòng, cách một dòng trống giữa các đoạn', controller: c, lines: 14, keyboard: TextInputType.multiline, autofocus: true),
+        _saveRow(ctx, busy: busy, onSave: () async {
+          if (c.text.trim() == initial) {
+            Navigator.pop(ctx);
+            return;
+          }
+          setState(() => busy = true);
+          try {
+            await ctl.auth.authedMutate(r'mutation($id: ID!, $type: String!, $content: String!) { updateLyric(id: $id, type: $type, content: $content) { id } }',
+                {'id': id, 'type': type, 'content': _textToLyric(c.text)});
+            if (ctx.mounted) Navigator.pop(ctx, true);
+          } catch (e) {
+            setState(() => busy = false);
+            ctl.toast('Lỗi: ${e.toString().replaceFirst('Exception: ', '')}', error: true);
+          }
+        }),
+      ]));
+  if (ok == true) {
+    ctl.toast('Đã lưu lời');
     await ctl.refresh();
   }
 }

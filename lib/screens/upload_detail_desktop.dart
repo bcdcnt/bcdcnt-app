@@ -19,6 +19,7 @@ import '../widgets/same_recordings.dart';
 import '../widgets/upload_thread.dart';
 import '../widgets/ui.dart' show PillButton, EmptyBlock, OfflineBlock, NetImage, typingInField;
 import '../widgets/waveform_player.dart';
+import '../widgets/keep_awake.dart';
 
 /// Bài gửi — xem & sửa (desktop, canvas "Desktop · Bài gửi — xem & sửa" +
 /// Dân ca + Bổ sung bản ghi variants).
@@ -589,7 +590,7 @@ class _UploadDetailDesktopState extends State<UploadDetailDesktop> {
                       borderRadius: BorderRadius.circular(14),
                       child: _chewie == null
                           ? AspectRatio(aspectRatio: 16 / 9, child: Container(color: AppColors.surfaceLight, alignment: Alignment.center, child: const CircularProgressIndicator(strokeWidth: 2)))
-                          : AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio == 0 ? 16 / 9 : _videoCtl!.value.aspectRatio, child: Chewie(controller: _chewie!)),
+                          : AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio == 0 ? 16 / 9 : _videoCtl!.value.aspectRatio, child: KeepAwakeWhilePlaying(controller: _videoCtl!, child: Chewie(controller: _chewie!))),
                     ),
                   ),
                 ),

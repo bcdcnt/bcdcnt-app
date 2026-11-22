@@ -18,6 +18,7 @@ import '../widgets/mini_player.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/desktop_page.dart' show isDesk;
 import 'upload_detail_desktop.dart';
+import '../widgets/keep_awake.dart';
 
 class UploadDetailScreen extends StatefulWidget {
   final String id;
@@ -247,7 +248,7 @@ class _UploadDetailScreenState extends State<UploadDetailScreen> {
                       padding: const EdgeInsets.only(bottom: 14),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio, child: Chewie(controller: _chewieCtl!)),
+                        child: AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio, child: KeepAwakeWhilePlaying(controller: _videoCtl!, child: Chewie(controller: _chewieCtl!))),
                       ),
                     )
                   else if (up['file']?['video_url'] != null && _videoFailed)

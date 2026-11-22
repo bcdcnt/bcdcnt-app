@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../services/player.dart';
 import '../constants/theme.dart';
+import 'keep_awake.dart';
 
 /// True for songs published as video (play_type = video) that have an mp4.
 bool isVideoSong(Map? song) =>
@@ -21,7 +22,10 @@ class SyncedVideo extends StatefulWidget {
   final PlayerProvider player;
   final Map song;
   final BoxFit fit;
-  const SyncedVideo({super.key, required this.player, required this.song, this.fit = BoxFit.contain});
+  /// Called once the video knows its real width/height ratio, so the parent
+  /// can size its frame to the picture (full player: no black side bars).
+  final ValueChanged<double>? onAspectRatio;
+  const SyncedVideo({super.key, required this.player, required this.song, this.fit = BoxFit.contain, this.onAspectRatio});
 
   @override
   State<SyncedVideo> createState() => _SyncedVideoState();
@@ -86,6 +90,8 @@ class _SyncedVideoState extends State<SyncedVideo> with WidgetsBindingObserver {
         return;
       }
       setState(() => _ready = true);
+      final ar = vc.value.aspectRatio;
+      if (ar.isFinite && ar > 0) widget.onAspectRatio?.call(ar);
       _sync(force: true);
     } catch (_) {}
   }
@@ -130,7 +136,7 @@ class _SyncedVideoState extends State<SyncedVideo> with WidgetsBindingObserver {
         child: SizedBox(
           width: vc.value.size.width > 0 ? vc.value.size.width : 1600,
           height: vc.value.size.height > 0 ? vc.value.size.height : 1600 / ((ar.isFinite && ar > 0) ? ar : 16 / 9),
-          child: VideoPlayer(vc),
+          child: KeepAwakeWhilePlaying(controller: vc, child: VideoPlayer(vc)),
         ),
       ),
     );

@@ -14,7 +14,7 @@ import '../main.dart' show TabReselect;
 
 const _objFields = '''
           __typename
-          ... on Song { id title slug thumbnail { url } file { audio_url } }
+          ... on Song { id title slug sticky_comment thumbnail { url } file { audio_url } }
           ... on Folk { id title slug thumbnail { url } file { audio_url } }
           ... on Instrumental { id title slug thumbnail { url } file { audio_url } }
           ... on Poem { id title slug thumbnail { url } file { audio_url } }
@@ -25,9 +25,9 @@ const _objFields = '''
           ... on Recomposer { id title slug avatar { url } }
           ... on Sheet { id title slug }
           ... on Document { id title slug thumbnail { url } }
-          ... on Discussion { id title slug }
+          ... on Discussion { id title slug sticky_comment }
           ... on Playlist { id title slug thumbnail { url } }
-          ... on Page { id title slug }
+          ... on Page { id title slug sticky_comment }
           ... on Upload { id title slug status result user_id }
           ... on Ticket { id title slug }
           ... on Role { id name slug alias }''';
@@ -355,6 +355,9 @@ class CommentTile extends StatelessWidget {
     final userId = user?['id']?.toString();
     void openUser() => context.push('/user/$userId');
     final canOpen = obj != null && (tn != 'Upload' || context.read<AuthProvider>().uploadRoute(obj) != null);
+    // Its song/topic/page is pinned (sticky_comment = 1): latestComments
+    // lists that one first. Only the latest-comments query asks for the flag.
+    final pinned = '${obj?['sticky_comment']}' == '1';
 
     return InkWell(
       // The whole tile opens the song/page at this comment.
@@ -404,6 +407,19 @@ class CommentTile extends StatelessWidget {
                         ),
                       );
                     }),
+                  ],
+                  if (pinned) ...[
+                    const SizedBox(width: 6),
+                    // canvas Desktop_CongDong_BinhLuan (21/11): "Đã ghim" in the accent colour.
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+                      decoration: BoxDecoration(color: AppColors.accent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(6)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.push_pin_rounded, size: 12, color: AppColors.accentFg),
+                        const SizedBox(width: 4),
+                        Text('Đã ghim', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                      ]),
+                    ),
                   ],
                   const SizedBox(width: 8),
                   Text(timeago(comment['created_at']?.toString()), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),

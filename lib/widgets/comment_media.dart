@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../constants/theme.dart';
 import 'waveform_player.dart';
+import 'keep_awake.dart';
 
 /// Renders comment HTML with proper handling for images, audio, video and
 /// other text — instead of just stripping tags. Images display via
@@ -586,7 +587,7 @@ class _VideoCardState extends State<_VideoCard> {
   Widget build(BuildContext context) {
     Widget inner;
     if (_chewieCtl != null) {
-      inner = Chewie(controller: _chewieCtl!);
+      inner = KeepAwakeWhilePlaying(controller: _videoCtl!, child: Chewie(controller: _chewieCtl!));
     } else if (_failed) {
       // Init lỗi (URL không phải video trực tiếp) → mở ngoài.
       inner = InkWell(

@@ -11,6 +11,7 @@ import 'waveform_player.dart';
 import 'comment_section.dart';
 import 'package:provider/provider.dart';
 import '../services/auth.dart';
+import 'keep_awake.dart';
 
 /// Shared top+bottom chrome for any lightbox item.
 class _Chrome extends StatelessWidget {
@@ -530,7 +531,7 @@ class _VideoLightboxState extends State<VideoLightbox> with _PagedLightbox {
               final isActive = i == _idx;
               final thumb = doc['thumbnail']?['url'];
               if (isActive && _chewieCtl != null) {
-                return Center(child: AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio, child: Chewie(controller: _chewieCtl!)));
+                return Center(child: AspectRatio(aspectRatio: _videoCtl!.value.aspectRatio, child: KeepAwakeWhilePlaying(controller: _videoCtl!, child: Chewie(controller: _chewieCtl!))));
               }
               return Stack(
                 fit: StackFit.expand,
