@@ -4,18 +4,24 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/theme.dart';
 import '../services/auth.dart';
+import '../services/desktop_alerts.dart';
 import '../services/push.dart';
 import '../services/friendly_error.dart';
 import 'ui.dart' show DeskToggleRow;
 
-/// Cài đặt → Thông báo điện thoại: system permission, and for members one
-/// switch per kind + quiet hours
-/// (user.push_prefs on the API).
+/// Cài đặt → Thông báo, one setting for every device of the account
+/// (canvas CaiDat_ThongBao / Desktop_CaiDat_ThongBao, 22/11): one switch per
+/// kind, quiet hours (pushes arrive silently) and the "ting" — saved on the
+/// account (user.push_prefs, notification_sound) and followed by phone push
+/// and desktop banners alike. On top, this device's own state: phone push
+/// permission, or a red line when the computer blocks the app's banners.
 class PushSettings extends StatefulWidget {
-  /// Desktop settings: no permission card (the computer doesn't get push),
-  /// rows in the desktop style. The switches still steer the phone.
+  /// Desktop settings: rows in the desktop style.
   final bool desktop;
-  const PushSettings({super.key, this.desktop = false});
+  /// The account's "ting" (notification_sound), owned by the settings screen.
+  final bool? sound;
+  final VoidCallback? onSound;
+  const PushSettings({super.key, this.desktop = false, this.sound, this.onSound});
 
   @override
   State<PushSettings> createState() => _PushSettingsState();
@@ -26,10 +32,11 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   bool _statusLoaded = false; // false until the first status() returns
   Map<String, dynamic>? _prefs; // null until loaded (or API not ready yet)
   bool _prefsFailed = false;
+  bool _deskBlocked = false;
 
   static const _kinds = [
     ('reply', Icons.chat_bubble_outline, 'Trả lời & nhắc tên', 'Có người trả lời, nhắc đến bạn, trả lời bình chọn'),
-    ('like', Icons.favorite_border, 'Lượt thích', 'Có người thích bình luận của bạn (gộp lại, không dồn dập)'),
+    ('like', Icons.favorite_border, 'Lượt thích', 'Có người thích bình luận của bạn'),
     ('follow', Icons.person_add_alt, 'Bài mới của người bạn theo dõi', 'Nhạc sĩ, nghệ sĩ bạn theo dõi có bài mới'),
     ('review', Icons.fact_check_outlined, 'Bài gửi & hỗ trợ', 'BQT duyệt bài gửi, yêu cầu bổ sung, trả lời hỗ trợ'),
     ('message', Icons.mail_outline, 'Tin nhắn', 'Thành viên nhắn tin cho bạn'),
@@ -51,7 +58,12 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   // Back from iOS Settings: the permission may have changed.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _loadStatus();
+    if (state == AppLifecycleState.resumed) widget.desktop ? _loadDeskBlocked() : _loadStatus();
+  }
+
+  Future<void> _loadDeskBlocked() async {
+    final b = await DesktopAlerts.instance.blocked();
+    if (mounted) setState(() => _deskBlocked = b);
   }
 
   Future<void> _loadStatus() async {
@@ -71,7 +83,11 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   }
 
   Future<void> _load() async {
-    if (!widget.desktop) await _loadStatus();
+    if (widget.desktop) {
+      _loadDeskBlocked();
+    } else {
+      await _loadStatus();
+    }
     if (!mounted) return;
     final auth = context.read<AuthProvider>();
     if (!auth.isAuthenticated) return;
@@ -92,6 +108,8 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
         r'mutation($p: PushPrefsInput) { updateMe(push_prefs: $p) { id } }',
         {'p': patch},
       );
+      // Desktop banners read the account's prefs from `me`.
+      if (mounted) context.read<AuthProvider>().refreshMe();
     } catch (e) {
       if (mounted) {
         setState(() => _prefs = before);
@@ -103,12 +121,10 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
   bool get _allowed => _status == AuthorizationStatus.authorized || _status == AuthorizationStatus.provisional;
 
   Future<void> _enable() async {
-    if (_status == AuthorizationStatus.denied) {
-      // iOS won't ask twice; only the system Settings can turn it back on.
-      await launchUrl(Uri.parse('app-settings:'));
-      return;
-    }
-    await PushService.instance.requestPermission();
+    // Android may still show its prompt once more after a "no"; iOS never
+    // asks twice. When the system won't ask, open its settings page.
+    final ok = await PushService.instance.requestPermission();
+    if (!ok) await PushService.openSystemSettings();
     await _loadStatus();
   }
 
@@ -128,15 +144,15 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
         ),
       ]);
     }
-    String hh(int h) => '${h.toString().padLeft(2, '0')}:00';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (_deskBlocked) _blockedLine(),
       const SizedBox(height: 6),
       for (final k in _kinds) DeskToggleRow(title: k.$3, subtitle: k.$4, value: _prefs![k.$1] != false, onChanged: (v) => _save({k.$1: v})),
       DeskToggleRow(
         title: 'Giờ yên lặng',
-        subtitle: quietOn ? 'Không báo từ ${hh(quietStart!)} đến ${hh(quietEnd!)}' : 'Báo cả ngày lẫn đêm',
+        subtitle: quietOn ? _quietText : 'Báo cả ngày lẫn đêm',
         value: quietOn,
-        last: !quietOn,
+        last: !quietOn && widget.sound == null,
         onChanged: (v) => _save(v ? {'quiet_start': 22, 'quiet_end': 7} : {'quiet_start': null, 'quiet_end': null}),
       ),
       if (quietOn)
@@ -148,12 +164,34 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
             _hourPicker('Đến', quietEnd!.clamp(0, 23), (h) => _save({'quiet_end': h})),
           ]),
         ),
-      Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Text('Thông báo từ BQT luôn được gửi.', style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
-      ),
+      if (widget.sound != null)
+        DeskToggleRow(
+          title: 'Âm báo khi có thông báo mới',
+          subtitle: 'Một tiếng “ting” khi có thông báo mới (máy tính; điện thoại theo âm báo của máy)',
+          value: widget.sound!,
+          onChanged: (_) => widget.onSound?.call(),
+          last: true,
+        ),
     ]);
   }
+
+  static const _quietText = 'Không kêu, không rung; vẫn có trong danh sách thông báo';
+
+  /// "Máy này đang chặn thông báo của app · Mở cài đặt" (desktop).
+  Widget _blockedLine() => Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 4),
+        child: Row(children: [
+          Icon(Icons.warning_rounded, size: 18, color: AppColors.errorText),
+          const SizedBox(width: 8),
+          Text('Máy này đang chặn thông báo của app', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.errorText))),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: Text('·', style: body(TextStyle(fontSize: 14, color: AppColors.textMuted)))),
+          TextButton(
+            onPressed: () => launchUrl(DesktopAlerts.systemSettingsUri),
+            style: TextButton.styleFrom(minimumSize: const Size(48, 40), padding: const EdgeInsets.symmetric(horizontal: 4)),
+            child: Text('Mở cài đặt', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentFg, decoration: TextDecoration.underline, decorationColor: AppColors.accentFg))),
+          ),
+        ]),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -186,7 +224,7 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
         else ...[
           for (final k in _kinds) _row(k.$2, k.$3, k.$4, _prefs![k.$1] != false, (v) => _save({k.$1: v})),
           const Divider(height: 20),
-          _row(Icons.bedtime_outlined, 'Giờ yên lặng', quietOn ? 'Không báo từ ${quietStart}h đến ${quietEnd}h' : 'Báo cả ngày lẫn đêm', quietOn,
+          _row(Icons.bedtime_outlined, 'Giờ yên lặng', quietOn ? _quietText : 'Báo cả ngày lẫn đêm', quietOn,
               (v) => _save(v ? {'quiet_start': 22, 'quiet_end': 7} : {'quiet_start': null, 'quiet_end': null})),
           if (quietOn)
             Padding(
@@ -197,10 +235,10 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
                 _hourPicker('Đến', quietEnd.clamp(0, 23), (h) => _save({'quiet_end': h})),
               ]),
             ),
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('Thông báo từ BQT luôn được gửi.', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-          ),
+          if (widget.sound != null) ...[
+            const Divider(height: 20),
+            _row(Icons.volume_up_outlined, 'Âm báo', 'Tiếng “ting” khi có thông báo mới trên máy tính', widget.sound!, (_) => widget.onSound?.call()),
+          ],
         ],
       ],
     ]);
@@ -223,7 +261,7 @@ class _PushSettingsState extends State<PushSettings> with WidgetsBindingObserver
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            on ? 'Thông báo đang bật' : (_status == AuthorizationStatus.denied ? 'Thông báo đang tắt trong cài đặt máy' : 'Thông báo chưa bật'),
+            on ? 'Máy này: thông báo đang bật' : (_status == AuthorizationStatus.denied ? 'Máy này đang chặn thông báo của app' : 'Máy này chưa bật thông báo'),
             style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)),
           ),
         ),

@@ -41,7 +41,7 @@ class RealtimeService {
       '... on Document { id title slug } ... on Discussion { id title slug } '
       '... on Playlist { id title slug } } } }';
   static const _notifQuery =
-      r'subscription($userId: ID!) { notificationReceived(userId: $userId) { id content action sender { id username avatar { url } } } }';
+      r'subscription($userId: ID!) { notificationReceived(userId: $userId) { id code content action object_type object_id extra sender { id username avatar { url } } } }';
 
   final String apiBase;
   final AuthProvider auth;

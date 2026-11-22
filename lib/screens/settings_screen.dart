@@ -8,7 +8,6 @@ import 'package:flutter/cupertino.dart' show CupertinoPicker;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, ValueListenable;
 import '../widgets/ui.dart' show goBack, OfflineBlock, DeskRow, DeskToggleRow;
-import '../services/desktop_alerts.dart';
 import '../services/friendly_error.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -830,10 +829,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 12),
               Padding(padding: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Padding(padding: const EdgeInsets.only(bottom: 6), child: Text('Giới tính', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-                Wrap(spacing: 8, runSpacing: 8, children: [
-                  _genderChip('male', 'Nam'),
-                  _genderChip('female', 'Nữ'),
-                  _genderChip('other', 'Khác'),
+                // One row, equal widths (canvas CaiDat_HoSo, 22/11).
+                Row(children: [
+                  Expanded(child: _genderChip('male', 'Nam')),
+                  const SizedBox(width: 8),
+                  Expanded(child: _genderChip('female', 'Nữ')),
+                  const SizedBox(width: 8),
+                  Expanded(child: _genderChip('other', 'Khác')),
                 ]),
               ])),
               const SizedBox(height: 8),
@@ -880,7 +882,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: 'Trả lời bình luận, lượt thích, theo dõi',
         items: [
           if (PushService.supported)
-            _SettingsItem(id: 'push', icon: Icons.notifications_active_outlined, title: 'Thông báo điện thoại', builder: () => const PushSettings()),
+            _SettingsItem(id: 'push', icon: Icons.notifications_active_outlined, title: 'Thông báo', builder: () => PushSettings(sound: context.read<AuthProvider>().isAuthenticated ? _notificationSound : null, onSound: _toggleNotificationSound)),
           // Web-only: the in-page "ding" for new notifications.
           if (kIsWeb && !isDesktop)
             _SettingsItem(
@@ -1133,47 +1135,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _desktopNotify() {
     final authed = context.read<AuthProvider>().isAuthenticated;
+    // One setting for every device (canvas Desktop_CaiDat_ThongBao, 22/11).
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const SizedBox(height: 18),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(12)),
-        child: Row(children: [
-          Icon(Icons.smartphone, size: 20, color: AppColors.accentFg),
-          const SizedBox(width: 10),
-          Expanded(child: Text('Áp dụng cho thông báo gửi đến điện thoại có cài app BCĐCNT và đăng nhập tài khoản này.', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textSecondary)))),
-        ]),
-      ),
-      _deskLabel('GỬI ĐẾN ĐIỆN THOẠI KHI CÓ', top: 22),
+      const SizedBox(height: 16),
       if (authed)
-        const PushSettings(desktop: true)
+        PushSettings(desktop: true, sound: _notificationSound, onSound: _toggleNotificationSound)
       else
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 14),
           child: Text('Đăng nhập để chọn những thông báo muốn nhận.', style: body(TextStyle(fontSize: 15, color: AppColors.textSecondary))),
         ),
-      if (authed) ...[
-        _deskLabel('TRÊN MÁY TÍNH NÀY'),
-        const SizedBox(height: 6),
-        DeskToggleRow(
-          title: 'Âm báo khi có thông báo mới',
-          subtitle: 'Một tiếng “ting” nhỏ khi chuông có số mới',
-          value: _notificationSound,
-          onChanged: (_) => _toggleNotificationSound(),
-          last: !DesktopAlerts.supported,
-        ),
-        if (DesktopAlerts.supported)
-          ValueListenableBuilder<bool>(
-            valueListenable: DesktopAlerts.instance.systemOn,
-            builder: (_, on, _) => DeskToggleRow(
-              title: 'Hiện thông báo của hệ thống',
-              subtitle: 'Góc màn hình ${Platform.isMacOS ? 'macOS' : 'Windows'}, khi app đang mở mà bạn đang làm việc khác',
-              value: on,
-              onChanged: DesktopAlerts.instance.setSystemOn,
-              last: true,
-            ),
-          ),
-      ],
       const SizedBox(height: 40),
     ]);
   }

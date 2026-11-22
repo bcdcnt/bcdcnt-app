@@ -26,5 +26,17 @@ import UserNotifications
         result(nil)
       }
     }
+    // "bcdcnt/settings": open this app's notification settings (after the
+    // listener said no to the permission prompt).
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BcdcntSettings") {
+      let channel = FlutterMethodChannel(name: "bcdcnt/settings", binaryMessenger: registrar.messenger())
+      channel.setMethodCallHandler { call, result in
+        guard call.method == "openNotificationSettings" else { return result(FlutterMethodNotImplemented) }
+        var urlString = UIApplication.openSettingsURLString
+        if #available(iOS 16.0, *) { urlString = UIApplication.openNotificationSettingsURLString }
+        if let url = URL(string: urlString) { UIApplication.shared.open(url) }
+        result(nil)
+      }
+    }
   }
 }

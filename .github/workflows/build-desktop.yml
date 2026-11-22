@@ -105,6 +105,23 @@ jobs:
             -define icon:auto-resize=256,128,64,48,32,16 `
             "windows/runner/resources/app_icon.ico"
 
+      # Push (FCM) needs android/app/google-services.json, which is kept out
+      # of git (public repo). Without it build.gradle skips the Google
+      # Services plugin and the app silently has no push — every Play / APK
+      # build before 22/11 shipped that way (0 Android devices registered).
+      - name: Firebase config (Android push)
+        if: matrix.target == 'android'
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
+            echo "google-services.json written ($(wc -c < android/app/google-services.json) bytes)"
+          else
+            echo "::warning::GOOGLE_SERVICES_JSON secret missing — this Android build has no push"
+          fi
+        shell: bash
+
       - name: Pub get
         run: flutter pub get
 

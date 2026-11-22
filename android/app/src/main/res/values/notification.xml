@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accent behind the push icon (same as the API's android.notification.color). -->
+    <color name="notification_color">#711313</color>
+</resources>

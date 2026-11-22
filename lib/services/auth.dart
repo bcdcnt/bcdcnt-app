@@ -13,6 +13,7 @@ const meQuery = '''query { me {
   permissions roles { alias }
   player_shuffle player_repeat
   show_comment_sidebar notification_sound
+  push_prefs { reply like follow review message admin quiet_start quiet_end }
 }}''';
 
 const _updateMeShuffleMutation = '''mutation(\$v: Boolean) {
@@ -226,6 +227,10 @@ class AuthProvider extends ChangeNotifier {
           'player_shuffle': me['player_shuffle'],
           'player_repeat': me['player_repeat'],
           'show_comment_sidebar': me['show_comment_sidebar'] ?? false,
+          // Read by desktop banners/ding (DesktopAlerts): the account's
+          // notification switches, quiet hours and "ting".
+          'notification_sound': me['notification_sound'] ?? false,
+          'push_prefs': me['push_prefs'],
         };
         final prefs = await SharedPreferences.getInstance();
         if (epoch != _epoch) return;

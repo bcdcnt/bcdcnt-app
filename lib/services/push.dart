@@ -16,10 +16,10 @@ import 'notification_route.dart';
 ///
 /// * The token is sent to the API on launch, on refresh and whenever the
 ///   member signs in or out (signed out = guest device: topic pushes only).
-/// * Permission is never asked at first launch: [maybeAsk] shows our own
-///   short explanation first, at a moment where it makes sense (after login,
-///   following someone, commenting, opening a ticket), and only asks iOS /
-///   Android once the listener says yes.
+/// * First launch after install: the system permission prompt right away
+///   (22/11). Later, [maybeAsk] can still offer it at a good moment (after
+///   login, following someone, commenting, opening a ticket); a "no" can be
+///   undone in Cài đặt › Thông báo.
 /// * Tapping a push opens the same page as tapping it in Thông báo.
 ///
 /// Without the Firebase config files (GoogleService-Info.plist /
@@ -29,6 +29,7 @@ class PushService {
   static final instance = PushService._();
 
   static const _kAskedAt = 'push_asked_at';
+  static const _kFirstAsk = 'push_first_ask_done';
 
   bool _ready = false;
   String? _token;
@@ -72,7 +73,17 @@ class PushService {
     if (!auth.loading) _wasSignedIn = auth.isAuthenticated;
     // Already allowed (earlier session)? Then register straight away.
     final s = await fm.getNotificationSettings();
-    if (_allowed(s.authorizationStatus)) await _start();
+    if (_allowed(s.authorizationStatus)) {
+      await _start();
+    } else {
+      // First launch after install (22/11): ask the system right away. Said
+      // no or skipped? Cài đặt › Thông báo can turn it on later.
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(_kFirstAsk) != true) {
+        await prefs.setBool(_kFirstAsk, true);
+        Future.delayed(const Duration(milliseconds: 1200), requestPermission);
+      }
+    }
   }
 
   static bool _allowed(AuthorizationStatus s) => s == AuthorizationStatus.authorized || s == AuthorizationStatus.provisional;
@@ -82,13 +93,30 @@ class PushService {
     return (await FirebaseMessaging.instance.getNotificationSettings()).authorizationStatus;
   }
 
+  int _tokenTries = 0;
+
   Future<void> _start() async {
+    final fm = FirebaseMessaging.instance;
     try {
-      _token = await FirebaseMessaging.instance.getToken();
+      // iOS: the FCM token needs the APNs token first, which arrives a moment
+      // after launch / after the permission prompt. Asking too early throws
+      // ("apns-token-not-set") and the phone never got registered.
+      if (Platform.isIOS) {
+        String? apns;
+        for (var i = 0; i < 10 && apns == null; i++) {
+          apns = await fm.getAPNSToken();
+          if (apns == null) await Future.delayed(const Duration(seconds: 1));
+        }
+        if (apns == null) throw StateError('apns-token-not-set');
+      }
+      _token = await fm.getToken();
     } catch (e) {
       debugPrint('FCM token failed: $e');
+      // Try again a little later (a few times), e.g. slow network at launch.
+      if (_tokenTries++ < 3) Future.delayed(Duration(seconds: 20 * _tokenTries), _start);
       return;
     }
+    _tokenTries = 0;
     await _register();
     // "Bài hát của ngày" (topic daily_song) was dropped in 2026-11. Older
     // builds subscribed every install by default: take them off it, once.
@@ -195,6 +223,14 @@ class PushService {
     final ok = _allowed(s.authorizationStatus);
     if (ok) await _start();
     return ok;
+  }
+
+  /// The phone's own notification settings for this app (after "Không cho
+  /// phép"): iOS app settings, Android's notification page for the app.
+  static Future<void> openSystemSettings() async {
+    try {
+      await const MethodChannel('bcdcnt/settings').invokeMethod('openNotificationSettings');
+    } catch (_) {}
   }
 
   /// Red number on the app icon; cleared when Thông báo is opened.
