@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
-import '../widgets/ui.dart' show goBack, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -133,10 +133,7 @@ class _FolkCategoryScreenState extends State<FolkCategoryScreen> with PagedLoade
                   ),
                   const SizedBox(height: 16),
                   if (!_notFound) ...[
-                    ListSearchField(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}${_fcat?['title'] ?? 'thể loại này'}', onChanged: _search),
-                    ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
-                    const SizedBox(height: 14),
-                    SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
+                    ListControls(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}${_fcat?['title'] ?? 'thể loại này'}', query: _q, onSearch: _search, total: _list.total, loading: _list.loading, sorts: _sorts, sort: _list.sort, onSort: (i) => _fetch(1, sort: i), summary: '${_formatInt(_list.total)} bài'),
                     const SizedBox(height: 14),
                   ],
                   ...infiniteListBody<Map<String, dynamic>>(

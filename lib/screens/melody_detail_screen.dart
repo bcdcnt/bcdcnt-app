@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
-import '../widgets/ui.dart' show goBack, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, OfflineBlock, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import '../widgets/shimmer.dart' show SongListSkeleton;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
@@ -123,10 +123,7 @@ class _MelodyDetailScreenState extends State<MelodyDetailScreen> with PagedLoade
                   ]),
                 ),
                 const SizedBox(height: 14),
-                ListSearchField(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}${_melody?['title'] ?? 'làn điệu này'}', onChanged: _search),
-                ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
-                const SizedBox(height: 14),
-                SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
+                ListControls(hint: 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}${_melody?['title'] ?? 'làn điệu này'}', query: _q, onSearch: _search, total: _list.total, loading: _list.loading, sorts: _sorts, sort: _list.sort, onSort: (i) => _fetch(1, sort: i), summary: '${_formatInt(_list.total)} bài'),
                 const SizedBox(height: 14),
                 ...infiniteListBody<Map<String, dynamic>>(
                   _list,

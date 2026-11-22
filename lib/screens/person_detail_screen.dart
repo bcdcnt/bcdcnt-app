@@ -14,6 +14,7 @@ import '../services/friendly_error.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/list_search.dart';
+import '../widgets/download_all.dart';
 import '../widgets/song_row.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
@@ -143,7 +144,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
   bool _following = false;
   int _followers = 0;
   bool _followBusy = false;
-  int _shares = 0;
   /// Songs per composition year for this composer/artist (desktop chart).
   Map<int, int> _yearCounts = {};
   /// The most listened songs, for the share picture.
@@ -262,7 +262,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         _yearCounts = {};
         _following = false;
         _followers = (p['loves']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
-        _shares = (p['shares'] as num?)?.toInt() ?? 0;
         _topSongs = [
           for (final c in _cfg.sections)
             for (final x in ((p[c.key]?['data'] ?? []) as List).take(3)) '${x['title'] ?? ''}'.trim(),
@@ -365,6 +364,26 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
         ));
       }
     }
+  }
+
+  /// Every song of section [cfg] (as currently searched/sorted), 100 a page,
+  /// for "Tải tất cả".
+  Future<List<Map<String, dynamic>>> _fetchAll(_SectionCfg cfg) async {
+    final personId = _person?['id']?.toString();
+    if (personId == null) return [];
+    final st = _sections[cfg.key]!;
+    final sortCol = _sortOptions.firstWhere((o) => o.$1 == st.sort, orElse: () => _sortOptions.first).$2;
+    final order = st.sort == 'title' ? 'ASC' : 'DESC';
+    final queryById = '${_cfg.queryName}ByID';
+    final q = 'query(\$id: ID!, \$page: Int, \$q: String) { $queryById(id: \$id) { ${cfg.key}(first: 100, page: \$page, q: \$q, orderBy: [{ column: "$sortCol", order: $order }]) { data { ${cfg.fields} } paginatorInfo { lastPage } } } }';
+    final out = <Map<String, dynamic>>[];
+    for (var page = 1; page <= 50; page++) {
+      final data = await ApiClient.query(q, {'id': personId, 'page': page, 'q': st.query});
+      final raw = data[queryById]?[cfg.key];
+      out.addAll(((raw?['data'] ?? []) as List).whereType<Map>().map((x) => {...Map<String, dynamic>.from(x), 'file_type': cfg.fileType}));
+      if (page >= ((raw?['paginatorInfo']?['lastPage'] as num?)?.toInt() ?? 1)) break;
+    }
+    return out;
   }
 
   /// New page / sort: back to the top of the list (header collapsed, tab
@@ -539,9 +558,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       topSongs: _topSongs,
       songCount: _sections[first.key]?.allTotal ?? 0,
       listens: ((p['total_listens'] ?? 0) as num).toInt(),
-      onCount: (n) {
-        if (mounted) setState(() => _shares = n);
-      },
     );
   }
 
@@ -1089,6 +1105,15 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
               right: 12,
               child: Row(children: [
                 circle(Icons.arrow_back_ios_new_rounded, 'Quay lại', () => goBack(context)),
+                const Spacer(),
+                // Chia sẻ on the photo (canvas NgheSi, 22/11): the action row
+                // below keeps 3 buttons, no share count.
+                // BQT: ✎ Sửa beside Chia sẻ (canvas NgheSi_BQT, 22/11).
+                if (_canEdit) ...[
+                  circle(Icons.edit_outlined, 'Sửa thông tin', _edit),
+                  const SizedBox(width: 8),
+                ],
+                circle(Icons.ios_share_rounded, 'Chia sẻ', _share),
               ]),
             ),
             Positioned(
@@ -1168,29 +1193,6 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
                 semantics: '${_following ? 'Đã yêu thích' : 'Yêu thích'}, $_followers người yêu thích',
                 onTap: _toggleFollow,
               ),
-              const SizedBox(width: 10),
-              _CountPill(
-                icon: Icons.ios_share_rounded,
-                count: _shares,
-                semantics: 'Chia sẻ, $_shares lượt chia sẻ',
-                onTap: _share,
-              ),
-              if (_canEdit) ...[
-                const SizedBox(width: 10),
-                Semantics(
-                  button: true,
-                  label: 'Sửa thông tin',
-                  child: Material(
-                    color: AppColors.surface,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _edit,
-                      child: SizedBox(width: 50, height: 50, child: Icon(Icons.edit_outlined, size: 22, color: AppColors.text)),
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
         ],
@@ -1286,18 +1288,42 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       // rows add their own 20px.
       padding: const EdgeInsets.fromLTRB(0, 12, 0, 100),
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            ListSearchField(
-              initial: state.query,
-              hint: 'Tìm trong ${_formatInt(state.allTotal)} bài${cfg.key == 'songs' ? '' : ' ${cfg.label.toLowerCase()}'} của ${_person?['title'] ?? ''}',
-              onChanged: (q) => _fetchPage(cfg.key, 1, query: q),
+        if (MediaQuery.sizeOf(context).width < 900)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: ListControlBar(
+              hint: 'Tìm trong ${_formatInt(state.allTotal)} bài${cfg.key == 'songs' ? '' : ' ${cfg.label.toLowerCase()}'}',
+              query: state.query,
+              onSearch: (q) => _fetchPage(cfg.key, 1, query: q),
+              total: state.total,
+              loading: state.loading,
+              sorts: kSongSorts,
+              sort: () { final i = _sortOptions.indexWhere((o) => o.$1 == state.sort); return i < 0 ? 0 : i; }(),
+              onSort: (i) => _fetchPage(cfg.key, 1, sort: _sortOptions[i].$1),
+              actions: [
+                DownloadAllButton(
+                  jobKey: '${_cfg.queryName}-${cfg.key}-${widget.slug}',
+                  title: '${_person?['title'] ?? ''}',
+                  count: state.total,
+                  fetch: () => _fetchAll(cfg),
+                ),
+              ],
             ),
-            ListSearchSummary(query: state.query, total: state.total, loading: state.loading),
-          ]),
-        ),
-        _buildSortBar(cfg.key, state),
+          )
+        else ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              ListSearchField(
+                initial: state.query,
+                hint: 'Tìm trong ${_formatInt(state.allTotal)} bài${cfg.key == 'songs' ? '' : ' ${cfg.label.toLowerCase()}'} của ${_person?['title'] ?? ''}',
+                onChanged: (q) => _fetchPage(cfg.key, 1, query: q),
+              ),
+              ListSearchSummary(query: state.query, total: state.total, loading: state.loading),
+            ]),
+          ),
+          _buildSortBar(cfg.key, state),
+        ],
         content,
       ],
     ),
@@ -1316,6 +1342,7 @@ class _PersonDetailScreenState extends State<PersonDetailScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       child: SortTabs(
         labels: kSongSorts,
+        summary: state.total > 0 ? '${_formatInt(state.total)} bài' : null,
         selected: selected < 0 ? 0 : selected,
         onSelect: (i) => _fetchPage(key, 1, sort: _sortOptions[i].$1),
       ),

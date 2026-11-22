@@ -2,7 +2,7 @@ import '../services/imgcdn.dart';
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
 import '../widgets/desktop_page.dart';
-import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PillButton, OfflineBlock, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
@@ -306,10 +306,7 @@ class _TagDetailScreenState extends State<TagDetailScreen> with PagedLoader {
                   ]),
                   const SizedBox(height: 14),
                 ],
-                ListSearchField(hint: 'Tìm trong ${st.allTotal > 0 ? '${_formatInt(st.allTotal)} bài ' : ''}$activeLabel', onChanged: _search),
-                ListSearchSummary(query: _q, total: st.total, loading: st.loading),
-                const SizedBox(height: 14),
-                SortTabs(labels: _sorts, selected: st.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetchPage(_activeType, 1, sort: i)),
+                ListControls(hint: 'Tìm trong ${st.allTotal > 0 ? '${_formatInt(st.allTotal)} bài ' : ''}$activeLabel', query: _q, onSearch: _search, total: st.total, loading: st.loading, sorts: _sorts, sort: st.sort, onSort: (i) => _fetchPage(_activeType, 1, sort: i), summary: '${_formatInt(st.total)} bài'),
                 const SizedBox(height: 14),
                 if (desk) SongTableHead(metric: songMetricLabel(kSongSortMetric[_sorts[st.sort]]!)),
                 ...infiniteListBody<Map<String, dynamic>>(

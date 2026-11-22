@@ -14,6 +14,7 @@ import '../services/auth.dart';
 import '../services/activity.dart';
 import '../services/player.dart';
 import '../widgets/song_row.dart';
+import '../widgets/download_all.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/comment_section.dart';
 import '../widgets/shimmer.dart';
@@ -354,6 +355,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   Expanded(child: PillButton(onTap: () => _playAll(), icon: Icons.play_arrow, label: 'Phát tất cả', primary: true)),
                   const SizedBox(width: 10),
                   Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
+                  const SizedBox(width: 10),
+                  // Tải cả playlist (góp ý longthanh, canvas Playlist_TaiTatCa 22/11).
+                  DownloadAllButton(
+                    jobKey: 'playlist-${widget.id}',
+                    title: 'playlist “${pl['title'] ?? ''}”',
+                    count: _items.length,
+                    fetch: () async => _items,
+                  ),
                 ]),
                 const SizedBox(height: 8),
               ])),

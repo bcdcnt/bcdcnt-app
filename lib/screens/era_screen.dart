@@ -8,7 +8,7 @@ import '../widgets/eras.dart';
 import '../widgets/list_search.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_row.dart';
-import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, Rail, SectionTitle, UserAvatar;
+import '../widgets/ui.dart' show goBack, PillButton, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, Rail, SectionTitle, UserAvatar;
 
 /// "Theo năm tháng" › one period (canvas "Theo năm tháng — trang giai
 /// đoạn"): laid out like a Thể loại page — head card in the period's look,
@@ -211,10 +211,7 @@ class _EraScreenState extends State<EraScreen> with PagedLoader {
                         Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                       ]),
                     ),
-                  ListSearchField(hint: 'Tìm trong ${_list.allTotal > 0 ? '${formatInt(_list.allTotal)} bài ' : ''}${e.title}', onChanged: _search),
-                  ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
-                  const SizedBox(height: 14),
-                  SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
+                  ListControls(hint: 'Tìm trong ${_list.allTotal > 0 ? '${formatInt(_list.allTotal)} bài ' : ''}${e.title}', query: _q, onSearch: _search, total: _list.total, loading: _list.loading, sorts: _sorts, sort: _list.sort, onSort: (i) => _fetch(1, sort: i), summary: '${formatInt(_list.total)} bài'),
                   const SizedBox(height: 14),
                   ...infiniteListBody<Map<String, dynamic>>(
                     _list,

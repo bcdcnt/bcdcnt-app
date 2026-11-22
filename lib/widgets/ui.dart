@@ -900,30 +900,98 @@ const kSongSortMetric = <String, String>{
 
 /// Sort row ("Nghe nhiều nhất · Mới cập nhật · ..."): [BrandChip] pills,
 /// 44pt tall, horizontally scrollable. Tapping the active tab does nothing.
+/// Sort control (canvas TheLoai_PA2, 22/11): one row — optional [summary]
+/// on the left ("14.107 bài"), "Sắp xếp: <current> ▾" on the right. Tapping
+/// opens a bottom sheet listing every option (current one ticked). Replaces
+/// the chip strip, which looked like the solid "Phát tất cả" buttons.
 class SortTabs extends StatelessWidget {
   final List<String> labels;
   final int selected;
   final ValueChanged<int> onSelect;
   final EdgeInsets padding;
-  const SortTabs({super.key, required this.labels, required this.selected, required this.onSelect, this.padding = const EdgeInsets.symmetric(horizontal: 20)});
+  final String? summary;
+  const SortTabs({super.key, required this.labels, required this.selected, required this.onSelect, this.padding = const EdgeInsets.symmetric(horizontal: 20), this.summary});
+
+  Future<void> _pick(BuildContext context, int cur) async {
+    final i = await pickSort(context, labels, cur);
+    if (i != null && i != selected) onSelect(i);
+  }
 
   @override
   Widget build(BuildContext context) {
     if (labels.length < 2) return const SizedBox.shrink();
-    return Semantics(
-      container: true,
-      label: 'Sắp xếp',
-      explicitChildNodes: true,
-      child: ChipStrip(
-        labels: labels,
-        selected: selected.clamp(0, labels.length - 1),
-        padding: padding,
-        onSelect: (i) {
-          if (i != selected) onSelect(i);
-        },
-      ),
+    final cur = selected.clamp(0, labels.length - 1);
+    return Padding(
+      padding: padding,
+      child: Row(children: [
+        if (summary != null && summary!.isNotEmpty)
+          Expanded(child: Text(summary!, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))))
+        else
+          const Spacer(),
+        Semantics(
+          button: true,
+          label: 'Sắp xếp: ${labels[cur]}',
+          excludeSemantics: true,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _pick(context, cur),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.sort_rounded, size: 18, color: AppColors.text),
+                  const SizedBox(width: 6),
+                  Text('Sắp xếp: ', style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textMuted))),
+                  Text(labels[cur], style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text))),
+                  Icon(Icons.arrow_drop_down_rounded, size: 22, color: AppColors.text),
+                ]),
+              ),
+            ),
+          ),
+        ),
+      ]),
     );
   }
+}
+
+/// "Sắp xếp theo" bottom sheet: every option, the current one ticked.
+/// Returns the picked index, or null when dismissed.
+Future<int?> pickSort(BuildContext context, List<String> labels, int cur) {
+  return showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppColors.bg,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+              child: Text('Sắp xếp theo', style: display(TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.text))),
+            ),
+            for (var k = 0; k < labels.length; k++)
+              Semantics(
+                selected: k == cur,
+                button: true,
+                child: InkWell(
+                  onTap: () => Navigator.pop(ctx, k),
+                  child: Container(
+                    constraints: const BoxConstraints(minHeight: 52),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    alignment: Alignment.centerLeft,
+                    child: Row(children: [
+                      Expanded(child: Text(labels[k], style: body(TextStyle(fontSize: 16, fontWeight: k == cur ? FontWeight.w800 : FontWeight.w600, color: k == cur ? AppColors.accentFg : AppColors.text)))),
+                      if (k == cur) Icon(Icons.check_rounded, size: 22, color: AppColors.accentFg),
+                    ]),
+                  ),
+                ),
+              ),
+          ]),
+        ),
+      ),
+    );
 }
 
 /// One-row pager: round ‹ › arrows (44pt) around the page numbers — first,

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/list_search.dart';
 import '../widgets/desktop_page.dart';
-import '../widgets/ui.dart' show goBack, PillButton, SortTabs, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
+import '../widgets/ui.dart' show goBack, PillButton, PagedLoader, PagedList, PageResult, infiniteListBody, nearListEnd, kSongSorts, kSongSortColumn, kSongSortOrder, kSongSortMetric;
 import 'package:provider/provider.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
@@ -169,10 +169,7 @@ class _DecadeSongsScreenState extends State<DecadeSongsScreen> with PagedLoader 
                       Expanded(child: PillButton(onTap: () => _playAll(shuffle: true), icon: Icons.shuffle, label: 'Ngẫu nhiên', primary: false)),
                     ]),
                   if (!desk) const SizedBox(height: 14),
-                  ListSearchField(hint: widget.video ? 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} ' : ''}video' : 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}thập niên ${widget.decade}', onChanged: _search),
-                  ListSearchSummary(query: _q, total: _list.total, loading: _list.loading),
-                  const SizedBox(height: 14),
-                  SortTabs(labels: _sorts, selected: _list.sort, padding: EdgeInsets.zero, onSelect: (i) => _fetch(1, sort: i)),
+                  ListControls(hint: widget.video ? 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} ' : ''}video' : 'Tìm trong ${_list.allTotal > 0 ? '${_list.allTotal} bài ' : ''}thập niên ${widget.decade}', query: _q, onSearch: _search, total: _list.total, loading: _list.loading, sorts: _sorts, sort: _list.sort, onSort: (i) => _fetch(1, sort: i), summary: '${_formatInt(_list.total)} bài'),
                   const SizedBox(height: 14),
                   if (desk) SongTableHead(metric: songMetricLabel(kSongSortMetric[_sorts[_list.sort]]!)),
                   ...infiniteListBody<Map<String, dynamic>>(

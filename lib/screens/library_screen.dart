@@ -183,11 +183,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   )
                 : null,
             actions: [
-              // Canvas "Cá nhân · nút Gửi bài" (chốt 17/11).
-              if (auth.hasPermission('upload')) ...[
-                PillButton(label: 'Gửi bài', icon: Icons.add_rounded, height: 44, onTap: () => context.push('/gui-bai')),
-                const SizedBox(width: 8),
-              ],
+              // No "Gửi bài" here any more (canvas CaNhan_NutGuiBai, 22/11):
+              // sending goes through Bài gửi của tôi.
               RoundIcon(icon: Icons.settings_outlined, tooltip: 'Cài đặt', onTap: () => context.push('/cai-dat')),
             ],
           ),
