@@ -514,7 +514,7 @@ class _HomeMobileScreenState extends State<HomeMobileScreen> {
                   const Spacer(),
                   RoundIcon(icon: Icons.search_rounded, tooltip: 'Tìm kiếm', onTap: () => context.go('/search')),
                   const SizedBox(width: 8),
-                  RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: unread > 0, onTap: () => context.push('/thong-bao')),
+                  RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', count: unread, onTap: () => context.push('/thong-bao')),
                 ],
               ),
             ),

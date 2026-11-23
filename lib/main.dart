@@ -777,8 +777,6 @@ class _MobileShellState extends State<_MobileShell> {
     final child = widget.child;
     final hasPlayer = context.select<PlayerProvider, bool>((p) => p.currentSong != null);
     goBackFallback = () => _tabs[_activeTab].$1;
-    final unreadRaw = context.select<AuthProvider, Object?>((a) => a.user?['unread']);
-    final unread = unreadRaw is num ? unreadRaw.toInt() : 0;
 
     return MiniPlayerScope(
       child: Scaffold(
@@ -810,7 +808,9 @@ class _MobileShellState extends State<_MobileShell> {
               ),
               // One mini player for every phone screen, right above the
               // tab bar; per-screen copies are muted by MiniPlayerScope.
-              if (hasPlayer) const Padding(padding: EdgeInsets.only(top: 6, bottom: 8), child: MiniPlayer(fromShell: true)),
+              // Hidden while the keyboard is up (writing a comment): the
+              // input gets that room instead (canvas BinhLuan_O_Nhap).
+              if (hasPlayer && MediaQuery.viewInsetsOf(context).bottom == 0) const Padding(padding: EdgeInsets.only(top: 6, bottom: 8), child: MiniPlayer(fromShell: true)),
             ],
           ),
         ),
@@ -836,7 +836,7 @@ class _MobileShellState extends State<_MobileShell> {
                         button: true,
                         selected: i == _activeTab,
                         excludeSemantics: true,
-                        label: i == 3 && unread > 0 ? '${_tabs[i].$4}, $unread thông báo mới' : _tabs[i].$4,
+                        label: _tabs[i].$4,
                         child: InkResponse(
                           onTap: () {
                             HapticFeedback.selectionClick();
@@ -877,13 +877,9 @@ class _MobileShellState extends State<_MobileShell> {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Badge(
-                                // Unread notifications: Thông báo lives under Cá nhân.
-                                isLabelVisible: i == 3 && unread > 0,
-                                label: Text(unread > 99 ? '99+' : '$unread'),
-                                backgroundColor: AppColors.accent,
-                                child: Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : AppColors.accentLight) : AppColors.textMuted),
-                              ),
+                              // No unread badge on the tabs (23/11, canvas ThongBao_ChuongDauTrang):
+                              // the count sits on the bell atop Trang chủ / Cộng đồng.
+                              Icon(i == _activeTab ? _tabs[i].$3 : _tabs[i].$2, size: 26, color: i == _activeTab ? (AppColors.isLight ? AppColors.wine : AppColors.accentLight) : AppColors.textMuted),
                               const SizedBox(height: 4),
                               FittedBox(fit: BoxFit.scaleDown, child: Text(_tabs[i].$4, maxLines: 1, style: body(TextStyle(
                                 fontSize: 13,

@@ -161,9 +161,12 @@ class RoundIcon extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onTap;
   final bool dot;
+  /// Unread count shown as a red number on the icon (1–99, then "99+");
+  /// wins over [dot]. Notifications bell (canvas ThongBao_ChuongDauTrang).
+  final int count;
   final Color? background;
   final Color? color;
-  const RoundIcon({super.key, required this.icon, required this.tooltip, this.onTap, this.dot = false, this.background, this.color});
+  const RoundIcon({super.key, required this.icon, required this.tooltip, this.onTap, this.dot = false, this.count = 0, this.background, this.color});
 
   @override
   Widget build(BuildContext context) => Tooltip(
@@ -171,7 +174,7 @@ class RoundIcon extends StatelessWidget {
         excludeFromSemantics: true,
         child: Semantics(
           button: true,
-          label: dot ? '$tooltip, có mục mới' : tooltip,
+          label: count > 0 ? '$tooltip, $count mục mới' : dot ? '$tooltip, có mục mới' : tooltip,
           child: Material(
             color: background ?? AppColors.surface,
             shape: const CircleBorder(),
@@ -188,9 +191,23 @@ class RoundIcon extends StatelessWidget {
                 height: 48,
                 child: Stack(
                   alignment: Alignment.center,
+                  clipBehavior: Clip.none,
                   children: [
                     Icon(icon, size: 22, color: color ?? AppColors.text),
-                    if (dot)
+                    if (count > 0)
+                      Positioned(
+                        top: 1,
+                        right: -2,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 20),
+                          height: 20,
+                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.bg, width: 2)),
+                          child: MediaQuery.withNoTextScaling(child: Text(count > 99 ? '99+' : '$count', style: body(const TextStyle(fontSize: 11, height: 1, fontWeight: FontWeight.w800, color: Colors.white)))),
+                        ),
+                      )
+                    else if (dot)
                       Positioned(
                         top: 10,
                         right: 11,

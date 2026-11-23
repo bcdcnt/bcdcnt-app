@@ -794,7 +794,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                 ),
                 const SizedBox(width: 12),
                 if (authed)
-                  RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: unread > 0, onTap: () => context.push('/thong-bao'))
+                  RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', count: unread, onTap: () => context.push('/thong-bao'))
                 else
                   PillButton(label: 'Đăng nhập', height: 38, onTap: () => showDialog(context: context, useRootNavigator: true, builder: (_) => const LoginDialog())),
               ]),

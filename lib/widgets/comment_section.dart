@@ -1,8 +1,6 @@
-import '../services/imgcdn.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -146,12 +144,27 @@ class _CommentSectionState extends State<CommentSection> {
     // surface the picker if it matches `@token`.
     _quillDocSub = _quillCtl.documentChanges.listen((_) {
       _onActiveCommentTextChanged(_quillCtl);
+      _syncComposerOpen();
     });
+    _quillCtl.focusNode.addListener(_syncComposerOpen);
     _fetchComments(1);
+  }
+
+  /// Phone comment box (canvas BinhLuan_O_Nhap, chốt 23/11): one slim row
+  /// while idle; while focused or holding text the input takes the full
+  /// width and 📎 + Đăng drop to a row below it.
+  bool _composerOpen = false;
+
+  bool get _boxOpen => _composerOpen || _attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty || _uploadingImage || _uploadingAudio || _uploadingVideo;
+
+  void _syncComposerOpen() {
+    final open = _quillCtl.focusNode.hasFocus || !_quillCtl.isEmpty || _attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty;
+    if (open != _composerOpen && mounted) setState(() => _composerOpen = open);
   }
 
   @override
   void dispose() {
+    _quillCtl.focusNode.removeListener(_syncComposerOpen);
     _quillDocSub?.cancel();
     _editQuillDocSub?.cancel();
     _mentionDebounce?.cancel();
@@ -554,7 +567,12 @@ class _CommentSectionState extends State<CommentSection> {
         if (st == 'completed') {
           final raw = status['uploadStatus']?['data'];
           final data = raw is String ? (await _tryParseJson(raw)) : raw;
-          finalUrl = data?['url'] as String?;
+          // As the web's media library: audio_url / video_url of the
+          // processed file (all media share the mp3 bucket, so pick by kind).
+          String? pick(String k) => (data is Map && data[k] is String && (data[k] as String).isNotEmpty) ? data[k] as String : null;
+          finalUrl = isAudio
+              ? (pick('audio_url') ?? pick('video_url') ?? pick('url'))
+              : (pick('video_url') ?? pick('audio_url') ?? pick('url'));
           break;
         }
         if (st == 'failed' || st == 'error') throw Exception('Xử lý ${isAudio ? "audio" : "video"} lỗi');
@@ -586,6 +604,47 @@ class _CommentSectionState extends State<CommentSection> {
   /// whenever any upload is in progress so the user knows
   /// background work is happening even though the toolbar is
   /// collapsed.
+  /// Phone "Đăng" pill (44pt tall; fixed label so it doesn't grow while sending).
+  Widget _postButton() => ElevatedButton.icon(
+        onPressed: _submitting ? null : _submit,
+        icon: _submitting
+            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+            : const Icon(Icons.send, size: 18),
+        label: const Text('Đăng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.accent,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
+          disabledForegroundColor: Colors.white,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          minimumSize: const Size(64, 44),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        ),
+      );
+
+  /// Phone, typing (canvas BinhLuan_O_Nhap, chốt 23/11): Ảnh · Âm thanh ·
+  /// Video laid out instead of the 📎 menu — one tap opens the right
+  /// picker. Pasting an image stays on the keyboard.
+  Widget _attachIcons() {
+    final busy = _uploadingImage || _uploadingAudio || _uploadingVideo;
+    Widget b(String tip, IconData icon, bool loading, VoidCallback onTap) => IconButton(
+          tooltip: tip,
+          onPressed: busy ? null : onTap,
+          constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+          padding: EdgeInsets.zero,
+          icon: loading
+              ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentLight))
+              : Icon(icon, size: 24, color: AppColors.textSecondary),
+        );
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      b('Ảnh', Icons.image_outlined, _uploadingImage, _pickAndUploadImage),
+      b('Âm thanh', Icons.audiotrack_outlined, _uploadingAudio, _pickAndUploadAudio),
+      b('Video', Icons.videocam_outlined, _uploadingVideo, _pickAndUploadVideo),
+    ]);
+  }
+
   Widget _attachMenuButton() {
     final busy = _uploadingImage || _uploadingAudio || _uploadingVideo;
     return PopupMenuButton<String>(
@@ -681,13 +740,10 @@ class _CommentSectionState extends State<CommentSection> {
     final hasMedia = _attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty;
     if ((_quillCtl.isEmpty && !hasMedia) || !auth.isAuthenticated) return;
     setState(() => _submitting = true);
-    // Quill emits the rich-text body (images inline, paragraphs).
-    // Audio/video aren't Quill embeds — append them as raw <audio>/
-    // <video> blocks at the end, matching the web's storage shape.
+    // Quill emits the rich-text body (paragraphs + image figures).
+    // Audio/video aren't Quill embeds — append them at the end.
     final body = _quillCtl.isEmpty ? '' : _quillCtl.html;
-    final audioHtml = _attachedAudios.map((u) => '<p><audio controls src="$u"></audio></p>').join();
-    final videoHtml = _attachedVideos.map((u) => '<p><video controls src="$u"></video></p>').join();
-    final content = '$body$audioHtml$videoHtml';
+    final content = '$body${_mediaHtml(_attachedAudios, _attachedVideos)}';
     try {
       await auth.authedMutate(
         r'''mutation($type: String!, $id: Int!, $content: String!) { addComment(type: $type, object_id: $id, content: $content) { id } }''',
@@ -775,13 +831,54 @@ class _CommentSectionState extends State<CommentSection> {
     }
   }
 
+  // Audio/video in the comment HTML. The web (CKEditor mediaEmbed) and the
+  // API store `<figure class="media"><oembed url="…#audio|#video"></oembed>
+  // </figure>`; the web's waveform player, its "Tải xuống" menu and the
+  // API's downloadCommentMedia only look for that. Older app builds wrote
+  // bare <audio>/<video> — still read here so they can be edited.
+  static final _mediaBlockRx = RegExp(
+    r'<figure[^>]*class="media"[^>]*>\s*<oembed\s+url="([^"]+)"[^>]*>(?:\s*</oembed>)?\s*</figure>'
+    r'|<oembed\s+url="([^"]+)"[^>]*>(?:\s*</oembed>)?'
+    r'|(?:<p>)?<audio[^>]*src="([^"]+)"[^>]*>\s*</audio>(?:</p>)?'
+    r'|(?:<p>)?<video[^>]*src="([^"]+)"[^>]*>\s*</video>(?:</p>)?',
+    caseSensitive: false,
+  );
+
+  /// Same rule as the web's getMediaType: file extension first, then the
+  /// #audio / #video tag added at insert time. Null = not bcdcnt media
+  /// (e.g. a YouTube oembed) — left alone.
+  static String? _mediaKind(String url) {
+    if (RegExp(r'\.(mp4|webm|mov)(\?|#|$)', caseSensitive: false).hasMatch(url)) return 'video';
+    if (RegExp(r'\.(mp3|wav|ogg|flac|aac|m4a)(\?|#|$)', caseSensitive: false).hasMatch(url)) return 'audio';
+    if (url.endsWith('#video')) return 'video';
+    if (url.endsWith('#audio')) return 'audio';
+    return null;
+  }
+
+  String _editKeptEmbeds = '';
+
+  static String _mediaHtml(List<String> audios, List<String> videos) => [
+        for (final u in audios) '<figure class="media"><oembed url="$u#audio"></oembed></figure>',
+        for (final u in videos) '<figure class="media"><oembed url="$u#video"></oembed></figure>',
+      ].join();
+
   void _startEdit(Map<String, dynamic> c) {
     final html = (c['content'] ?? '').toString();
     // Tear down any prior edit session — switching from one comment
     // straight to another shouldn't leak the old Quill document.
     _editQuillDocSub?.cancel();
     _editQuillCtl?.dispose();
-    final ctl = QuillCommentController(initialHtml: html);
+    // Audio/video become chips below the editor (re-appended on save), so
+    // keep their blocks out of the text itself.
+    // Other embeds (YouTube…) can't live in the editor either: keep them
+    // aside and put them back on save so editing doesn't drop them.
+    final kept = StringBuffer();
+    final ctl = QuillCommentController(initialHtml: html.replaceAllMapped(_mediaBlockRx, (m) {
+      final u = m.group(1) ?? m.group(2);
+      if (u != null && _mediaKind(u) == null) kept.write(m.group(0));
+      return '';
+    }));
+    _editKeptEmbeds = kept.toString();
     _editQuillDocSub = ctl.documentChanges.listen((_) {
       _onActiveCommentTextChanged(ctl);
     });
@@ -789,11 +886,13 @@ class _CommentSectionState extends State<CommentSection> {
     // can drop or keep them; new uploads land in the same lists.
     final audios = <String>[];
     final videos = <String>[];
-    for (final m in RegExp(r'<audio[^>]*src="([^"]+)"', caseSensitive: false).allMatches(html)) {
-      final u = m.group(1); if (u != null) audios.add(u);
-    }
-    for (final m in RegExp(r'<video[^>]*src="([^"]+)"', caseSensitive: false).allMatches(html)) {
-      final u = m.group(1); if (u != null) videos.add(u);
+    for (final m in _mediaBlockRx.allMatches(html)) {
+      final raw = m.group(1) ?? m.group(2) ?? m.group(3) ?? m.group(4);
+      if (raw == null) continue;
+      final kind = m.group(3) != null ? 'audio' : m.group(4) != null ? 'video' : _mediaKind(raw);
+      if (kind == null) continue;
+      final u = raw.replaceFirst(RegExp(r'#(audio|video)$'), '');
+      (kind == 'video' ? videos : audios).add(u);
     }
     setState(() {
       _editingId = c['id']?.toString();
@@ -821,9 +920,7 @@ class _CommentSectionState extends State<CommentSection> {
     if (_savingEdit || ctl == null || (ctl.isEmpty && !hasMedia)) return;
     setState(() => _savingEdit = true);
     final body = ctl.isEmpty ? '' : ctl.html;
-    final audioHtml = _editAttachedAudios.map((u) => '<p><audio controls src="$u"></audio></p>').join();
-    final videoHtml = _editAttachedVideos.map((u) => '<p><video controls src="$u"></video></p>').join();
-    final html = '$body$audioHtml$videoHtml';
+    final html = '$body$_editKeptEmbeds${_mediaHtml(_editAttachedAudios, _editAttachedVideos)}';
     try {
       final auth = context.read<AuthProvider>();
       final data = await auth.authedMutate(
@@ -908,8 +1005,14 @@ class _CommentSectionState extends State<CommentSection> {
           Text('Chủ đề đã khoá, không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))
         else if (auth.isAuthenticated)
           Container(
-            padding: compact ? const EdgeInsets.fromLTRB(4, 2, 6, 2) : const EdgeInsets.fromLTRB(10, 8, 6, 8),
-            decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(compact ? 24 : 12), border: Border.all(color: AppColors.borderSubtle)),
+            padding: compact
+                ? const EdgeInsets.fromLTRB(4, 2, 6, 2)
+                : _boxOpen ? const EdgeInsets.fromLTRB(10, 8, 6, 4) : const EdgeInsets.fromLTRB(2, 2, 4, 2),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(compact ? 24 : (_boxOpen ? 16 : 26)),
+              border: Border.all(color: !compact && _boxOpen ? AppColors.accentLight.withValues(alpha: 0.6) : AppColors.borderSubtle, width: !compact && _boxOpen ? 1.5 : 1),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -956,7 +1059,7 @@ class _CommentSectionState extends State<CommentSection> {
                 // and the send button sits in the bottom-right
                 // corner of that same panel.
                 Container(
-                  padding: compact ? EdgeInsets.zero : const EdgeInsets.fromLTRB(2, 4, 2, 4),
+                  padding: EdgeInsets.zero,
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     // Discord/Telegram-style row: avatar + input grow
                     // horizontally and the send pill rides at the
@@ -964,26 +1067,16 @@ class _CommentSectionState extends State<CommentSection> {
                     // the last line of text. Bottom-aligning means
                     // the button stays put when the input is empty
                     // and follows the input as it grows multi-line.
-                    Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                      if (!compact) CircleAvatar(
-                        radius: 14,
-                        backgroundColor: AppColors.wine,
-                        backgroundImage: auth.user?['avatar'] != null ? CachedNetworkImageProvider(cdnImg((auth.user!['avatar']).toString(), 160)) : null,
-                        child: auth.user?['avatar'] == null ? const Icon(Icons.person, size: 16, color: Colors.white) : null,
-                      ),
-                      if (!compact) const SizedBox(width: 4),
+                    if (compact) Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                       _attachMenuButton(),
                       const SizedBox(width: 2),
                       Expanded(
                         key: _composerKey,
-                        child: QuillCommentInput(
-                          controller: _quillCtl,
-                          hintText: compact ? 'Viết cảm nhận…' : 'Viết bình luận...',
-                        ),
+                        child: QuillCommentInput(controller: _quillCtl, hintText: 'Viết cảm nhận…'),
                       ),
                       const SizedBox(width: 6),
                       // Side panel: one row — clip, text, a small Gửi.
-                      if (compact) FilledButton(
+                      FilledButton(
                         onPressed: _submitting ? null : _submit,
                         style: FilledButton.styleFrom(
                           backgroundColor: AppColors.accent,
@@ -997,25 +1090,31 @@ class _CommentSectionState extends State<CommentSection> {
                             ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                             : Text('Gửi', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white))),
                       ),
-                      if (!compact) ElevatedButton.icon(
-                        onPressed: _submitting ? null : _submit,
-                        icon: _submitting
-                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                            : const Icon(Icons.send, size: 18),
-                        // Nhãn cố định "Đăng" để nút không phình khi đang gửi.
-                        label: const Text('Đăng', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accent,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: AppColors.accent.withValues(alpha: 0.55),
-                          disabledForegroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                          minimumSize: const Size(64, 48),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                        ),
+                    ])
+                    // Phone, typing: the text gets the whole width (up to
+                    // ~6 lines, then scrolls inside); 📎 + Đăng below.
+                    else if (_boxOpen) Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
+                        child: QuillCommentInput(key: _composerKey, controller: _quillCtl, hintText: 'Viết bình luận...', maxHeight: 168),
                       ),
+                      const SizedBox(height: 2),
+                      Row(children: [
+                        Transform.translate(offset: const Offset(-8, 0), child: _attachIcons()),
+                        const Spacer(),
+                        _postButton(),
+                      ]),
+                    ])
+                    // Phone, idle: one slim row — 📎 · Viết bình luận… · Đăng.
+                    else Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                      _attachMenuButton(),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        key: _composerKey,
+                        child: QuillCommentInput(controller: _quillCtl, hintText: 'Viết bình luận...'),
+                      ),
+                      const SizedBox(width: 6),
+                      _postButton(),
                     ]),
                     // Attached audio / video chips below the input.
                     if (_attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty)

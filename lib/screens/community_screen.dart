@@ -40,7 +40,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
       child: Column(
         children: [
           PageTitle('Cộng đồng', actions: [
-            RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', dot: ((context.select<AuthProvider, Object?>((a) => a.user?['unread']) as num?) ?? 0) > 0, onTap: () => context.push('/thong-bao')),
+            RoundIcon(icon: Icons.notifications_none_rounded, tooltip: 'Thông báo', count: ((context.select<AuthProvider, Object?>((a) => a.user?['unread']) as num?) ?? 0).toInt(), onTap: () => context.push('/thong-bao')),
           ]),
           const SizedBox(height: 16),
           Segmented(labels: const ['Cảm nhận', 'Thảo luận', 'Hoạt động'], selected: _pane, onSelect: (i) => setState(() => _pane = i)),

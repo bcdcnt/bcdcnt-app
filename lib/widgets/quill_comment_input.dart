@@ -103,6 +103,20 @@ class QuillCommentController {
     // Quill always trails a `\n` → renders to `<p><br/></p>`. Drop it
     // (and any chain of empty paragraphs) so we don't store noise.
     out = out.replaceAll(RegExp(r'(<p><br/?></p>)+$'), '');
+    // Images as the web editor (CKEditor imageBlock) stores them: their own
+    // <figure class="image"><img src></figure> block, not an <img> inside
+    // a paragraph — same shape whichever client wrote the comment.
+    out = out.replaceAllMapped(
+      RegExp(r'<img\b[^>]*?\bsrc="([^"]+)"[^>]*>'),
+      (m) => '</p><figure class="image"><img src="${m[1]}"></figure><p>',
+    );
+    for (var prev = ''; prev != out;) {
+      prev = out;
+      out = out
+          .replaceAll(RegExp(r'<p>(\s|<br/?>)+'), '<p>')
+          .replaceAll(RegExp(r'(\s|<br/?>)+</p>'), '</p>')
+          .replaceAll('<p></p>', '');
+    }
     return out.trim();
   }
 
@@ -148,6 +162,8 @@ class QuillCommentController {
   }
 
   void requestFocus() => _focus.requestFocus();
+  /// Focus of the editor (the comment box widens while it has focus).
+  FocusNode get focusNode => _focus;
 
   /// Stream of document change events — every keystroke / paste /
   /// replaceText surfaces here. Used by the mention typeahead.
@@ -178,8 +194,14 @@ class QuillCommentController {
 
   Delta _htmlToDelta(String html) {
     try {
-      // Bare <p>…</p><p>… loses its paragraph breaks unless wrapped.
-      return htmlToQuillDelta(html);
+      // The web stores images as <figure class="image"><img …></figure>,
+      // which the converter drops — editing such a comment used to lose
+      // its pictures. Hand it the image inside a plain paragraph instead.
+      final fixed = html.replaceAllMapped(
+        RegExp(r'<figure\b[^>]*>[\s\S]*?<img\b[^>]*?\bsrc="([^"]+)"[^>]*>[\s\S]*?</figure>', caseSensitive: false),
+        (m) => '<p><img src="${m[1]}"></p>',
+      );
+      return htmlToQuillDelta(fixed);
     } catch (_) {
       return Delta()
         ..insert(html.replaceAll(RegExp(r'<[^>]+>'), ''))
