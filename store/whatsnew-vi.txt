@@ -1,7 +1,5 @@
-- Thông báo trên điện thoại: hỏi quyền ngay lần mở đầu, Android nhận được thông báo, giờ yên lặng chỉ tắt tiếng chứ không mất thông báo.
-- Cài đặt thông báo dùng chung cho điện thoại và máy tính.
-- Máy tính: thông báo có tên, ảnh người gửi, bấm mở thẳng bài.
-- Tải tất cả bài của nghệ sĩ hoặc playlist về máy.
-- Danh sách bài: nút sắp xếp và tìm gọn một hàng.
-- Video không tắt màn hình giữa chừng, khung vừa tỉ lệ video.
-- CTV sửa lời bài hát ngay trong ứng dụng.
+- Ô bình luận rộng hơn khi gõ: chữ chạy hết bề ngang, nút Ảnh · Âm thanh · Video bày sẵn.
+- Ảnh, ghi âm, video gửi từ ứng dụng hiện đúng trên web (trình phát có sóng âm, tải xuống được).
+- Sửa bình luận không còn làm mất ảnh hay video YouTube đã nhúng.
+- Số thông báo chưa đọc hiện ngay trên chuông ở Trang chủ và Cộng đồng.
+- Đăng nhập bằng Google trên Android đã hoạt động.
