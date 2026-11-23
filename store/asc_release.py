@@ -1,6 +1,7 @@
 """App Store Connect: tạo version, ghi "Có gì mới", gắn build, nộp duyệt.
 
     ~/.venvs/cadquery/bin/python store/asc_release.py <IOS|MAC_OS> <version> <build> [status|submit]
+    ~/.venvs/cadquery/bin/python store/asc_release.py <IOS|MAC_OS> cancel   (rút bản đang chờ duyệt)
 
 Khoá API V866A924D3 (~/.appstoreconnect/private_keys). "Có gì mới" lấy từ
 store/whatsnew-vi.txt. Phát hành tự động sau khi duyệt.
@@ -31,7 +32,19 @@ def call(method, path, body=None, **params):
     return r.json() if r.text else {}
 
 
+EDITABLE = {"PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"}
+
+
+def cancel(platform):
+    for st in ("WAITING_FOR_REVIEW", "IN_REVIEW", "UNRESOLVED_ISSUES"):
+        for sub in call("GET", "/reviewSubmissions", **{"filter[app]": APP_ID, "filter[platform]": platform, "filter[state]": st})["data"]:
+            r = call("PATCH", f"/reviewSubmissions/{sub['id']}", {"data": {"type": "reviewSubmissions", "id": sub["id"], "attributes": {"canceled": True}}})
+            print("rút", sub["id"], st, "→", r["data"]["attributes"]["state"])
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[2] == "cancel":
+        return cancel(sys.argv[1])
     platform, ver, build = sys.argv[1], sys.argv[2], sys.argv[3]
     action = sys.argv[4] if len(sys.argv) > 4 else "status"
     whats_new = (pathlib.Path(__file__).parent / "whatsnew-vi.txt").read_text().strip()
@@ -56,6 +69,13 @@ def main():
     if v:
         v = v[0]
     else:
+        # A version still being prepared (e.g. 1.8.0 pulled from review)
+        # takes the new number instead of creating a second one.
+        open_ = [x for x in call("GET", f"/apps/{APP_ID}/appStoreVersions", **{"filter[platform]": platform})["data"] if x["attributes"]["appStoreState"] in EDITABLE]
+        if open_:
+            v = call("PATCH", f"/appStoreVersions/{open_[0]['id']}", {"data": {"type": "appStoreVersions", "id": open_[0]["id"], "attributes": {"versionString": ver}}})["data"]
+            print("đổi số phiên bản", open_[0]["attributes"]["versionString"], "→", ver)
+    if not v:
         v = call("POST", "/appStoreVersions", {"data": {"type": "appStoreVersions",
             "attributes": {"platform": platform, "versionString": ver, "releaseType": "AFTER_APPROVAL"},
             "relationships": {"app": {"data": {"type": "apps", "id": APP_ID}}}}})["data"]
