@@ -52,7 +52,7 @@ class _SameRecordingsState extends State<SameRecordings> {
     if (title.isEmpty) return;
     final key = '${u['id']}|$title|${want.join(',')}';
     try {
-      final d = await ApiClient.query(r'query($q: String) { songs(first: 30, q: $q) { data { id title views record_year artists(first: 3) { data { title } } sheet { composers(first: 3) { data { title } } } file { audio_url duration bitrate } } } }', {'q': title});
+      final d = await ApiClient.query(r'query($q: String) { songs(first: 30, q: $q) { data { id title subtitle views record_year artists(first: 3) { data { title } } sheet { composers(first: 3) { data { title } } } file { audio_url duration bitrate } } } }', {'q': title});
       final u2 = widget.upload;
       if (!mounted || key != '${u2['id']}|$title|${want.join(',')}') return;
       setState(() => _same = [
@@ -70,6 +70,16 @@ class _SameRecordingsState extends State<SameRecordings> {
     if (_same.isEmpty) return const SizedBox.shrink();
     final sent = '${widget.upload['artists'] ?? ''}'.split(RegExp(r'[,;]|\s-\s')).map(_norm).where((x) => x.isNotEmpty).toSet();
     final composers = _names(_same.first['sheet']?['composers']);
+    // Singers with two or more recordings here: their cards show the note
+    // ("bản 1", "bản 2 · đĩa nhựa…") so the versions tell apart (canvas
+    // Desktop_BanLamViec_GhiChuBanThu, chốt 24/11).
+    final seen = <String, int>{};
+    for (final m in _same) {
+      final a = _norm(_names(m['artists']));
+      if (a.isNotEmpty) seen[a] = (seen[a] ?? 0) + 1;
+    }
+    final repeated = {for (final e in seen.entries) if (e.value > 1) e.key};
+    final ordered = _byArtist(sent);
     return Padding(
       padding: const EdgeInsets.only(top: 18),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -80,13 +90,58 @@ class _SameRecordingsState extends State<SameRecordings> {
         ]),
         const SizedBox(height: 2),
         Text('Cùng tên “${_same.first['title']}”${composers.isEmpty ? '' : ' · cùng nhạc sĩ $composers'} — nghe so sánh trước khi duyệt', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted))),
-        for (final m in _same) _card(context, m, sent),
+        for (final m in ordered) _card(context, m, sent, repeated),
       ]),
     );
   }
 
-  Widget _card(BuildContext context, Map<String, dynamic> m, Set<String> sent) {
+  /// Grouped by singer (canvas Desktop_BanLamViec_GhiChuBanThu, chốt 24/11):
+  /// the singer of the upload first, then singers with more recordings
+  /// (tie: more plays), "Chưa rõ người trình bày" last; inside a singer by
+  /// "bản N", else by recording year.
+  List<Map<String, dynamic>> _byArtist(Set<String> sent) {
+    String key(Map m) => _norm(_names(m['artists']));
+    final count = <String, int>{}, plays = <String, int>{};
+    for (final m in _same) {
+      final k = key(m);
+      count[k] = (count[k] ?? 0) + 1;
+      plays[k] = (plays[k] ?? 0) + ((m['views'] as num?)?.toInt() ?? 0);
+    }
+    bool isSent(String k) => k.isNotEmpty && _names(_same.firstWhere((m) => key(m) == k)['artists']).split(', ').map(_norm).any(sent.contains);
+    int? version(Map m) => int.tryParse(RegExp(r'bản\s*(\d+)', caseSensitive: false).firstMatch('${m['subtitle'] ?? ''}')?.group(1) ?? '');
+    int year(Map m) => int.tryParse('${m['record_year'] ?? ''}') ?? 0;
+    final list = [..._same];
+    list.sort((a, b) {
+      final ka = key(a), kb = key(b);
+      if (ka != kb) {
+        if (ka.isEmpty != kb.isEmpty) return ka.isEmpty ? 1 : -1;
+        final sa = isSent(ka), sb = isSent(kb);
+        if (sa != sb) return sa ? -1 : 1;
+        final c = count[kb]!.compareTo(count[ka]!);
+        if (c != 0) return c;
+        final p = plays[kb]!.compareTo(plays[ka]!);
+        return p != 0 ? p : ka.compareTo(kb);
+      }
+      final va = version(a), vb = version(b);
+      if (va != null && vb != null && va != vb) return va.compareTo(vb);
+      if ((va == null) != (vb == null)) return va == null ? 1 : -1;
+      final y = year(a).compareTo(year(b));
+      if (y != 0) return y;
+      return (int.tryParse('${a['id']}') ?? 0).compareTo(int.tryParse('${b['id']}') ?? 0);
+    });
+    return list;
+  }
+
+  /// "(bản 2 - đĩa nhựa Nhật Bản)" → "bản 2 · đĩa nhựa Nhật Bản".
+  static String _note(dynamic v) {
+    var t = '${v ?? ''}'.trim();
+    if (t.startsWith('(') && t.endsWith(')')) t = t.substring(1, t.length - 1).trim();
+    return t.replaceAll(RegExp(r'\s+[-–—]\s+'), ' · ');
+  }
+
+  Widget _card(BuildContext context, Map<String, dynamic> m, Set<String> sent, Set<String> repeated) {
     final artists = _names(m['artists']);
+    final note = repeated.contains(_norm(artists)) ? _note(m['subtitle']) : '';
     final dup = artists.split(', ').map(_norm).any(sent.contains);
     final f = m['file'] as Map;
     final meta = [
@@ -104,6 +159,16 @@ class _SameRecordingsState extends State<SameRecordings> {
           Expanded(
             child: Row(children: [
               Flexible(child: Text(artists.isEmpty ? 'Chưa rõ người trình bày' : artists, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.text)))),
+              if (note.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 2),
+                    decoration: BoxDecoration(color: AppColors.bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.accentFg.withValues(alpha: 0.35), width: 1.5)),
+                    child: Text(note, maxLines: 1, overflow: TextOverflow.ellipsis, style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.accentFg))),
+                  ),
+                ),
+              ],
               if (dup) ...[
                 const SizedBox(width: 8),
                 Container(

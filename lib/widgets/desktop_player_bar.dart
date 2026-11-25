@@ -171,8 +171,18 @@ class _ProgressState extends State<_Progress> {
   double? _drag;
   bool _hover = false;
 
+  // Ticks come through positionNotifier, not the provider (which no longer
+  // notifies per tick). Without listening here the bar and time froze at
+  // the moment of the last rebuild — on Windows nothing else rebuilt the
+  // bar, so it sat at 0:00 until the mouse went over it (góp ý
+  // vuquangthang 24/11, dựng lại trên máy ảo Windows 11).
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ValueListenableBuilder<Duration>(
+        valueListenable: widget.player.positionNotifier,
+        builder: (context, _, _) => _bar(context),
+      );
+
+  Widget _bar(BuildContext context) {
     final p = widget.player;
     final total = p.duration.inMilliseconds / 1000;
     final now = _drag ?? p.position.inMilliseconds / 1000;

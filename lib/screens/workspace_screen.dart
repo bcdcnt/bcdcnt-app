@@ -37,6 +37,7 @@ class WorkspaceScreen extends StatefulWidget {
 const _todo = [
   ('pending', 'Bài gửi chờ duyệt', 'Bài gửi'),
   ('doc_request', 'Xử lý yêu cầu', 'Yêu cầu'),
+  ('comment_pending', 'Bình luận chờ duyệt', 'Bình luận'),
   ('no_year', 'Thiếu năm sáng tác', 'Bản nhạc'),
   ('no_score', 'Thiếu bản nhạc', 'Bản nhạc'),
   ('no_tag', 'Thiếu tag', 'Bản nhạc'),
@@ -56,7 +57,6 @@ const _uploadQueues = {'pending', 'not_sure', 'rejected', 'approved'};
 const _noYearWhere = '{OR: [{column: "year", operator: IS_NULL}, {column: "year", value: 0}]}';
 const _noScoreWhere = '{OR: [{column: "content", operator: IS_NULL}, {column: "content", value: ""}]}';
 const _requestWhere = '{AND: [{column: "is_request", value: 1}, {OR: [{column: "request_status", operator: IS_NULL}, {column: "request_status", operator: IN, value: ["processing", "need_more_info"]}]}]}';
-const _commentPendingWhere = '{column: "status", value: 0}';
 /// Songs still without a picture / lyrics, whole catalogue (the home
 /// "Nhờ bạn giúp sức" strip shows the same totals).
 const _noImageWhere = '{column: "image_id", operator: IS_NULL}';
@@ -70,7 +70,7 @@ const _idPaths = {'Document': 'tu-lieu/chi-tiet', 'Discussion': 'thao-luan', 'Pl
 const _fileTypes = {'Song': 'song', 'Folk': 'folk', 'Instrumental': 'instrumental', 'Poem': 'poem', 'Karaoke': 'karaoke'};
 
 class _WorkspaceScreenState extends State<WorkspaceScreen> {
-  // An old link to a queue no longer listed (Bình luận chờ duyệt) lands on the uploads.
+  // A link to a queue not listed lands on the uploads.
   late String _queue = [..._todo, ..._done].any((q) => q.$1 == widget.queue) ? widget.queue! : 'pending';
   final Map<String, int> _counts = {};
   List<Map<String, dynamic>> _items = [];
@@ -93,6 +93,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   bool get _isSheet => _queue == 'no_score' || _queue == 'no_tag' || _queue == 'no_year';
   bool get _isSong => _queue == 'lost_file' || _queue == 'no_image' || _queue == 'no_lyric';
   bool get _isComment => _queue == 'doc_request' || _queue == 'comment_pending';
+  /// Held comments are approved by those with manage_comment (API @can).
+  bool get _canComments => _auth.hasPermission('manage_comment');
+  /// "Bỏ kiểm duyệt tài khoản này khi duyệt" (per comment on screen).
+  bool _unmoderate = false;
 
   static const _fields = 'id title content note source type composers artists poets recomposers accompanists accompaniment_instrument year record_year link status reason created_at user { id username avatar { url } } thumbnail { url } file { id audio_url duration bitrate is_hq } talk: comments(first: 1, orderBy: [{column: "id", order: DESC}], where: {column: "status", operator: NEQ, value: 2}) { paginatorInfo { total } data { user { id } } } object { __typename ... on Song { id title slug artists(first: 3) { data { title } } file { id audio_url duration bitrate is_hq user { username } } sheet { composers(first: 3) { data { title } } } } }';
 
@@ -133,6 +137,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_tag': 'sheets(first: 1, untagged: true)',
       'doc_request': 'comments(first: 1, where: $_requestWhere)',
       'lost_file': 'songs(first: 1, where: {column: "empty_file", value: 1})',
+      if (_canComments) 'comment_pending': 'pendingComments(first: 1)',
       'no_image': 'songs(first: 1, where: $_noImageWhere)',
       'no_lyric': 'songs(first: 1, where: $_noLyricWhere)',
     };
@@ -140,7 +145,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       try {
         final d = await _auth.authedQuery('query { $q }', null, true);
         if (mounted) setState(() { for (final k in keys) { _counts[k] = n(d[k]); } });
-        if (keys.contains('pending')) pendingUploads.value = _counts['pending'];
+        // The side menu badge: uploads + held comments, as the menu counts them.
+        if (keys.contains('pending') || keys.contains('comment_pending')) pendingUploads.value = (_counts['pending'] ?? 0) + (_counts['comment_pending'] ?? 0);
       } catch (_) {}
     }
     await Future.wait([
@@ -162,7 +168,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       'no_image' => ('songs', 'songs(first: 40, where: $_noImageWhere, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
       'no_lyric' => ('songs', 'songs(first: 40, where: $_noLyricWhere, orderBy: [$order]) { data { id title views record_year thumbnail { url } artists(first: 3) $people sheet { year composers(first: 3) $people } } }'),
       'doc_request' => ('comments', 'comments(first: 40, where: $_requestWhere, orderBy: [$order]) { data { id content created_at request_status user { id username } object { $_commentObj } } }'),
-      'comment_pending' => ('comments', 'comments(first: 40, where: $_commentPendingWhere, orderBy: [$order]) { data { id content created_at user { id username } object { $_commentObj } } }'),
+      'comment_pending' => ('pendingComments', 'pendingComments(first: 40, orderBy: [$order]) { data { id content created_at pending_reason user { id username created_at avatar { url } comments(first: 1) { paginatorInfo { total } } } object { $_commentObj } } }'),
       _ => ('uploads', 'uploads(first: 40, page: 1, where: {column: "status", value: "$queue"}, orderBy: [$order]) { data { $_fields } }'),
     };
     try {
@@ -228,7 +234,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   void _select(int i) {
     if (i < 0 || i >= _items.length) return;
-    setState(() { _sel = i; _lyricsOpen = false; });
+    setState(() { _sel = i; _lyricsOpen = false; _unmoderate = false; });
     _checkDupes();
   }
 
@@ -261,6 +267,165 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Bình luận chờ duyệt: A duyệt (optionally lifting the writer's
+  /// moderation), R xoá after a confirm.
+  Future<void> _decideComment(bool approve) async {
+    final u = _cur;
+    if (u == null || _busy) return;
+    if (!approve) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Xoá bình luận này?'),
+          content: Text('Bình luận của ${u['user']?['username'] ?? 'thành viên'} sẽ bị xoá, không hiện trong bài.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+            FilledButton(autofocus: true, onPressed: () => Navigator.pop(ctx, true), child: const Text('Xoá')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final unmoderate = approve && _unmoderate && u['pending_reason'] == 'moderated';
+    try {
+      if (approve) {
+        await _auth.authedMutate(r'mutation($id: ID!, $u: Boolean) { approvePendingComment(id: $id, unmoderate: $u) { id status } }', {'id': '${u['id']}', 'u': unmoderate});
+      } else {
+        await _auth.authedMutate(r'mutation($ids: [ID!]) { updateBatchComment(ids: $ids, update: {delete: true}) }', {'ids': ['${u['id']}']});
+      }
+      if (!mounted) return;
+      messenger?.showSnackBar(SnackBar(content: Text(approve ? (unmoderate ? 'Đã duyệt và bỏ kiểm duyệt ${u['user']?['username'] ?? ''}' : 'Đã duyệt bình luận') : 'Đã xoá bình luận'), duration: const Duration(seconds: 2)));
+      setState(() {
+        _items.removeAt(_sel);
+        if (_sel >= _items.length) _sel = _items.length - 1;
+        if (_sel < 0) _sel = 0;
+        _unmoderate = false;
+        // The writer is no longer moderated: their other held comments
+        // still wait here (they were held before), but say so less loudly.
+        if (unmoderate) {
+          for (final x in _items) {
+            if ('${x['user']?['id']}' == '${u['user']?['id']}' && x['pending_reason'] == 'moderated') x['pending_reason'] = null;
+          }
+        }
+      });
+      _loadCounts();
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text(friendlyError(e)), backgroundColor: AppColors.error));
+    }
+    if (mounted) setState(() => _busy = false);
+  }
+
+  /// Detail of a held comment (canvas Desktop_BanLamViec_BinhLuan, chốt 24/11).
+  Widget _pendingDetail(Map<String, dynamic> u) {
+    final user = u['user'] is Map ? u['user'] as Map : const {};
+    final name = '${user['username'] ?? 'Ẩn danh'}';
+    final reason = switch (u['pending_reason']) {
+      'moderated' => 'Vì sao chờ: tài khoản đang bị kiểm duyệt bình luận',
+      'bad_words' => 'Vì sao chờ: có từ bị lọc',
+      _ => null,
+    };
+    final approved = (user['comments']?['paginatorInfo']?['total'] as num?)?.toInt();
+    final joined = DateTime.tryParse('${user['created_at'] ?? ''}')?.year;
+    final others = _items.where((x) => x != u && '${x['user']?['id']}' == '${user['id']}').length;
+    final at = DateTime.tryParse('${u['created_at'] ?? ''}');
+    String two(int v) => v.toString().padLeft(2, '0');
+    final when = at == null ? '' : '${two(at.day)}/${two(at.month)}/${at.year} · ${two(at.hour)}:${two(at.minute)}';
+    Widget row(String k, String v) => Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.borderSubtle))),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 150, child: Text(k, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textMuted)))),
+            Expanded(child: Text(v, style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text)))),
+          ]),
+        );
+    final obj = u['object'] is Map ? u['object'] as Map : null;
+    void open() {
+      final tn = '${obj?['__typename'] ?? ''}';
+      if (_fileTypes.containsKey(tn)) {
+        context.push('/song/${obj!['id']}?binh-luan=1', extra: {...Map<String, dynamic>.from(obj), 'file_type': _fileTypes[tn]});
+      } else if (tn == 'Sheet') {
+        context.push('/sheet/${obj!['id']}');
+      } else if (_personPaths.containsKey(tn) && '${obj!['slug'] ?? ''}'.isNotEmpty) {
+        context.push('/${_personPaths[tn]}/${obj['slug']}');
+      } else if (_idPaths.containsKey(tn)) {
+        context.push('/${_idPaths[tn]}/${obj!['id']}');
+      } else {
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(const SnackBar(content: Text('App chưa mở được trang này. Xem trên web.')));
+      }
+    }
+    return ListView(padding: const EdgeInsets.fromLTRB(36, 24, 36, 40), children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Text('BÌNH LUẬN CHỜ DUYỆT · ${name.toUpperCase()} · ${timeago(u['created_at']?.toString()).toUpperCase()}', style: AppText.eyebrow)),
+        if (obj != null) ...[
+          const SizedBox(width: 12),
+          OutlinedButton(
+            onPressed: open,
+            style: OutlinedButton.styleFrom(foregroundColor: AppColors.accentFg, side: BorderSide(color: AppColors.accentFg, width: 1.5), shape: const StadiumBorder(), padding: const EdgeInsets.symmetric(horizontal: 14)),
+            child: Text('Mở trong bài ›', style: body(const TextStyle(fontSize: 14, fontWeight: FontWeight.w800))),
+          ),
+        ],
+      ]),
+      const SizedBox(height: 6),
+      Text('Trong ${obj?['title'] ?? 'bài'}', style: display(TextStyle(fontSize: 30, height: 1.15, letterSpacing: -0.5, fontWeight: FontWeight.w800, color: AppColors.text))),
+      if (reason != null) ...[
+        const SizedBox(height: 14),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(color: AppColors.isLight ? const Color(0xFFFFF4DE) : const Color(0xFF3A2E14), borderRadius: BorderRadius.circular(10)),
+            child: Text(reason, style: body(TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.warningText))),
+          ),
+        ),
+      ],
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          UserAvatar(url: user['avatar']?['url']?.toString(), name: name, size: 40),
+          const SizedBox(width: 14),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text.rich(TextSpan(children: [
+              TextSpan(text: name, style: const TextStyle(fontWeight: FontWeight.w800)),
+              if (when.isNotEmpty) TextSpan(text: ' · $when', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textMuted)),
+            ]), style: body(TextStyle(fontSize: 15, color: AppColors.text))),
+            const SizedBox(height: 6),
+            SelectableText(_plain(u['content']).isEmpty ? '(bình luận trống)' : _plain(u['content']), style: body(TextStyle(fontSize: 17, height: 1.5, color: AppColors.text))),
+          ])),
+        ]),
+      ),
+      const SizedBox(height: 16),
+      row('Người viết', [name, if (approved != null) '${formatInt(approved)} bình luận đã duyệt', if (joined != null) 'tham gia $joined'].join(' · ')),
+      if (others > 0) row('Bình luận chờ khác', '$others bình luận khác của người này đang chờ'),
+      if (u['pending_reason'] == 'moderated') ...[
+        const SizedBox(height: 12),
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => setState(() => _unmoderate = !_unmoderate),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(children: [
+              Checkbox(value: _unmoderate, onChanged: (v) => setState(() => _unmoderate = v ?? false)),
+              Text('Bỏ kiểm duyệt tài khoản này khi duyệt', style: body(TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.text))),
+              const SizedBox(width: 8),
+              Flexible(child: Text('— lần sau bình luận hiện ngay', style: body(TextStyle(fontSize: 13, color: AppColors.textMuted)))),
+            ]),
+          ),
+        ),
+      ],
+      const SizedBox(height: 20),
+      Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        PillButton(label: 'Duyệt (A)', icon: Icons.check_rounded, loading: _busy, onTap: () => _decideComment(true)),
+        PillButton(label: 'Xoá (R)', icon: Icons.close_rounded, primary: false, onTap: _busy ? null : () => _decideComment(false)),
+        const SizedBox(width: 12),
+        Row(mainAxisSize: MainAxisSize.min, children: [_kbd('J', 'bình luận sau'), const SizedBox(width: 12), _kbd('K', 'bình luận trước')]),
+      ]),
+    ]);
   }
 
   Future<String?> _askReason() {
@@ -313,6 +478,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final k = e.logicalKey;
     if (k == LogicalKeyboardKey.keyJ) { _select(_sel + 1); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyK) { _select(_sel - 1); return KeyEventResult.handled; }
+    if (_queue == 'comment_pending') {
+      if (k == LogicalKeyboardKey.keyA) { _decideComment(true); return KeyEventResult.handled; }
+      if (k == LogicalKeyboardKey.keyR) { _decideComment(false); return KeyEventResult.handled; }
+      return KeyEventResult.ignored;
+    }
     if (!_isUpload || _queue == 'approved') return KeyEventResult.ignored;
     if (k == LogicalKeyboardKey.keyA) { _decide('approve'); return KeyEventResult.handled; }
     if (k == LogicalKeyboardKey.keyN) { _decide('not_sure'); return KeyEventResult.handled; }
@@ -383,7 +553,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       )),
             ]),
           ),
-          Expanded(child: _cur == null ? const SizedBox.shrink() : (_isUpload ? _detail(_cur!) : _otherDetail(_cur!))),
+          Expanded(child: _cur == null ? const SizedBox.shrink() : (_isUpload ? _detail(_cur!) : (_queue == 'comment_pending' ? _pendingDetail(_cur!) : _otherDetail(_cur!)))),
           if (threadOn && !overlay) _threadColumn(_cur!),
         ]);
           if (!overlay) return row;
@@ -413,7 +583,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Padding(padding: const EdgeInsets.fromLTRB(12, 0, 0, 12), child: Text('Việc cần làm', style: display(TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.text)))),
-              for (final (k, label, _) in _todo) _queueRow(k, label),
+              for (final (k, label, _) in _todo)
+                if (k != 'comment_pending' || _canComments) _queueRow(k, label),
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 22, 0, 8),
                 child: Text('ĐÃ XỬ LÝ', style: body(TextStyle(fontSize: 12, letterSpacing: 0.8, fontWeight: FontWeight.w800, color: AppColors.textMuted))),
@@ -470,7 +641,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       decoration: BoxDecoration(border: Border(right: BorderSide(color: AppColors.borderSubtle))),
       child: ListView(children: [
         IconButton(tooltip: 'Đóng Trao đổi, hiện đủ Việc cần làm', onPressed: _toggleThread, icon: Icon(Icons.keyboard_double_arrow_right_rounded, color: AppColors.textMuted)),
-        for (final (k, label, _) in _todo) item(k, label),
+        for (final (k, label, _) in _todo) if (k != 'comment_pending' || _canComments) item(k, label),
         Padding(padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6), child: Divider(height: 1, color: AppColors.border)),
         for (final (k, label, _) in _done) item(k, label),
       ]),
@@ -542,6 +713,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _ => null,
       };
 
+  /// Waiting for a BQT decision: the count stays red until it is done.
+  bool _urgent(String k) => (k == 'pending' || k == 'comment_pending') && (_counts[k] ?? 0) > 0;
+
   Widget _queueRow(String k, String label) => Padding(
         padding: const EdgeInsets.only(bottom: 2),
         child: Material(
@@ -562,8 +736,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     height: 24,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     alignment: Alignment.center,
-                    decoration: BoxDecoration(color: k == _queue ? AppColors.wine : (_doneColors(k)?.$1 ?? AppColors.surface), borderRadius: BorderRadius.circular(12)),
-                    child: Text(formatInt(_counts[k]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: k == _queue ? Colors.white : (_doneColors(k)?.$2 ?? AppColors.textSecondary)))),
+                    decoration: BoxDecoration(color: (k == _queue || _urgent(k)) ? AppColors.wine : (_doneColors(k)?.$1 ?? AppColors.surface), borderRadius: BorderRadius.circular(12)),
+                    child: Text(formatInt(_counts[k]), style: body(TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: (k == _queue || _urgent(k)) ? Colors.white : (_doneColors(k)?.$2 ?? AppColors.textSecondary)))),
                   ),
                 const SizedBox(width: 10),
               ]),

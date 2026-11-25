@@ -16,6 +16,7 @@ import 'events_screen.dart' show EventSheet;
 import '../widgets/auth_dialogs.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/eras.dart';
+import '../widgets/home_extras.dart';
 import '../widgets/song_row.dart';
 import '../widgets/ui.dart';
 
@@ -736,6 +737,7 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                   return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Expanded(flex: 13, child: today), const SizedBox(width: 20), Expanded(flex: 10, child: radio)]));
                 }),
                 ...(authed ? _forYouBlock() : _guestInvite()),
+                const HomeLiveBlock(mobile: false),
                 if (_decades.isNotEmpty) ...[_head('Đi qua năm tháng', action: 'Mở Dòng thời gian', onAction: () => context.push('/dong-thoi-gian')), _decadeChart()],
                 const SizedBox(height: 48),
                 LayoutBuilder(builder: (context, cc) {
@@ -750,7 +752,16 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
                     ]),
                   );
                 }),
+                const HomeCollectionsBlock(mobile: false),
                 if (_storyList.isNotEmpty || _comments.isNotEmpty) ...[_head('Người nghe kể', action: 'Vào Cộng đồng', onAction: () => context.push('/binh-luan')), _stories()],
+                // Ngày này năm xưa | Nghe theo nhạc sĩ side by side; stacked when narrow.
+                LayoutBuilder(builder: (context, cc) {
+                  const anniv = HomeAnnivBlock(mobile: false);
+                  const people = HomeComposersBlock(mobile: false);
+                  if (cc.maxWidth < 900) return const Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [anniv, people]);
+                  return const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(flex: 23, child: anniv), SizedBox(width: 40), Expanded(flex: 20, child: people)]);
+                }),
+                const HomeTopicsBlock(mobile: false),
                 if (_ctv.isNotEmpty) _together(),
               ]),
             ),
@@ -762,7 +773,8 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
 
   // ---------- Phone ----------
   /// Trang chủ on a phone, built for listening (search has its own tab): greeting · Đài ·
-  /// Nghe tiếp · Dành cho bạn · Nghe nhiều · Mới về kho.
+  /// Dành cho bạn · Theo năm tháng · Mọi người đang nghe · Nghe nhiều · Tuyển
+  /// tập · Mới về kho · Ngày này năm xưa · Nghe theo nhạc sĩ · Nghe theo chủ đề.
   Widget _mobileBuild(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final authed = auth.isAuthenticated;
@@ -802,8 +814,13 @@ class _DesktopHomeScreenState extends State<DesktopHomeScreen> {
             Padding(padding: const EdgeInsets.fromLTRB(20, 18, 20, 0), child: _radioCard()),
             if (authed) Padding(padding: side, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: _forYouBlock())),
             ..._eraRail(),
+            const HomeLiveBlock(mobile: true),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _topCol()),
+            const HomeCollectionsBlock(mobile: true),
             Padding(padding: const EdgeInsets.fromLTRB(20, 32, 20, 0), child: _latestCol()),
+            const HomeAnnivBlock(mobile: true),
+            const HomeComposersBlock(mobile: true),
+            const HomeTopicsBlock(mobile: true),
           ]),
         ),
       ),

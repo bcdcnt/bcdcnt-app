@@ -45,7 +45,9 @@ class SongDetailScreen extends StatefulWidget {
   final String? highlightCommentId;
   /// Open scrolled to the comment box ("Góp tay": write what you know).
   final bool scrollToComments;
-  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong, this.highlightCommentId, this.scrollToComments = false});
+  /// False when the page is re-opened by a tab switch: no autoplay.
+  final bool autoplay;
+  const SongDetailScreen({super.key, required this.songId, this.fileType = 'song', this.initialSong, this.highlightCommentId, this.scrollToComments = false, this.autoplay = true});
 
   @override
   State<SongDetailScreen> createState() => _SongDetailScreenState();
@@ -333,7 +335,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         final isCurrent = _isThisSong(player.currentSong);
         // A song whose file is gone would only raise "Không phát được".
         final playable = _song!['empty_file'] != 1 && (_song!['file']?['audio_url'] != null || _song!['file']?['video_url'] != null);
-        if (!isCurrent && playable) _play();
+        if (!isCurrent && playable && widget.autoplay) _play();
       }
       _failed = false;
     } catch (_) {

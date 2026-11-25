@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../constants/theme.dart';
 import '../services/api.dart';
 import '../widgets/contribute_card.dart';
+import '../widgets/gap_scroll.dart';
 import '../widgets/ui.dart';
 import 'activity_screen.dart';
 import 'comments_screen.dart';
@@ -29,7 +30,7 @@ class _DesktopCommunityScreenState extends State<DesktopCommunityScreen> {
   void _openTopic(String id) => setState(() { _tab = 0; _topic = id; });
 
   Widget _withSide(Widget feed) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Align(alignment: Alignment.topLeft, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: feed))),
+        Expanded(child: GapScroll(maxWidth: 760, child: feed)),
         const SizedBox(width: 40),
         SizedBox(width: 340, child: _CommunitySide(onOpenTopic: _openTopic)),
       ]);

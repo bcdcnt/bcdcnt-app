@@ -15,6 +15,7 @@ import '../widgets/mini_player.dart';
 import '../widgets/comment_media.dart';
 import '../widgets/waveform_player.dart';
 import '../widgets/comment_section.dart';
+import '../widgets/gap_scroll.dart';
 import 'discussion_compose_screen.dart' show DiscussionComposeScreen, ForumGroup, loadForumGroups, showForumPicker;
 
 class DiscussionDetailScreen extends StatefulWidget {
@@ -40,6 +41,9 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
 
   @override
   void initState() { super.initState(); _fetch(); }
+
+  @override
+  void dispose() { _sideScroll.dispose(); super.dispose(); }
 
   Future<void> _fetch({bool fresh = false}) async {
     if (_failed) setState(() { _failed = false; _loading = true; });
@@ -185,25 +189,45 @@ class _DiscussionDetailScreenState extends State<DiscussionDetailScreen> {
 
   /// Desktop: a 760 reading column (post card + comments, composer docked
   /// at the bottom) and, when there is room, a 320 side column.
+  final _mainKey = GlobalKey();
+  final _sideKey = GlobalKey();
+  final _sideScroll = ScrollController();
+
+  /// A trackpad swipe over the side column stays there only when that
+  /// column is taller than the window and can scroll itself.
+  bool _overScrollableSide(Offset global) {
+    final box = _sideKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return false;
+    if (!(box.localToGlobal(Offset.zero) & box.size).contains(global)) return false;
+    return _sideScroll.hasClients && _sideScroll.position.maxScrollExtent > 0;
+  }
+
   Widget _desktop(Map<String, dynamic> d) {
     return Material(
       color: AppColors.bg,
       child: LayoutBuilder(builder: (context, c) {
         final side = c.maxWidth >= 1180;
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: [
-            Flexible(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: CommentSection(type: 'discussion', id: widget.id, readOnly: _isClosed(d), docked: true, sortable: true, lead: _desktopLead(d)),
+        // Wheel/trackpad anywhere outside the reading column (margins, the
+        // side column when it fits) scrolls the topic, góp ý 25/11.
+        return GapScroll(
+          target: _mainKey,
+          skip: _overScrollableSide,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisAlignment: MainAxisAlignment.center, children: [
+              Flexible(
+                child: ConstrainedBox(
+                  key: _mainKey,
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: CommentSection(type: 'discussion', id: widget.id, readOnly: _isClosed(d), docked: true, sortable: true, lead: _desktopLead(d)),
+                ),
               ),
-            ),
-            if (side) ...[
-              const SizedBox(width: 40),
-              SizedBox(width: 320, child: SingleChildScrollView(padding: const EdgeInsets.only(top: 24, bottom: 24), child: _desktopSide(d))),
-            ],
-          ]),
+              if (side) ...[
+                const SizedBox(width: 40),
+                SizedBox(key: _sideKey, width: 320, child: SingleChildScrollView(controller: _sideScroll, padding: const EdgeInsets.only(top: 24, bottom: 24), child: _desktopSide(d))),
+              ],
+            ]),
+          ),
         );
       }),
     );

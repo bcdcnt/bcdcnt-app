@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding, WidgetsBindingObserver;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'player.dart' show songKind;
@@ -119,6 +120,39 @@ class OfflineStore extends ChangeNotifier {
         } catch (_) {}
       });
 
+  static const _maxRetries = 6;
+  // Connections of downloads in flight, closed on return from the
+  // background so a dead socket fails (and resumes) at once instead of
+  // waiting out its 30s timeout.
+  final Set<http.Client> _clients = {};
+  _Lifecycle? _lifecycle;
+  bool _background = false;
+  Completer<void>? _resumed;
+
+  void _watchLifecycle() {
+    if (_lifecycle != null) return;
+    _lifecycle = _Lifecycle(this);
+    WidgetsBinding.instance.addObserver(_lifecycle!);
+  }
+
+  void _onLifecycle(AppLifecycleState s) {
+    if (s == AppLifecycleState.paused || s == AppLifecycleState.hidden) {
+      _background = true;
+    } else if (s == AppLifecycleState.resumed && _background) {
+      _background = false;
+      for (final c in _clients.toList()) {
+        c.close();
+      }
+      _resumed?.complete();
+      _resumed = null;
+    }
+  }
+
+  Future<void> _foreground() {
+    if (!_background) return Future.value();
+    return (_resumed ??= Completer<void>()).future;
+  }
+
   /// Downloads [song] for offline listening. Returns null on success or a
   /// Vietnamese message explaining why it couldn't.
   Future<String?> download(Map<String, dynamic> song, AuthProvider auth) async {
@@ -133,44 +167,92 @@ class OfflineStore extends ChangeNotifier {
     try {
       const m = r'mutation($objectType: String!, $objectId: ID!) { download(object_type: $objectType, object_id: $objectId) { url } }';
       final vars = {'objectType': type, 'objectId': song['id'].toString()};
-      final data = auth.isAuthenticated ? await auth.authedMutate(m, vars) : await ApiClient.mutate(m, vars);
-      final url = data['download']?['url']?.toString();
-      if (url == null || url.isEmpty) return 'Bạn đã tải quá nhiều, thử lại sau';
+      Future<String?> fetchUrl() async {
+        final data = auth.isAuthenticated ? await auth.authedMutate(m, vars) : await ApiClient.mutate(m, vars);
+        final url = data['download']?['url']?.toString();
+        return url == null || url.isEmpty ? null : url;
+      }
+      final url = await fetchUrl();
+      if (url == null) return 'Bạn đã tải quá nhiều, thử lại sau';
 
       final dir = await _folder;
       final file = File('${dir.path}/$key.mp3');
       tmp = File('${file.path}.part');
-      final client = http.Client();
+      _watchLifecycle();
+      var uri = Uri.parse(url);
       IOSink? sink;
       var got = 0;
+      var total = 0;
       try {
-        final res = await client.send(http.Request('GET', Uri.parse(url))).timeout(const Duration(seconds: 30));
-        if (res.statusCode != 200) return 'Không tải được file (mã ${res.statusCode})';
-        final total = res.contentLength ?? 0;
-        sink = tmp.openWrite();
-        var lastPct = -1;
-        // A stalled stream must not hang a whole "tải cả danh sách" run.
-        await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
-          sink.add(chunk);
-          got += chunk.length;
-          if (total > 0) {
-            // Notify per whole percent, not per chunk (hundreds per MP3).
-            final pct = got * 100 ~/ total;
-            if (pct != lastPct) {
-              lastPct = pct;
-              _progress[key] = got / total;
-              notifyListeners();
+        // Going to the background (iOS suspends the app; Android may cut
+        // its network) kills the connection mid-file. Instead of dropping
+        // the song, reconnect and ask only for the missing bytes (Range).
+        for (var attempt = 0;; attempt++) {
+          final client = http.Client();
+          _clients.add(client);
+          try {
+            final req = http.Request('GET', uri);
+            if (got > 0) req.headers['Range'] = 'bytes=$got-';
+            final res = await client.send(req).timeout(const Duration(seconds: 30));
+            if (res.statusCode == 403 && attempt > 0) {
+              // The download link lives 5 minutes; a long stay in the
+              // background outlives it. Ask for a fresh one and carry on.
+              final fresh = await fetchUrl();
+              if (fresh == null) return 'Bạn đã tải quá nhiều, thử lại sau';
+              uri = Uri.parse(fresh);
+              throw const SocketException('link expired');
             }
+            if (got > 0 && res.statusCode == 200) {
+              // Server ignored Range: start the file over.
+              await sink?.close();
+              sink = null;
+              got = 0;
+            } else if (res.statusCode != 200 && res.statusCode != 206) {
+              return 'Không tải được file (mã ${res.statusCode})';
+            }
+            if (res.statusCode == 206) {
+              final m = RegExp(r'/(\d+)$').firstMatch(res.headers['content-range'] ?? '');
+              total = m != null ? int.parse(m.group(1)!) : got + (res.contentLength ?? 0);
+            } else {
+              total = res.contentLength ?? 0;
+            }
+            sink ??= tmp.openWrite(mode: got > 0 ? FileMode.append : FileMode.write);
+            var lastPct = -1;
+            // A stalled stream must not hang a whole "tải cả danh sách" run.
+            await for (final chunk in res.stream.timeout(const Duration(seconds: 30))) {
+              sink.add(chunk);
+              got += chunk.length;
+              if (total > 0) {
+                // Notify per whole percent, not per chunk (hundreds per MP3).
+                final pct = got * 100 ~/ total;
+                if (pct != lastPct) {
+                  lastPct = pct;
+                  _progress[key] = got / total;
+                  notifyListeners();
+                }
+              }
+            }
+            // A dropped connection can end the stream early without an
+            // error; a half file would play a few seconds then stop.
+            if (total > 0 && got < total) throw const SocketException('short read');
+            break;
+          } on Object catch (e) {
+            final network = e is SocketException || e is TimeoutException || e is http.ClientException;
+            if (!network || attempt >= _maxRetries) rethrow;
+            await sink?.flush();
+            // Wait until the app is back in front: retrying while suspended
+            // would only burn the attempts.
+            await _foreground();
+            await Future.delayed(Duration(seconds: attempt < 2 ? 1 : 3));
+          } finally {
+            _clients.remove(client);
+            client.close();
           }
         }
         await sink.close();
         sink = null;
-        // A dropped connection can end the stream early without an error;
-        // a half file would play a few seconds then stop.
-        if (total > 0 && got != total) return 'Tải chưa xong, kiểm tra mạng rồi thử lại';
       } finally {
         await sink?.close();
-        client.close();
       }
       await tmp.rename(file.path);
 
@@ -221,4 +303,11 @@ class OfflineStore extends ChangeNotifier {
     await _save();
     notifyListeners();
   }
+}
+
+class _Lifecycle with WidgetsBindingObserver {
+  final OfflineStore store;
+  _Lifecycle(this.store);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) => store._onLifecycle(state);
 }

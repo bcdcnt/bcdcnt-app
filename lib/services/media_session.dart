@@ -54,11 +54,11 @@ class MediaSession extends BaseAudioHandler with SeekHandler {
 
   Future<void> _loadLogo() async {
     try {
+      // Rewrite every launch: an older copy (black logo) must not outlive
+      // an icon change.
       final f = File('${(await getApplicationSupportDirectory()).path}/now_playing_logo.png');
-      if (!await f.exists()) {
-        final b = await rootBundle.load('assets/app_icon.png');
-        await f.writeAsBytes(b.buffer.asUint8List(), flush: true);
-      }
+      final b = await rootBundle.load('assets/app_icon.png');
+      await f.writeAsBytes(b.buffer.asUint8List(), flush: true);
       _logo = f.uri;
       // A song without a cover may already be showing.
       _itemId = null;

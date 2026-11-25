@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:pasteboard/pasteboard.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/theme.dart';
 import 'ui.dart' show PillButton, OfflineBlock, SkeletonSongRow, UserAvatar;
 import '../services/api.dart';
@@ -145,10 +146,136 @@ class _CommentSectionState extends State<CommentSection> {
     _quillDocSub = _quillCtl.documentChanges.listen((_) {
       _onActiveCommentTextChanged(_quillCtl);
       _syncComposerOpen();
+      _scheduleDraftSave();
     });
     _quillCtl.focusNode.addListener(_syncComposerOpen);
+    _loadDraft();
     _fetchComments(1);
   }
+
+  // ── Bản nháp (canvas BinhLuan_BanNhap, chốt 24/11) ─────────────────────
+  // Like the web: one draft per page on this device, saved 0.5s after
+  // typing stops, gone once posted or emptied. Coming back, the box shows
+  // a "Nháp" tag + the first line; a tap opens it with "Đã khôi phục nháp".
+  String get _draftKey => 'comment_draft_${widget.type}_${widget.id}';
+  String? _pendingDraft; // saved html, not yet put back in the box
+  String? _draftStatus; // 'saved' | 'restored'
+  bool _savedHintShown = false;
+  Timer? _draftTimer;
+  Timer? _draftStatusTimer;
+
+  Future<void> _loadDraft() async {
+    try {
+      final html = (await SharedPreferences.getInstance()).getString(_draftKey);
+      if (html == null || html.trim().isEmpty || !mounted || !_quillCtl.isEmpty) return;
+      setState(() => _pendingDraft = html);
+    } catch (_) {}
+  }
+
+  void _scheduleDraftSave() {
+    if (_pendingDraft != null) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 500), () {
+      final empty = _quillCtl.isEmpty;
+      _writeDraft(empty ? null : _quillCtl.html);
+      if (!empty && !_savedHintShown && _quillCtl.plainText.trim().length >= 50) {
+        _savedHintShown = true;
+        _flashDraftStatus('saved');
+      }
+    });
+  }
+
+  Future<void> _writeDraft(String? html) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (html == null || html.isEmpty) {
+        await prefs.remove(_draftKey);
+      } else {
+        await prefs.setString(_draftKey, html);
+      }
+    } catch (_) {}
+  }
+
+  void _flashDraftStatus(String status) {
+    if (!mounted) return;
+    _draftStatusTimer?.cancel();
+    setState(() => _draftStatus = status);
+    _draftStatusTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _draftStatus = null);
+    });
+  }
+
+  void _restoreDraft() {
+    final html = _pendingDraft;
+    if (html == null) return;
+    _quillCtl.setHtml(html);
+    setState(() => _pendingDraft = null);
+    _syncComposerOpen();
+    _flashDraftStatus('restored');
+    WidgetsBinding.instance.addPostFrameCallback((_) => _quillCtl.requestFocus());
+  }
+
+  /// First line of the draft, for the collapsed box.
+  static String _draftPreview(String html) {
+    final text = html
+        .replaceAll(RegExp(r'</p>|<br\s*/?>|</figure>', caseSensitive: false), '\n')
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&amp;', '&')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&quot;', '"');
+    final line = text.split('\n').map((l) => l.trim()).firstWhere((l) => l.isNotEmpty, orElse: () => '');
+    if (line.isNotEmpty) return line;
+    return html.contains('<img') ? '[Ảnh]' : '…';
+  }
+
+  /// Stands in for the input while a saved draft waits to be opened.
+  Widget _draftChip() => Semantics(
+        button: true,
+        label: 'Mở bản nháp bình luận',
+        child: InkWell(
+          onTap: _restoreDraft,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(color: AppColors.gold.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(10)),
+                child: Text('Nháp', style: body(TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.warningText))),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _draftPreview(_pendingDraft ?? ''),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: body(TextStyle(fontSize: 17, color: AppColors.text)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      );
+
+  /// "✓ Đã lưu nháp" / "↺ Đã khôi phục nháp", fades after 3s.
+  Widget _draftStatusLine() => AnimatedSwitcher(
+        duration: const Duration(milliseconds: 250),
+        child: _draftStatus == null
+            ? const SizedBox(key: ValueKey('none'), width: double.infinity)
+            : Align(
+                key: ValueKey(_draftStatus),
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2, right: 4),
+                  child: Text(
+                    _draftStatus == 'restored' ? '↺ Đã khôi phục nháp' : '✓ Đã lưu nháp',
+                    style: body(TextStyle(fontSize: 12, fontWeight: _draftStatus == 'restored' ? FontWeight.w700 : FontWeight.w500, color: _draftStatus == 'restored' ? AppColors.warningText : AppColors.textMuted)),
+                  ),
+                ),
+              ),
+      );
 
   /// Phone comment box (canvas BinhLuan_O_Nhap, chốt 23/11): one slim row
   /// while idle; while focused or holding text the input takes the full
@@ -165,6 +292,12 @@ class _CommentSectionState extends State<CommentSection> {
   @override
   void dispose() {
     _quillCtl.focusNode.removeListener(_syncComposerOpen);
+    if (_draftTimer?.isActive ?? false) {
+      // Left within 0.5s of the last keystroke: keep that too.
+      _draftTimer!.cancel();
+      _writeDraft(_quillCtl.isEmpty ? null : _quillCtl.html);
+    }
+    _draftStatusTimer?.cancel();
     _quillDocSub?.cancel();
     _editQuillDocSub?.cancel();
     _mentionDebounce?.cancel();
@@ -260,6 +393,7 @@ class _CommentSectionState extends State<CommentSection> {
   /// "Trả lời": start the composer with @name and bring it into view.
   void _replyTo(String? username) {
     if (username == null || username.isEmpty) return;
+    _restoreDraft(); // a waiting draft goes back in first, @name in front of it
     final text = _quillCtl.plainText.trimRight();
     final mention = '@$username ';
     if (!text.contains(mention.trim())) _quillCtl.replaceTextAt(0, 0, mention);
@@ -750,6 +884,11 @@ class _CommentSectionState extends State<CommentSection> {
         {'type': widget.type, 'id': int.parse(widget.id), 'content': content},
       );
       _quillCtl.clear();
+      _draftTimer?.cancel();
+      _writeDraft(null);
+      _savedHintShown = false;
+      _draftStatusTimer?.cancel();
+      _draftStatus = null;
       _attachedAudios.clear();
       _attachedVideos.clear();
       await _fetchComments(1);
@@ -1004,7 +1143,9 @@ class _CommentSectionState extends State<CommentSection> {
         if (widget.readOnly)
           Text('Chủ đề đã khoá, không nhận thêm bình luận.', style: body(TextStyle(fontSize: 15, color: AppColors.textMuted)))
         else if (auth.isAuthenticated)
-          Container(
+          // Whole box counts as "inside" the editor, so tapping Ảnh/Âm thanh/
+          // Video/Đăng keeps focus; a tap anywhere else closes the keyboard.
+          TextFieldTapRegion(child: Container(
             padding: compact
                 ? const EdgeInsets.fromLTRB(4, 2, 6, 2)
                 : _boxOpen ? const EdgeInsets.fromLTRB(10, 8, 6, 4) : const EdgeInsets.fromLTRB(2, 2, 4, 2),
@@ -1072,7 +1213,7 @@ class _CommentSectionState extends State<CommentSection> {
                       const SizedBox(width: 2),
                       Expanded(
                         key: _composerKey,
-                        child: QuillCommentInput(controller: _quillCtl, hintText: 'Viết cảm nhận…'),
+                        child: _pendingDraft != null ? _draftChip() : QuillCommentInput(controller: _quillCtl, hintText: 'Viết cảm nhận…'),
                       ),
                       const SizedBox(width: 6),
                       // Side panel: one row — clip, text, a small Gửi.
@@ -1098,6 +1239,7 @@ class _CommentSectionState extends State<CommentSection> {
                         padding: const EdgeInsets.fromLTRB(4, 0, 4, 0),
                         child: QuillCommentInput(key: _composerKey, controller: _quillCtl, hintText: 'Viết bình luận...', maxHeight: 168),
                       ),
+                      _draftStatusLine(),
                       const SizedBox(height: 2),
                       Row(children: [
                         Transform.translate(offset: const Offset(-8, 0), child: _attachIcons()),
@@ -1111,11 +1253,12 @@ class _CommentSectionState extends State<CommentSection> {
                       const SizedBox(width: 2),
                       Expanded(
                         key: _composerKey,
-                        child: QuillCommentInput(controller: _quillCtl, hintText: 'Viết bình luận...'),
+                        child: _pendingDraft != null ? _draftChip() : QuillCommentInput(controller: _quillCtl, hintText: 'Viết bình luận...'),
                       ),
                       const SizedBox(width: 6),
                       _postButton(),
                     ]),
+                    if (compact) _draftStatusLine(),
                     // Attached audio / video chips below the input.
                     if (_attachedAudios.isNotEmpty || _attachedVideos.isNotEmpty)
                       _buildMediaChipsStrip(audios: _attachedAudios, videos: _attachedVideos, onRemoveAudio: (i) => setState(() => _attachedAudios.removeAt(i)), onRemoveVideo: (i) => setState(() => _attachedVideos.removeAt(i))),
@@ -1132,7 +1275,7 @@ class _CommentSectionState extends State<CommentSection> {
                 ),
               ],
             ),
-          )
+          ))
         else
           Align(
             alignment: Alignment.centerLeft,

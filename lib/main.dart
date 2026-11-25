@@ -88,14 +88,22 @@ import 'package:audio_session/audio_session.dart';
 import 'services/analytics.dart';
 import 'services/radio_presence.dart';
 import 'services/desktop_alerts.dart';
+import 'services/windows_roots.dart';
 
 void main() async {
+  if (!kIsWeb) installWindowsRoots();
   // window_manager is desktop-only (used for the FullPlayer fullscreen
   // toggle). Skip the bind on mobile/web so the app starts the same way
   // it did before the dep was added.
   if (!kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux)) {
     WidgetsFlutterBinding.ensureInitialized();
     await windowManager.ensureInitialized();
+    // The Windows/Linux runner is scaffolded by `flutter create` in CI, so
+    // its window title defaults to the package name "bcdcnt". macOS already
+    // takes the bundle name.
+    if (Platform.isWindows || Platform.isLinux) {
+      await windowManager.setTitle('Bài ca đi cùng năm tháng');
+    }
     // Screenshot/automation hook: BCDCNT_SHOT_SIZE="1280x820" pins the window
     // to an exact size + centers it so the capture script gets identical,
     // reproducible frames every run. No-op in normal use.
@@ -501,7 +509,14 @@ final _router = GoRouter(
         GoRoute(
           path: '/song/:id',
           builder: (c, s) {
-            final extra = s.extra as Map<String, dynamic>?;
+            var extra = s.extra as Map<String, dynamic>?;
+            // Re-opened by a tab switch (the trail the user left): show the
+            // page but don't start its song again over what's playing now.
+            final restored = extra?['_restored'] == true;
+            if (restored) {
+              extra = Map<String, dynamic>.from(extra!)..remove('_restored');
+              if (extra.isEmpty) extra = null;
+            }
             // `highlightCommentId` is opt-in: only deep-links from
             // surfaces like Cảm nhận hay set it. Strip it before
             // passing the rest to the screen as initialSong so we
@@ -512,6 +527,7 @@ final _router = GoRouter(
               initialSong: extra,
               highlightCommentId: hi,
               scrollToComments: s.uri.queryParameters['binh-luan'] == '1',
+              autoplay: !restored,
             );
           },
         ),
@@ -868,7 +884,12 @@ class _MobileShellState extends State<_MobileShell> {
                                 if (!mounted) return;
                                 final router = GoRouter.of(context);
                                 for (final p in back) {
-                                  router.push(p.$1, extra: p.$2);
+                                  // Song pages autoplay on open: flag these
+                                  // so the song picked meanwhile keeps playing.
+                                  final extra = p.$1.startsWith('/song/') && (p.$2 == null || p.$2 is Map)
+                                      ? <String, dynamic>{...?(p.$2 as Map?)?.cast<String, dynamic>(), '_restored': true}
+                                      : p.$2;
+                                  router.push(p.$1, extra: extra);
                                 }
                               });
                             }

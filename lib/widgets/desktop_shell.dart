@@ -204,8 +204,11 @@ class _SideNavState extends State<_SideNav> {
 
   void _loadPending(AuthProvider auth) {
     if (!auth.hasPermission('manage_upload')) return;
-    auth.authedQuery(r'query { uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } } }').then((d) {
-      final n = (d['uploads']?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+    // Bình luận chờ duyệt counts too, for those who may approve them.
+    final comments = auth.hasPermission('manage_comment') ? ' pendingComments(first: 1) { paginatorInfo { total } }' : '';
+    auth.authedQuery('query { uploads(first: 1, where: {column: "status", value: "pending"}) { paginatorInfo { total } }$comments }').then((d) {
+      int t(String k) => (d[k]?['paginatorInfo']?['total'] as num?)?.toInt() ?? 0;
+      final n = t('uploads') + t('pendingComments');
       if (mounted && n != _pending) setState(() => _pending = n);
     }).catchError((_) {});
   }

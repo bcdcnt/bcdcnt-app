@@ -39,6 +39,9 @@ class QuillCommentInput extends StatelessWidget {
         config: q.QuillEditorConfig(
           placeholder: hintText,
           autoFocus: autofocus,
+          // Quill only drops focus for mouse taps; on phones a touch outside
+          // left the keyboard up with no way to close it.
+          onTapOutside: (_, focus) => focus.unfocus(),
           expands: false,
           padding: const EdgeInsets.symmetric(vertical: 6),
           embedBuilders: [_InlineImageEmbedBuilder()],
