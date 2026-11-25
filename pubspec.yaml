@@ -1,7 +1,7 @@
 name: bcdcnt
 description: BCĐCNT - Bài Ca Đi Cùng Năm Tháng
 publish_to: 'none'
-version: 1.8.1+34
+version: 1.9.0+35
 
 environment:
   sdk: ^3.11.5
@@ -94,7 +94,7 @@ flutter:
 # BCĐCNT → Product identity and must match it exactly; the Store signs
 # the package itself. The MSIX version is pubspec's major.minor.patch + ".0".
 msix_config:
-  display_name: BCĐCNT
+  display_name: BCĐCNT – Bài ca đi cùng năm tháng
   publisher_display_name: BCĐCNT
   identity_name: BCCNT.BCCNT
   publisher: CN=8E39FCBC-32B3-41E4-BF19-306E6C843AD9

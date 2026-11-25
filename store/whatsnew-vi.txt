@@ -1,5 +1,6 @@
-- Ô bình luận rộng hơn khi gõ: chữ chạy hết bề ngang, nút Ảnh · Âm thanh · Video bày sẵn.
-- Ảnh, ghi âm, video gửi từ ứng dụng hiện đúng trên web (trình phát có sóng âm, tải xuống được).
-- Sửa bình luận không còn làm mất ảnh hay video YouTube đã nhúng.
-- Số thông báo chưa đọc hiện ngay trên chuông ở Trang chủ và Cộng đồng.
-- Đăng nhập bằng Google trên Android đã hoạt động.
+- Trang chủ thêm: Mọi người đang nghe, Tuyển tập, Ngày này năm xưa, Nghe theo nhạc sĩ, Nghe theo chủ đề.
+- Bình luận đang viết dở được tự lưu nháp, mở lại vẫn còn.
+- "Tải tất cả" tự tải tiếp khi quay lại ứng dụng, không bị dừng giữa chừng.
+- Chuyển tab không còn tự phát lại bài cũ.
+- iPhone, iPad nhận được thông báo khi có người trả lời.
+- Máy tính: thanh thời gian chạy đúng trên Windows, Windows 10 tải được dữ liệu, cuộn ở lề trang chủ đề.

@@ -159,6 +159,19 @@ jobs:
           fi
         shell: bash
 
+      # A clean Windows 10 has no Visual C++ runtime, and the zip build then
+      # fails at launch ("VCRUNTIME140.dll was not found"), found on a fresh
+      # Win10 VM 24/11. Ship the three DLLs next to bcdcnt.exe (app-local
+      # deployment, allowed by Microsoft) — the MSIX picks them up too.
+      - name: Bundle Visual C++ runtime (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          foreach ($d in 'msvcp140.dll','vcruntime140.dll','vcruntime140_1.dll') {
+            Copy-Item "$env:WINDIR\System32\$d" build/windows/x64/runner/Release/ -ErrorAction Stop
+          }
+          Get-ChildItem build/windows/x64/runner/Release/*.dll | Select-Object Name, Length
+
       # PRODUCT_NAME is "Bài ca đi cùng năm tháng", so the built bundle is
       # "Bài ca đi cùng năm tháng.app" (and was bcdcnt_flutter.app before that).
       # Glob whatever .app got produced and normalise it to bcdcnt.app so the

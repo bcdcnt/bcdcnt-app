@@ -48,6 +48,9 @@ def main():
     platform, ver, build = sys.argv[1], sys.argv[2], sys.argv[3]
     action = sys.argv[4] if len(sys.argv) > 4 else "status"
     whats_new = (pathlib.Path(__file__).parent / "whatsnew-vi.txt").read_text().strip()
+    # Tên, phụ đề, từ khoá (store/asc_meta.json): tìm "bcđcnt", "bcdcnt" hay
+    # cả cụm "bài ca đi cùng năm tháng" đều ra app (25/11/2026).
+    meta = json.loads((pathlib.Path(__file__).parent / "asc_meta.json").read_text())
 
     # Build
     b = call("GET", "/builds", **{"filter[app]": APP_ID, "filter[version]": build, "filter[preReleaseVersion.platform]": platform})["data"]
@@ -83,8 +86,18 @@ def main():
     print("version", ver, vid, v["attributes"]["appStoreState"])
 
     for loc in call("GET", f"/appStoreVersions/{vid}/appStoreVersionLocalizations")["data"]:
-        call("PATCH", f"/appStoreVersionLocalizations/{loc['id']}", {"data": {"type": "appStoreVersionLocalizations", "id": loc["id"], "attributes": {"whatsNew": whats_new}}})
-        print("whatsNew", loc["attributes"]["locale"])
+        call("PATCH", f"/appStoreVersionLocalizations/{loc['id']}", {"data": {"type": "appStoreVersionLocalizations", "id": loc["id"], "attributes": {"whatsNew": whats_new, "keywords": meta["keywords"]}}})
+        print("whatsNew + keywords", loc["attributes"]["locale"])
+
+    # Name/subtitle live on the app info that is still editable (one is
+    # opened with each new version; the live one can't be changed).
+    for ai in call("GET", f"/apps/{APP_ID}/appInfos")["data"]:
+        if ai["attributes"].get("appStoreState") == "READY_FOR_SALE":
+            continue
+        for loc in call("GET", f"/appInfos/{ai['id']}/appInfoLocalizations")["data"]:
+            if loc["attributes"]["name"] != meta["name"] or loc["attributes"].get("subtitle") != meta["subtitle"]:
+                call("PATCH", f"/appInfoLocalizations/{loc['id']}", {"data": {"type": "appInfoLocalizations", "id": loc["id"], "attributes": {"name": meta["name"], "subtitle": meta["subtitle"]}}})
+                print("tên/phụ đề", loc["attributes"]["locale"], "→", meta["name"], "·", meta["subtitle"])
 
     call("PATCH", f"/appStoreVersions/{vid}/relationships/build", {"data": {"type": "builds", "id": b["id"]}})
     print("gắn build", build)
