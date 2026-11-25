@@ -1,7 +1,7 @@
 name: bcdcnt
 description: BCĐCNT - Bài Ca Đi Cùng Năm Tháng
 publish_to: 'none'
-version: 1.9.0+35
+version: 1.9.1+36
 
 environment:
   sdk: ^3.11.5
@@ -129,3 +129,11 @@ flutter_native_splash:
     image_dark: store/splash/a12_dark.png
   web: false
   ios_content_mode: center
+
+# media_kit 1.2.6 (bản mới nhất) ghi MPV_FORMAT_FLAG bằng Bool 1 byte trong khi
+# libmpv đọc int 4 byte → `pause=false` có thể thành `true` (rác heap): Windows 10
+# bản Microsoft Store phát câm. Bản chép đã vá real.dart _setPropertyFlag.
+# Bỏ override khi upstream sửa.
+dependency_overrides:
+  media_kit:
+    path: third_party/media_kit

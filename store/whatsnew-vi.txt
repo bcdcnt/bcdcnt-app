@@ -1,6 +1,7 @@
+- Sửa lỗi không có tiếng trên một số máy Windows 10.
 - Trang chủ thêm: Mọi người đang nghe, Tuyển tập, Ngày này năm xưa, Nghe theo nhạc sĩ, Nghe theo chủ đề.
 - Bình luận đang viết dở được tự lưu nháp, mở lại vẫn còn.
 - "Tải tất cả" tự tải tiếp khi quay lại ứng dụng, không bị dừng giữa chừng.
 - Chuyển tab không còn tự phát lại bài cũ.
 - iPhone, iPad nhận được thông báo khi có người trả lời.
-- Máy tính: thanh thời gian chạy đúng trên Windows, Windows 10 tải được dữ liệu, cuộn ở lề trang chủ đề.
+- Windows: thanh thời gian chạy đúng, Windows 10 tải được dữ liệu.
